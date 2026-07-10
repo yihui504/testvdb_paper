@@ -12,7 +12,7 @@
 ## Score Summary
 
 | Dimension | R1 (客观) | R2 (严格) | R3 (友好) |
-|-----------|:---------:|:---------:|:---------:
+|-----------|:---------:|:---------:|:---------:|
 | Soundness | 2/4 | 1/4 | 3/4 |
 | Novelty | 3/4 | 2/4 | 3/4 |
 | Presentation | 2/4 | 2/4 | 3/4 |
@@ -52,6 +52,48 @@
 1. **[投稿前硬门槛] 填 `references.bib`** — 空 bib 会让任何审稿人第一眼扣印象分；注意核验 venue（norec20 疑为 OOPSLA/PACMPL 而非 OSDI）。
 2. **[投稿前硬门槛] 真实框架图 + 方法可复现段** — 至少补 LLM 版本、判定规则、一个端到端样例走查。
 3. **[会被反复追问] TP 召回 20–60%** — 无法靠写作解决，但可加一段正面论证「在无 mechanical oracle 的场景下，高精度低召回的运营价值」，把限制转化为设计取舍的论证。
+
+---
+
+## Round 3 详细审阅（against `paper-draft-vldb-final.tex` + `RESPONSE-to-reviewers.md`, 2026-07-10）
+
+**判断：Borderline / Weak Reject（顶会 SE 档），Weak Accept（扎实的二档）。** Round 1–2 那些会致命的「表述硬伤」基本清除；现在卡住的不再是诚实度，而是**评估完整性**——论文能证明「提交的假阳性少」，但没证明「漏了多少真 bug」，且**没有任何外部 baseline**。这个天花板与写作打磨无关。
+
+### [P0] 机械阻断项（仍在文件里，几分钟可修）
+1. **Intro 与 abstract 自相矛盾。** abstract/贡献/RQ3/结论已换成新口径（FP 抑制 31%→81%、recall 96.7%），但 Intro 的 Results 段（line 119）仍是旧的「precision 12.9%(4/31)→66.7%(4/6)，5.2×」。同一篇里两个头号数字，审稿人第一页就撞见。
+2. **投稿的 tex 指向空 bib。** `paper-draft-vldb-final.tex` 在 `files/` 根目录，`\bibliography{references}` → `files/references.bib` 仍为空；填好的 8 条在 `files/paper/references.bib`。在 tex 所在目录编译，所有 `\cite` 出 `[?]`。回复信「0 undefined」只在 `files/paper/` 内成立。
+3. **虚构合著者。** `du2023improving` 多列了第 6 作者「Pieter Abbeel」；原文只有 5 位（Du/Li/Torralba/Tenenbaum/Mordatch）。删。
+
+### [P1] 审稿人不会放过的评估缺口
+4. **无端到端 recall——核心科学空洞。** 卖点是 precision，但没估计漏掉多少可发现的合规缺陷。新的 96.7% 是对**已被确认的 36 个 TP** 复判得到的，即「已抓到的 bug 上的召回」。这是判断层稳定性的合理陈述，但回复信称其「消除」召回担忧属**过度声称**：它对「从未被 surface 的 bug」一无所知。需要 recall 分母实验（如喂一批已知已修的合规 bug，测重发现率）。
+5. **完全没有外部 baseline。** VDBFuzz 无实测可理解（paywall/无预印本，oracle 定义 + `run.py` 源码自证 crash-only 可作复现替代，保留）；但也没有「单层 LLM 全提交 + 真实维护者裁决」的 baseline，没有人工/启发式 baseline。唯一对照是自家 retrospective ablation。顶会没有任何 pipeline 外 baseline 是硬伤。
+6. **precision 头号数字只靠 5 库里的 2 库。** yield：Milvus 51 + Qdrant 26 = 77/111；Weaviate 30 提交里 21 pending，MeiliSearch 3、Chroma 1。「across five VDBMSs」夸大了，已裁决 precision 实质是「Milvus + Qdrant 上的 precision」。[43.9%, 80.5%] 敏感区间已暴露对 Weaviate pending 的依赖。
+7. **threat-model prior：架构里承重，评估里被否。** §3.2 说 threat model 注入「generation / judgment / dedup」，写成工作组件；RQ4 又说从未填充、未测、不稳定。§3.2 和 §5.4 描述的是两套系统。要么在 Approach 降级为「一个未能验证的 optional prior」，要么从数据流里拿掉。
+8. **`norec20` 是错标引用。** 正文「NoREC tests SQL via pivoted query synthesis」；bib 条目标题是 *Testing Database Engines via Pivoted Query Synthesis* = **PQS**（OSDI 2020，另一篇 Rigger & Su）；NoREC 是 non-optimizing reference engine（ESEC/FSE 2020）。回复信 §2 又说「OOPSLA/PACMPL 2020」，三处互不一致。定一篇，让 key + 正文名 + venue 对齐。另核 `ddlcheck25` 页码（自承估计值）与 `buzzbee24` 的 `and others`。
+
+### [P2] 加分项
+9. **COSINE>1.0 是最亮的技术点却被埋。** 跨厂商、与硬件无关、违背数学不变量、Milvus+Qdrant 双库复现——比「CTS 作为原则」更新颖更站得住。建议把「可表达不变量」提升为第二个 oracle 维度小节，区别于「LLM 查 LLM」。
+10. **指标切换需明说。** RQ3 从 precision lift 换成 FP 抑制 + recall（更干净，我认可），但跨版本对比的审稿人会注意到，加一句说明即可。
+11. **abstract 数字过密。** results 一句塞 5 个统计量，把敏感区间和 n=30 下沉到 §5.3。
+
+### 确实变好的
+- 内部账目自洽：52 = 36 TP + 16 FP，16 = 12 by-design + 4 rejected，111 = 52 + 30 pending + 29 excluded。
+- Fig.1 换成真 TikZ 图（assertion/truth 双层配色），占位框消除。
+- 加了 implementation 段（agent 分层、GLM-5.2、四判官轴），补上可复现缺口。
+- 诚实度高（明确边界、披露低产库、RQ4 标为 negative result），审稿人会给分。
+- 28 个真实落地修复仍是最强资产。
+
+### 给作者的问题
+1. 端到端 recall 的最佳估计是多少？用一批已修合规 bug 做 held-out，报重发现率。
+2. 「单层 LLM 全提交」在真实维护者裁决下的 precision 到底是多少（不是回溯，是实际提交）？
+3. 去掉 Milvus + Qdrant，其余三库还有信号吗？
+4. threat-model prior 到底在不在部署 pipeline 里？未测为何进架构图数据流？
+
+### 下一步（按优先级）
+1. 修三个 [P0] 机械项（Intro 数字对齐、bib 放到 tex 旁、删虚构作者），重编译验证 0 undefined。
+2. 调和 §3.2 与 §5.4 对 threat model 的口径（纯一致性，无需新实验）。
+3. 若截稿前有时间，补 recall 分母实验——这是唯一能真正移动结论的补充。
+4. 修 `norec20` 引用身份。
 
 ---
 
