@@ -85,8 +85,8 @@ We respond to VDBFuzz's generation-side Future Work (LLM-generated diverse API i
 \item \textbf{Contract-Truth Separation}, a design principle isolating LLM-generated assertions from a maintainer-authority truth layer that falsifies them.
 \item A \textbf{counter-evidence mechanism} (dev-reviewer) with three anchors, removing 80.6\% of false positives and lifting precision $5.4\times$, with its TP-recall limitation (20--60\%) reported honestly.
 \item The \textbf{contract hallucination propagation finding}: when an LLM both generates a contract and judges compliance, hallucinated constraints are self-confirmed---observed in 12 by-design cases; the dev-reviewer's counter-evidence anchors are the mitigation.
-\item An \textbf{exploratory pilot} of a threat-model prior, with honest design limitations.
-\item \textbf{Empirical results and an open-source system}: 111 issues across 5 VDBMSs, 36 maintainer acknowledgments.
+\item An \textbf{exploratory pilot} of a threat-model prior, with honest design limitations; we do not claim a validated effect, and full evaluation is deferred to future work.
+\item \textbf{Empirical results and an open-source system}: 111 issues across 5 VDBMSs, 36 maintainer acknowledgments; an anonymized artifact will be released at \url{[anonymized URL]}.
 \end{enumerate}
 
 %=========================================================================
@@ -174,23 +174,23 @@ Formally, let $C_{\mathrm{LLM}}$ be the LLM-derived contract and $C_{\mathrm{tru
 We address four research questions.
 
 \subsection{RQ1: Detection Capability}
-We ran TestVDB against five VDBMSs, pinning exact target versions. Table~\ref{tab:yield} reports the yield.
+We ran TestVDB against five VDBMSs, pinning exact target versions. Table~\ref{tab:yield} reports the yield. The dev-reviewer's source-grounding fetches version-pinned source via release tags (e.g., \texttt{/blob/v2.6.17}), not live master; the contract's derivation tag may lag the exact target version (e.g., a v2.6.19 run reused a v2.6.17-derived contract), a drift we flag as a threat to validity (\S\ref{sec:eval-rq3}).
 
 \begin{table}[t]
-\caption{Issues submitted and maintainer outcomes (5 VDBMSs).}
+\caption{Issues submitted and maintainer outcomes (5 VDBMSs). Not-a-bug = By-design + Rejected (maintainer judged not a defect; labels differ across projects). Pending = open bugs awaiting triage. Precision is computed over adjudicated issues (Fixed + Accepted + Not-a-bug = 52): 36/52 = 69.2\%. An additional 29 submissions were closed without label or marked duplicate and are excluded.}
 \label{tab:yield}
 \small
 \begin{tabular}{lrrrrr}
 \toprule
-VDBMS & Submitted & Fixed & Accepted & By-design & Rejected \\
+VDBMS & Submitted & Fixed & Accepted & Not-a-bug & Pending \\
 \midrule
 Milvus      & 51 & 14 & 8 & 12 & 0 \\
-Qdrant      & 26 & 11 & 0 & 0  & 3 \\
-Weaviate    & 30 & 3  & 0 & 0  & 1 \\
+Qdrant      & 26 & 11 & 0 & 3  & 8 \\
+Weaviate    & 30 & 3  & 0 & 1  & 21 \\
 MeiliSearch & 3  & 0  & 0 & 0  & 0 \\
-Chroma      & 1  & 0  & 0 & 0  & 0 \\
+Chroma      & 1  & 0  & 0 & 0  & 1 \\
 \midrule
-\textbf{Total} & \textbf{111} & \textbf{28} & \textbf{8} & \textbf{12} & \textbf{4} \\
+\textbf{Total} & \textbf{111} & \textbf{28} & \textbf{8} & \textbf{16} & \textbf{30} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -213,7 +213,7 @@ a $5.4\times$ improvement over the 12.9\% single-layer baseline. We deliberately
 \paragraph{Controlled retrospective (pilot, 12 candidates).} To isolate the judgment layer, we re-triaged 12 maintainer-adjudicated candidates (6 TP, 6 FP) under two blind conditions: claim-only (the 4-judge layer) and source-grounded (the dev-reviewer). Maintainer outcomes were hidden via label-isolated agents. Claim-only suppressed 2/6 FP ($S{=}33\%$, TP recall 6/6); adding source-grounding lifted suppression to ${\sim}4/6$ (${\sim}67\%$). The residual misses were all \emph{silent-absence} cases (a parameter with no code-level validation; partial concurrency locking)---ambiguous signals that require the threat-model anchor (\S\ref{sec:cts}). We report this as pilot-scale evidence for the 3-anchor complementarity; a full 52-candidate re-triage with version-pinned source is underway for final $S/R$ numbers. Two honesty notes: (i) source must be pinned to each issue's filing version---master drift can confound (one pilot case was)---which the full run enforces; (ii) this measures judgment-layer precision on a historical candidate pool, not an end-to-end false-positive rate.
 
 \subsection{RQ4: Threat-Model Pilot (Exploratory)}\label{sec:eval-tm}
-We ran a double-blind ablation on Milvus v2.6.17 (control with threat-model cognition vs.\ experiment without; $n{=}5$ TP, 7 FP). TP recall moved 20\%/60\% (control/experiment); FP-correct 86\%/57\%. We do \emph{not} claim a threat-model effect: blindspot indicators were never populated (so the TP-protection mechanism went untested), the dev-reviewer was unstable on the same candidate across runs (2/2 CONFIRMED/FP), and $n{=}5$ is below significance. The reliable finding is orthogonal and humbling: the dev-reviewer's TP recall is only 20--60\%---even with counter-evidence, an LLM proxy struggles to recognize genuine bugs, a core limitation of CTS.
+We ran a double-blind ablation on Milvus v2.6.17 (control with threat-model cognition vs.\ experiment without; $n{=}5$ TP, 7 FP). TP recall moved 20\%/60\% (control/experiment); FP-correct 86\%/57\%. We do \emph{not} claim a threat-model effect: blindspot indicators were never populated (so the TP-protection mechanism went untested), the dev-reviewer was unstable on the same candidate across runs (2/2 CONFIRMED/FP), and $n{=}5$ is below significance. The reliable finding is orthogonal and humbling: the dev-reviewer's TP recall is only 20--60\%---even with counter-evidence, an LLM proxy struggles to recognize genuine bugs, a core limitation of CTS. In concrete terms, CTS suppresses 80.6\% of false positives (Milvus ablation, $n{=}31$) while TP recall sits at only 20--60\% (pilot, $n{=}5$); the latter is small-sample and will be tightened by the full re-triage.
 
 \subsection{Threats to Validity}
 \emph{Internal:} maintainer acknowledgment is a weak ground truth; rejected/by-design outcomes involve human judgment. \emph{External:} the cross-layer ablation (RQ3) is Milvus-only; cross-library dev-reviewer data is incomplete (Weaviate has 22 open undiagnosed). \emph{Construct:} defect-type classification is title-based and pending per-defect label confirmation. \emph{LLM variance:} dev-reviewer judgments vary across runs; we report ranges, not point estimates.
