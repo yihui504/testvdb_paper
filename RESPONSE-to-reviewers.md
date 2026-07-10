@@ -97,3 +97,30 @@ Round 3 P1-4(discovery recall)是核心科学空洞。全 pipeline discovery rec
 
 ### 论文落地
 §5 加 "Discovery recall (upstream extraction)" 段(commit `40ba275`),完整披露 67% + 3 MISS(含 id7 误判)+ future work。这**部分** address P1-4;Opus 要的全 discovery recall 未完全解决,诚实标 future work。
+
+---
+
+## 9. Round 4 问题回复 + Tier-1 实验计划(2026-07-11)
+
+### W1:111 拆分 + 敏感性"30"
+- **111 = 52 adjudicated(36 ack + 12 by-design + 4 rejected)+ 30 pending + 29 excluded**
+- 敏感性 [43.9%, 80.5%] 针对的是 **30 pending**(待裁决:Weaviate 21 + Qdrant 8 + Chroma 1)
+- 29 excluded = closed-no-label / duplicate(已 closed,裁决不可得)——**不在**敏感性,因为它们不是"待裁决",是"无法裁决/重复"
+
+### W2:模型配置(待作者确认 → 修 implementation 段)
+论文 implementation 段(line ~167)写"four agents opus tier + sixteen sonnet; all runs GLM-5.2"。但 **opus/sonnet 是 Claude Code 的 agent 档位名**(frontmatter `model:`),不是 GLM 型号。实际跑什么取决于 Claude Code 配置:
+- 若 Claude Code 配 **GLM**(opus/sonnet → GLM 不同档):档位是**泛称**,实际均 GLM-5.2 家族,implementation 段应写"agents 分两档(重推理/常规),均跑 GLM-5.2 家族"
+- 若跑 **Claude**(opus=真 Opus, sonnet=真 Sonnet):则"all runs GLM-5.2"错误,要改
+
+**待作者确认实际模型 → 修 implementation 段措辞**(也影响 D/E 实验的模型说明)。
+
+### Tier-1 实验计划(Opus Round 4 建议,基于已有数据)
+
+| 实验 | 答什么 | 可行性 | 谁做 |
+|---|---|---|---|
+| **C 三锚点消融** | src/repro/tm 各自 FP 抑制 + TM 降级依据(W5) | claim/src 离线(重解析 stage2 数据);repro 要 VDB;tm 要 artifact | C-src 我离线做;repro/tm 标"需 VDB/artifact" |
+| **D 稳定性 k=5** | dev-reviewer 方差 + 多数投票 precision(把"坦白"变"测量") | 离线 5 dispatch × 52 候选 | 我离线做 |
+| **A1 单层端到端反事实** | 端到端 dev-reviewer 净收益(W3 主证据) | 要 TestVDB 去 dev-reviewer 重跑 + 新候选抽样裁决 | 作者跑(协议见 round4-todo memory)|
+
+**Tier-2(camera-ready,1-2 周)**:B discovery recall 真实分母(旧版本 + web archive 文档 + 15-20 case 策展)/ E 第二 backbone 敏感性。
+**Tier-3(不做)**:F Weaviate 跨库补全 / G threat-model 验证(降级而非补跑)/ A2 真实批量提交单层(伦理/spam 风险)。
