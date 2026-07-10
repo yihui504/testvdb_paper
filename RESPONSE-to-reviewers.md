@@ -73,3 +73,27 @@ Round 2 认可 5.2×(4/31→4/6 同总体)。但深挖 Milvus v2.6.19 原始数�
 - 外部 baseline(P1-5)
 - ddlcheck25 页码核实、buzzbee24 作者补全
 - COSINE>1.0 提升为第二 oracle 维度(P2-9,Opus 也认可这是最亮技术点)
+
+---
+
+## 8. 实验 1:extraction recall(P1-4 部分,2026-07-11)
+
+Round 3 P1-4(discovery recall)是核心科学空洞。全 pipeline discovery recall 需 TestVDB 跑 bug-present 旧版本,但**旧版本文档多已下架**(Milvus 2.2/2.3 官方文档不可得)。我们做了**上游部分**:extraction recall。
+
+### 设计(D)
+- 9 held-out pre-2024 合规 bug(Milvus/Qdrant/Weaviate,排除 yihui504 提交;pre-2024 降 LLM 泄露)
+- blind Agent 模拟 knowledge-extractor,判:当前 API 文档是否明确禁该 violation?COVER / MISS / UNCLEAR
+- extraction recall = COVER / 9
+
+### 结果
+- **6/9 COVER(67%)**:当前文档契约覆盖了(datetime RFC3339 / JSON 完整性 / vectorizer 名 / dim 匹配 / shardingConfig / cosine∈[-1,1])
+- **3/9 MISS**:契约 gap(unrecognized query params 未规定;诊断质量无文档;qdrant max_indexing_threads 误校验)
+- 其中 id7 Agent **误判**:把 held-out 的 bug 行为("8 被误拒")当契约("≥1000")——这是用 LLM 知识作 doc proxy 的固有局限,已校正为 MISS 并写进论文
+
+### 诚实框定
+- 测的是 **extraction 上游**(契约覆盖),**非** Opus 要的全 pipeline discovery(攻击 hit + judge 未跑)
+- COVER 反映**当前文档**(可能 bug 已修后明确),不是 bug 版本契约(那些文档没了,测不到)
+- 全 pipeline discovery + bug 版本契约 = future work
+
+### 论文落地
+§5 加 "Discovery recall (upstream extraction)" 段(commit `40ba275`),完整披露 67% + 3 MISS(含 id7 误判)+ future work。这**部分** address P1-4;Opus 要的全 discovery recall 未完全解决,诚实标 future work。
