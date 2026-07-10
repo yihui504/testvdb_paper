@@ -85,7 +85,6 @@ We respond to VDBFuzz's generation-side Future Work (LLM-generated diverse API i
 \item \textbf{Contract-Truth Separation}, a design principle isolating LLM-generated assertions from a maintainer-authority truth layer that falsifies them.
 \item A \textbf{counter-evidence mechanism} (dev-reviewer) with three anchors, removing 79\% of false positives (26/33) on a Milvus ablation batch; on a controlled retrospective its source anchor lifts false-positive suppression from 31\% to 81\%, with its TP-recall characterized empirically: the 4-judge layer retains $92\%$ of TPs ($n{=}36$) and source-grounding retains $96.7\%$ ($n{=}30$, independent blind judge).
 \item The \textbf{contract hallucination propagation finding}: when an LLM both generates a contract and judges compliance, hallucinated constraints are self-confirmed---observed in 12 by-design cases; the dev-reviewer's counter-evidence anchors are the mitigation.
-\item An \textbf{exploratory pilot} of a threat-model prior, with honest design limitations; we do not claim a validated effect, and full evaluation is deferred to future work.
 \item \textbf{Empirical results and an open-source system}: 111 issues across 5 VDBMSs, 36 maintainer acknowledgments; an anonymized artifact is available at \url{https://anonymous.4open.science/r/testvdb-anon-D644/}.
 \end{enumerate}
 
@@ -170,6 +169,8 @@ Formally, let $C_{\mathrm{LLM}}$ be the LLM-derived contract and $C_{\mathrm{tru
 
 %=========================================================================
 \section{Evaluation}\label{sec:eval}
+
+\paragraph{Implementation.} All agents are LLM-driven; four (orchestrator, dev-reviewer, threat-modeler, bug-shape-extractor) use the opus tier and the remaining sixteen use sonnet; all runs reported here use GLM-5.2. Four independent judges (evidence, novelty, severity, documentation) score each Stage-2 candidate; the orchestrator aggregates their verdicts and forwards survivors to the dev-reviewer, which suppresses a candidate if any of its three anchors (clean reproduction, source-grounding, threat-model) yields counter-evidence. An end-to-end trace (contract hallucination $\to$ source-grounded reclassification) appears in \S\ref{sec:hallucination}.
 
 We address four research questions.
 
