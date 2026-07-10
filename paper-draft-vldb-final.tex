@@ -7,7 +7,7 @@
 % the paper's own self-consistent counts):
 %   [P0-1] Removed the cross-basis "5.4x" splice. The primary precision
 %          gain is now stated on ONE fixed population/denominator
-%          (Milvus v2.6.19: 12.9% (4/31) -> 66.7% (4/6) = 5.2x). The
+%          (full-52 controlled retrospective: FP suppression 31->81%, TP recall 96.7%). The
 %          five-library 69.2% (36/52) is reported separately as an
 %          aggregate operating point, NOT as the "after" arm of the ratio.
 %   [P0-2] Added pending-submission sensitivity: aggregate precision lies
@@ -26,7 +26,7 @@
 %
 % TODO (author, cannot be done from facts alone):
 %   - references.bib is currently empty; populate with VERIFIED BibTeX
-%     (double-check venues, e.g. norec20 may be OOPSLA/PACMPL not OSDI).
+%     (norec20 = NoREC, ESEC/FSE 2020; ddlcheck25 = PVLDB v18).
 %   - Replace the \fbox placeholder in Fig.1 with a real framework figure.
 %   - State the exact LLM backbone + version and per-agent decision rules
 %     (add a reproducibility paragraph / artifact pointer).
@@ -116,7 +116,7 @@ The naive design---an LLM extracts a contract from docs, then the same family of
 When no mechanical oracle is available, the only usable truth source is \emph{maintainer authority}---source code, prior PRs, by-design intent, issue history. It is scarce, so it must be proxied by an agent. We separate the \emph{assertion layer} (LLM-generated contracts and judgments) from a \emph{truth layer} and use the latter to falsify the former. The truth layer is a dev-reviewer agent that applies counter-evidence along three anchors: clean reproduction, source-grounded verification (the direct counter to hallucination), and threat-model cross-check. This mirrors how a maintainer adjudicates an incoming bug report.
 
 \paragraph{Results.}
-TestVDB produced 111 candidate issues across five VDBMSs; maintainers acknowledged 36 (28 fixed, 8 accepted-open). On a controlled same-population Milvus ablation the dev-reviewer lifts precision from 12.9\% (4/31) to 66.7\% (4/6), a $5.2\times$ improvement on one fixed denominator; aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52), which lies within $[43.9\%, 80.5\%]$ under pending-resolution sensitivity (Section~\ref{sec:eval-rq3}). We report the boundary honestly: 75\% of yield is boundary/validation compliance; crash bugs are excluded by design (complementary to VDBFuzz); soft result-correctness (ANN recall, ranking) remains open.
+TestVDB produced 111 candidate issues across five VDBMSs; maintainers acknowledged 36 (28 fixed, 8 accepted-open). On a controlled retrospective over all 52 maintainer-adjudicated candidates (same population), the dev-reviewer's source anchor lifts false-positive suppression from 31\% to 81\% while retaining 96.7\% of true positives ($n{=}30$); aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52), within $[43.9\%, 80.5\%]$ under pending-resolution sensitivity (Section~\ref{sec:eval-rq3}). We report the boundary honestly: 75\% of yield is boundary/validation compliance; crash bugs are excluded by design (complementary to VDBFuzz); soft result-correctness (ANN recall, ranking) remains open.
 
 \paragraph{Positioning.}
 We respond to VDBFuzz's generation-side Future Work (LLM-generated diverse API interactions and staying current with evolving APIs). Our judgment side provides a contract oracle that extends detection beyond crash into the API-compliance subset of incorrect behavior. We do \emph{not} claim to solve VDBFuzz's oracle-for-correctness direction (result correctness of vector search), which remains open~\cite{roadmap25}.
@@ -203,7 +203,7 @@ TestVDB is a five-stage pipeline (Figure~\ref{fig:overview}): (1) contract extra
 \end{figure}
 
 \subsection{Contract Extraction and the Threat-Model Prior}\label{sec:tm}
-A knowledge-extractor agent crawls official API documentation and emits structured contracts (parameter domains, enum values, documented limits, status-code semantics) that seed both attack agents and judges. A threat-model artifact encodes recurring by-design intents (idempotency, eventual consistency, lenient defaults) and known blind spots; it is injected as a prior at generation (steering attacks toward non-trivial boundaries), at judgment (as a counter-evidence dictionary for the dev-reviewer), and at dedup. We treat the threat model as an \emph{exploratory pilot} (Section~\ref{sec:eval-tm}) rather than a core claim, because our ablation could not cleanly isolate its effect.
+A knowledge-extractor agent crawls official API documentation and emits structured contracts (parameter domains, enum values, documented limits, status-code semantics) that seed both attack agents and judges. A threat-model artifact encodes recurring by-design intents (idempotency, eventual consistency, lenient defaults) and known blind spots. It is \emph{designed} to be injected at generation, judgment, and dedup; however, in our runs the blindspot indicators were never populated and its effect could not be isolated (Section~\ref{sec:eval-tm}), so we treat it as an unvalidated optional prior rather than a working component of the evaluated system.
 
 \subsection{Attack Generation and the Four-Judge Debate}
 Three attack agents target the compliance dimensions: a \emph{boundary} agent (illegal-success at parameter, enum, and limit edges---the dominant yield), a \emph{semantic} agent (diagnostic-quality violations), and a \emph{state} agent (state/logic inconsistencies). Candidates enter a four-judge debate (evidence/severity/novelty/doc axes) drawing on multi-agent verification ideas~\cite{du2023improving}. The Stage-2 output of this debate feeds the dev-reviewer.
@@ -281,12 +281,12 @@ We report this as an end-to-end operating point, \emph{not} as the ``after'' arm
 We ran a double-blind ablation on Milvus v2.6.17 (control with threat-model cognition vs.\ experiment without; $n{=}5$ TP, 7 FP). TP recall moved 20\%/60\% (control/experiment); FP-correct 86\%/57\%. We report this as an \emph{exploratory negative result} and explicitly do not count it as a contribution: blindspot indicators were never populated, the dev-reviewer was unstable across runs (2/2 CONFIRMED/FP), and $n{=}5$ is below significance. We emphasize these 20\%/60\% figures are the TM control/experiment split, \emph{not} a stable estimate of dev-reviewer TP recall: the controlled retrospective (\S\ref{sec:eval-rq3}) measures the latter at $96.7\%$ ($n{=}30$), i.e., the dev-reviewer's source anchor does not trade away TP recall.
 
 \subsection{Threats to Validity}
-\emph{Internal:} maintainer acknowledgment is a weak ground truth; rejected/by-design outcomes involve human judgment. \emph{External:} the same-population ablation (RQ3) is Milvus-only, and cross-library dev-reviewer validation currently covers Milvus and Qdrant; Weaviate submissions are not yet fully diagnosed and are therefore \emph{excluded} from our precision estimates rather than reported as an in-flight claim---we report only completed measurements. \emph{Construct:} defect-type classification is title-based and pending per-defect label confirmation. \emph{LLM variance:} dev-reviewer judgments vary across runs; we report ranges, not point estimates.
+\emph{Internal:} maintainer acknowledgment is a weak ground truth; rejected/by-design outcomes involve human judgment. \emph{External:} the same-population ablation (RQ3) is Milvus-only, and cross-library dev-reviewer validation currently covers Milvus and Qdrant; Weaviate submissions are not yet fully diagnosed and are therefore \emph{excluded} from our precision estimates rather than reported as an in-flight claim---we report only completed measurements. \emph{Construct:} defect-type classification is title-based and pending per-defect label confirmation. \emph{LLM variance:} dev-reviewer judgments vary across runs; we report ranges, not point estimates. \emph{Recall scope:} the 96.7\% TP-recall is measured on the 36 maintainer-acknowledged TPs (judgment-layer recall over surfaced candidates), not end-to-end discovery recall---the rate at which TestVDB surfaces compliance bugs that were never submitted. Measuring discovery recall against a held-out set of known-fixed bugs is future work.
 
 %=========================================================================
 \section{Related Work}\label{sec:rw}
 \paragraph{VDBMS testing.} VDBFuzz~\cite{vdbfuzz26} is the first dedicated VDBMS fuzzer (crash-oracle-based) and is complementary to this work. The roadmap~\cite{roadmap25} and the empirical bug study~\cite{bugstudy25} define the agenda and taxonomy we build upon. MeTMaP~\cite{metmap24} applies metamorphic testing to false vector matching in LLM-augmented generation. BUZZBEE~\cite{buzzbee24} fuzzes general DBMSs.
-\paragraph{Database correctness oracles.} NoREC~\cite{norec20} tests SQL via pivoted query synthesis; DDLCheck~\cite{ddlcheck25} tests DDL correctness. These assume reference SQL semantics absent in VDBMS APIs.
+\paragraph{Database correctness oracles.} NoREC~\cite{norec20} tests SQL via non-optimizing reference engine construction; DDLCheck~\cite{ddlcheck25} tests DDL correctness. These assume reference SQL semantics absent in VDBMS APIs.
 \paragraph{LLM-based testing and multi-agent debate.} LLMs are increasingly used for test generation and oracle enhancement; we use multi-agent debate~\cite{du2023improving} for generation and judgment but contribute the Contract-Truth Separation layer that addresses the contract-hallucination failure mode of self-confirming LLM oracles.
 
 %=========================================================================
