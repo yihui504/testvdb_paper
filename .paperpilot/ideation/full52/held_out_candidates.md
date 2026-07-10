@@ -39,6 +39,33 @@
 - Build/infra: weaviate#8926 (build fails), qdrant#4366 (docker), weaviate#6555 (dial tcp)
 - Non-API: qdrant#6555 (Web UI), weaviate#7331/8991 (model errors)
 
+## Pre-2024 cohort (LOW leakage — use this for the experiment)
+
+> 2022-2023 created, mature VDB era (API close to current), GLM training leakage risk low. Filtered from `invalid`/`silent`/`wrong`/`incorrect` searches; excluded crash/build/infra/result-correctness-soft.
+
+### Boundary / validation compliance (11)
+| # | issue | date | title |
+|---|---|---|---|
+| 1 | weaviate#1929 | 2022-04 | wrongly formated datetime field silently leads to... |
+| 2 | weaviate#2699 | 2023-03 | silently ignore unrecognized parameters (REST) |
+| 3 | weaviate#2709 | 2023-03 | REST endpoints silently accept junk after JSON end |
+| 4 | weaviate#2929 | 2023-04 | invalid pagination params: query maximum results exceeded |
+| 5 | weaviate#2975 | 2023-05 | Invalid property type `uuid` |
+| 6 | weaviate#3028 | 2023-05 | Invalid schema properties don't throw an error |
+| 7 | weaviate#3624 | 2023-10 | Wrong defaults for shardingConfig (multiTenancy) |
+| 8 | qdrant#2069 | 2023-06 | Incorrect API validation: hnsw_config.max_indexing_threads |
+| 9 | qdrant#2268 | 2023-07 | Wrong dim when create collection (should reject) |
+| 10 | qdrant#2557 | 2023-08 | Upserting wrong vector size does not return an error |
+| 11 | milvus#26038 | 2023-07 | Error message for BIN_IVF_FLAT params (diagnostic) |
+
+### Result-correctness / expressible invariants (2 — TestVDB partially covers)
+| # | issue | date | title |
+|---|---|---|---|
+| 12 | milvus#26675 | 2023-08 | Milvus 2.3 wrong distance for metric cosine |
+| 13 | milvus#27368 | 2023-09 | wrong results when doing cosine similarity |
+
+**N=13** (pre-2024, low leakage). The two cosine cases (#12-13) are the same class as our COSINE>1.0 finding — TestVDB should plausibly hit them; the 11 boundary/validation cases are our core scope.
+
 ## Next steps (the experiment itself)
 1. **Body-extract (me)**: for each of the ~16, read the issue body, extract (API endpoint, version, expected vs actual). Output a re-discovery protocol per bug.
 2. **Run TestVDB (you)**: `/testvdb:mine --target <vdb> --version <v>` for each bug's API+version. N=16 runs, ~30-60min each (Docker + GLM). Collect TestVDB's output candidates.
