@@ -124,3 +124,26 @@ Round 3 P1-4(discovery recall)是核心科学空洞。全 pipeline discovery rec
 
 **Tier-2(camera-ready,1-2 周)**:B discovery recall 真实分母(旧版本 + web archive 文档 + 15-20 case 策展)/ E 第二 backbone 敏感性。
 **Tier-3(不做)**:F Weaviate 跨库补全 / G threat-model 验证(降级而非补跑)/ A2 真实批量提交单层(伦理/spam 风险)。
+
+---
+
+## 10. Tier-1 C-src + D 已完成(2026-07-11,commit `1dc6529`)
+
+两项离线实验已完成并落论文(final `1dc6529`,testvdb_paper main,6 页 0 undefined refs)。
+
+### C-src:锚点归因(§5.3 `\paragraph{Anchor attribution}`)
+- **source anchor 单独贡献**了 FP 抑制的全部 lift:claim-only 5/16(31%)→ 加 source 13/16(81%,2.6×)。
+- **3 个 source 残留漏判**(q3/q37/q52)是 *silent-absent*(无验证代码可引用,agent 默认判 bug)——正是 *threat-model* anchor 设计要抓的;但 TM 盲点字段从未填充(§5.4),故这 3 个漏。
+- *reproduction* anchor 需 live VDB 容器,本回顾未行使。
+- 故将 81%/96.7% 归因于 source anchor,repro/TM 标 **unmeasured future components**。支持 W5(TM 降级为 future,非工作组件)。
+
+### D:稳定性 k=5(§5 Threats *LLM variance*)
+- 46 候选(16 FP + 30 TP)× **5 个独立 Agent**,source-grounded evidence 固定(隔离 judgment 层 sampling 方差)。
+- **pairwise agreement 99.1%**(range 98–100%);**45/46 unanimous(5/5)**;1 个非一致(候选 10,4/5)由 majority vote 解决;**majority vote 100%** 复原 ground truth。
+- 把 Round 3 "judgments vary across runs (2/2)" 的含糊坦白换成测量:**judgment 层近零方差**;残余 end-to-end 方差 confined 在 source-extraction 步(version-pinned release-tag,deterministic)。
+- 边界:测的是 judgment 层(evidence 已喂入),非 blind source-extraction;100% acc 部分因 evidence 形式携带信号,故只 claim agreement/stability,accuracy 仍以 stage2 的 96.7% 为准。
+
+### 仍待
+- **W2**:模型配置确认(Claude Code 配 GLM 还是 Claude?)→ 修 implementation 段。
+- **A1**:单层端到端反事实(用户跑 TestVDB 去 dev-reviewer)。
+- **Tier-2 camera-ready**:B discovery recall 真实分母 / E 第二 backbone。
