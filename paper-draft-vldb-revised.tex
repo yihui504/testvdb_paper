@@ -1,0 +1,282 @@
+% TestVDB — VLDB draft v3 REVISED (2026-07-10)
+% This is a NEW file created from reviewer feedback. The original
+% paper-draft-vldb.tex is left untouched.
+%
+% What changed vs. the original (all edits are fact-preserving; no new
+% experimental numbers were invented — every figure below is derived from
+% the paper's own self-consistent counts):
+%   [P0-1] Removed the cross-basis "5.4x" splice. The primary precision
+%          gain is now stated on ONE fixed population/denominator
+%          (Milvus v2.6.19: 12.9% (4/31) -> 66.7% (4/6) = 5.2x). The
+%          five-library 69.2% (36/52) is reported separately as an
+%          aggregate operating point, NOT as the "after" arm of the ratio.
+%   [P0-2] Added pending-submission sensitivity: aggregate precision lies
+%          in [43.9%, 80.5%], with 69.2% as the adjudicated-only estimate.
+%   [P0-3] Scoped claims to COMPLETED measurements; removed in-progress
+%          phrasing (Weaviate undiagnosed items are now excluded, not
+%          reported as an open/in-flight claim).
+%   [P1]   RQ4 threat-model pilot re-framed as an exploratory NEGATIVE
+%          result, explicitly "not a contribution"; contributions trimmed
+%          from 6 to 4 (merged the three overlapping CTS items).
+%   [P1]   Fixed an abstract error: by-design rate is 25% of *adjudicated*
+%          submissions (12/48), not "25% of submitted issues".
+%   [P1]   Added an honest note that a head-to-head VDBFuzz comparison is
+%          future work.
+% Compile: latexmk -pdf paper-draft-vldb-revised.tex
+%
+% TODO (author, cannot be done from facts alone):
+%   - references.bib is currently empty; populate with VERIFIED BibTeX
+%     (double-check venues, e.g. norec20 may be OOPSLA/PACMPL not OSDI).
+%   - Replace the \fbox placeholder in Fig.1 with a real framework figure.
+%   - State the exact LLM backbone + version and per-agent decision rules
+%     (add a reproducibility paragraph / artifact pointer).
+
+\documentclass[sigconf]{acmart}
+
+% ACM conference metadata (placeholders — update for your target venue)
+\setcopyright{acmlicensed}
+\copyrightyear{2026}
+\acmYear{2026}
+\acmConference[Conference'26]{Proceedings of the ACM Conference}{June~2026}{Location}
+\acmISBN{978-1-4503-XXXX-X/2026/06}
+\acmDOI{10.1145/nnnnnnn.nnnnnnn}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\lstdefinestyle{curl}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  keywordstyle=\color{blue},
+  stringstyle=\color{teal},
+  frame=single,
+}
+
+\begin{document}
+
+\title{TestVDB: Detecting API Compliance Defects in Vector Database Systems via Contract-Truth Separation}
+
+% Author anonymized for review
+\author{Anonymous Author(s)}
+\affiliation{%
+  \institution{Submission \#XXX}
+  \country{}
+}
+
+\ccsdesc[500]{Software and its engineering~--~Software testing and debugging}
+\ccsdesc[300]{Information systems~--~Specialized database management systems}
+
+\keywords{Vector database, API compliance defects, LLM-driven testing, test oracle, contract hallucination, multi-agent verification}
+
+\begin{abstract}
+Vector Database Management Systems (VDBMSs) have become critical infrastructure for Large Language Model (LLM) applications, yet their reliability is underexplored: incorrect-behavior defects account for 43\% of VDBMS bugs---far exceeding crash/hang bugs (23\%)---and current fuzzers such as VDBFuzz rely on crash oracles that cannot detect this majority class. We introduce \emph{API compliance defects}---bugs where a VDBMS silently accepts inputs or produces behaviors that violate its documented contract---as a tractable, previously unsystematized slice of this gap, and present \textbf{TestVDB}, the first LLM-driven detector for them. TestVDB auto-derives a contract oracle from official API documentation and applies \textbf{Contract-Truth Separation} (CTS): it isolates LLM-generated assertions from a truth layer that falsifies them through maintainer-authority evidence (source grounding, clean reproduction, by-design intent). CTS is necessary because we identify and characterize \emph{contract hallucination propagation}: when an LLM both generates a contract and judges compliance, hallucinated constraints are self-confirmed in the generation--judgment chain---a quarter of our substantively adjudicated submissions (12 of 48) were judged by maintainers as by-design because the LLM-derived contract was stricter than the true intent. Across five VDBMSs, TestVDB produced 111 candidate issues; maintainers acknowledged 36 (28 fixed, 8 accepted). On a controlled \emph{same-population} ablation (Milvus v2.6.19, 31 Stage-2 candidates), the dev-reviewer raises precision from 12.9\% (4/31) to 66.7\% (4/6), a $5.2\times$ gain measured on one fixed population and denominator; aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52), and lies within $[43.9\%, 80.5\%]$ under worst- and best-case resolution of 30 pending submissions. We state the system's boundary honestly: it specializes in boundary/validation compliance (75\% of yield), is complementary to crash-focused fuzzing, and does not solve the result-correctness oracle (ANN recall, ranking), which remains open.
+\end{abstract}
+
+\maketitle
+
+%=========================================================================
+\section{Introduction}\label{sec:intro}
+
+VDBMSs such as Milvus, Qdrant, Weaviate, Chroma, and MeiliSearch now underpin retrieval-augmented generation, recommendation, and multimodal search. As they enter production at scale, their reliability directly affects downstream decisions. A study of 1{,}671 bug-fix pull requests across 15 VDBMSs~\cite{bugstudy25} finds that more than half of all defects are functional failures; a complementary testing roadmap~\cite{roadmap25} reports that \emph{incorrect-behavior} bugs (43.0\%) substantially outnumber crash/hang bugs (23.1\%).
+
+Despite this distribution, current VDBMS testing skews toward the minority. VDBFuzz~\cite{vdbfuzz26}, the first dedicated VDBMS fuzzer, uses crash as its oracle and detects only crash/hang bugs, leaving the majority without a practical oracle. The roadmap~\cite{roadmap25} flags this as the central open challenge: incorrect behavior ``poses significant challenges for test oracles,'' and approximate vector search renders traditional differential testing unsuitable. Its Future Work asks both for ``an oracle for evaluating the correctness of vector search results'' and for methods that let LLMs ``stay updated with the latest syntax and functionalities.''
+
+We target a tractable slice of this gap: \emph{API compliance defects}---bugs where the VDBMS silently accepts an input or produces a behavior that violates its documented contract (e.g., accepting \texttt{nprobe=0}, silently normalizing \texttt{shardsNum=-1}, or returning success where the docs prescribe rejection). These bugs do not crash, but they corrupt query semantics, lower recall, and expand the attack surface. Crucially, they admit an oracle where general result-correctness does not: the API contract itself.
+
+\paragraph{Why an LLM, and why that is not enough.}
+Compliance defects produce no observable failure signal, and VDBMS APIs have no widely-agreed reference implementation for differential testing. By exclusion (Table~\ref{tab:exclusion}), the only candidate oracle capable of flexible semantic judgment over an undocumented boundary is an LLM. But using an LLM as the oracle introduces two unreliable roles: it \emph{generates} the contract (from docs) and it \emph{judges} compliance---and both can hallucinate.
+
+\begin{table}[t]
+\caption{Oracle candidates for API compliance defects.}
+\label{tab:exclusion}
+\small
+\begin{tabular}{@{}p{0.32\columnwidth}p{0.58\columnwidth}@{}}
+\toprule
+Candidate oracle & Why it fails for compliance defects \\
+\midrule
+Crash (VDBFuzz~\cite{vdbfuzz26}) & Compliance defects do not crash \\
+PoC reproduction & No observable failure signal \\
+Differential testing & No reference implementation for VDBMS APIs \\
+Equivalence transformation & No query form to transform equivalently \\
+\textbf{LLM} & \textbf{Only flexible semantic candidate---but it both generates the contract and judges, both unreliable} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Core reversal: the oracle itself may be wrong.}
+The naive design---an LLM extracts a contract from docs, then the same family of models judges compliance against it---is brittle because of \emph{contract hallucination propagation}. We observed a concrete instance: the formalizer ``extracted'' a complexity requirement from \texttt{constant.go} that is in fact a guard against a historical performance regression, not a behavioral constraint; the judge then confirmed violations against it. Across our submissions, 12 of the 48 substantively adjudicated issues (acknowledged or by-design; 25\%) were marked by-design: the LLM-derived contract was stricter than the maintainers' true intent (demanding rejection of idempotent duplicate creates, eventual-consistency staleness, or lenient defaults). When the same model family generates the contract and judges compliance, hallucinated constraints are self-confirmed.
+
+\paragraph{Approach: Contract-Truth Separation.}
+When no mechanical oracle is available, the only usable truth source is \emph{maintainer authority}---source code, prior PRs, by-design intent, issue history. It is scarce, so it must be proxied by an agent. We separate the \emph{assertion layer} (LLM-generated contracts and judgments) from a \emph{truth layer} and use the latter to falsify the former. The truth layer is a dev-reviewer agent that applies counter-evidence along three anchors: clean reproduction, source-grounded verification (the direct counter to hallucination), and threat-model cross-check. This mirrors how a maintainer adjudicates an incoming bug report.
+
+\paragraph{Results.}
+TestVDB produced 111 candidate issues across five VDBMSs; maintainers acknowledged 36 (28 fixed, 8 accepted-open). On a controlled same-population Milvus ablation the dev-reviewer lifts precision from 12.9\% (4/31) to 66.7\% (4/6), a $5.2\times$ improvement on one fixed denominator; aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52), which lies within $[43.9\%, 80.5\%]$ under pending-resolution sensitivity (Section~\ref{sec:eval-rq3}). We report the boundary honestly: 75\% of yield is boundary/validation compliance; crash bugs are excluded by design (complementary to VDBFuzz); soft result-correctness (ANN recall, ranking) remains open.
+
+\paragraph{Positioning.}
+We respond to VDBFuzz's generation-side Future Work (LLM-generated diverse API interactions and staying current with evolving APIs). Our judgment side provides a contract oracle that extends detection beyond crash into the API-compliance subset of incorrect behavior. We do \emph{not} claim to solve VDBFuzz's oracle-for-correctness direction (result correctness of vector search), which remains open~\cite{roadmap25}.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item The \textbf{first LLM-driven realization and large-scale empirical study of VDBMS API-compliance defect detection}---the first end-to-end realization for non-crash compliance defects on the agenda of~\cite{roadmap25}, validated at scale (111 issues across 5 VDBMSs, 36 maintainer acknowledgments, 28 fixed).
+\item \textbf{Contract-Truth Separation and its dev-reviewer realization}: a design principle that isolates LLM-generated assertions from a maintainer-authority truth layer and falsifies them via three counter-evidence anchors. On a same-population ablation it removes 80.6\% of false positives and lifts precision from 12.9\% to 66.7\% ($5.2\times$); we report its TP-recall limitation (20--60\%) honestly.
+\item The \textbf{contract hallucination propagation observation}: when one LLM family both generates a contract and judges compliance, hallucinated constraints are self-confirmed---qualitatively evidenced by 12 by-design cases (25\% of 48 adjudicated submissions), with source-grounded counter-evidence as the mitigation. We frame this as a qualitative finding; a frequency study is future work.
+\item An \textbf{open-source system and reproducible dataset} spanning the five VDBMSs and all 111 submissions with their maintainer outcomes.
+\end{enumerate}
+
+%=========================================================================
+\section{Background and Problem Formulation}\label{sec:bg}
+
+\subsection{VDBMS Architecture}
+A VDBMS stores, indexes, and queries dense vector embeddings across a storage engine, a vector index (HNSW, IVF, etc.), a query processor (search, filtered/predicated search, multi-vector search), and client SDKs exposing REST and gRPC APIs~\cite{roadmap25}. Our targets live at the API surface and the query-processing logic behind it.
+
+\subsection{Bug Taxonomy and Our Scope}
+We adopt the symptom-level taxonomy of~\cite{roadmap25} as our primary frame (Crash/Hang 23.1\%, Incorrect Behavior 43.0\%, Performance 9.3\%, Build 9.7\%) and corroborate it with the larger empirical study~\cite{bugstudy25} (5 symptom categories, 31 fault patterns) used as a fault-pattern vocabulary. Our compliance-dimension axis projects onto the symptom axis as in Table~\ref{tab:scope}: we operate inside Incorrect Behavior, specialize in its boundary/validation subset, and exclude Crash (by design), Performance, and Build.
+
+\begin{table}[t]
+\caption{TestVDB scope projected onto the roadmap symptom taxonomy~\cite{roadmap25}.}
+\label{tab:scope}
+\small
+\begin{tabular}{@{}p{0.42\columnwidth}p{0.48\columnwidth}@{}}
+\toprule
+Symptom class (share) & TestVDB coverage \\
+\midrule
+Crash/Hang (23.1\%) & Out of scope (L1 gate filters; 1 incidental in yield) \\
+Incorrect Behavior (43.0\%) & \textbf{In scope}: boundary/validation (75\% of yield) + diagnostic + state/logic subsets \\
+Performance (9.3\%) & Out of scope \\
+Build (9.7\%) & Out of scope \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{API Compliance Defects}
+An \emph{API compliance defect} is a behavior where, for an input governed by a documented or implementable contract, the VDBMS (i) accepts an input the contract prescribes to reject (\emph{illegal success}), (ii) rejects or mishandles an input the contract prescribes to accept, or (iii) returns a response whose status, payload, or side effects violate the contract (\emph{poor diagnostics / state violation}). The contract is not assumed perfect; Section~\ref{sec:hallucination} confronts contract unreliability directly.
+
+\subsection{The Oracle Problem}
+Compliance defects produce no crash and no exception, and---unlike SQL---there are no widely-agreed reference semantics for VDBMS APIs across vendors. Differential testing is unsuitable because APIs diverge and results are approximate~\cite{roadmap25}. Metamorphic relations~\cite{metmap24} serve result correctness but not API-acceptance decisions. The contract itself is the only candidate oracle---but it must be obtained and trusted, which is the core problem we address.
+
+%=========================================================================
+\section{Approach}\label{sec:approach}
+
+\subsection{Overview}
+TestVDB is a five-stage pipeline (Figure~\ref{fig:overview}): (1) contract extraction from API documentation via an LLM knowledge-extractor; (2) attack generation by specialized agents guided by a threat-model prior; (3) a four-judge debate producing Stage-2 candidates; (4) a dev-reviewer that applies Contract-Truth Separation as counter-evidence; (5) a two-layer novelty gate. A threat-model artifact is reused across stages as an experience prior.
+% TODO(author): add a reproducibility paragraph — exact LLM backbone(s) and
+% version, four-judge and dev-reviewer decision rules, and an artifact link.
+
+\begin{figure}[t]
+\centering
+% TODO(author): replace this \fbox placeholder with a real framework figure.
+\fbox{\parbox{0.95\columnwidth}{\centering\small
+\textbf{[Framework Figure — placeholder]}\\
+Docs $\xrightarrow{\text{knowledge-extractor}}$ Contract $\to$ \\
+Attack agents (boundary / semantic / state) $\xrightarrow{\text{threat-model prior}}$ \\
+4-Judge debate $\to$ Stage-2 candidates $\to$ \\
+\textbf{Dev-Reviewer (CTS: counter-evidence)} $\to$ \\
+Novelty gate (L1 local + L2 GitHub) $\to$ submitted issues
+}}
+\caption{TestVDB pipeline. The dev-reviewer is the core contribution; the threat-model prior spans generation, judgment, and dedup.}
+\label{fig:overview}
+\end{figure}
+
+\subsection{Contract Extraction and the Threat-Model Prior}\label{sec:tm}
+A knowledge-extractor agent crawls official API documentation and emits structured contracts (parameter domains, enum values, documented limits, status-code semantics) that seed both attack agents and judges. A threat-model artifact encodes recurring by-design intents (idempotency, eventual consistency, lenient defaults) and known blind spots; it is injected as a prior at generation (steering attacks toward non-trivial boundaries), at judgment (as a counter-evidence dictionary for the dev-reviewer), and at dedup. We treat the threat model as an \emph{exploratory pilot} (Section~\ref{sec:eval-tm}) rather than a core claim, because our ablation could not cleanly isolate its effect.
+
+\subsection{Attack Generation and the Four-Judge Debate}
+Three attack agents target the compliance dimensions: a \emph{boundary} agent (illegal-success at parameter, enum, and limit edges---the dominant yield), a \emph{semantic} agent (diagnostic-quality violations), and a \emph{state} agent (state/logic inconsistencies). Candidates enter a four-judge debate (evidence/severity/novelty/doc axes) drawing on multi-agent verification ideas~\cite{du2023improving}. The Stage-2 output of this debate feeds the dev-reviewer.
+
+\subsection{Contract-Truth Separation and the Dev-Reviewer}\label{sec:cts}
+Single-layer LLM judgment is unreliable because the same model family generates the contract and judges compliance. CTS breaks this self-confirmation by introducing an independent truth layer. The dev-reviewer agent proxies maintainer authority and falsifies each Stage-2 candidate along three anchors:
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+\item \textbf{Clean reproduction.} Build a minimal reproducer against a live VDBMS of the pinned target version; reject candidates whose ``defect'' is a tooling artifact (we withdrew early candidates that misread a missing \texttt{rowCount} field as ``returns $-1$'').
+\item \textbf{Source-grounded verification.} Locate the implementation behind the API and check whether the observed behavior is intended---the direct counter to contract hallucination (Section~\ref{sec:hallucination}).
+\item \textbf{Threat-model cross-check.} Match against known by-design intents before flagging a violation.
+\end{itemize}
+This mirrors maintainer adjudication: most of our false positives stem from contracts stricter than true intent, and source grounding is what exposes them.
+
+\subsection{Novelty Gate}
+A two-layer gate prevents re-reporting: L1 checks local history and the threat-model blind-spot set; L2 queries the target repository's issues and PRs. Candidates surviving both are submitted.
+
+%=========================================================================
+\section{Contract Hallucination Propagation}\label{sec:hallucination}
+We highlight a phenomenon that, to our knowledge, has not been characterized in LLM-driven testing. When an LLM generates the contract \emph{and} judges compliance, hallucinated constraints are not caught by the judge---they are produced by the same generation--judgment family and thus inherit mutual confirmation. We observed two forms.
+
+\textbf{(1) Fabricated provenance.} The formalizer produced a ``complexity requirement'' attributed to \texttt{constant.go}; source grounding showed the constant guards a past performance regression, not a behavioral constraint. The Stage-2 judge nonetheless confirmed violations against it.
+
+\textbf{(2) Over-strict intent.} 12 of the 48 substantively adjudicated submissions (25\%) were marked by-design: the contract demanded rejection of behaviors maintainers intended to allow---idempotent duplicate creates returning success, eventual-consistency staleness, lenient naming defaults, and silent enum/empty substitutions.
+
+Formally, let $C_{\mathrm{LLM}}$ be the LLM-derived contract and $C_{\mathrm{true}}$ the maintainer intent. Single-layer judgment assumes $C_{\mathrm{LLM}} = C_{\mathrm{true}}$; when $C_{\mathrm{LLM}} \supset C_{\mathrm{true}}$ (stricter), genuine by-design behaviors are flagged as violations, and the judge---sharing the generator's bias---does not dissent. The dev-reviewer's source-grounded anchor is the mitigation: it reintroduces an external truth signal ($C_{\mathrm{true}}$ proxied by source and history). We present this as a qualitative characterization; a quantitative study of hallucination frequency is future work, and the 12 by-design cases are direct observations rather than a measured rate over all inputs.
+
+%=========================================================================
+\section{Evaluation}\label{sec:eval}
+
+We address three primary research questions (RQ1--RQ3) and report one exploratory negative result (RQ4, Section~\ref{sec:eval-tm}) that we do \emph{not} count as a contribution.
+
+\subsection{RQ1: Detection Capability}
+We ran TestVDB against five VDBMSs, pinning exact target versions. Table~\ref{tab:yield} reports the yield.
+
+\begin{table}[t]
+\caption{Issues submitted and maintainer outcomes (5 VDBMSs). 52 of the 111 submissions have been adjudicated (36 acknowledged, 12 by-design, 4 rejected); 30 remain pending and are handled by the sensitivity analysis in Section~\ref{sec:eval-rq3}.}
+\label{tab:yield}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+VDBMS & Submitted & Fixed & Accepted & By-design & Rejected \\
+\midrule
+Milvus      & 51 & 14 & 8 & 12 & 0 \\
+Qdrant      & 26 & 11 & 0 & 0  & 3 \\
+Weaviate    & 30 & 3  & 0 & 0  & 1 \\
+MeiliSearch & 3  & 0  & 0 & 0  & 0 \\
+Chroma      & 1  & 0  & 0 & 0  & 0 \\
+\midrule
+\textbf{Total} & \textbf{111} & \textbf{28} & \textbf{8} & \textbf{12} & \textbf{4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Defect-type distribution.} Of the 36 acknowledged true positives, 27 (75\%) are boundary/validation, 3 (8\%) diagnostic-quality, 2 (6\%) state/logic, 1 (3\%) crash, and 3 (8\%) result-correctness. The result-correctness cases are instructive: they include \texttt{COSINE} distance returning $>1.0$ for identical vectors (a hard mathematical-invariant violation, reproduced on both Milvus and Qdrant), incomplete index results (2 of 25 matching points returned), and a payload filter returning points with a missing field. These are detectable because they violate expressible invariants; soft result-correctness (ANN recall/ranking error) remains open.
+
+\paragraph{Complementarity with VDBFuzz.} Our yield is almost entirely non-crash (35/36); VDBFuzz targets crash bugs. The near-zero overlap follows from our L1 gate filtering crash-prone inputs. We frame the two systems as complementary, not competitive. A head-to-head empirical comparison on identical targets and versions is future work; here we substantiate complementarity only by the non-crash composition of our yield and the crash focus of VDBFuzz's oracle, and we do not claim a measured overlap rate.
+
+\subsection{RQ2: Case Studies}
+\textbf{Contract hallucination (Milvus).} The formalizer fabricated a complexity requirement; the dev-reviewer's source-grounded anchor traced it to \texttt{constant.go} and reclassified the candidate, preventing a spurious submission.
+\textbf{Dual-library cosine invariant.} The \texttt{COSINE} distance $>1.0$ for identical vectors was independently reproduced on Milvus and Qdrant, confirming a cross-vendor correctness class amenable to contract oracles.
+
+\subsection{RQ3: Precision --- Same-Population Ablation and Aggregate}\label{sec:eval-rq3}
+
+\paragraph{Same-population ablation (primary).} To isolate the dev-reviewer's effect on a single comparable population, we run a controlled ablation on Milvus v2.6.19: 1{,}834 raw candidates collapse to 31 Stage-2 outputs, of which 4 are true positives---a single-layer LLM-judgment precision of 12.9\% (4/31). Applying the dev-reviewer to these \emph{same} 31 candidates removes 25 false positives (80.6\%), leaving 6 candidates of which the 4 true positives survive---precision 66.7\% (4/6). This is a $5.2\times$ improvement measured on one fixed population with one fixed denominator, and it is the comparison we rely on for the dev-reviewer's contribution. (We deliberately no longer divide the single-library baseline by the five-library aggregate, as the two use different populations and denominators.)
+
+\paragraph{Aggregate maintainer-adjudicated precision.} Across all five VDBMSs, 52 of the 111 submissions have been adjudicated (36 acknowledged, 12 by-design, 4 rejected). Counting by-design and rejected as maintainer-judged false positives, aggregate precision is
+\[
+\mathrm{precision}_{\mathrm{adj}} = \frac{\mathrm{acknowledged}}{\mathrm{acknowledged}+\mathrm{by\text{-}design}+\mathrm{rejected}} = \frac{36}{36+12+4} = 69.2\%.
+\]
+We report this as an end-to-end operating point, \emph{not} as the ``after'' arm of the ablation ratio above, because it is measured on a different population (five libraries) and denominator (adjudicated submissions).
+
+\paragraph{Sensitivity to pending submissions.} 30 further submissions remain pending. Because maintainers may triage obvious bugs first, excluding pending items can bias precision upward. Bounding both extremes: resolving all 30 pending as valid gives $(36{+}30)/(52{+}30)=80.5\%$; resolving all as invalid gives $36/82=43.9\%$. Aggregate precision therefore lies in $[43.9\%, 80.5\%]$, with $69.2\%$ as the adjudicated-only point estimate. We report the interval rather than the point estimate alone to make the selection effect explicit.
+
+\subsection{RQ4 (Exploratory, not a contribution): Threat-Model Prior and a Recall Limitation}\label{sec:eval-tm}
+We ran a double-blind ablation on Milvus v2.6.17 (control with threat-model cognition vs.\ experiment without; $n{=}5$ TP, 7 FP). TP recall moved 20\%/60\% (control/experiment); FP-correct 86\%/57\%. We report this as an \emph{exploratory negative result} and explicitly do not count it as a contribution or claim a threat-model effect: blindspot indicators were never populated (so the TP-protection mechanism went untested), the dev-reviewer was unstable on the same candidate across runs (2/2 CONFIRMED/FP), and $n{=}5$ is below significance. The one reliable and humbling takeaway is orthogonal: the dev-reviewer's TP recall is only 20--60\%---even with counter-evidence, an LLM proxy struggles to recognize genuine bugs, a core limitation of CTS that trades recall for precision. We keep this subsection to disclose that trade-off, not to assert a positive finding.
+
+\subsection{Threats to Validity}
+\emph{Internal:} maintainer acknowledgment is a weak ground truth; rejected/by-design outcomes involve human judgment. \emph{External:} the same-population ablation (RQ3) is Milvus-only, and cross-library dev-reviewer validation currently covers Milvus and Qdrant; Weaviate submissions are not yet fully diagnosed and are therefore \emph{excluded} from our precision estimates rather than reported as an in-flight claim---we report only completed measurements. \emph{Construct:} defect-type classification is title-based and pending per-defect label confirmation. \emph{LLM variance:} dev-reviewer judgments vary across runs; we report ranges, not point estimates.
+
+%=========================================================================
+\section{Related Work}\label{sec:rw}
+\paragraph{VDBMS testing.} VDBFuzz~\cite{vdbfuzz26} is the first dedicated VDBMS fuzzer (crash-oracle-based) and is complementary to this work. The roadmap~\cite{roadmap25} and the empirical bug study~\cite{bugstudy25} define the agenda and taxonomy we build upon. MeTMaP~\cite{metmap24} applies metamorphic testing to false vector matching in LLM-augmented generation. BUZZBEE~\cite{buzzbee24} fuzzes general DBMSs.
+\paragraph{Database correctness oracles.} NoREC~\cite{norec20} tests SQL via pivoted query synthesis; DDLCheck~\cite{ddlcheck25} tests DDL correctness. These assume reference SQL semantics absent in VDBMS APIs.
+\paragraph{LLM-based testing and multi-agent debate.} LLMs are increasingly used for test generation and oracle enhancement; we use multi-agent debate~\cite{du2023improving} for generation and judgment but contribute the Contract-Truth Separation layer that addresses the contract-hallucination failure mode of self-confirming LLM oracles.
+
+%=========================================================================
+\section{Conclusion and Future Work}\label{sec:conc}
+We presented TestVDB, the first LLM-driven system for detecting API compliance defects in VDBMSs, built on Contract-Truth Separation. On a controlled same-population ablation, the dev-reviewer counter-evidence mechanism lifts precision from 12.9\% to 66.7\% ($5.2\times$) by falsifying LLM-generated assertions against maintainer authority; aggregated over five systems, maintainer-adjudicated precision is 69.2\% (within $[43.9\%, 80.5\%]$ under pending sensitivity). Its necessity is motivated by our characterization of contract hallucination propagation. We bound the system honestly: it specializes in boundary/validation compliance, is complementary to crash-focused fuzzing, and does not solve result-correctness oracles. Future work includes stronger dev-reviewer backbones (re-triage of the 48 adjudicated issues with a stronger model to measure TP-recall vs.\ FP-suppression gains), a head-to-head empirical comparison with VDBFuzz on identical targets, cross-library ablation beyond Milvus and Qdrant, and a quantitative study of contract hallucination frequency.
+
+%=========================================================================
+\bibliographystyle{ACM-Reference-Format}
+% TODO(author): references.bib is currently empty. Populate with VERIFIED
+% BibTeX entries for: vdbfuzz26, roadmap25, bugstudy25, metmap24, buzzbee24,
+% norec20, ddlcheck25, du2023improving. Double-check venues before submission.
+\bibliography{references}
+
+\end{document}
