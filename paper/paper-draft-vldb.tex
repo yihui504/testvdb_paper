@@ -12,6 +12,8 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc}
 
 \lstdefinestyle{curl}{
   basicstyle=\ttfamily\scriptsize,
@@ -126,15 +128,35 @@ TestVDB is a five-stage pipeline (Figure~\ref{fig:overview}): (1) contract extra
 
 \begin{figure}[t]
 \centering
-\fbox{\parbox{0.92\columnwidth}{\centering\small
-\textbf{[Framework Figure]}\\
-Docs $\xrightarrow{\text{knowledge-extractor}}$ Contract $\to$ \\
-Attack agents (boundary / semantic / state) $\xrightarrow{\text{threat-model prior}}$ \\
-4-Judge debate $\to$ Stage-2 candidates $\to$ \\
-\textbf{Dev-Reviewer (CTS: counter-evidence)} $\to$ \\
-Novelty gate (L1 local + L2 GitHub) $\to$ submitted issues
-}}
-\caption{TestVDB pipeline. The dev-reviewer is the core contribution; the threat-model prior spans generation, judgment, and dedup.}
+\begin{tikzpicture}[
+  node distance=2.2mm and 2.2mm,
+  font=\scriptsize,
+  assert/.style={draw, rounded corners, fill=blue!6, align=center, inner sep=2pt, text width=12mm, minimum height=7mm},
+  truth/.style={draw, rounded corners, fill=red!6, align=center, inner sep=2pt, text width=11mm, minimum height=7mm},
+  gate/.style={draw, rounded corners, align=center, inner sep=2pt, text width=14mm, minimum height=7mm},
+  arr/.style={-Stealth, thin}
+]
+\node[assert] (docs) {API docs};
+\node[assert, right=of docs] (contract) {Contract};
+\node[assert, right=of contract] (attack) {Attack\\agents};
+\node[assert, right=of attack] (judge) {4-Judge};
+\node[gate, below=7mm of judge] (devrev) {\textbf{Dev-reviewer}\\\scriptsize(CTS)};
+\node[truth, left=of devrev] (src) {Source};
+\node[truth, left=of src] (repro) {Clean\\repro};
+\node[truth, right=of devrev] (tm) {Threat-\\model};
+\node[gate, right=of tm] (out) {Novelty gate\\$\to$ submit};
+\draw[arr] (docs)--(contract);
+\draw[arr] (contract)--(attack);
+\draw[arr] (attack)--(judge);
+\draw[arr] (judge)--(devrev);
+\draw[arr] (repro)--(devrev);
+\draw[arr] (src)--(devrev);
+\draw[arr] (tm)--(devrev);
+\draw[arr] (devrev)--(out);
+\node[font=\tiny\itshape, color=blue!60!black] at ($(docs.north)+(0,3mm)$) {assertion layer (LLM)};
+\node[font=\tiny\itshape, color=red!60!black] at ($(repro.south)+(0,-3mm)$) {truth layer (counter-evidence)};
+\end{tikzpicture}
+\caption{TestVDB pipeline. The assertion layer (LLM contract + 4-judge) is falsified by the dev-reviewer's three counter-evidence anchors (truth layer). CTS = Contract-Truth Separation.}
 \label{fig:overview}
 \end{figure}
 
