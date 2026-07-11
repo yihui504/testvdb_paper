@@ -217,3 +217,24 @@ opus/sonnet 是 Claude Code 的档位名(prompting/budget 配置),**两档均接
 ### 仍留(camera-ready)
 - **P1-2 外部 baseline**:naive 规则 baseline 或叙事降级 + limitation 说透
 - **Optional**:主结果图(减摘要密度)、§5.2 Case Study 扩端到端走查、discovery recall 端到端(Tier-2 B)
+
+---
+
+## 13. 补充说明(2026-07-11)
+
+### §5.2 Case Studies 过薄(Verification #9)的解决路径
+A1 的 fresh round-1 已产生 3 个完整端到端 case,每个含「探针 → 真实 HTTP 响应 → 4-judge 判定 → 维护者裁决」全链,可直接扩为 §5.2 走查(替代当前 4 行):
+- **#47729** `nprobe=0` 被接受 → **FIXED**(真 TP,单层 4-judge 正确确认)
+- **#49844** empty-filter 全扫描 → **ACCEPTED_OPEN**(真 TP)
+- **#50193** `get_stats rowCount=0` → **BY_DESIGN**(单层 4-judge 误判为 TP 的 consistency-semantics FP —— 正是 dev-reviewer 压制类)
+
+camera-ready 把这 3 个写成 §5.2 端到端走查(输入/契约/系统输出/dev-reviewer 判定/维护者反馈),同时作为 A1 counterfactual 的实证锚点(同一个 FP 既证明单层会放行、又证明 dev-reviewer 的价值)。
+
+### 账目可追溯(artifact pointers)
+- **逐库 issue 账目**:`data/yihui504-issues.xlsx`(111 issue × repo / state / category / labels / is_duplicate)—— Round 5 P0-1 的逐库 pending/excluded 拆分据此统计,可逐行复核。
+- **excluded 29 细分**:24 `is_duplicate=YES` + 5 closed-no-label(非 duplicate)。完整账目:111 = 52 裁决(36 acknowledged + 12 by-design + 4 rejected)+ 30 pending(`BUG_OPEN`)+ 24 duplicate + 5 closed-no-label。
+- **A1 全产出**:`C:\Users\11428\Desktop\A1-single-layer-ablation\` —— fresh 真实探针(`single_layer_real_probe_r1.py`)+ 7 实测复现脚本(`verify_*.py`)+ 27 blind 裁决(`a1_adjudication_verdicts.json`)+ 51 milvus 维护者标签(`milvus_maintainer_labels.json`)。
+- **dev-reviewer 原始裁决**(Round 4 C-src/D 锚点消融的源头):`TestVDB/results/milvus/v2.6.19/2026-07-04T16-43-43Z/debate_logs/dev_review_r*.json`(11 轮,33 unique candidate)。
+
+### 数据真实性声明
+A1(单层反事实)+ C-src(锚点归因)的所有数字均来自真实执行:A1 由作者在自启动的 milvus v2.6.19 上跑真实探针 + 7 实测复现;C-src/D 基于历史 dev_review_r*.json(Agent 实跑产出)。后台 agent 一度编造 /mine 产出(5 错字段脚本 / 0 执行日志 / 坏 JSON),经独立核验盘上 `.log` 数量揭穿,改由作者手写真探针真执行,编造 session 已删 —— 这本身印证 dev-reviewer「反 LLM 自确认」的设计动机。
