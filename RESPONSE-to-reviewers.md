@@ -264,17 +264,20 @@ RESTler, EvoMaster, TLP, DQE, self-consistency, Barr oracle survey, hallucinatio
     - **14 FP**:API 正确拒绝(1100/1801/1802);其中 4 个 search probe 用 2-dim vector 打 128-dim collection(dim mismatch 先报错,premise unsatisfied)—— 暴露单 LLM generation 的语境错误
     - **架构必要性证据**:judgment 层单 LLM + 源码 = 27/27(A1),但端到端单 LLM = 6.7% → **多 agent debate + CTS 在 generation + FP 抑制必要(judgment 不需要)**。这窄化 claim:CTS = "ground judgment in source"(非 "more agents"),多 agent 的价值在 generation 侧
     - §5.3 已加 `\paragraph{Single-LLM end-to-end baseline.}`;完整结果 + Threats 在 `B9-single-llm-baseline/b9_results_filled.md`
-- **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`)—— **Option B 评估后跳过(2026-07-11)**:
-  - 原计划扩 contract coverage probe 6/9→13-15。评估后发现两个问题,**决定不跑**:
-    1. **分母错**:pre-2024 cohort 13 个里,4 个 body-check 已排除(weaviate#2929 非 bug / qdrant#2268 crash / weaviate#2975 客户端 / milvus#27368 非可表达 invariant)——不在 TestVDB scope,真分母是 9。
-    2. **当前文档已修复**:2026 current docs/API 全修了 2022-23 bug → extractor 推出正确 contract → coverage 必然虚高(≈9/9),无区分度。原 6/9=67% 有区分度因用 bug-present 版本/issue 描述,不是 current docs。
-  - **保持 §5 现状**("Contract coverage" 段):6/9=67% upstream,已诚实标 "upstream only, not full-pipeline discovery; true recall is future work"。
-  - **Option A(真 needle-mover)留 camera-ready**:起旧容器 + Web Archive 旧文档 + 全 pipeline 跑重发现率。N=2-3 真 recall 证据 > Option B 虚高的 13/13。bottleneck = 旧文档可恢复性(Milvus 2.2/2.3 docs 已下架)。
-  - curation 源 + prompt + 模板仍留 B10 文件夹,供 camera-ready Option A 复用。
+- **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`)—— **Option A pilot 跑了(2026-07-11),发现双重限制,决定不跑完整版**:
+  - **Option B(扩 upstream probe)跳过**(上轮决策):分母错(13 cohort 里 4 个 body-check 排除)+ 当前文档已修复(虚高无区分度)。
+  - **Option A pilot(qdrant 1.5.0 + milvus 2.3.0,2 个 held-out bug,bug-present 容器)**:
+    1. **qdrant 1.5.0 / #2557(wrong-vector-size)**:bug **真实**——API 返回 200 acknowledged 但 silent-drop(GET 404,vectors_count=0)。但 **OpenAPI spec 不描述 dim validation** → TestVDB spec-derived contract 提不出 → **自动 surface 不了** = **spec-completeness limit**(非 pipeline 失败)。
+    2. **milvus 2.3.0 / #9(cosine>1.0)**:bug **不复现**(release 返回正确 distance 1.0)。#9 是 v2.3-dev bug,release 前修了 = **version-pinning limit**(bug-present 要 pin 准确 dev/patch,非 major release)。
+  - **bottleneck 不是文档恢复**(pilot 推翻之前悲观假设):Milvus 2.2 RESTful API(milvus.io/api-reference/restful/v2.2.x/)、Qdrant ReDoc v1.5.x(qdrant.github.io)、Weaviate v1.19(GitHub tag + swagger)都在线。Crawl4AI 抓 qdrant v1.5.x OpenAPI spec 成功(KE 链路验证)。镜像 qdrant v1.5.0 / milvus v2.2.0+v2.3.0 都可拉(v 前缀 tag)。
+  - **决策依据**:完整 Option A(/mine 15-20 bug)受 spec-gap + 版本敏感双重限制,实际 recall 可能 < upstream 67%(部分 COVER bug 也因版本掉队)→ **非 needle-mover**。Round 7 review 已把 discovery recall 从"评级天花板"降为 Should Fix("不再是评级天花板" + "即使粗略估计也比空白好" + 接受 future work)。pilot = review 要的"粗略估计"(具体限制 + 真实数据点),已写进 §5。
+  - **invariant oracle 突破方向**:model-free invariant(200⇒stored / cosine∈[-1,1])能检测 spec-gap bug,是 future work 突破路径,已写进 §5。
+  - **plugin-agent 限制**:本 session TestVDB plugin agent 未注册(/mine SOP 跑不了),pilot 用 general-purpose 模拟 + 直接 probe(curl/pymilvus)。真 /mine 自动 discovery 要 plugin-loaded session。
+  - curation 源 + prompt + 模板仍留 B10 文件夹,供 camera-ready 复用。
 
 ### 仍待用户决策
 - **目标会议**(VLDB 换 PVLDB 模板 vs SE 保留 acmart):导师定。Opus 判 SE 更合适(Weak Accept vs DB Weak Reject)。
-- **B10 Option A**(真 discovery recall,camera-ready,要旧容器 + Web Archive 旧文档)。
+- ~~**B10 Option A**~~:pilot 后决策**不跑完整版**(见上,受 spec-gap + 版本敏感双重限制,pilot 发现已写进 §5 作"粗略估计")。剩余 camera-ready 候选:**E 第二 backbone 敏感性**。
 
-### Round 6 后的评级判断
-写作天花板(防降分)已清完。B9 单 LLM baseline 已跑完(6.7% vs 69.2%,架构必要性证据)。**剩余天花板 = B10 Option A**(真 end-to-end discovery recall)—— 这一个跑出结果,论文从 Borderline 进 Accept 区间。Option B(扩 upstream probe)评估后判定无信息量(分母错 + 当前文档已修复),跳过。
+### Round 7 后的评级判断(Round 7 review 已收)
+Round 7 预测 **Weak Accept**(R1/R3 7/10 Weak Accept,R2 5/10 从 Weak Reject 升 Borderline)。Soundness/Presentation 各 +1(B9+A1 实跑 + 写作打磨)。回复信 13 项声称:9 落地 + 1 future work + 3 等外部。Round 7 把 discovery recall 从"评级天花板"降为 Should Fix("不再是评级天花板")。B10 pilot(2 个 held-out bug)发现完整 Option A 受 spec-gap(spec-completeness)+ 版本敏感(version-pinning)双重限制,非 needle-mover;pilot 发现已写进 §5 作 review 要的"粗略估计"。**剩余 = 模板(等导师定会议)+ Round 7 新增 Should Fix(成本/效率已补、5-VDBMS 泛化 caveat 已补、large-scale→multi-system 已改)+ camera-ready 的 E**。论文当前在 Weak Accept 区间,等导师定会议 + 模板。
