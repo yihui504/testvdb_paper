@@ -1033,60 +1033,74 @@ TestVDB 是首个针对 VDBMS API 合规缺陷的 LLM 驱动检测器。核心�
 
 ---
 
-## Verification (Round 8 — 主 agent 逐条核实)
+## Verification (Round 8 — 主 agent 逐条核实, with RESPONSE Cross-Reference)
 
-| # | Source | Claim | Verdict | Note |
-|---|--------|-------|---------|------|
-| 1 | R1-W1, R2-W1, R3 | "Three-anchor" over-claimed | <span style="color:#16a34a">**Valid**</span> | Contribution #2 (L96) headlines "three-anchor counter-evidence design"; Fig.1 灰显 repro/TM 为 "not yet evaluated"; L261 承认 "reproduction and threat-model anchors as unmeasured future components." 贡献声明的 headline 与实证支撑不匹配 |
-| 2 | R1-W2, R3 | "Five VDBMSs" 在已裁决信号分布下 misleading | <span style="color:#16a34a">**Valid**</span> | Abstract (L47) "Across five VDBMSs"; L211 承认 "cross-system generalization is claimed primarily for Milvus and Qdrant." 两处不一致 |
-| 3 | R1-W3, R2-W3 | 单 LLM baseline n=15 统计力弱 | <span style="color:#16a34a">**Valid**</span> | L259: Wilson CI [0.2%, 31.5%] — CI 上限与 claim-only 33% 重叠。4/14 FP 是 dimension-mismatch 执行失败而非判断失败 |
-| 4 | R2-W2 | 无 schema-validation baseline | <span style="color:#16a34a">**Valid**</span> | 全文中无 RESTler/Schemathesis/OpenAPI validator 对比。75% yield 是 boundary/validation (L232) |
-| 5 | R2-W4 | A1 27/27 与多 agent 架构叙事矛盾 | <span style="color:#d97706">**Partially valid with nuance**</span> | L259 承认 "single LLM with extracted source matches dev-reviewer precision at 27/27"——这是 judgment 层发现。论文将必要性论证移到 generation 侧。但缺 "single-LLM generation + source-anchored verification" 消融臂 |
-| 6 | R2-W1 | CTS 作为重新包装的工程决策 | <span style="color:#d97706">**Subjective but reasonable**</span> | 形式化 C_LLM ⊃ C_true 是描述性而非分析性。评价取决于审稿人重理论还是重实践 |
-| 7 | R1, R2, R3 | 模板不匹配 | <span style="color:#16a34a">**Valid**</span> | L3: `\documentclass[sigconf]{acmart}` + 占位符元数据。文件名含 "vldb"。投稿前必须解决 |
-| 8 | R1, R3 | Discovery recall 完全推迟 | <span style="color:#16a34a">**Valid**</span> | L269: "96.7% figure is judgment-layer TP retention, not end-to-end discovery recall (future work)." Contract coverage pilot 6/9=67% 未扩大 |
-| 9 | R2-W5 | 可复现性缺口 | <span style="color:#16a34a">**Valid**</span> | 缺 temperature, token budgets, dollar cost, artifact URL, GLM-5.2 version/date |
-| 10 | R2-W6 | "Opus/sonnet tier" 命名困惑 | <span style="color:#16a34a">**Valid**</span> | L138-139 借用 Anthropic 专有命名标注 GLM 配置。论文解释到位但术语选择仍 confusing |
-| 11 | R1-W5, R2-W7 | 48 vs 52 分母不一致 | <span style="color:#16a34a">**Valid**</span> | L82 用 48 (=36+12, excl. 4 rejected); L253 用 52 (=36+12+4). 自洽但首次出现时无括号定义 |
-| 12 | R1-W8 | A1 27/27 混用 proxy+live ground truth | <span style="color:#16a34a">**Valid**</span> | L257: 7/27 live re-probes + 20/27 LLM adjudication. 2/7 overturned LLM's TP → ~29% overturn rate, projected to ~6 possible errors in 20 LLM-only |
-| 13 | R2-W8 | Threats 省略严重威胁 | <span style="color:#16a34a">**Valid**</span> | 约 10 行，缺 selection bias (submission ratio unreported), contamination (GLM-5.2 training data), excluded-set audit |
-| 14 | R3 | "Multi-system" not "large-scale" | <span style="color:#dc2626">**Round 7 已修**</span> | L95 已为 "multi-system empirical study" (非 "large-scale"). R2-W2 的此具体点已过时 |
-| 15 | R3 | COSINE>1.0 仍被埋 | <span style="color:#16a34a">**Valid**</span> | L239: "Model-free mathematical-invariant oracle" 在 RQ2 提到，但仍是半段落而非独立 subsection |
+| # | Source | Claim | Verdict | RESPONSE Status | Note |
+|---|--------|-------|---------|-----------------|------|
+| 1 | R1-W1, R2-W1, R3 | "Three-anchor" over-claimed | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §12,§14: 贡献#2 已改 "source-grounded verification---the validated anchor---within a three-anchor counter-evidence design"; Fig.1 灰显 repro/TM. 但 headline 仍读作 "three-anchor counter-evidence design" — R1/R2 认为还不够 |
+| 2 | R1-W2, R3 | "Five VDBMSs" 在 abstract 未加 caveat | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §14: "5-VDBMS 泛化 caveat 已补" — 但 caveat 只在 §5.1 (L211), abstract/Contribution #1 (L47, L95) 仍写 "five VDBMSs" 不加限定 |
+| 3 | R1-W3, R2-W3 | 单 LLM baseline n=15 统计力弱 | <span style="color:#dc2626">**NOT addressed**</span> | ❌ RESPONSE 未涉及扩大 n. B9 实验保持 n=15 |
+| 4 | R2-W2 | 无 schema-validation baseline | <span style="color:#dc2626">**NOT addressed**</span> | ❌ RESPONSE §4,§12: 外部 baseline 列为 "camera-ready". 未补实验也未在 limitation 中说透 |
+| 5 | R2-W4 | A1 27/27 vs 多 agent 架构叙事矛盾 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §14(B9): 承认 "多 agent debate 的价值不在 judgment,在 generation." 论文已将必要性论证移到 generation 侧. 但缺 "single-LLM generation + source verification" 消融臂 |
+| 6 | R2-W1 | CTS 作为重新包装的工程决策 | <span style="color:#d97706">**不能通过加实验改变**</span> | — 主观判断，取决于审稿人重理论还是重实践. 写作可微调，本质争议不变 |
+| 7 | R1, R2, R3 | 模板不匹配 | <span style="color:#dc2626">**NOT addressed**</span> | ❌ RESPONSE §14: "目标会议:导师定." 等待外部决策 |
+| 8 | R1, R3 | Discovery recall 完全推迟 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §14(B10): Option A pilot 跑了 (2 held-out bugs, 发现 spec-completeness + version-pinning 双重限制), 已写进 §5. Contract coverage 探针 6/9=67% 在论文中. 但全是上游/小样本, 无完整 pipeline recall |
+| 9 | R2-W5 | 可复现性缺口 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §5: artifact link 存在 (https://anonymous.4open.science/r/testvdb-anon-D644/). RESPONSE §12: 模型配置已澄清. 但 temperature, token budgets, dollar cost, 版本号仍未在论文正文中 |
+| 10 | R2-W6 | "Opus/sonnet tier" 命名困惑 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §12: L138-139 已加解释 "denote prompting-and-budget configurations of the same GLM-5.2 backbone, not different model families." 解释存在但命名仍 suboptimal |
+| 11 | R1-W5, R2-W7 | 48 vs 52 分母不一致 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §12: 摘要中 "12 of 48" 加定义 "acknowledged-or-by-design, excluding 4 rejected." RESPONSE §14: 摘要精简后删除了 48/52 口径. 但正文 §4 (L201) 用 48, §5.3 (L253) 用 52, 仍无首次定义 |
+| 12 | R1-W8 | A1 27/27 混用 proxy+live ground truth | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §11: 列出了验证手段 "5 批盲 sonnet + 6 富证据重裁 + 7 实测复现." 但论文未将 7 live vs 20 LLM-only 分开报告 |
+| 13 | R2-W8 | Threats 省略严重威胁 | <span style="color:#dc2626">**NOT addressed**</span> | ❌ RESPONSE §14: Threats 从 30 行**压缩**到 10 行 (与审稿人期望的扩充方向相反). 缺 selection bias, contamination, excluded-set audit |
+| 14 | R3 | "Multi-system" not "large-scale" | <span style="color:#16a34a">**✅ Round 7 已修**</span> | ✅ RESPONSE §14: "large-scale→multi-system 已改." L95 已为 "multi-system empirical study" |
+| 15 | R3 | COSINE>1.0 仍被埋 | <span style="color:#d97706">**Partially addressed**</span> | 🟡 RESPONSE §14: RQ2 已扩, COSINE 提升为 "Model-free mathematical-invariant oracle" 子类. 但仍非独立 subsection |
 
 ---
 
-## Action Plan (Round 8)
+## RESPONSE Cross-Reference Summary
+
+Round 8 的 15 个核实项与 `RESPONSE-to-reviewers.md` (Round 3–6 回复) 的交叉比对：
+
+| 状态 | 数量 | 条目 |
+|------|:---:|------|
+| ✅ **已解决** | 1 | #14 "large-scale→multi-system" 措辞 |
+| 🟡 **部分解决** | 10 | #1 三锚点措辞 (已加限定但 headline 仍 over-claim), #2 five-VDBMS (caveat 在正文但 abstract 未收敛), #5 A1 叙事 (已承认但缺消融臂), #8 discovery recall (pilot 存在但极粗略), #9 可复现性 (artifact link 存在但不在论文中), #10 opus/sonnet 命名 (已解释但命名仍 suboptimal), #11 48/52 (摘要已删但正文仍不一致), #12 A1 live/proxy 分离 (数据存在但未分开报告), #15 COSINE (已提升但非独立 subsection), #6 CTS framing (主观, 写作可微调) |
+| ❌ **未解决** | 4 | #3 扩大单 LLM n (RESPONSE 未涉及), #4 schema baseline (列为 camera-ready), #7 模板 (等导师定), #13 Threats 扩充 (RESPONSE 反而压缩了) |
+
+**关键发现：** RESPONSE 主要覆盖了 Round 3–6 的写作/表述问题 (措辞收敛、Fig.1 灰显、模型配置澄清、摘要精简、48/52 口径统一、Related Work 扩充)。但对 Round 8 新暴露的**实验缺口** (#3 扩大 n, #4 schema baseline, #8 全链路 discovery recall, #13 Threats 扩充) 未提供新实验数据——这些是提升评级的关键。
+
+---
+
+## Action Plan (Round 8, updated against RESPONSE)
 
 ### <span style="color:#dc2626">Must Fix</span> — 多人共识，不改大概率被拦
 
-- [ ] **P0-1: 收窄"三锚点"贡献声明。** Contribution #2 (L96) headline 从 "three-anchor counter-evidence design" → "source-grounded verification (validated), within a three-anchor design where reproduction and threat-model anchors are designed but not yet evaluated." 保持 Fig.1 灰显处理一致，但文字 headline 必须对齐实证现实。Abstract 同步修改。
-- [ ] **P0-2: 收敛"five VDBMSs" 泛化措辞。** Abstract (L47)、Contribution #1 (L95)、conclusion 的 "across/spanning five VDBMSs" → "across two VDBMSs with adjudicated signal (Milvus and Qdrant), with breadth probes on three more." 或同效的诚实 framing。与 L211 "primarily Milvus and Qdrant" 一致。
-- [ ] **P0-3: 换模板。** `\documentclass[sigconf]{acmart}` → 目标会议模板。确认投稿 venue（PVLDB 或 SE 顶会），更新全部元数据。文件名与模板对齐。
-- [ ] **P0-4: 加至少一个像样的非 LLM baseline。** 最具可行性：Schemathesis 或 RESTler 在 Milvus API 上运行（利用其 OpenAPI spec），报告 boundary/validation 子类上的 detection+FPs。若无法补实验，需在 Limitations 中详细说透为何做不了 + 何时能做。当前 "单 LLM 6.7%" 不足以支撑架构必要性论证（n=15, CI [0.2%, 31.5%]）。
+- [ ] **P0-1: 收窄"三锚点"贡献声明。** *(RESPONSE: 🟡 partially — 已加 "the validated anchor" 限定但 headline 仍读作 "three-anchor counter-evidence design")* → 需进一步将 headline 改为 "source-grounded verification (validated), within a three-anchor design where reproduction and threat-model anchors are designed but not yet evaluated." Abstract 同步。
+- [ ] **P0-2: 收敛"five VDBMSs" 泛化措辞。** *(RESPONSE: 🟡 partially — caveat 在 §5.1 但 abstract/contributions 未收敛)* → Abstract (L47)、Contribution #1 (L95)、conclusion 的 "across/spanning five VDBMSs" → "across two VDBMSs with adjudicated signal (Milvus and Qdrant), with breadth probes on three more."
+- [ ] **P0-3: 换模板。** *(RESPONSE: ❌ — "导师定")* → `\documentclass[sigconf]{acmart}` → 目标会议模板。需导师确认 venue 后执行。
+- [ ] **P0-4: 加至少一个像样的非 LLM baseline。** *(RESPONSE: ❌ — 列为 camera-ready)* → 最具可行性：Schemathesis 或 RESTler 在 Milvus API 上运行。若无法补实验，需在 Limitations 中详细说透为何做不了 + 何时能做。当前 "单 LLM 6.7%" 不足以支撑架构必要性论证。
 
 ### <span style="color:#d97706">Should Fix</span> — 不改会被误解或降分
 
-- [ ] **P1-1: 扩大单 LLM baseline 样本量。** n=15 → n≥50，确保 CI 不与 claim-only precision 重叠。同时 de-bias prompt-execution errors（dimension-mismatch 等不是判断失败）。
-- [ ] **P1-2: 加 "single-LLM generation + source-anchored verification" 消融臂。** 这是 R2-W4 的 missing arm——直接回应 "A1 27/27 是否使多 agent 架构不必要" 的质疑。
-- [ ] **P1-3: 给 discovery recall 一个更好的估计。** 扩大 contract coverage 探针（当前 6/9），或对 held-out 已修 bug 跑完整 pipeline。即使是粗略 bound 也比空白好。B10 Option A pilot 的发现 (spec-completeness + version-pinning limits) 已写进 §5，但数字未扩大。
-- [ ] **P1-4: 加成本/效率表。** token 消耗、API 调用次数、wall-clock、$ per acknowledged bug。LLM 系统论文的标配。
-- [ ] **P1-5: 补 artifact link。** 即使 anonymized (anonymous.4open.science 或 Zenodo)。Contribution #4 声称 "open-source system" 但正文无链接。
-- [ ] **P1-6: 统一 "48" 与 "52" 口径。** L82 首次出现 "48 substantively adjudicated" 时加括号定义 (= acknowledged + by-design, excluding 4 rejected)。避免与 L253 的 52 混淆。
-- [ ] **P1-7: 收窄 "opus/sonnet" 命名。** 或用中性名称 "high-budget/low-budget agent class"，或至少加 footnote 解释这不是 Anthropic 模型族。避免审稿人误读。
-- [ ] **P1-8: 扩大 Threats to Validity。** 当前 ~10 行省略了关键威胁。至少加：selection bias (submission ratio)、GLM-5.2 training data contamination、excluded-set audit (至少 random sample of 29)。
-- [ ] **P1-9: 分离 A1 27/27 中的 live vs. LLM-proxy ground truth。** 报告 7/7 live re-probe result vs. 20/20 LLM-only separately，让读者自行判断 27/27 headline 的稳健性。
+- [ ] **P1-1: 扩大单 LLM baseline 样本量。** *(RESPONSE: ❌ — 未涉及)* → n=15 → n≥50，确保 CI 不与 claim-only precision 重叠。
+- [ ] **P1-2: 加 "single-LLM generation + source-anchored verification" 消融臂。** *(RESPONSE: 🟡 — 已承认架构必要性在 generation 侧，但缺消融臂)* → 直接回应 "A1 27/27 是否使多 agent 架构不必要" 的质疑。
+- [ ] **P1-3: 给 discovery recall 一个更好的估计。** *(RESPONSE: 🟡 — B10 pilot 2 held-out bugs + contract coverage 6/9=67% 已在 §5, 但极粗略)* → 即使小规模扩大 (5-10 held-out bugs 跑完整 pipeline) 也比空白好。
+- [ ] **P1-4: 加成本/效率表。** *(RESPONSE: 🟡 — RESPONSE §5 有 artifact link, 但论文正文无数字)* → token 消耗、API 调用次数、wall-clock、$ per acknowledged bug。LLM 系统论文标配。
+- [ ] **P1-5: 补 artifact link 到论文正文。** *(RESPONSE: ✅ — RESPONSE §5 给了 https://anonymous.4open.science/r/testvdb-anon-D644/)* → 论文 Contribution #4 声称 "open-source system" 但正文无链接。只需在 reproducibility 段加一行。
+- [ ] **P1-6: 统一正文中 "48" 与 "52" 口径。** *(RESPONSE: 🟡 — 摘要已删 48/52, 但正文 §4 L201 vs §5.3 L253 仍不一致)* → L201 首次出现 48 时加括号定义 (= acknowledged + by-design, excluding 4 rejected)。
+- [ ] **P1-7: 收窄 "opus/sonnet" 命名。** *(RESPONSE: 🟡 — L138-139 已加解释, 但命名仍 confusing)* → 考虑用 "high-budget/low-budget agent class" 或至少加 footnote 说明不是 Anthropic 模型族。
+- [ ] **P1-8: 扩大 Threats to Validity。** *(RESPONSE: ❌ — 反而从 30 行压缩到 10 行)* → 至少加：selection bias (submission ratio)、GLM-5.2 training data contamination、excluded-set audit。
+- [ ] **P1-9: 分离 A1 27/27 中的 live vs. LLM-proxy ground truth。** *(RESPONSE: 🟡 — RESPONSE §11 列出了验证手段, 但论文未分开报告)* → 报告 7/7 live re-probe result vs. 20/20 LLM-only separately。
 
 ### <span style="color:#6b7280">Optional</span> — 锦上添花
 
-- [ ] **提升 COSINE > 1.0 为独立 subsection。** 论文最 novel 的技术发现，不依赖 LLM judgment，值得 "Model-free invariant oracles: a complementary subclass" 独立小节。可能比 CTS 更有辨识度。
-- [ ] **讨论 CTS 泛化性。** 一个简短段落将 CTS 应用于 REST API/云服务契约，会增加 impact 感。与 Conclusion 最后一句话呼应。
-- [ ] **扩充 §5.2 Case Studies 至少一个 Qdrant 案例。** 当前全 Milvus。至少需要一个 Qdrant 端到端走查支撑 "cross-system" narrative。
-- [ ] **Classify 12 by-design cases。** 分解为 hallucinated constraints vs. maintainer-discretion relaxations。Only former supports "contract hallucination propagation" mechanism. 定性分类即可，不需要新实验。
-- [ ] **RQ4 移到 appendix 或删除。** 当前是 candid but awkward 的 distraction。保留为 implementation note，不在正文占用评估空间。
+- [ ] **提升 COSINE > 1.0 为独立 subsection。** *(RESPONSE: 🟡 — RQ2 已扩, 但仍非独立 subsection)* → "Model-free invariant oracles: a complementary subclass" 小节可能比 CTS 更有辨识度。
+- [ ] **讨论 CTS 泛化性。** *(RESPONSE: ✅ — conclusion 已加 CTS 泛化到 REST API/云服务一句)* → 已有一句，Optional 升级为简短段落。
+- [ ] **扩充 §5.2 Case Studies 至少一个 Qdrant 案例。** *(RESPONSE: ❌ — 未涉及)* → 当前全 Milvus，需 Qdrant 端到端走查支撑 "cross-system" narrative。
+- [ ] **Classify 12 by-design cases。** *(RESPONSE: ❌ — 未涉及)* → 分解为 hallucinated constraints vs. maintainer-discretion relaxations。定性分类即可。
+- [ ] **RQ4 移到 appendix 或删除。** *(RESPONSE: ❌ — 未涉及)* → Candid but awkward distraction.
 
 ---
 
-## Round 8 Overall Assessment
+## Round 8 Overall Assessment (updated against RESPONSE)
 
 **预测：Weak Accept（分裂票，R1/R2 Weak Reject, R3 Weak Accept）。** 这是 rebuttal 后大概率被接受的分裂模式——R3 的 6/10 通常能说服 AC。
 
@@ -1097,8 +1111,22 @@ TestVDB 是首个针对 VDBMS API 合规缺陷的 LLM 驱动检测器。核心�
 - A1 27/27 over-kill=0 + 单 LLM 6.7% vs 69.2% → 架构价值有实证支持
 - COSINE > 1.0 数学不变量 → 论文最亮技术发现，跨厂商复现
 
+**RESPONSE 文件能覆盖什么 (Round 8 视角)：**
+- ✅ **已解决 (1/15)：** "large-scale→multi-system" 措辞
+- 🟡 **部分解决 (10/15)：** 三锚点措辞、five-VDBMS caveat、A1 叙事、discovery recall pilot、artifact link、opus/sonnet 解释、48/52 口径、COSINE 提升、CTS framing——这些在 RESPONSE 中都有对应的修改或承认，但程度不够 (如 caveat 在正文但不在 abstract，pilot 存在但极粗略)
+- ❌ **未解决 (4/15)：** 扩大单 LLM n、schema baseline、模板、Threats 扩充——RESPONSE 未提供新实验或决策
+
+**RESPONSE 文件不能覆盖什么：**
+RESPONSE 主要记录的是 Round 3–6 的写作/表述修复 (措辞收敛、Fig.1 灰显、模型配置澄清、摘要精简、Related Work 扩充)，这些在 Round 8 的 final 版中已落地。但对 Round 8 新暴露的**实验评估缺口**：
+1. **Schema-validation baseline** — RESPONSE 列为 camera-ready，未补
+2. **扩大单 LLM n** — RESPONSE 未涉及
+3. **全链路 discovery recall** — RESPONSE 的 B10 pilot 只有 2 bugs + spec-gap 限制
+4. **Threats 扩充** — RESPONSE 反而压缩了
+5. **模板** — 等导师决策
+
 **相比 Round 7 的变化：**
-- 贡献措辞收敛 ("multi-system" 已修)、摘要精简、RQ2 充实、Related Work 20 篇、Threats 压缩——写作侧几乎清完。
-- **本轮新发现的本质性问题：** (1) "三锚点" headline 与 Fig.1/L261 的诚实自述仍不一致——改词即可；(2) 单 LLM baseline n=15 被三方审稿人同时质疑统计效力——需扩大样本量；(3) Schema-validation baseline 完全缺失——对 75% boundary/validation yield 而言是显著空白。
-- **评级天花板：** 模板 (执行项)、discovery recall (实质性 gap)、schema baseline (实质性 gap)。前两项是已知问题，第三项是本轮新暴露的。
-- **投稿建议不变：** 若 VLDB → 换 PVLDB 模板 + 加强向量检索内部机制对接；若 SE 顶会 (ICSE/FSE/ISSTA/ASE) → 当前质量接近 Accept 区间，补上 schema baseline + 更大单 LLM baseline + discovery recall 粗略估计后有望跨线。
+- 写作侧几乎清完 (multi-system 措辞、摘要精简、RQ2 充实、Related Work 20 篇、Threats 压缩)
+- **本轮新发现的本质性问题：** (1) "三锚点" headline 仍 over-claim → 改词即可；(2) 单 LLM baseline n=15 被三方同时质疑 → 需扩大；(3) Schema-validation baseline 完全缺失 → 最大评级天花板
+- **评级天花板：** schema baseline (新暴露，实质性)、discovery recall (已知，部分缓解)、模板 (执行项)
+
+**投稿建议不变：** 若 VLDB → 换 PVLDB 模板 + 加强向量检索内部机制对接；若 SE 顶会 (ICSE/FSE/ISSTA/ASE) → 当前质量接近 Accept 区间，补上 schema baseline + 更大单 LLM baseline + discovery recall 粗略估计后有望跨线。
