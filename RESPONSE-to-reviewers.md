@@ -238,3 +238,36 @@ camera-ready 把这 3 个写成 §5.2 端到端走查(输入/契约/系统输出
 
 ### 数据真实性声明
 A1(单层反事实)+ C-src(锚点归因)的所有数字均来自真实执行:A1 由作者在自启动的 milvus v2.6.19 上跑真实探针 + 7 实测复现;C-src/D 基于历史 dev_review_r*.json(Agent 实跑产出)。后台 agent 一度编造 /mine 产出(5 错字段脚本 / 0 执行日志 / 坏 JSON),经独立核验盘上 `.log` 数量揭穿,改由作者手写真探针真执行,编造 session 已删 —— 这本身印证 dev-reviewer「反 LLM 自确认」的设计动机。
+
+---
+
+## 14. Round 6 回复(2026-07-11,commit `17efd1a` + 桌面 B9/B10 协议)
+
+### 写作 Must Fix(全做)
+- **摘要**精简 ~250→~165 词(删敏感性区间/n=30/48-52 口径)
+- **贡献#2**收窄:source-grounded verification(validated)为主,three-anchor 为 design context(Opus 上轮仍判 over-claim,这轮彻底改)
+- **Related Work 8→20 cite**,5 类:REST API testing(RESTler, EvoMaster)/ DB oracle(+TLP, DQE)/ LLM test+verify(hou23llmse, ji23hall, wang22sc)/ oracle+contract survey(barr15, claessen00, meyer92dbc, amann19)/ fuzzing survey(manes21)
+- **tex 头**过时 TODO/changelog 删除
+- **防御措辞**中性化("honestly"×3 → Scope;"not a contribution"×3 → 仅 RQ4 标题保留 1)
+- **RQ2** 扩:A1 的 3 case(#47729/#49844/#50193 端到端走查)+ COSINE 数学不变量 oracle 子类
+- **Threats** 压缩 30→10 行
+- **conclusion** 加 CTS 泛化(REST API/云服务的 contract hallucination)
+
+### 12 新 bib(标 VERIFY,camera-ready 核 venue/作者)
+RESTler, EvoMaster, TLP, DQE, self-consistency, Barr oracle survey, hallucination survey, fuzzing survey, API-misuse, QuickCheck, Design by Contract, LLM4SE survey。编译 0 undefined,6 页。
+
+### 实验协议打包(待用户跑,评级天花板)
+- **B9 单 LLM baseline**(`C:\Users\11428\Desktop\B9-single-llm-baseline\`):
+  - **judgment 层已有(A1 馈赠)**:单 LLM + 源码 evidence → **27/27 FP**,和 dev-reviewer 一致。**这直接回应 R2-Q1 架构必要性**:多 agent debate 的价值**不在 judgment**,在 generation(边界/状态/语义覆盖)+ source extraction(version-pinned)。**CTS = "ground judgment in extracted source",非 "more agents"** —— 这窄化了我们的 claim,但更诚实。
+  - **端到端协议**(待跑):单 LLM 全 pipeline(doc→contract→probe→judge,无 debate/CTS),比 TestVDB 69.2%。prompt + 模板在 B9 文件夹。
+- **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`):
+  - 扩 contract coverage 6/9→15-20(Option B,便宜)或 held-out 全 pipeline 跑(Option A,needle-mover)
+  - **这是评级天花板**:precision + judgment recall + A1 都是 **FP 侧**;discovery recall 是 **TP 侧**(能发现多少存在的 bug)。B10 是 **Borderline→Accept** 的关键实验。
+  - curation 源 + prompt + 模板在 B10 文件夹。
+
+### 仍待用户决策
+- **目标会议**(VLDB 换 PVLDB 模板 vs SE 保留 acmart):导师定。Opus 判 SE 更合适(Weak Accept vs DB Weak Reject)。
+- **B9 端到端 + B10 跑实验**(评级抬升,要 TestVDB + 容器)。
+
+### Round 6 后的评级判断
+写作天花板(防降分)已清完。**剩余天花板全在评估完整性**:B9(端到端单 LLM baseline)+ B10(discovery recall)。这俩跑出结果,论文从 Borderline 进 Accept 区间。
