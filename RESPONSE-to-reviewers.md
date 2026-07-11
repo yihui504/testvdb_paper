@@ -281,3 +281,47 @@ RESTler, EvoMaster, TLP, DQE, self-consistency, Barr oracle survey, hallucinatio
 
 ### Round 7 后的评级判断(Round 7 review 已收)
 Round 7 预测 **Weak Accept**(R1/R3 7/10 Weak Accept,R2 5/10 从 Weak Reject 升 Borderline)。Soundness/Presentation 各 +1(B9+A1 实跑 + 写作打磨)。回复信 13 项声称:9 落地 + 1 future work + 3 等外部。Round 7 把 discovery recall 从"评级天花板"降为 Should Fix("不再是评级天花板")。B10 pilot(2 个 held-out bug)发现完整 Option A 受 spec-gap(spec-completeness)+ 版本敏感(version-pinning)双重限制,非 needle-mover;pilot 发现已写进 §5 作 review 要的"粗略估计"。**剩余 = 模板(等导师定会议)+ Round 7 新增 Should Fix(成本/效率已补、5-VDBMS 泛化 caveat 已补、large-scale→multi-system 已改)+ camera-ready 的 E**。论文当前在 Weak Accept 区间,等导师定会议 + 模板。
+
+## 15. Round 8 回复(2026-07-11,commit pending)
+
+Round 8 重新盲审,评级分裂(R1 4/10 WR, R2 4/10 WR, R3 6/10 WA)。新暴露 4 个实验缺口 + 3 个写作 headline。
+
+### 写作 Must/Should Fix(7 项全做)
+- **P0-1 三锚点 headline 收窄**: contrib#2 改为 "source-grounded verification---the validated anchor of a three-anchor design whose reproduction and threat-model anchors are designed but not yet evaluated"; abstract 同步(L47/L96)
+- **P0-2 five VDBMSs 收敛**: abstract + contrib#1 + results 段加 "adjudicated signal concentrated on Milvus and Qdrant"(L47/L88/L95)
+- **P1-5 artifact link**: reproducibility 段加 https://anonymous.4open.science/r/testvdb-anon-D644/(L140)
+- **P1-6 48/52 定义**: §1 首次出现 48 加 "(52 adjudicated minus 4 rejected)"(L82)
+- **P1-7 opus/sonnet → high/low-budget configuration**: 避免混淆 Anthropic 模型名(L138)
+- **P1-8 Threats 扩充**: 加 Selection(submission ratio)/Contamination(GLM 训练见 Milvus source)/Excluded-set audit(17/29 Milvus)+ reviewer effect(L269)
+- **P1-9 A1 live/proxy 分离**: 27 killed = 7 live re-probe + 20 LLM-proxy,分开报告 precision(L257)
+
+### Schema-aware boundary fuzzer baseline(P0-4, 最大新天花板)
+R1/R2 核心质疑: "schema validator 能捕获 TestVDB 27 boundary TP 里多少? TestVDB 是 LLM stack 必要还是昂贵 schema linter?"
+
+**实验**: 手写 boundary fuzzer(**no LLM**, 19 probe 基于 Milvus 文档化参数约束: dimension range / metricType+consistencyLevel enums / limit+nprobe bounds / required fields)。跑 milvus 2.6.19。
+
+**结果**: 19 probe → **7 API-accepted candidates**:
+- consistencyLevel=INVALID / =42(int) silently accepted(enum validation 缺失)
+- nprobe=0 / -1 accepted(search 负数边界)
+- query limit=0 返回数据 / query limit=-1 返回全部(query 验证不一致)
+- metricType missing defaults(by-design)
+- **search vs query 不一致**: search reject limit=-1/0/16385(code 1100), query accept limit=-1/0 — 同参数两端点验证不一致
+
+**诚实结论**(回应 R1/R2 + 重新定位):
+1. **boundary 子类 schema fuzzer 有效**(7 violations / 19 probe)→ **TestVDB 对 boundary 不是唯一**(诚实承认)
+2. **TestVDB 独特价值**在三处 schema fuzzer 不能:
+   - (a) state/logic + diagnostic + result-correctness probes(8/36 TP 非-boundary,参数边界 fuzzer 够不到)
+   - (b) CTS FP-suppression(fuzzer 无 source-grounded 层, by-design FP 通过)
+   - (c) spec-gap bugs(doc 沉默的, 如 qdrant #2557 silent-drop)
+3. **重新定位 novelty**: TestVDB **不是 boundary finder**, 是 state/semantic + FP-suppression 层, 补充 schema fuzzing
+
+§5.3 加 `\paragraph{Schema-aware boundary fuzzer baseline.}` 段。Schemathesis head-to-head + 更大 fuzzer cohort = future work(Milvus 不 serve swagger, Schemathesis 适配非标准 REST 复杂)。
+
+### P1-1 / P1-2(已跑完)
+- **P1-1**(single-LLM n=51): 13 TP / 51 = **25.5%**(LLM-judged, 含 by-design FP 如 consistencyLevel missing 默认 / metricType missing / case-insensitive enum), Wilson 95% CI [15.5%, 38.9%]。CI 比 B9 [0.2%, 31.5%] 显著收窄(n=15→51), 上界 38.9% 仍 << TestVDB 69.2%(架构必要性维持)。**回应 R1/R2 "n=15 统计无力"**
+- **P1-2**(single-LLM+source 消融臂, n=12): **16.7%**(2/12, source-grounded 过滤 by-design 后)。比 B9 no-source 6.7% 高 2.5x(source anchoring 有效), 但 << TestVDB 69.2%(多 agent 在 source 之上仍必要)
+- **A1 27/27 解释**(回应 R2-W4): A1 是 pre-filtered judgment(reviewer-killed 候选, 非 e2e generation); e2e single-LLM+source 只到 16.7%。**多 agent debate 的价值明确在 generation 侧**(source 过滤后仍 gap 52.5pp 到 TestVDB)
+- §5 single-LLM baseline 段更新为 n=51 + source 消融臂(P1-2)
+
+### Round 8 评级判断
+schema baseline 诚实承认 boundary 上 schema fuzzer 有效 → 重新定位 TestVDB value 在 state/semantic + CTS + spec-gap。这**部分回应** R1/R2 的"boundary over-engineering"质疑(诚实承认 + 重新定位, 而非死守 boundary novelty)。P1-2(single-LLM+source 消融臂)若证实"source-grounding 让单 LLM 接近 TestVDB", 则多 agent debate 的价值明确收窄到 generation 侧(呼应 A1 27/27)。预期: R1/R2 的 schema baseline 顾虑解除(诚实 + 重新定位), R3 的 6/10 应稳或升。**剩余阻塞 = 模板(等导师定会议)**。
