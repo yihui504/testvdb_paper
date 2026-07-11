@@ -325,3 +325,22 @@ R1/R2 核心质疑: "schema validator 能捕获 TestVDB 27 boundary TP 里多少
 
 ### Round 8 评级判断
 schema baseline 诚实承认 boundary 上 schema fuzzer 有效 → 重新定位 TestVDB value 在 state/semantic + CTS + spec-gap。这**部分回应** R1/R2 的"boundary over-engineering"质疑(诚实承认 + 重新定位, 而非死守 boundary novelty)。P1-2(single-LLM+source 消融臂)若证实"source-grounding 让单 LLM 接近 TestVDB", 则多 agent debate 的价值明确收窄到 generation 侧(呼应 A1 27/27)。预期: R1/R2 的 schema baseline 顾虑解除(诚实 + 重新定位), R3 的 6/10 应稳或升。**剩余阻塞 = 模板(等导师定会议)**。
+
+## 16. Round 9 回复(2026-07-11,commit pending)
+
+Round 9 评级全升(R1/R2 5/10 Borderline, R3 7/10 Weak Accept, R3 在 clear accept 边缘)。Round 8 实验缺口全填, Round 9 **无新实验缺口**, 剩余都是呈现/诚实性小修。
+
+### Round 9 小修(全做, ~半天)
+- **P0-2 fuzzer overlap 量化**: §5 schema baseline 段加 — fuzzer 7 candidates 里 ~1-2 重叠 TestVDB boundary TPs(nprobe=0 → milvus #47729), ~3-4 是 TestVDB 也 surface 的 variants(consistencyLevel enum fallback, search/query limit 不一致), ~1-2 by-design。fuzzer 多数 rediscover TestVDB boundary yield + 少量新 variants, 非暴露 coverage gap
+- **P1-1 统一 comparison table**: §5.3 加 Table~\ref{tab:baselines}(arms × precision/n/ground-truth/CI)。让读者一眼看 ground-truth 不对齐(LLM self-judgment / LLM+source / maintainer)+ 各 arm 统计力。回应 R1/R2 ground-truth asymmetry
+- **P1-2 成本 summary**: §3 reproducibility 段加 — 全研究 ~10^4 LLM calls(~10^7 tokens), 单 target pipeline 几小时。order-of-magnitude(精确在 artifact)。回应 R1/R2/R3 cost
+- **P1-3 candidate-to-submission ratio**: §5 Threats Selection 改 — pipeline 每 target 生成 O(几百) 候选, novelty gate 过滤重复/已知。诚实标 "not instrumented, roughly bounded"
+- **P1-4 Schemathesis blocker**: §5 schema baseline 段加 — Milvus 不 serve OpenAPI spec(pilot 实测 /swagger/openapi.json 全 404), 阻塞 Schemathesis 直接集成, 需手工 spec authoring。future work
+- **COSINE > 1.0 独立 subsection**: §5.2 提升为 \paragraph{Model-free invariant oracles.}, 强调"最 defensible 技术发现(不依赖 LLM, 跨厂商, 数学不变量)"。novelty boost
+
+### 阻塞
+- **P0-1 模板**(等导师定 venue) — 唯一 Must Fix
+- **P1-5 source-ablation 扩 n≥30** — camera-ready(n=12 CI 宽, 标 revision plan)
+
+### Round 9 评级判断
+R3 原话: "修好模板 + 加成本 + clarify overlap, 我给 clear accept"。本轮三项全做(cost/overlap/blocker)+ comparison table + COSINE subsection。R1/R2 的 ground-truth asymmetry + hand-crafted baseline 顾虑部分缓解(comparison table 显式 ground-truth 列 + Schemathesis blocker 说明)。**预期 R3 → clear accept, R1/R2 维持 Borderline 或升**。论文在 Weak Accept–clear accept 区间, 唯一阻塞 = 模板(导师定 venue)。
