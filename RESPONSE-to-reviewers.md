@@ -264,14 +264,17 @@ RESTler, EvoMaster, TLP, DQE, self-consistency, Barr oracle survey, hallucinatio
     - **14 FP**:API 正确拒绝(1100/1801/1802);其中 4 个 search probe 用 2-dim vector 打 128-dim collection(dim mismatch 先报错,premise unsatisfied)—— 暴露单 LLM generation 的语境错误
     - **架构必要性证据**:judgment 层单 LLM + 源码 = 27/27(A1),但端到端单 LLM = 6.7% → **多 agent debate + CTS 在 generation + FP 抑制必要(judgment 不需要)**。这窄化 claim:CTS = "ground judgment in source"(非 "more agents"),多 agent 的价值在 generation 侧
     - §5.3 已加 `\paragraph{Single-LLM end-to-end baseline.}`;完整结果 + Threats 在 `B9-single-llm-baseline/b9_results_filled.md`
-- **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`):
-  - 扩 contract coverage 6/9→15-20(Option B,便宜)或 held-out 全 pipeline 跑(Option A,needle-mover)
-  - **这是评级天花板**:precision + judgment recall + A1 都是 **FP 侧**;discovery recall 是 **TP 侧**(能发现多少存在的 bug)。B10 是 **Borderline→Accept** 的关键实验。
-  - curation 源 + prompt + 模板在 B10 文件夹。
+- **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`)—— **Option B 评估后跳过(2026-07-11)**:
+  - 原计划扩 contract coverage probe 6/9→13-15。评估后发现两个问题,**决定不跑**:
+    1. **分母错**:pre-2024 cohort 13 个里,4 个 body-check 已排除(weaviate#2929 非 bug / qdrant#2268 crash / weaviate#2975 客户端 / milvus#27368 非可表达 invariant)——不在 TestVDB scope,真分母是 9。
+    2. **当前文档已修复**:2026 current docs/API 全修了 2022-23 bug → extractor 推出正确 contract → coverage 必然虚高(≈9/9),无区分度。原 6/9=67% 有区分度因用 bug-present 版本/issue 描述,不是 current docs。
+  - **保持 §5 现状**("Contract coverage" 段):6/9=67% upstream,已诚实标 "upstream only, not full-pipeline discovery; true recall is future work"。
+  - **Option A(真 needle-mover)留 camera-ready**:起旧容器 + Web Archive 旧文档 + 全 pipeline 跑重发现率。N=2-3 真 recall 证据 > Option B 虚高的 13/13。bottleneck = 旧文档可恢复性(Milvus 2.2/2.3 docs 已下架)。
+  - curation 源 + prompt + 模板仍留 B10 文件夹,供 camera-ready Option A 复用。
 
 ### 仍待用户决策
 - **目标会议**(VLDB 换 PVLDB 模板 vs SE 保留 acmart):导师定。Opus 判 SE 更合适(Weak Accept vs DB Weak Reject)。
-- **B9 端到端 + B10 跑实验**(评级抬升,要 TestVDB + 容器)。
+- **B10 Option A**(真 discovery recall,camera-ready,要旧容器 + Web Archive 旧文档)。
 
 ### Round 6 后的评级判断
-写作天花板(防降分)已清完。**剩余天花板全在评估完整性**:B9(端到端单 LLM baseline)+ B10(discovery recall)。这俩跑出结果,论文从 Borderline 进 Accept 区间。
+写作天花板(防降分)已清完。B9 单 LLM baseline 已跑完(6.7% vs 69.2%,架构必要性证据)。**剩余天花板 = B10 Option A**(真 end-to-end discovery recall)—— 这一个跑出结果,论文从 Borderline 进 Accept 区间。Option B(扩 upstream probe)评估后判定无信息量(分母错 + 当前文档已修复),跳过。
