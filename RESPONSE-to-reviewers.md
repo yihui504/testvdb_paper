@@ -176,3 +176,44 @@ fresh round-1 确认的那个 FP(getstats 一致性-语义)正是 dev-reviewer �
 
 ### 产出
 全部在 `C:\Users\11428\Desktop\A1-single-layer-ablation\`:`a1_results_filled.md` + `single_layer_real_probe_r1.py`(真实探针)+ 7 个 `verify_*.py` 实测复现脚本 + `a1_adjudication_verdicts.json`(27 裁决)+ `milvus_maintainer_labels.json`(51 维护者标签)。
+
+---
+
+## 12. Round 5 回复(2026-07-11)
+
+### P0-1 账目闭合(已修)— 不是数字错,是 29 excluded 未写进论文
+**真相**:111 = 52 adjudicated + **30 pending** + **29 excluded**,账目一直闭合(本文件 §6)。Opus 逐 Table 2 推 59 pending,因 Table 2 无 excluded 列、正文 5 处只写 30 pending 没提 29 excluded。
+
+**逐库真实拆分**(from `data/yihui504-issues.xlsx`,据实际 issue 状态统计):
+
+| VDBMS | total | adjudicated | pending | excluded |
+|---|---|---|---|---|
+| Milvus | 51 | 34 | 0 | 17 |
+| Qdrant | 26 | 14 | 8 | 4 |
+| Weaviate | 30 | 4 | 21 | 5 |
+| MeiliSearch | 3 | 0 | 0 | 3 |
+| Chroma | 1 | 0 | 1 | 0 |
+| **Total** | **111** | **52** | **30** | **29** |
+
+(pending = `BUG_OPEN` open-awaiting-triage;excluded = `CLOSED_NO_LABEL` 27 + `OPEN_NO_LABEL` 2,closed-no-label 或 duplicate,裁决不可得)
+
+**修复**:Table 2 加 Pending + Excluded 两列(逐库真实)+ caption 重写;§5.3 敏感性段 + 摘要澄清"59 not-yet-adjudicated = 30 pending + 29 excluded"。**区间 [43.9%, 80.5%] 不变**(只针对 30 pending;29 excluded 是 closed-no-label/duplicate 不可裁决,不在敏感性)。§1/结论的"pending sensitivity"是区间限定词,Table 2 闭合后自动对齐。R2 的 reject 理由(基于"59 pending")随之消除。
+
+### P0-2 模型配置 = W2(已修)
+opus/sonnet 是 Claude Code 的档位名(prompting/budget 配置),**两档均接 GLM-5.2**,不是不同模型族。§3 implementation 段已改:"opus/sonnet denote prompting-and-budget configurations of the same GLM-5.2 backbone rather than different model families."
+
+### P0-3 CTS over-claiming(已修)
+- 贡献 #2:"three anchors" → "three-anchor framework; source validated, repro/TM design-level not yet evaluated (§5.3)"
+- Fig.1:repro + tm 节点改灰虚线(dashed gray!15),caption 标 "source validated; repro/TM unvalidated"
+- 与 §5.3 Anchor attribution(已有)+ §3.2 TM(已降级 unvalidated optional prior)一致
+
+### P1(已修)
+- **33/44 vs 29/32**:脚注说明两条件 TP 分母不同(claim-only 全集 36 保留 33;source 可达 30 保留 29,6 rate-limited)
+- **48 vs 52**:摘要"12 of 48"加定义"acknowledged-or-by-design, excluding 4 rejected"
+- **46 source-grounded**:Threats 加注"52-candidate pool minus 6 unreachable to GitHub rate limits"
+- **discovery recall → contract coverage**:§5.3 段落标题改,区分判断层 TP-recall(96.7%)vs 上游抽取覆盖(67%)
+- **45.6% caveat**:Threats 加"两总体不同 ground-truth 来源(maintainer 裁决 vs LLM+re-probe)+ n=3 directional 非统计"
+
+### 仍留(camera-ready)
+- **P1-2 外部 baseline**:naive 规则 baseline 或叙事降级 + limitation 说透
+- **Optional**:主结果图(减摘要密度)、§5.2 Case Study 扩端到端走查、discovery recall 端到端(Tier-2 B)
