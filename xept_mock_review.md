@@ -1130,3 +1130,226 @@ RESPONSE 主要记录的是 Round 3–6 的写作/表述修复 (措辞收敛、F
 - **评级天花板：** schema baseline (新暴露，实质性)、discovery recall (已知，部分缓解)、模板 (执行项)
 
 **投稿建议不变：** 若 VLDB → 换 PVLDB 模板 + 加强向量检索内部机制对接；若 SE 顶会 (ICSE/FSE/ISSTA/ASE) → 当前质量接近 Accept 区间，补上 schema baseline + 更大单 LLM baseline + discovery recall 粗略估计后有望跨线。
+
+---
+
+# Round 9 — Response-Implemented Re-evaluation (against `paper-draft-vldb-final.tex`, 2026-07-11)
+
+> **Method:** Round 8 暴露了 4 个实验缺口 (schema baseline、扩大单 LLM n、source-ablation arm、Threats 扩充) + 3 个写作 headline。本轮对已实现 Round 8 回复后的最新 `paper-draft-vldb-final.tex` 重新盲审，评估回复信 §15 声称的修改落地情况及剩余风险。
+> **Overall Prediction:** Weak Accept (R1 5/10, R2 5/10, R3 7/10)
+> **Date:** 2026-07-11
+
+---
+
+## Score Summary
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Supportive) |
+|-----------|:---------:|:---------:|:---------:|
+| Soundness | 3/4 | 2/4 | 3/4 |
+| Novelty | 2/4 | 2/4 | 3/4 |
+| Presentation | 3/4 | 3/4 | 3/4 |
+| **Overall** | **5/10 (Borderline)** | **5/10 (Borderline)** | **7/10 (Weak Accept)** |
+
+**相比 Round 8 的变化：** R1 从 4/10 升 5/10（schema baseline + 扩大 n 解决了两个 Major weakness）；R2 从 4/10 升 5/10（schema concession 的诚实重新定位让 novelty 论证更可辩护，但 R2 仍对 CTS 作为 principle 有保留）；R3 从 6/10 升 7/10（三项实验补全 + 写作打磨完成，距 clear accept 只差模板和 discovery recall）。
+
+**共识：** 三方认同 Round 8 回复的核心增量——schema fuzzer concession + 重新定位（TestVDB 不是 boundary finder，是 state/semantic + FP-suppression layer）是正确的战略决策。Single-LLM 扩大到 n=51 显著收窄了 CI，architecture necessity 现在有统计支持。分歧点收窄为：(a) CTS 是否值得 "design principle" 标签（R2 坚持不值），(b) 模板与 venue 未定（所有人标为格式门槛），(c) discovery recall 仍为 future work（R3 已接受、R1/R2 仍视为 gap）。
+
+---
+
+## Round 8 Response 落地核实
+
+| # | 回复信 §15 声称的修改 | 核实状态 | 证据 (final.tex 行号) |
+|---|---|---|---|
+| 1 | P0-1 三锚点 headline 进一步收窄 | ✅ 已落地 | L96: "source-grounded verification---the validated anchor of a three-anchor counter-evidence design whose reproduction and threat-model anchors are designed but not yet evaluated" |
+| 2 | P0-2 five VDBMSs 收敛 | ✅ 已落地 | L47: "adjudicated signal concentrated on Milvus and Qdrant"; L88: "adjudicated signal concentrated on Milvus and Qdrant"; L95: "with adjudicated signal on Milvus and Qdrant and breadth probes on the other three" |
+| 3 | P0-4 Schema-aware boundary fuzzer baseline | ✅ 已落地 | L261: 完整段落，19 probe → 7 API-accepted，诚实承认 boundary 上 schema fuzzer 有效，重新定位 TestVDB 价值在 state/semantic + FP-suppression + spec-gap |
+| 4 | P1-1 单 LLM n=51 | ✅ 已落地 | L259: "produced 51 candidates...13 are LLM-judged true positives (25.5%, Wilson 95% CI [15.5%, 38.9%])" |
+| 5 | P1-2 Single-LLM + source 消融臂 n=12 | ✅ 已落地 | L259: "A source-anchored ablation arm (single-LLM generation + source-grounded self-judgment, n=12) drops to 2/12 = 16.7%" |
+| 6 | P1-5 Artifact link | ✅ 已落地 | L140: `\url{https://anonymous.4open.science/r/testvdb-anon-D644/}` |
+| 7 | P1-6 48/52 定义 | ✅ 已落地 | L82: "(acknowledged or by-design, i.e., 52 adjudicated minus 4 rejected; 25%)" |
+| 8 | P1-7 opus/sonnet → high/low-budget | ✅ 已落地 | L138: "high-budget configuration and the remaining sixteen on the low-budget configuration---both the same GLM-5.2 backbone, differing in context window and max output tokens rather than model families" |
+| 9 | P1-8 Threats 扩充 | ✅ 已落地 | L271: 新增 Selection (submission ratio)、Contamination (GLM 训练数据)、Excluded-set audit (17/29 Milvus)、reviewer effect |
+| 10 | P1-9 A1 live/proxy 分离 | ✅ 已落地 | L257: "dev-reviewer precision 7/7 on live ground truth and 20/20 on LLM-adjudicated proxy; over-kill 0/27" |
+| 11 | 模板 (P0-3) | ❌ 未解决 | L3: 仍为 `\documentclass[sigconf]{acmart}` + 占位符元数据。等导师确认 venue |
+| 12 | 成本/效率信息 | 🟡 部分 | L140: "precise per-token and wall-clock accounting is part of the anonymized artifact" — 正文无 summary 数字 |
+
+**净结果：11 项声称中 10 项完全落地，1 项部分（成本在 artifact 不在正文），1 项硬阻塞（模板 = 外部决策）。Round 8 的四大实验缺口中三个已填 (schema baseline、扩大 n、source-ablation arm)，第四个 (Threats 扩充) 也已落地。**
+
+---
+
+## Reviewer 1 -- Objective Reviewer (Confidence: 4/5)
+
+**Summary**
+
+TestVDB 是首个针对 VDBMS API 合规缺陷的 LLM 驱动检测器，基于 Contract-Truth Separation (CTS) 设计。本轮评估基于 Round 8 回复落地后的最新稿件。关键增量：(1) schema-aware boundary fuzzer baseline 诚实展示了 boundary 子类上 schema fuzzer 的有效性并重新定位了 TestVDB 的独特价值；(2) 单 LLM baseline 扩大到 n=51，CI 显著收窄；(3) source-ablation arm (n=12) 量化了 source-anchoring 的独立贡献。
+
+**Strengths**
+1. **Schema fuzzer concession 是战略正确。** L261 诚实承认 "on the boundary/validation subset (75% of yield), a spec-driven fuzzer is genuinely effective" 然后立即定义 TestVDB 的 marginal value (state/logic, FP-suppression, spec-gap)。这比死守 "boundary novelty" 可信度高得多。
+2. **n=51 收窄了 CI，架构必要性有统计支持。** Wilson CI [15.5%, 38.9%] 上界 38.9% << TestVDB 69.2%；加 source-filter 后 16.7% (n=12) 仍远低于 TestVDB。多 agent debate 对 generation quality 的贡献明确。
+3. **A1 live/proxy 分离诚实。** L257 不再笼统报 "27/27"，而是区分 7/7 live re-probe + 20/20 LLM-adjudicated proxy。读者能自行评估强度。
+4. **Threats 实质性扩充。** L271 新增 selection ratio (unbounded)、GLM contamination、excluded-set audit、reviewer effect。Round 8 R2 要的四项威胁中补了三项。
+5. 28 个真实修复 + COSINE > 1.0 跨厂商复现始终是论文最硬的资产。
+
+**Weaknesses**
+1. <span style="color:#dc2626">**[Major]**</span> **模板与 venue 不匹配。** `\documentclass[sigconf]{acmart}` + 占位符元数据 (L3-L11)。这是纯格式门槛，但投 VLDB 需 vldb.cls，投 SE 需确认 acmart sigconf 是否合适。不修不能投。
+2. <span style="color:#dc2626">**[Major]**</span> **Schema fuzzer 与 TestVDB boundary TPs 的重叠未量化。** L261 报告 fuzzer 产出 7 candidates (5-6 likely genuine)，但未说明这 7 个中多少与 TestVDB 已确认的 27 boundary TPs 重叠。若重叠率高（如 5/7 已在 TestVDB yield 中），则验证了 TestVDB 的 boundary 覆盖力；若重叠率低（fuzzer 发现了 TestVDB 未发现的 boundary bugs），则暗示 TestVDB 的 boundary 发现力有漏洞。一句话即可消歧。
+3. <span style="color:#dc2626">**[Major]**</span> **n=51 单 LLM 的 ground truth 标准与 TestVDB 不同。** L259 的 25.5% (13/51) 是 LLM-judged precision；TestVDB 的 69.2% (36/52) 是 maintainer-judged precision。直接比较隐含了 LLM judgment 与 maintainer judgment 等价的假设。Source-filter 后的 16.7% (2/12, n=12) 更诚实但 n 太小 (Wilson CI ≈ [2.1%, 48.4%])。这不影响 "architecture matters" 的方向性结论，但审稿人会追问公平比较的 ground-truth 对齐。
+4. <span style="color:#d97706">**[Minor]**</span> **Discovery recall 仍完全推迟。** L265 的 pilot (2 held-out bugs) + 上游 coverage 6/9 = 67% 是目前最好的，但无完整 pipeline recall estimate。这是论文的永久限制，已标为 future work；不再是 reject-level 问题但仍是审稿人追问点。
+5. <span style="color:#d97706">**[Minor]**</span> **成本信息仅在 artifact 不在正文。** L140 承诺 "precise per-token and wall-clock accounting is part of the anonymized artifact"。LLM 系统论文越来越期望正文中至少一个 summary 数字（如 "~$X per target" 或 "~Y K tokens per submission"）。
+
+**Questions for Authors**
+1. Schema fuzzer 的 7 个 candidates 中，有多少与 TestVDB 36 TP 中的 boundary 子集重叠？
+2. 是否有计划在 camera-ready 中将 n=12 source-ablation arm 扩大到 n≥30，使 CI 窄到能支撑统计结论？
+3. 单次 pipeline run 的大约成本（tokens 或美元）？
+
+**Score:** Soundness 3/4, Novelty 2/4, Presentation 3/4, Overall **5/10 (Borderline)**。schema baseline + 重新定位解决了 Round 8 最大的 W3/W4，但 ground-truth asymmetry 和 fuzzer-overlap 未量化使 soundness 无法上到 4。
+
+---
+
+## Reviewer 2 -- Strict Reviewer (Confidence: 4/5)
+
+**Summary**
+
+Round 8 回复后，论文实质性改善了评估完整性。schema-aware fuzzer baseline 的诚实 concession 和 TestVDB 价值的重新定位 (不是 boundary finder 而是 state/semantic + FP-suppression layer) 是正确的。但核心问题不变：CTS 作为 "design principle" 被 over-packaged，实际验证范围窄 (只有 source anchor on Milvus+Qdrant)，且论文仍无非 LLM baseline 的 *实际跑通* 对照。
+
+**Strengths**
+1. **Schema fuzzer concession 终于诚实了。** 这是 8 轮以来第一次看到作者直面 "75% 的 yield 是 schema fuzzer 能覆盖的"。L261 的 repositioning ("TestVDB is therefore not a boundary finder but a state/semantic + FP-suppression layer that complements schema fuzzing") 是准确的。
+2. **n=51 比 n=15 好得多。** CI 从 [0.2%, 31.5%] 收窄到 [15.5%, 38.9%]，上界不再与 TestVDB 重叠。
+3. **A1 live/proxy 分离是正确的透明度改进。** 7/7 live 比 27/27 混合报告更可审计。
+4. **Threats 扩充方向正确。** Selection ratio + contamination + excluded-set audit 是 Round 8 要求的三项。
+
+**Weaknesses**
+1. <span style="color:#dc2626">**[Major]**</span> **CTS "design principle" 仍 over-packaged。** L96 仍将 "three-anchor counter-evidence design" 作为贡献框架——即使加了 "designed but not yet evaluated" 限定。回到本质：验证了的就是 "用源码验证 LLM 输出"。术语 CTS、assertion layer、truth layer 不增加分析力度。这是工程 pattern 而非 principle。对 SE 顶会，这是 novelty 评判上的主观分歧——我不认为改写能解决它，但保留 2/4 的 novelty 评分。
+2. <span style="color:#dc2626">**[Major]**</span> **Schema fuzzer baseline 是 "手写 19 probe" 而非工具运行。** L261 说 "a hand-written boundary-value fuzzer (no LLM): 19 probes derived directly from Milvus's documented parameter constraints"。这不是 Schemathesis/RESTler 的自动化运行，而是作者手动从文档提取约束写了 19 个 curl。作为 proof-of-concept 有价值，但严格来说不是 "与现有工具的对比"。Schemathesis 头对头仍标为 future work。审稿人期望的是工具级 baseline，不是 hand-crafted probe set。
+3. <span style="color:#dc2626">**[Major]**</span> **Ground truth 不对齐。** 25.5% (LLM-judged) vs 69.2% (maintainer-judged) vs 16.7% (LLM+source-judged) 使用三种不同的 ground truth 标准。论文未在一张 summary table 里统一对齐这些 arms 到同一 oracle。读者需自行推导公平比较，这是呈现问题也是方法学问题。
+4. <span style="color:#d97706">**[Minor]**</span> **"Single-LLM generation + source-anchored verification" arm (n=12) 太小。** 16.7% 的 Wilson CI 约 [2.1%, 48.4%]，包含了 TestVDB 的 69.2% 的互补区间的一部分。n=12 在统计上不能支撑 "多 agent debate 对 generation 必要" 的结论——只能作 directional evidence。
+5. <span style="color:#d97706">**[Minor]**</span> **Candidate-to-submission ratio 仍为 "unbounded"。** L271 明确写 "the candidate-to-submission ratio is unreported, so submission-selection bias is unbounded"。如果 pipeline 生成了 500 个候选，novelty gate 通过 111 个提交，比率是 4.5:1；如果生成了 5000 个，比率是 45:1——后者意味着 novelty gate 承担了大量 precision 工作且其错误率未知。作者应该知道这个数字。
+6. <span style="color:#d97706">**[Minor]**</span> **COSINE > 1.0 仍被低估。** 这是论文唯一不依赖 LLM 判断、跨厂商复现、违反数学不变量的发现。L241 和 RQ2 给了位置但仍不是独立 subsection。对于一篇 novelty 被质疑的论文，maximizing 这个点是免费的 novelty boost。
+
+**Questions for Authors**
+1. Pipeline 从攻击生成到 novelty gate 通过的 candidate-to-submission 数字是多少？
+2. 为什么不直接用 Schemathesis + Milvus OpenAPI spec 跑一次？如果 Milvus 没有 serve OpenAPI spec（论文暗示如此），请明确说明这个 blocker。
+3. 能否统一 summary table: arms × {precision, ground-truth-type, n, CI}？
+4. n=12 source-ablation arm 是否计划在 camera-ready 扩大？
+
+**Score:** Soundness 2/4, Novelty 2/4, Presentation 3/4, Overall **5/10 (Borderline)**。从 4/10 升到 5/10 因为 schema concession + n=51 是实质增量。但 ground-truth asymmetry、hand-crafted (非工具) baseline、和 CTS over-packaging 使我无法给 6+。如果作者 (a) 加统一 comparison table + (b) 明确 Schemathesis blocker + (c) 报 candidate ratio，我会移到 6。
+
+---
+
+## Reviewer 3 -- Supportive Reviewer (Confidence: 3/5)
+
+**Summary**
+
+Round 8 回复后论文达到了我认为可以投稿的状态。三项关键实验补全 (schema fuzzer concession、n=51 single-LLM、source-ablation arm) 诚实地重新定位了 TestVDB 的价值，同时保留了核心贡献 (28 修复、CTS 概念、COSINE 不变量)。剩余问题均可在 revision 中解决或已被诚实标注为 limitation。
+
+**Strengths**
+1. **Schema fuzzer baseline 是本轮最重要的增量。** 诚实承认 boundary 子类上 schema fuzzer 有效，同时清晰定义 TestVDB 的不可替代价值 (state/semantic、FP-suppression、spec-gap) — 这是 mature positioning。
+2. **n=51 使统计论证成立。** [15.5%, 38.9%] vs 69.2% 不再重叠。architecture necessity 有数据支撑。
+3. **Source-ablation arm (16.7%, n=12) 是 missing arm 的交付。** 虽然 n 小，但方向清晰：source-anchoring 单独不够，multi-agent debate 在 generation 侧贡献了 52.5pp 的 gap (16.7% → 69.2%)。
+4. **Threats 扩充方向对。** Contamination、selection ratio、excluded-set audit 是 Round 8 新要求的三项，全部到位。
+5. **A1 live/proxy 分离是加分。** 7/7 live + 20/20 proxy 分开报告让审稿人自行判断强度——比笼统 27/27 更 trustworthy。
+6. **核心资产不变且加固。** 28 修复、COSINE > 1.0、contract hallucination propagation、69.2% precision + [43.9%, 80.5%] 敏感性——经 9 轮审阅始终成立。
+7. **写作质量已达可投状态。** 摘要 ~165 词、Related Work 20 篇、RQ2 充实 (3 case study + COSINE 子类)、Threats 有实质内容、48/52 口径定义清晰。
+
+**Weaknesses**
+1. <span style="color:#dc2626">**[Major]**</span> **模板不匹配仍是格式门槛。** 唯一的 Must Fix 执行项——一旦导师确认目标 venue，换模板即可。
+2. <span style="color:#d97706">**[Minor]**</span> **Discovery recall 仍为空白。** 但论文已诚实标注 (L265 pilot + L271 recall scope + L283 future work)。R3 不再将此视为评级天花板——单 LLM baseline + A1 实验已大幅提升了评估的 "一半图景" 问题。
+3. <span style="color:#d97706">**[Minor]**</span> **成本 summary 应在正文。** L140 只说 "in artifact"。一行 "A full run over one target VDBMS costs ~X USD / ~Y K tokens" 在正文中出现会 preempt 这个追问。
+4. <span style="color:#d97706">**[Minor]**</span> **COSINE > 1.0 仍非独立 subsection。** 这是论文最 novel、最不可替代的技术发现（model-free、跨厂商、违反数学不变量）。RQ2 的位置已经比 Round 8 好，但给它一个 dedicated "\paragraph{Model-free invariant oracles}" 或提升为 §5.2.1 会进一步加强 novelty claim。
+5. <span style="color:#d97706">**[Minor]**</span> **Schema fuzzer 7 candidates 与 TestVDB 27 boundary TPs 的重叠未说明。** 一句 "X of the 7 correspond to already-acknowledged TestVDB issues" 即可消歧。
+
+**Questions for Authors**
+1. 模板 / 目标 venue 何时确定？
+2. COSINE > 1.0 是否考虑作为独立 subsection 提升？
+3. Full pipeline per-target 的大致美元成本或 token 消耗？
+
+**Score:** Soundness 3/4, Novelty 3/4, Presentation 3/4, Overall **7/10 (Weak Accept)**。论文经过 9 轮审阅，核心贡献始终成立，评估完整性已从 "只有内部消融" 发展为 "schema baseline + 单 LLM n=51 + source-ablation arm + A1 反事实 + controlled retrospective"。剩余 gap (discovery recall、tool-level baseline) 已被诚实标注且不 threaten 核心 claims。修好模板、加成本 summary、clarify fuzzer overlap，我会移到 clear accept。
+
+---
+
+## Verification (Round 9 -- 主 agent 逐条核实)
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R1-W2 | Schema fuzzer 7 candidates 与 27 boundary TPs 重叠未量化 | <span style="color:#16a34a">**Valid**</span> | L261 只报告 fuzzer 产出 7 candidates，未说明多少属于 TestVDB 已报告的 boundary issues。一句话即可修复 |
+| 2 | R1-W3 | n=51 LLM-judged vs 69.2% maintainer-judged = ground truth 不对齐 | <span style="color:#16a34a">**Valid**</span> | L259 用 LLM self-judgment 作 single-LLM precision，L249 用 maintainer adjudication 作 TestVDB precision。无统一 table |
+| 3 | R2-W2 | Schema baseline 是手写 19 probe 而非工具自动化运行 | <span style="color:#16a34a">**Valid**</span> | L261 "a hand-written boundary-value fuzzer (no LLM): 19 probes derived directly from Milvus's documented parameter constraints"——确为手动 |
+| 4 | R2-W3 | 三种 ground truth 标准未统一 | <span style="color:#16a34a">**Valid**</span> | 25.5% (LLM-judged)、16.7% (LLM+source)、69.2% (maintainer)，论文无统一对照表 |
+| 5 | R2-W5 | Candidate-to-submission ratio 仍为 "unbounded" | <span style="color:#16a34a">**Valid**</span> | L271: "the candidate-to-submission ratio is unreported, so submission-selection bias is unbounded" |
+| 6 | R1-W1, R2, R3 | 模板不匹配 | <span style="color:#16a34a">**Valid**</span> | L3: `\documentclass[sigconf]{acmart}` + L9-11 占位符 |
+| 7 | R3-W3 | 成本仅在 artifact | <span style="color:#16a34a">**Valid**</span> | L140: "precise per-token and wall-clock accounting is part of the anonymized artifact"；正文无 summary |
+| 8 | R2-W1 | CTS 作为 "design principle" over-packaged | <span style="color:#d97706">**Subjective**</span> | 主观 novelty 评判；L96 已加 "designed but not yet evaluated" 限定，但 headline 仍以 three-anchor design 为框架 |
+| 9 | R1-W4 | Discovery recall 仍完全推迟 | <span style="color:#16a34a">**Valid**</span> | L265: pilot 2 bugs + upstream 6/9; L271: "recall scope"; L283: future work。无完整数字 |
+| 10 | R2-W4 | n=12 source-ablation arm CI 过宽 | <span style="color:#16a34a">**Valid**</span> | 2/12 precision Wilson CI ≈ [2.1%, 48.4%]，包含 TestVDB 互补区间。统计力不足 |
+| 11 | 内部核实 | Schema fuzzer "search vs query 不一致" 是否属 TestVDB 已报告 | <span style="color:#d97706">**Unclear**</span> | L261 fuzzer 发现的 "search reject limit=-1/0/16385 but query accept limit=-1/0" 是新发现还是已在 TestVDB yield 中，论文未说明 |
+| 12 | 内部核实 | L259 "13 are LLM-judged true positives" 含 by-design | <span style="color:#16a34a">**Valid**</span> | 紧接的句子确认 "includes by-design defaults (consistencyLevel missing..., metricType missing..., case-insensitive enum matching) that a source-grounded filter reclassifies as FP"。13/51 = inflated precision |
+
+---
+
+## Action Plan (Round 9)
+
+### <span style="color:#dc2626">Must Fix</span> -- 不改大概率被拦
+
+- [ ] **P0-1: 换模板。** `\documentclass[sigconf]{acmart}` → 目标会议模板。需导师确认 venue。*(所有 reviewer 共识，纯执行格式门槛)*
+- [ ] **P0-2: 量化 schema fuzzer 与 TestVDB boundary TPs 的重叠。** L261 加一句说明 7 个 fuzzer candidates 中多少与已确认的 27 boundary TPs 重叠、多少是新 variants。消歧 "TestVDB 的 boundary 覆盖是否已含 fuzzer 能发现的" vs "fuzzer 能发现 TestVDB 漏掉的"。*(10 分钟改写)*
+
+### <span style="color:#d97706">Should Fix</span> -- 不改会降分或被误解
+
+- [ ] **P1-1: 加统一 comparison summary table。** 在 §5.3 末尾加一个 inline table，统一列出所有 arms：
+
+  | Arm | Precision | n | Ground truth | CI |
+  |-----|-----------|---|--------------|-----|
+  | Single-LLM (LLM-judged) | 25.5% | 51 | LLM self-judgment | [15.5%, 38.9%] |
+  | Single-LLM + source | 16.7% | 12 | LLM + source-filter | [2.1%, 48.4%] |
+  | Single-layer 4-judge (claim-only) | 75% | 44 | Retrospective (same pool) | — |
+  | TestVDB source-grounded | 91% | 32 | Retrospective (same pool) | — |
+  | TestVDB (maintainer end-to-end) | 69.2% | 52 | Maintainer adjudication | [55.6%, 80.5%] |
+
+  这让读者一眼看出 ground-truth 差异和每个 arm 的统计力。*(30 分钟)*
+
+- [ ] **P1-2: 加成本 summary 到正文。** 在 L140 段末加一句 approximate per-target 成本 (tokens + USD + wall-clock)。如 "A full pipeline invocation for one VDBMS target costs approximately X K tokens (~$Y) and completes in Z hours"。*(10 分钟，需作者确认真实数字)*
+
+- [ ] **P1-3: 报告 candidate-to-submission ratio。** 如果知道 novelty gate 前的候选总数，在 L271 将 "unreported" 替换为实际数字。如不知道，至少给量级估计 ("the novelty gate filtered approximately 200--400 candidates to the 111 submitted")。*(10 分钟)*
+
+- [ ] **P1-4: 明确 Schemathesis/RESTler 不可行的 blocker。** L261 末尾已标 "a head-to-head comparison against a tool such as Schemathesis...is future work"。加一句解释 blocker："Milvus does not serve a standards-compliant OpenAPI specification at its REST endpoint, preventing direct Schemathesis integration without manual spec authoring"。*(1 句话)*
+
+- [ ] **P1-5: Source-ablation arm (n=12) 在 camera-ready 扩大。** n=12 的 Wilson CI 跨度过大 ([2.1%, 48.4%])，目前只能作 directional evidence。如果 camera-ready 能扩大到 n≥30，CI 会窄到能支撑统计结论。标为 revision plan。
+
+### <span style="color:#6b7280">Optional</span> -- 锦上添花
+
+- [ ] **COSINE > 1.0 提升为 §5.2 的 dedicated \paragraph{} 或 subsubsection。** 标题建议："Model-free invariant oracles: a non-LLM complementary subclass"。这是论文最亮技术点 + 最不可替代发现 + novelty 免费 boost。
+- [ ] **分类 12 by-design cases。** 将 12 个按 (a) LLM hallucinated constraints vs (b) maintainer-discretion relaxation 分类。即使定性也能硬化 §4 的 "contract hallucination propagation" claim。
+- [ ] **考虑一个 Qdrant 端到端 case study 加入 RQ2。** 当前 3 个 case study 全是 Milvus (#47729, #49844, #50193)；一个 Qdrant 走查支撑 "cross-system" narrative。COSINE 已跨 Milvus+Qdrant，但 detailed trace 只有 Milvus。
+- [ ] **RQ4 移到 appendix。** "Blindspot indicators never populated" 是 candid 但 distracting 的死重。如果页数紧张，正文留一句 "threat-model prior was explored but did not produce actionable signal (\S Appendix)" 即可。
+
+---
+
+## Round 9 Overall Assessment
+
+**预测：Weak Accept（R1 5/10 Borderline, R2 5/10 Borderline, R3 7/10 Weak Accept）。** 这是 rebuttal 后大概率被接受的分裂模式。R3 已在 clear accept 边缘 ("修好模板 + 加成本 + clarify overlap 我就给 accept")；R1 从 Weak Reject 移动到 Borderline (Round 8 的两个 Major 被 schema baseline 和 n=51 解决)；R2 从 Weak Reject 移动到 Borderline (concession + 重新定位让 novelty 论证更可辩护)。AC 在这个分裂模式下通常 follow R3 的判断。
+
+**核心资产（经过 9 轮审阅始终成立）：**
+- 28 个真实修复 → 实践影响无可争议
+- Contract hallucination propagation → 可被广泛引用的概念贡献
+- COSINE > 1.0 数学不变量 → 论文最亮技术发现，不依赖 LLM 判断
+- 方法学诚实度出色 → 9 轮审阅始终是论文最一致的加分项
+- Schema fuzzer concession + 重新定位 → 证明作者能正确评估自身贡献边界
+
+**相比 Round 8 的关键进步：**
+- ✅ Schema fuzzer baseline 落地并重新定位了 TestVDB 价值（Round 8 最大天花板）
+- ✅ n=51 收窄 CI，architecture necessity 有统计支持
+- ✅ Source-ablation arm 量化了 source-anchoring 的独立贡献
+- ✅ Threats 实质扩充（selection + contamination + excluded-set + reviewer effect）
+- ✅ A1 live/proxy 分离
+
+**剩余评级天花板（按影响排序）：**
+1. **模板（格式门槛）** -- 纯执行，等导师定 venue
+2. **Ground-truth 对齐 + comparison table** -- 呈现问题，30 分钟可修
+3. **Fuzzer-overlap 量化** -- 一句话可修
+4. **Discovery recall** -- 永久限制，已诚实标注，不再是 reject-level
+5. **CTS novelty 主观争议** -- 无法通过修改消除，R2 始终会保留
+
+**投稿建议：**
+- **SE 顶会 (ICSE/FSE/ISSTA/ASE)：当前质量已在 Accept 区间边缘。** 修 P0-2 (fuzzer overlap) + P1-1 (comparison table) + P1-2 (cost summary) 后，有信心通过 rebuttal phase。
+- **VLDB/SIGMOD：** 需额外工作——换 PVLDB 模板 + 向量检索内部机制对接 + 更大规模评估。不建议作为首选。
+- **当前最佳投稿路径：** 选定 SE venue → 换模板 → 修 P0-2/P1-1/P1-2/P1-3/P1-4（约半天工作量）→ 投稿。
