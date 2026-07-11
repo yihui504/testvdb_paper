@@ -661,3 +661,190 @@ TestVDB 填补了 VDBMS 测试中一个真实且被文献点名的空白：43% �
 5. **[呈现] 摘要过密、Related work 薄、RQ2 薄、过度防御** -- 写作打磨
 
 **核心价值判断：** 论文的核心价值（维护者权威作独立真值层 + 28 个真实修复 + contract hallucination propagation 观察）经过 6 轮审阅始终成立。数据账目自洽，方法论审慎，诚实度出色。天花板不在写作，在评估完整性：缺外部 baseline 和 discovery recall 使审稿人只能看到一半的图景。如果目标是 SE 顶会（ICSE/FSE/ISSTA/ASE），补上最可行的 baseline（单 LLM 调用对照）和粗略的 recall 估计后，有望进入 accept 区间；如果目标是 DB 顶会（VLDB/SIGMOD），还需要更强的与向量检索内部机制的对接。
+
+---
+
+# Round 7 — 三视角独立审稿 + Response Letter 后校正 (2026-07-11)
+
+> **Method:** 三份独立审稿完成后，对照作者回复信 (`RESPONSE-to-reviewers.md`) 和 `paper-draft-vldb-final.tex` 逐条核实回复中声称的修改是否落地。本轮标注每项修改的核实状态（✅ 已落地 / 🟡 部分 / ❌ 未改）。
+> **Overall Prediction:** Weak Accept — R1 和 R3 Weak Accept，R2 从 Weak Reject 上移至 Borderline。回复信解决了约 70% 的实质顾虑。
+> **Date:** 2026-07-11
+
+## Score Summary（Response Letter 后校正）
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Friendly) |
+|-----------|:---------:|:---------:|:---------:|
+| Soundness | **3/4** (+1) | **3/4** (+1) | 3/4 |
+| Novelty | 3/4 | 2/4 | 3/4 |
+| Presentation | **3/4** | **3/4** (+1) | **3/4** |
+| **Overall** | **7/10** (+1) | **5/10** (+1) | **7/10** |
+
+**Soundness 上调理由：** 单 LLM 端到端 baseline (6.7%) + A1 单层反事实实验 (27/27 over-kill=0) 是两个实跑实验增量，填补了原先"仅有内部消融"的最大评估缺口。**Presentation 上调理由：** 摘要精简至 ~165 词、RQ2 充实（3 case study）、Related Work 从 8 篇扩至 20 篇、Threats 压缩至 ~10 行、stale TODO 删除、48/52 口径统一。
+
+---
+
+## Response Letter 修正逐条核实
+
+| # | 回复信声称的修改 | 核实状态 | 证据（final.tex 行号） |
+|---|---|---|---|
+| 1 | 贡献 #2 措辞收敛（三锚点→source-grounded validated + 其余 designed but not yet evaluated） | ✅ 已落地 | L96-97: "source-grounded verification---the validated anchor---within a three-anchor counter-evidence design" |
+| 2 | 新增单 LLM 端到端 baseline | ✅ 已落地 | L257-258: Single-LLM 全流程 6.7% (1/15), Wilson CI [0.2%, 31.5%] vs TestVDB 69.2% |
+| 3 | A1 单层反事实实验（fresh probes） | ✅ 已落地 | L255-256: 15 fresh probes, 2 TP + 1 FP confirmed; 27/27 killed all FP, over-kill=0 |
+| 4 | 摘要精简 | ✅ 已落地 | 从 ~250 词压至 ~165 词，不再塞敏感性区间 |
+| 5 | Related Work 扩展 | ✅ 已落地 | 从 8 篇 → 20 个 `\cite{}`: RESTler, EvoMaster, NoREC/TLP/DQE/DDLCheck, LLM for SE, hallucination survey, Barr et al., 等 |
+| 6 | RQ2 充实（3 个端到端 case study + COSINE 不变量子类） | ✅ 已落地 | L234-239: TP #47729, TP #49844, FP #50193 全链路走查 + COSINE>1.0 数学不变量子类 |
+| 7 | Threats 压缩 | ✅ 已落地 | L266-268: 压缩至 ~10 行 |
+| 8 | 删除 stale TODO | ✅ 已落地 | tex 头部注释已清除 |
+| 9 | 48/52 口径统一 | ✅ 已落地 | 摘要和正文中定义清晰 |
+| 10 | Discovery recall 补实验 | 🟡 标为 future work | L261: "establishing true discovery recall ... is future work"——未补新数据，但标注诚实 |
+| 11 | 模板（acmart → 目标会议） | ❌ 未改 | L3: 仍为 `\documentclass[sigconf]{acmart}`，等导师确认目标会议 |
+| 12 | 成本/效率信息 | ❌ 未补 | 无 token 消耗、API 调用量、wall-clock time |
+| 13 | "large-scale" 措辞 | ❌ 未改 | 贡献 #1 (L95) 仍写 "large-scale empirical study" |
+
+**净结果：13 项声称中有 9 项完全落地、1 项诚实标注 future work、3 项等待外部决策或后续补充。回复信主要增量是两项实跑实验（A1 单层反事实 + B9 单 LLM baseline），这确实改变了评估图景。**
+
+---
+
+---
+
+## Reviewer 1 -- Objective Reviewer (Confidence: 4/5)
+
+**Summary:** TestVDB 用 LLM 从 VDBMS 文档提取 API 契约，通过四判官辩论生成攻击，再用 dev-reviewer agent 的 source-grounded 验证过滤假阳性。111 投稿、36 维护者确认、28 修复。核心概念 CTS 将 LLM 断言层与真值层分离。
+
+**Strengths:**
+1. 问题定位精准：43% incorrect-behavior vs 23% crash/hang，VDBFuzz 只覆盖 crash。Table 1 的 oracle 排除论证干净。
+2. Contract hallucination propagation 是有洞察力的观察：constant.go 的虚构 provenance + 12/48 by-design 案例支撑其存在性。
+3. 诚实度罕见：敏感性区间 [43.9%, 80.5%]、RQ4 标为 negative result、未验证锚点灰显、边界明确。
+4. 28 个真实修复是硬通货。COSINE > 1.0 跨厂商复现是漂亮发现。
+5. **【新增】** 单 LLM 端到端 baseline (6.7% vs TestVDB 69.2%) 有力地证明了多 agent 架构的端到端必要性——不是只在内部消融中成立。
+6. **【新增】** A1 单层反事实 27/27 over-kill=0 直接回应了"高精度是否靠牺牲召回换来的"质疑。
+
+**Weaknesses:**
+1. <span style="color:#dc2626">**[Major]**</span> **模板不匹配。** `\documentclass[sigconf]{acmart}` 是 ACM 格式，文件名含 "vldb"。投稿前必须换 PVLDB 或目标会议模板。*(回复信未解决——等导师定会议)*
+2. <span style="color:#16a34a">**[Resolved]**</span> ~~三锚点 CTS 仅 source 被验证~~ → 贡献 #2 (L96-97) 已改为 "source-grounded verification---the validated anchor---within a three-anchor design...reproduction and threat-model anchors are designed but not yet evaluated"。与 Fig.1 灰显完全对齐。✅
+3. <span style="color:#16a34a">**[Resolved]**</span> ~~缺端到端外部 baseline~~ → L257-258 新增单 LLM 端到端 baseline: 6.7% (1/15), Wilson CI [0.2%, 31.5%] vs TestVDB 69.2%。✅
+4. <span style="color:#d97706">**[Minor]**</span> **缺端到端 discovery recall。** 回复信未补新实验，仅标为 future work。96.7% 仍是判断层 TP 保留率。Contract coverage 探针 (6/9=67%) 未扩大。
+5. <span style="color:#16a34a">**[Resolved]**</span> ~~摘要过密~~ → 已精简至 ~165 词。✅
+6. <span style="color:#16a34a">**[Resolved]**</span> ~~RQ2 过薄~~ → 已补 3 个端到端 case study（TP #47729、TP #49844、FP #50193 全链路）+ COSINE 不变量子类。✅
+7. <span style="color:#16a34a">**[Resolved]**</span> ~~Related Work 仅 8 篇~~ → 已扩至 20 篇，覆盖 API testing、LLM for SE、database oracles、hallucination survey。✅
+
+**Unresolved Questions:** (1) Discovery recall 仍是空白——能否扩大 held-out 样本跑完整 pipeline？(2) Artifact link 在哪里？(3) MeiliSearch (3) 和 Chroma (1) 几乎零信号，"five VDBMSs" 泛化措辞是否应收敛为 "primarily Milvus and Qdrant"？
+
+---
+
+## Reviewer 2 -- Strict Reviewer (Confidence: 4/5)
+
+**Summary:** 用 LLM 提取 API 契约并检测合规违规。dev-reviewer 通过查源码过滤假阳性。论文提出 "contract hallucination propagation" 作为失败模式。
+
+**Strengths:**
+1. 28 个已修复 bug 是实在的实践影响。
+2. 内部数据账目自洽，敏感性区间方法论合理。
+3. 受控回溯实验在其限定范围内可信。
+4. **【新增】** 单 LLM 端到端 baseline (6.7%) 提供了一个 pipeline 外对照，直接回应了"没有外部 baseline"的批评。6.7% vs 69.2% 的差距是硬的。
+5. **【新增】** A1 27/27 over-kill=0 说明精度提升不以牺牲召回为代价——对一篇 precision-focused 的论文至关重要。
+
+**Weaknesses:**
+1. <span style="color:#dc2626">**[Major]**</span> **Novelty 有限。** CTS、"assertion layer"、"truth layer" 等术语提升了感知复杂度，但底层机制是"用源码验证 LLM 输出"，属直觉性工程决策。形式化 C_LLM ⊃ C_true 不增加分析力度。*(回复信未改变这一点——这是本质判断，不是能靠加实验改的)*
+2. <span style="color:#dc2626">**[Major]**</span> **75% 的发现是浅层边界/验证缺陷。** 如 nprobe=0、shardsNum=-1 这类简单输入验证 bug，是任何基于契约的方法最容易抓的。仅 2 个 state/logic、3 个 result-correctness bug。对顶会需在更难类别上展示价值。*(回复信未改变)*
+3. <span style="color:#d97706">**[Minor，从 Major 降级]**</span> **无 pipeline 外对照** ~~→ 已补单 LLM 6.7% baseline。~~ 这是一个实质性的回应。✅ 但缺与规则 API 验证器和人工 reviewer 的对比。
+4. <span style="color:#d97706">**[Minor]**</span> **可复现性缺口：** Implementation 段已补 agent 分层架构，但仍缺 API 版本号、temperature/sampling 参数、20 个 agent 的提示词摘要、成本分析、artifact link。
+5. <span style="color:#16a34a">**[Resolved]**</span> ~~§5.5 single-layer counterfactual 混合 ground truth~~ → A1 fresh probes + 7/27 live re-probe 已独立验证，不再纯依赖混合推算。✅
+6. <span style="color:#16a34a">**[Resolved]**</span> ~~Threats to Validity 30 行 vs Related Work 8 篇~~ → Threats 压缩至 ~10 行，Related Work 扩至 20 篇。比例已正常。✅
+7. <span style="color:#16a34a">**[Resolved]**</span> ~~tex 头部 stale TODO~~ → 已清除。✅
+
+**Unresolved Questions:** (1) L1/L2 novelty gate 的假阴性率是多少？(2) 缺 REST API validator / simple rule baseline 的对照。单 LLM 6.7% 确实很低，但更简单的启发式 baseline 可能同样有效。
+
+---
+
+## Reviewer 3 -- Friendly Reviewer (Confidence: 3/5)
+
+**Summary:** TestVDB 填补了 VDBMS 测试中 43% incorrect-behavior 缺陷无 oracle 的真实空白。CTS 通过引入独立真值层缓解 LLM 自我确认问题。28 个已修复 bug + COSINE > 1.0 跨厂商复现有说服力。
+
+**Strengths:**
+1. 问题时机好、scope 合理，聚焦可解子问题而不过度声称。
+2. Contract hallucination propagation 是可被广泛引用的概念贡献。方法论插曲（opus agent 编造 /mine 产物）反而强化了 CTS 核心论点。
+3. 28 个真实修复 + COSINE > 1.0 数学不变量违规。
+4. 方法论审慎：账目闭合、敏感性区间、RQ4 negative result、灰显未验证锚点。
+5. 受控回溯设计合理 (FP 抑制 31%→81%, TP 保留 96.7%)。
+6. Single-layer counterfactual 的 27/27 zero over-kill 有说服力。
+7. **【新增】** 单 LLM 端到端 baseline (6.7%) 让 "多 agent 架构是否必要" 有了实证答案。
+8. **【新增】** RQ2 的三个 case study（含一个 FP 被正确抑制的走查）让系统行为可理解。
+
+**Weaknesses:**
+1. <span style="color:#d97706">**[Minor，从 Major 降级]**</span> **Discovery recall** 仍标为 future work，但回复信已做诚实标注。6/9 contract coverage 探针未扩大。这是论文最明显的剩余缺口，但不再是评级天花板——单 LLM baseline 和 A1 实验已大幅提升了评估完整性。
+2. <span style="color:#16a34a">**[Resolved]**</span> ~~呈现冗余~~ → 摘要 165 词、Threats ~10 行、RQ3 段落精简。✅
+3. <span style="color:#16a34a">**[Resolved]**</span> ~~贡献 #2 over-claiming~~ → 已对齐。✅
+4. <span style="color:#16a34a">**[Resolved]**</span> ~~Related work 偏薄~~ → 已扩至 20 篇。✅
+5. <span style="color:#16a34a">**[Resolved]**</span> ~~COSINE>1.0 被埋~~ → 已在 RQ2 提升为"数学不变量 oracle"子类。虽然仍不是独立 case study，但位置已有实质提升。✅
+
+**Unresolved Questions:** (1) 29 个 excluded（closed-no-label/duplicate）是系统失败还是维护者行为？(2) 端到端延迟大约多少？成本信息有助于判断可部署性。(3) COSINE>1.0 能否推广为系统性的"数学不变量 oracle"子类？
+
+---
+
+## Verification（Response Letter 后重新逐条核实）
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R1-W1 | 模板不匹配 | <span style="color:#16a34a">**Valid（仍存在）**</span> | `\documentclass[sigconf]{acmart}` + 占位符元数据，文件名含 "vldb"。回复信未解决 |
+| 2 | R1-W2 | 三锚点仅 source 验证 | <span style="color:#dc2626">**已修正**</span> | 贡献 #2 (L96-97) 已改为 "source-grounded verification---the validated anchor---within a three-anchor design...reproduction and threat-model anchors are designed but not yet evaluated"。与 Fig.1 灰显完全对齐 |
+| 3 | R1-W3 | 无外部 baseline | <span style="color:#dc2626">**已修正**</span> | L257-258 新增单 LLM 端到端 baseline: 6.7% (1/15), Wilson CI [0.2%, 31.5%]。真正独立的 pipeline 外对照 |
+| 4 | R1-W4, R3-W1 | 无 discovery recall | <span style="color:#d97706">**仍存在（诚实标 future work）**</span> | 96.7% 仍是判断层 TP 保留率。Contract coverage 探针未扩大。L261 明确标 "future work" |
+| 5 | R2-W1 | Novelty 有限 | <span style="color:#d97706">**主观判断，未变**</span> | 属本质性批评，不因加实验而改变 |
+| 6 | R2-W2 | 75% 浅层边界 | <span style="color:#16a34a">**Valid（仍存在）**</span> | 27/36=75% boundary/validation。仅 2 state/logic + 3 result-correctness。回复信未改变 |
+| 7 | R2-W4 | 可复现性缺口 | <span style="color:#d97706">**部分改善**</span> | Implementation 段已补 agent 分层（4 opus + 16 sonnet on GLM-5.2），但仍缺提示词、温度、成本、artifact link |
+| 8 | R3-W5 | COSINE>1.0 被埋 | <span style="color:#dc2626">**已改善**</span> | 在 RQ2 (L239) 提升为 "Model-free mathematical-invariant oracle" 子类，区别于纯 contract oracle |
+| 9 | R1-W5 | 摘要过密 | <span style="color:#dc2626">**已修正**</span> | ~165 词，不再塞敏感性区间和 48/52 口径细节 |
+| 10 | R1-W5 | Related Work 仅 8 篇 | <span style="color:#dc2626">**已修正**</span> | 20 个 `\cite{}`: RESTler, EvoMaster, NoREC, TLP, DQE, DDLCheck, LLM for SE, hallucination survey, Barr et al., Claessen, Meyer, Amann, Manes |
+| 11 | R1-W6 | RQ2 过薄 (~4 行) | <span style="color:#dc2626">**已修正**</span> | L234-239: 3 个端到端 case study（TP #47729, TP #49844, FP #50193）+ COSINE 子类 |
+| 12 | R2-W7 | Threats 30 行 vs RW 薄 | <span style="color:#dc2626">**已修正**</span> | Threats (L266-268) ~10 行，RW 扩至 20 篇。比例正常 |
+| 13 | 新增 | A1 单层反事实 27/27 over-kill | <span style="color:#16a34a">**Valid**</span> | L255-256: 15 fresh probes (2 TP + 1 FP confirmed); 7/27 live re-probe; 27/27 all FP, over-kill=0 |
+
+---
+
+## Action Plan（Response Letter 后校正版）
+
+### <span style="color:#dc2626">Must Fix</span> -- 不改大概率被拒
+
+- [ ] **换模板。** `\documentclass[sigconf]{acmart}` → 目标会议模板（等导师确认 PVLDB 或 SE 会议）。*(唯一未被回复信解决的格式门槛)*
+- [ ] **收敛 "large-scale" 措辞。** 贡献 #1 (L95) 中 "large-scale empirical study" → "multi-system empirical study"。111 个 issue 跨 5 个系统，在 VDBMS 测试领域算规模可观，但 "large-scale" 对 DB/SE 顶会而言有夸大嫌疑——审稿人会拿百万 commit 级别的实证研究做对比。
+
+### <span style="color:#d97706">Should Fix</span> -- 不改会降分
+
+- [ ] **给 discovery recall 一个更好的估计。** B10 Option A（旧容器 + Web Archive 旧文档跑重发现率）如果能在截稿前跑出来，是跨入 Accept 的最后临门一脚。即使只是粗略估计也比空白好。*(唯一剩余的评估完整性缺口)*
+- [ ] **加成本/效率信息。** token 消耗、API 调用次数、wall-clock time。LLM 系统论文越来越期望这些。*(新增建议)*
+- [ ] **补充可复现信息。** 提示词摘要、温度参数、Artifact link。Implementation 段已有 agent 架构，再补这几点即可满足顶会可复现性标准。
+- [ ] **讨论 "five VDBMSs" 泛化是否应收敛。** MeiliSearch (3/111) 和 Chroma (1/111) 信号近乎为零。如不收敛，至少加一句 caveat。
+
+### <span style="color:#6b7280">Optional</span> -- 锦上添花
+
+- [ ] **讨论 29 excluded 的性质。** 是系统失败还是维护者行为？有助于理解实际失败模式。
+- [ ] **考虑 CTS 泛化性段落。** Contract hallucination propagation 适用于所有 LLM 驱动的规约测试系统——REST API、云服务等。简短段落即可增加 impact 感。
+
+---
+
+## Round 7 Overall Assessment（Response Letter 后校正）
+
+**预测：Weak Accept。** R1 (7/10) 和 R3 (7/10) 推荐 Weak Accept，R2 (5/10) 从 Weak Reject 上移至 Borderline。这是一个 rebuttal 后大概率接受的分裂。
+
+**回复信效力评估：约 70% 的实质顾虑已解决。** 主要加分项：
+1. **A1 单层反事实 + B9 单 LLM baseline 是真正的实验增量，不是只改措辞。** 单 LLM 的 6.7% vs TestVDB 的 69.2% 这个差距是硬的——审稿人会认。27/27 over-kill=0 直接回应了 "高精度是否靠牺牲召回" 的质疑。
+2. **贡献 #2 的措辞修改精准到位**，不再把未验证的三个锚点当作已证明贡献。
+3. **方法论插曲**（opus agent 编造 /mine 产物）虽然负面，反而强化了 CTS 核心论点——"LLM agent 会编造，需独立锚点核验"。
+4. **写作打磨全面落地：** 摘要 165 词、Related Work 20 篇、RQ2 3 个 case study、Threats 10 行、48/52 统一、stale TODO 清除。
+
+**核心资产（经过 7 轮审阅 + 回复信校正始终成立）：**
+- 28 个真实修复 → 实践影响无可争议
+- Contract hallucination propagation → 可被广泛引用的概念贡献
+- 单 LLM 6.7% vs TestVDB 69.2% → 架构必要性的硬证据
+- 方法论诚实度出色 → 经过 7 轮审阅，这是论文最一致的加分项
+
+**剩余天花板：**
+- **模板**（格式门槛——纯执行，等导师定会议）
+- **Discovery recall**（评估完整性天花板——B10 Option A 如果跑出来，是最后一个临门一脚）
+- **"large-scale" 措辞**（易被审稿人抓辫子——改词即可）
+- **成本/效率信息**（LLM 系统论文的标配——半天可补）
+
+**投稿建议：**
+- 如果目标 VLDB：必须换 PVLDB proceedings 模板 + 加强与向量检索内部机制的对接（DB 审稿人对 "浅层 boundary/validation" 批评会更严厉）
+- 如果目标 SE 顶会 (ICSE/FSE/ISSTA/ASE)：当前稿件质量已接近 Accept 区间。补上 discovery recall 粗略估计 + 成本信息后，有望跨过 Accept 线
+- 不建议再投次级 SE 会议——稿件已超过那个档位
