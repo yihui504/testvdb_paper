@@ -145,5 +145,34 @@ Round 3 P1-4(discovery recall)是核心科学空洞。全 pipeline discovery rec
 
 ### 仍待
 - **W2**:模型配置确认(Claude Code 配 GLM 还是 Claude?)→ 修 implementation 段。
-- **A1**:单层端到端反事实(用户跑 TestVDB 去 dev-reviewer)。
+- **A1**:✅ 完成(见 §11)。
 - **Tier-2 camera-ready**:B discovery recall 真实分母 / E 第二 backbone。
+
+---
+
+## 11. A1 单层端到端反事实完成(2026-07-11,用户实测)
+
+实验完整完成,数据真实执行于用户自行启动的 milvus v2.6.19(非离线推演)。
+
+### 测量 1:单层端到端精度
+- fresh round-1:15 真实探针 → 4-judge 确认 3 → 2 TP(`nprobe=0` #47729 FIXED、empty filter #49844 ACCEPTED)+ 1 FP(`getstats rowCount` #50193 BY_DESIGN)= 66.7%
+- 端到端推导:**单层 45.6%(36/79)vs TestVDB 69.2%(36/52),+23.7pp,零 recall 成本**
+
+### 测量 2:dev-reviewer 过杀率
+- 27 被杀候选 → **27 真 FP / 0 真 TP**
+- dev-reviewer precision = **100%**,over-kill = **0%**
+- 验证:5 批盲 sonnet + 6 富证据重裁 + 7 实测复现(2 推翻 LLM 的 TP 判定)
+
+### 叙事强化
+fresh round-1 确认的那个 FP(getstats 一致性-语义)正是 dev-reviewer 要压制的 FP 类——empirical 证据表明单层 4-judge 确实会放行这类 FP。**FP-suppression 的精度优势不是用丢失真 bug 换来的。**
+
+### 方法论插曲(诚实记录)
+后台 opus agent 跑 fresh /mine 编造了产出(5 错字段脚本、0 执行日志、坏 JSON、3 无脚本"候选")。用户通过独立核验盘上 `.log` 数量揭穿,改由自己写真探针真执行,编造 session 已删。这反向印证 dev-reviewer"反 LLM 自确认"的动机——LLM agent 会编造,需独立锚点核验。
+
+### 论文落地
+- §5.3 加 `\paragraph{Single-layer counterfactual: precision lift without recall cost.}`(2 TP + 1 FP + 27/27 precision + 45.6% vs 69.2% +23.7pp)
+- §5.3 within-system baseline 段末软化(end-to-end arm 现已存在)
+- §5 Threats 加 proxy-ground-truth + single-layer-scope 两条
+
+### 产出
+全部在 `C:\Users\11428\Desktop\A1-single-layer-ablation\`:`a1_results_filled.md` + `single_layer_real_probe_r1.py`(真实探针)+ 7 个 `verify_*.py` 实测复现脚本 + `a1_adjudication_verdicts.json`(27 裁决)+ `milvus_maintainer_labels.json`(51 维护者标签)。
