@@ -259,7 +259,11 @@ RESTler, EvoMaster, TLP, DQE, self-consistency, Barr oracle survey, hallucinatio
 ### 实验协议打包(待用户跑,评级天花板)
 - **B9 单 LLM baseline**(`C:\Users\11428\Desktop\B9-single-llm-baseline\`):
   - **judgment 层已有(A1 馈赠)**:单 LLM + 源码 evidence → **27/27 FP**,和 dev-reviewer 一致。**这直接回应 R2-Q1 架构必要性**:多 agent debate 的价值**不在 judgment**,在 generation(边界/状态/语义覆盖)+ source extraction(version-pinned)。**CTS = "ground judgment in extracted source",非 "more agents"** —— 这窄化了我们的 claim,但更诚实。
-  - **端到端协议**(待跑):单 LLM 全 pipeline(doc→contract→probe→judge,无 debate/CTS),比 TestVDB 69.2%。prompt + 模板在 B9 文件夹。
+  - **端到端已跑(2026-07-11,我 dispatch)**:单 LLM(`general-purpose` subagent,**不挂 TestVDB 插件**)在 milvus v2.6.19 跑 15 probe → **1 TP + 14 FP = 6.7%**(Wilson 95% CI [0.2%, 31.5%])vs TestVDB 69.2%。
+    - **1 TP 独立验证 + 新发现**:`consistencyLevel="INVALID"` 被静默接受(200),`describe` 显示 fallback 到 "Bounded"(应拒绝非法 enum,可单独提交)
+    - **14 FP**:API 正确拒绝(1100/1801/1802);其中 4 个 search probe 用 2-dim vector 打 128-dim collection(dim mismatch 先报错,premise unsatisfied)—— 暴露单 LLM generation 的语境错误
+    - **架构必要性证据**:judgment 层单 LLM + 源码 = 27/27(A1),但端到端单 LLM = 6.7% → **多 agent debate + CTS 在 generation + FP 抑制必要(judgment 不需要)**。这窄化 claim:CTS = "ground judgment in source"(非 "more agents"),多 agent 的价值在 generation 侧
+    - §5.3 已加 `\paragraph{Single-LLM end-to-end baseline.}`;完整结果 + Threats 在 `B9-single-llm-baseline/b9_results_filled.md`
 - **B10 discovery recall**(`C:\Users\11428\Desktop\B10-discovery-recall\`):
   - 扩 contract coverage 6/9→15-20(Option B,便宜)或 held-out 全 pipeline 跑(Option A,needle-mover)
   - **这是评级天花板**:precision + judgment recall + A1 都是 **FP 侧**;discovery recall 是 **TP 侧**(能发现多少存在的 bug)。B10 是 **Borderline→Accept** 的关键实验。
