@@ -344,3 +344,16 @@ Round 9 评级全升(R1/R2 5/10 Borderline, R3 7/10 Weak Accept, R3 在 clear ac
 
 ### Round 9 评级判断
 R3 原话: "修好模板 + 加成本 + clarify overlap, 我给 clear accept"。本轮三项全做(cost/overlap/blocker)+ comparison table + COSINE subsection。R1/R2 的 ground-truth asymmetry + hand-crafted baseline 顾虑部分缓解(comparison table 显式 ground-truth 列 + Schemathesis blocker 说明)。**预期 R3 → clear accept, R1/R2 维持 Borderline 或升**。论文在 Weak Accept–clear accept 区间, 唯一阻塞 = 模板(导师定 venue)。
+
+## 17. Round 10 回复(2026-07-11,commit pending)
+
+Round 10 三方**首次全部 Weak Accept**(R1/R2 6/10, R3 7/10), Borderline 分裂消失。R2 按其 Round 9 明示承诺(table + Schemathesis blocker + candidate ratio)升 5→6。**论文内容在 Accept 区间**, 唯一硬阻塞 = 模板。
+
+### Round 10 状态
+- **P1-1/P1-2(Table 2 两处标签瑕疵)**: **Accept 已代改**(验证: L279 schema fuzzer `37\%$^{\dagger}$` + L270 caption 注明 "CI Wilson except last row pending-resolution sensitivity" + "$^\dagger$ probe→accept rate ~79% genuine")。保留, 不覆盖
+- **P1-3 per-target 成本**: §3 reproducibility 段加 — per target ~10^3 calls(~2×10^6 tokens), 几小时。order-of-magnitude(精确在 artifact)。闭合 R1/R3 cost 追问
+- **P0-1 模板**: 等导师定 venue — 唯一 Must Fix
+- **Optional(camera-ready)**: source-ablation n≥30 / 12 by-design 分类 / Qdrant case / RQ4 appendix
+
+### Round 10 评级判断
+R3 原话: "一旦换模板, 我即给 clear accept"。R2 按承诺升 6。R1 content Major 全消。**剩余唯一步 = 模板(导师定 venue)**。论文经 10 轮审阅, 核心资产(28 修复 / contract hallucination propagation / COSINE 不变量 / 方法学诚实度)始终成立, 评估完整性从"只有内部消融"发展到"schema baseline + 单 LLM n=51 + source ablation + A1 反事实 + controlled retrospective + fuzzer overlap 量化 + comparison table"。换模板即可投 SE 顶会。
