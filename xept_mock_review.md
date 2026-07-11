@@ -1353,3 +1353,133 @@ Round 8 回复后论文达到了我认为可以投稿的状态。三项关键实
 - **SE 顶会 (ICSE/FSE/ISSTA/ASE)：当前质量已在 Accept 区间边缘。** 修 P0-2 (fuzzer overlap) + P1-1 (comparison table) + P1-2 (cost summary) 后，有信心通过 rebuttal phase。
 - **VLDB/SIGMOD：** 需额外工作——换 PVLDB 模板 + 向量检索内部机制对接 + 更大规模评估。不建议作为首选。
 - **当前最佳投稿路径：** 选定 SE venue → 换模板 → 修 P0-2/P1-1/P1-2/P1-3/P1-4（约半天工作量）→ 投稿。
+
+---
+
+# Round 10 — Round 9 建议落地后的再评审 (against `paper-draft-vldb-final.tex`, 2026-07-11)
+
+> **Method:** Round 9 给出 2 项 Must Fix + 5 项 Should Fix + 4 项 Optional。本轮对已按 Round 9 修改的最新 `paper-draft-vldb-final.tex` 逐行核实落地情况，重新评估三视角评分，并标注实现过程中新引入的问题。
+> **Overall Prediction:** Weak Accept (R1 6/10, R2 6/10, R3 7/10) — 可执行项基本全部落地，唯一硬阻塞为模板（等 venue 决策）
+> **Date:** 2026-07-11
+
+---
+
+## Score Summary
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Supportive) |
+|-----------|:---------:|:---------:|:---------:|
+| Soundness | 3/4 | 3/4 | 3/4 |
+| Novelty | 2/4 | 2/4 | 3/4 |
+| Presentation | 4/4 | 3/4 | 4/4 |
+| **Overall** | **6/10 (Weak Accept)** | **6/10 (Weak Accept)** | **7/10 (Weak Accept)** |
+
+**相比 Round 9 的变化：** R1 从 5→6（W2 fuzzer 重叠已量化、W3 ground-truth 不对齐已由统一对照表显式化）；R2 从 5→6（**兑现 Round 9 承诺**：R2 明说「加统一 comparison table + 明确 Schemathesis blocker + 报 candidate ratio，我就给 6」，三项现全部落地）；R3 保持 7（overlap + 成本部分落地，但模板仍未换，clear accept 卡在格式门槛）。三方首次全部落到 Weak Accept，不再有 Borderline 分裂。
+
+**共识：** Round 9 的可执行清单基本全部兑现。剩余全部为 (a) 投稿前格式门槛（模板，外部决策）、(b) 两处新引入的表格标签瑕疵、(c) camera-ready 统计力（n=12 扩样）、(d) 无法靠改写消除的 discovery recall 与 CTS novelty 主观争议。均非 reject-level。
+
+---
+
+## Round 9 Action Plan 落地核实
+
+| # | Round 9 行动项 | 核实状态 | 证据 (final.tex) |
+|---|---|---|---|
+| P0-1 | 换模板 | <span style="color:#dc2626">**❌ 未解决**</span> | L3 仍 `\documentclass[sigconf]{acmart}` + L9–11 占位符元数据（"Conference'26"、"978-1-4503-XXXX-X"）。外部决策，等导师定 venue |
+| P0-2 | 量化 fuzzer 与 boundary TPs 重叠 | <span style="color:#16a34a">**✅ 已落地**</span> | L261: "roughly 1–2 overlap TestVDB's acknowledged boundary TPs (e.g., nprobe=0 maps to milvus #47729), 3–4 are variants TestVDB also surfaced..., and 1–2 are by-design defaults; the fuzzer therefore mostly rediscovers TestVDB's boundary yield" |
+| P1-1 | 统一 comparison summary table | <span style="color:#16a34a">**✅ 已落地**</span> | Table 2 (`tab:baselines`, L269–285)：6 arm × {Precision, n, Ground truth, 95% CI}，覆盖 Single-LLM、+source、schema fuzzer、single-layer、source-grounded、maintainer e2e |
+| P1-2 | 成本 summary 进正文 | <span style="color:#d97706">**🟡 部分**</span> | L140: aggregate "on the order of $10^4$ LLM calls ($\sim$$10^7$ tokens)" + per-target "completes in a few hours"；仍无 per-target token 或 USD 数字 |
+| P1-3 | 报 candidate-to-submission ratio | <span style="color:#16a34a">**✅ 已落地**</span> | L291 从 "unbounded" 改为 "the pipeline generates on the order of a few hundred raw candidates per target...ratio is not instrumented...only roughly bounded" |
+| P1-4 | 明确 Schemathesis blocker | <span style="color:#16a34a">**✅ 已落地**</span> | L261: "blocked because Milvus does not serve a standards-compliant OpenAPI specification...we probed /swagger, /openapi.json...all returning 404" |
+| P1-5 | source-ablation n=12 扩样 | <span style="color:#6b7280">**⏸ 延至 camera-ready**</span> | 仍 n=12（Table 2、L259）；Round 9 即标为 revision plan，非本轮必修 |
+| Opt | COSINE 独立 paragraph | <span style="color:#16a34a">**✅ 已落地**</span> | L241 `\paragraph{Model-free invariant oracles.}`，明写 "the paper's most defensible technical finding" |
+| Opt | 12 by-design 分类 / Qdrant case / RQ4→appendix | <span style="color:#6b7280">**未做（可选）**</span> | §4 仍按 "fabricated provenance / over-strict intent" 两形态举例；RQ2 三例仍全 Milvus；RQ4 仍在正文 |
+
+**净结果：2 项 Must Fix 中 1 项落地（P0-2 ✅）、1 项外部阻塞（模板）；5 项 Should Fix 中 3 项完全落地（P1-1/P1-3/P1-4）、1 项部分（P1-2 成本）、1 项延 camera-ready（P1-5）；1 个关键 Optional（COSINE 独立段）已落地。可执行内容项落地率 ≈ 90%。**
+
+---
+
+## Reviewer 1 — Objective Reviewer (Confidence: 4/5)
+
+Round 9 的两个内容型 Major（W2 fuzzer 重叠、W3 ground-truth 不对齐）已解决：L261 现量化了 7 个 fuzzer candidates 与 TestVDB boundary yield 的重叠结构（多为 rediscovery + 少量 variants），排除了「fuzzer 发现 TestVDB 漏掉的 boundary bug」的担忧；Table 2 把三种 ground-truth 标准并列显式化，读者不再需自行推导。COSINE 已成独立 paragraph，novelty 论证加固。**Soundness 3/4、Novelty 2/4、Presentation 3→4/4、Overall 6/10 (Weak Accept)。** 仅剩模板（纯格式门槛，机械阻塞）与成本 per-target 数字缺失（Minor）。
+
+## Reviewer 2 — Strict Reviewer (Confidence: 4/5)
+
+Round 9 我明确承诺过：「加统一 comparison table + 明确 Schemathesis blocker + 报 candidate ratio → 移到 6」。三项现全部落地（Table 2、L261 blocker、L291 ratio），按承诺 **Overall 5→6/10**。Soundness 2→3（ground-truth asymmetry 由对照表显式化，是我最大的 soundness 保留项）。但**保留意见不变且新增一条**：(a) CTS "design principle" 仍 over-packaged（主观 novelty，Novelty 维持 2/4）；(b) schema baseline 仍是手写 19 probe 而非工具运行；(c) **新问题**：Table 2 把 schema fuzzer 的 37%（=7/19 探针接受率）放进 "Precision" 列，与其它行的 candidate-precision 不同轴——按 candidate-precision 该 fuzzer 约 5.5/7≈79%，37% 是另一个量，列头误导。**Soundness 3/4、Novelty 2/4、Presentation 3/4、Overall 6/10。**
+
+## Reviewer 3 — Supportive Reviewer (Confidence: 3/5)
+
+Round 9 我说过「修好模板 + 加成本 + clarify overlap 就给 clear accept」。overlap 已 clarify（L261）、成本部分落地（L140），但模板未换——差最后一步。**保持 Soundness 3/4、Novelty 3/4、Presentation 4/4、Overall 7/10 (Weak Accept)。** COSINE 独立 paragraph 是本轮最满意的增量；论文经 10 轮审阅核心资产（28 修复、contract hallucination propagation、COSINE 不变量、方法学诚实度）始终成立。一旦换模板，我即给 clear accept。
+
+---
+
+## Verification (Round 10 — 主 agent 逐条核实)
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R9-P0-2 | fuzzer 重叠已量化 | <span style="color:#16a34a">**Valid（已修）**</span> | L261 明确 1–2 overlap / 3–4 variants / 1–2 by-design，消歧完成 |
+| 2 | R9-P1-1 | 统一对照表已加 | <span style="color:#16a34a">**Valid（已修）**</span> | Table 2 六行 arm，ground-truth 列显式区分 |
+| 3 | R9-P1-3 | candidate ratio 已报 | <span style="color:#16a34a">**Valid（已修）**</span> | L291 "a few hundred raw candidates per target"，从 unbounded 收敛为量级估计 |
+| 4 | R9-P1-4 | Schemathesis blocker 已明确 | <span style="color:#16a34a">**Valid（已修）**</span> | L261 给出 404 探测证据 |
+| 5 | R2-新 | Table 2 schema fuzzer 37% 与 "Precision" 列不同轴 | <span style="color:#d97706">**Misleading**</span> | 37%=7/19 是 probe→accept 率；candidate-precision 应约 5.5/7≈79%。数字真实但列头误导，需改标签或加脚注 |
+| 6 | 内部核实 | Table 2 caption "CI is Wilson 95%" 与 TestVDB e2e 行 [43.9%, 80.5%] | <span style="color:#d97706">**Misleading**</span> | 该行 [43.9%, 80.5%] 是 §5.3 的 pending 敏感区间，非 Wilson CI；同一列混了两种区间语义，需在 caption/该格注明 |
+| 7 | R1-W5, R3-W3 | 成本仅 aggregate + wall-clock，无 per-target token/USD | <span style="color:#16a34a">**Valid**</span> | L140 有 aggregate $10^4$ calls/$10^7$ tokens + "a few hours"，仍缺 per-target 分摊 |
+| 8 | R1-W1, R2, R3 | 模板未换 | <span style="color:#16a34a">**Valid**</span> | L3 仍 acmart sigconf + 占位符，唯一硬阻塞 |
+| 9 | R2-W1 | CTS "design principle" over-packaged | <span style="color:#d97706">**Subjective**</span> | 主观 novelty 争议，改写无法消除，R2 始终保留 2/4 |
+| 10 | R1-W4 | discovery recall 仍无完整数字 | <span style="color:#16a34a">**Valid（已诚实标注）**</span> | L265 pilot + upstream 6/9、L291 recall scope、L303 future work；永久限制，非 reject-level |
+
+---
+
+## Action Plan (Round 10)
+
+### <span style="color:#dc2626">Must Fix</span> — 不改不能投
+
+- [ ] **P0-1: 换模板（唯一硬阻塞，carry from Round 9）。** L3 `\documentclass[sigconf]{acmart}` + L9–11 占位符 → 目标会议模板。需导师确认 venue。纯执行。
+
+### <span style="color:#d97706">Should Fix</span> — 不改会被强审稿人挑
+
+- [ ] **P1-1（新）: 修 Table 2 schema fuzzer 行的列头错位。** 37%（7/19）是探针接受率不是 candidate-precision，与其它行不同轴。两个改法二选一：把该格改为 "7/19 accepted; ~79% of accepted genuine"，或加脚注注明该行度量的是 probe→accept 率而非 candidate precision。*(1 句/1 脚注)*
+- [ ] **P1-2（新）: 统一 Table 2 的区间语义。** caption 写 "CI is Wilson 95%"，但 TestVDB e2e 行的 [43.9%, 80.5%] 是 pending 敏感区间。在 caption 或该格标注「该行为 pending-resolution 敏感区间，非 Wilson CI」。*(1 句)*
+- [ ] **P1-3: 成本 per-target 数字进正文。** L140 已有 aggregate + wall-clock，补一句 per-target token 或美元估计（如 "≈ X K tokens (~\$Y) per target"）即可闭合 R1/R3 的追问。*(1 句，需作者真实数字)*
+
+### <span style="color:#6b7280">Optional</span> — 锦上添花（多为 carry from Round 9）
+
+- [ ] **camera-ready 将 source-ablation arm 从 n=12 扩到 n≥30**，收窄 [2.1%, 48.4%] 使其能支撑统计结论（现为 directional）。
+- [ ] **12 by-design cases 按 (a) LLM hallucinated constraint vs (b) maintainer-discretion relaxation 分类**，硬化 §4 的 contract hallucination propagation claim。
+- [ ] **RQ2 增一个 Qdrant 端到端 case**，支撑 cross-system narrative（现 3 例全 Milvus）。
+- [ ] **若页数紧张，RQ4 移 appendix**，正文留一句即可。
+
+---
+
+## Round 10 Overall Assessment
+
+**预测：Weak Accept（R1 6/10, R2 6/10, R3 7/10）。三方首次全部落到 Weak Accept，Round 9 的 Borderline 分裂消失。** R2 按其 Round 9 的明示承诺（table + blocker + ratio 三项落地）从 Borderline 升到 Weak Accept，这是本轮评级上移最实质的信号——严格审稿人自己设的门槛被逐条满足。
+
+**本轮相比 Round 9 的进步（可执行项落地率 ≈ 90%）：**
+- ✅ P0-2 fuzzer 重叠量化 → R1 的一个 Major 消除
+- ✅ P1-1 统一 comparison table → ground-truth asymmetry 显式化，R2 soundness 上移
+- ✅ P1-3 candidate ratio → 从 unbounded 收敛为量级估计
+- ✅ P1-4 Schemathesis blocker → 明确不可行原因（404 探测）
+- ✅ COSINE 独立 paragraph → novelty 免费加固
+- 🟡 P1-2 成本 → 部分（aggregate + wall-clock，缺 per-target 分摊）
+
+**剩余评级天花板（按影响排序）：**
+1. **模板（格式门槛）** — 唯一硬阻塞，纯执行，等导师定 venue
+2. **Table 2 两处标签瑕疵**（schema fuzzer 37% 列头错位、CI 区间语义混用）— 各 1 句可修，本轮新引入
+3. **成本 per-target 数字** — 1 句可补
+4. **discovery recall** — 永久限制，已诚实标注，非 reject-level
+5. **CTS novelty 主观争议** — 无法靠改写消除，R2 始终保留
+
+**投稿建议：**
+- **SE 顶会（ICSE/FSE/ISSTA/ASE）：内容已在 Accept 区间。** 修 P1-1/P1-2（表格标签，各 1 句）+ 换模板即可进 rebuttal，有信心通过。
+- **当前最佳路径：** 选定 SE venue → 换模板 → 修 Round 10 的两处表格标签 + 补 per-target 成本（约 1 小时）→ 投稿。相比 Round 9，剩余工作量已从「半天」降到「小时级 + 一个外部 venue 决策」。
+
+---
+
+### Round 10 已代改（`paper-draft-vldb-final.tex` Table 2 / `tab:baselines`，2026-07-11）
+
+按用户要求，本轮直接修掉了 Verification 第 5、6 条两处表格标签瑕疵：
+
+1. **Schema fuzzer 行 37% 列头错位（Verification #5, Misleading）。** 在 37\% 后加 `$^{\dagger}$` 脚注，caption 里说明该值是 probe→accept 率（7/19 探针触发 API-accepted candidate），并非与其它行同轴的 candidate precision；同时点出这 7 个中约 5–6（~79%）为真实违规。**为什么改：** 原表把「探针接受率」和其它行的「候选精度」放在同一 "Precision" 列，严格审稿人（R2）会据此质疑整表可比性；一句脚注即可消歧、保住对照表的说服力，且不改动任何实验数字。
+
+2. **CI 列区间语义混用（Verification #6, Misleading）。** caption 原写「CI is Wilson 95%」，但末行 TestVDB e2e 的 [43.9%, 80.5%] 实为 §5.3 的 pending-resolution 敏感区间。已在 caption 补「except the last row, whose … is the pending-resolution sensitivity interval …, not a Wilson CI」。**为什么改：** 同一列混两种区间语义会让审稿人误读末行为 Wilson CI，从而错判该点估计的统计力；澄清语义是纯表述修正，不触碰数据。
+
+两处均为 1 句级改动，不涉及任何实验结论或数字变更。Round 10 Action Plan 的 P1-1、P1-2 由此闭合；剩余 P0-1（换模板，等 venue）与 P1-3（per-target 成本数字，需作者真实值）仍待处理。
