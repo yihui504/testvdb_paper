@@ -617,3 +617,139 @@ One substantive gap keeps this at Weak rather than clear Accept: **marginal valu
 - **Presentation: Weak/Poor → Adequate.** The structural must-fixes (abstract, contributions, Section 5.3, Threats) all landed. This is the decisive change.
 - **Soundness (R1): Weak → Adequate.** The cost paragraph and Contribution-3 elevation address the marginal-value argument enough for the objective reviewer, though the strict reviewer still withholds (evidence vs. assertion).
 - **Overall: BORDERLINE → Weak Accept.** Same experiments and numbers as Round 16; the improvement is entirely presentational and rhetorical, which is exactly what Round 16 said was needed.
+
+---
+---
+
+# Mock Review Report — Round 19
+> **Target Venue:** VLDB / PVLDB &middot; **Overall Prediction:** Accept (borderline) &middot; **Date:** 2026-07-12
+> **Revision Context:** Round 18 = Weak Accept, leaning Accept. Since then the last remaining Major (end-to-end discovery recall) was addressed with a held-out rediscovery study (L370, 4/9). Independent re-read of current text.
+
+---
+
+## Score Summary
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Favorable) |
+|-----------|:---------:|:---------:|:---------:|
+| Significance | 3/4 | 3/4 | 4/4 |
+| Novelty | 3/4 | 3/4 | 4/4 |
+| Soundness | 3/4 | 2/4 | 3/4 |
+| Presentation | 4/4 | 3/4 | 4/4 |
+| Overall | 7/10 | 5/10 | 8/10 |
+
+---
+
+## Reviewer 1 — Objective Reviewer
+> Confidence: 4/5
+
+### Summary
+TestVDB detects API compliance defects in VDBMSs via Contract-Truth Separation (CTS): LLM-generated contract assertions are falsified by a dev-reviewer truth layer grounded in maintainer authority. 111 submissions across five systems, 36 acknowledged (28 fixed). The evidence spine is (a) a same-population retrospective (source anchor lifts FP suppression 31%→81% at 96.7% TP retention), (b) an incremental-yield decomposition isolating 5 TPs reachable only by the full pipeline, and (c) a new held-out rediscovery study (4/9 pre-2024 bugs).
+
+Compared with the prior round, the paper now closes the recall gap that dominated three earlier rounds. The held-out study (L370) converts the single largest evaluation void into a bounded positive number, and the contamination canary (0/9 at issue-specificity) makes the recall claim credibly non-memorized. The paper is now internally complete: every headline number has a scope caveat, and the caveats are honest rather than defensive.
+
+### Strengths
+1. **Recall is now measured, not deferred.** The 4/9 held-out rediscovery, with the 0/9 canary and the two named confounds (spec-completeness, version-pinning), turns "future work" into a real, defensible data point.
+2. **Marginal value is now decomposed by oracle class (L231).** The "5 TPs reachable only by the full pipeline" plus the cross-category FP-suppression lift (45.6%→69.2%) gives a concrete answer to "what does the LLM buy beyond a spec fuzzer."
+3. **Honest scoping throughout.** Cross-system claims restricted to Milvus+Qdrant; threat-model anchor reported as a diagnosed negative; sensitivity band on precision made explicit.
+
+### Weaknesses
+1. **[Minor]** The recall number is honest but modest: 4/9 (really 4/7 testable) means the system misses more than half of known compliance bugs. This is fine to report, but the abstract/intro should not let the retrospective's 96.7% overshadow it — a reader skimming will conflate the two.
+2. **[Minor]** The 69.2% precision still carries a [43.9%, 80.5%] band driven by 30 pending + 29 excluded. The point estimate rests on 52/111 adjudicated. This is disclosed but remains the widest uncertainty in the paper.
+3. **[Minor]** Model/runtime description is confusing: "served by GLM-5.2" but "inherit the Claude Code runtime's default sampling." A reviewer cannot tell what the actual inference stack is or how determinism is controlled.
+
+### Questions for Authors
+1. Of the 4/9 rediscovered, how many required the full 20-agent pipeline vs. contract-derivation + probe alone (which is what you actually ran)?
+2. Can you give a single number for the effective adjudication rate you expect the 30 pending to resolve at, to narrow the precision band?
+
+---
+
+## Reviewer 2 — Strict Reviewer
+> Confidence: 4/5
+
+### Summary
+The paper is well-written and honest, and the phenomenon (contract hallucination propagation) is a real contribution. My concern is unchanged in kind from prior rounds though smaller in degree: the positive empirical case rests on a stack of small, heterogeneous samples, and the central "marginal value" claim is still established by author-assigned reachability rather than by running the competing oracle.
+
+### Strengths
+1. Contract hallucination propagation is a genuine, transferable insight, and the DeepSeek counterfactual gives it cross-model support.
+2. The model-free invariant oracle subclass is the one finding with no LLM dependency — correctly identified as the most defensible.
+3. The negative results (threat-model anchor, single-LLM) are reported rather than buried.
+
+### Weaknesses
+1. **[Major]** *The whole positive case is underpowered.* Recall n=9 (4/7 testable), threat-model ablation n=12, single-layer live re-probe n=27, schema fuzzer 19 probes, retrospective 52. None of the decisive numbers has a sample large enough to survive a hostile reading, and the 4/9 recall has no interval. The paper is honest about this, but honesty does not add statistical power.
+2. **[Major]** *"5 TPs reachable only by the full pipeline" is still analytical, not demonstrated.* You argue the spec fuzzer and model-free oracle cannot reach the 3 diagnostic + 2 state/logic TPs; you did not run them against those five and show they miss. Until you do, the core marginal-value claim is a reclassification, not a measurement — the same objection as Round 18, only relabeled.
+3. **[Major]** *CTS is a three-anchor design of which only one anchor is validated.* Source is validated; threat-model is a diagnosed noisy complement (n=12); reproduction is design-only. So the headline contribution effectively reduces to "source-grounded falsification." That is still worthwhile, but the paper is sold as a three-anchor architecture and two-thirds of it is unproven.
+4. **[Minor]** "Five VDBMSs" recurs in abstract/intro/contributions, but adjudicated signal is essentially two systems; MeiliSearch and Chroma contribute 0 adjudicated. This is disclosed in Sec 5.1 but oversold up front.
+
+### Questions for Authors
+1. Run the 19-probe spec fuzzer and the model-free oracle against the specific 5 "unique" TPs and report that they miss. Can you?
+2. What is a 95% interval on the 4/9 recall, and does its lower bound stay above a trivial baseline?
+
+---
+
+## Reviewer 3 — Favorable Reviewer
+> Confidence: 3/5
+
+### Summary
+A mature, unusually honest systems paper that opens a new problem (non-crash VDBMS compliance defects), ships 28 maintainer-fixed bugs, and contributes a genuinely novel failure mode (contract hallucination propagation) plus a clean mitigation (CTS). The revision history shows every reviewer ask has been answered, including the recall study that was the last outstanding item.
+
+### Strengths
+1. Real-world impact: 28 fixed bugs across production VDBMSs is strong external validation few LLM-testing papers match.
+2. Contract hallucination propagation + CTS is a conceptual contribution that generalizes beyond VDBMSs (REST contracts, policy-as-code), and the Conclusion frames this transfer well.
+3. The paper now has both a controlled retrospective AND a held-out recall study AND an ablation stack — the evaluation is broad for the page budget.
+4. Presentation is polished: tight abstract, decomposed Sec 5.3, figure/text consistency on the threat-model anchor.
+
+### Weaknesses
+1. **[Minor]** The single-layer counterfactual paragraph (Sec 5.3) is dense; splitting it would help.
+2. **[Minor]** No head-to-head with VDBFuzz — complementarity is argued from oracle definitions. Convincing, but a small empirical confirmation would remove all doubt.
+
+### Questions for Authors
+1. Would a short table listing the 5 unique-yield TPs by ID (with why each competing oracle misses) strengthen the marginal-value claim at near-zero cost?
+
+---
+
+## Verification
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R1 | "Recall now measured (4/9 held-out, canary 0/9)" | <span style="color:#16a34a">**Valid**</span> | L370 present; confounds named; canary at issue-specificity |
+| 2 | R2-W2 | "5 unique TPs argued not demonstrated" | <span style="color:#16a34a">**Valid**</span> | L231 assigns reachability by inspection; fuzzer not run against those 5 |
+| 3 | R2-W3 | "Only 1 of 3 CTS anchors validated" | <span style="color:#16a34a">**Valid**</span> | Source validated (5.3); threat-model diagnosed negative (5.4, n=12); reproduction design-only (L189) |
+| 4 | R2-W1 | "Positive case underpowered (small n)" | <span style="color:#16a34a">**Valid**</span> | recall 9, TM 12, single-layer 27, fuzzer 19 — all small; disclosed but real |
+| 5 | R2-W4 | "'Five VDBMSs' oversold" | <span style="color:#d97706">**Misleading**</span> | Genuinely disclosed at L210 and in contributions; front-matter phrasing is optimistic, not false |
+| 6 | R1-W3 | "Model/runtime stack unclear (GLM-5.2 + Claude Code runtime)" | <span style="color:#16a34a">**Valid**</span> | L137/L139 mix backbone and runtime; determinism control ambiguous |
+| 7 | R1-W1 | "4/9 recall risks being overshadowed by 96.7%" | <span style="color:#d97706">**Misleading**</span> | Both numbers are correctly distinguished in text (L370); risk is reader conflation, not author error |
+| 8 | R3-W2 | "No VDBFuzz head-to-head" | <span style="color:#16a34a">**Valid**</span> | L233 concedes empirical comparison is future work |
+
+---
+
+## Action Plan
+
+<span style="color:#dc2626">**Must Fix**</span> — none content-blocking on scientific merit; the two below are the strict reviewer's ceiling-raisers
+- [ ] **Demonstrate the 5 unique TPs (R2-W2).** Run the 19-probe spec fuzzer + model-free oracle against those specific 5 TPs and report they miss; add a small by-ID table (also answers R3-Q1). Converts the last analytical claim into measurement. Low effort — the tools already exist.
+- [ ] **Confirm target venue and align template (administrative).** Still `\documentclass[sigconf]{acmart}` while filename/target say VLDB; PVLDB uses `vldb.cls`. Gating for submission, affects page/format compliance. *Excluded from the scientific rating below per request.*
+
+<span style="color:#d97706">**Should Fix**</span> — reduce misread risk / strict-reviewer friction
+- [ ] Add a 95% interval (or explicit "n too small for CI") to the 4/9 recall so it is not read as a point claim (R2-Q2).
+- [ ] Reframe "five VDBMSs" → "five probed, two adjudicated (Milvus, Qdrant)" in abstract + contribution 1 (R2-W4).
+- [ ] Clarify the inference stack in one sentence: what GLM-5.2 vs. Claude Code runtime each mean, and how determinism is handled (R1-W3).
+
+<span style="color:#6b7280">**Optional**</span> — polish
+- [ ] Split the single-layer counterfactual paragraph (Sec 5.3) into two (R3-W1).
+- [ ] One-line note in intro that 4/9 recall is a floor (simplified 2-stage probe, not full 20-agent pipeline) so the number is not read as the system's ceiling.
+
+---
+
+## Meta Recommendation: **ACCEPT (borderline)** — content-wise up from Round 18's Weak Accept
+
+The recall study is the decisive change. Three rounds running, "no end-to-end discovery number" was the one Major every strict reviewer fell back on; it is now a bounded, contamination-controlled 4/9. With that filled, no reviewer has a *Major* that maps to a missing experiment — R2's remaining three Majors are all "underpowered / argued not measured," which lower the ceiling but do not, on their own, justify rejection given the 28 fixed real bugs.
+
+### Excluding the venue/template issue — the rating you asked for
+The template/venue mismatch is **purely administrative** and carries **zero weight** on scientific merit. Setting it aside entirely:
+- **Content rating: Weak Accept solidly tipping into Accept** (mean overall 6.7/10 across the three reviewers; R1 7, R2 5, R3 8).
+- The paper would clear a real PVLDB/ICSE-class bar on the strength of impact (28 fixed bugs), a novel and transferable failure mode (contract hallucination propagation), and a now-complete evaluation (retrospective + recall + ablation stack).
+- What still separates it from a **clear/strong Accept** is not a missing experiment but *statistical weight*: every positive number rests on small n, and the "unique 5 TPs" marginal-value claim is still analytical. The single highest-leverage, near-zero-cost move is running the two baselines against those 5 TPs (Must-Fix #1) — that alone would likely push R2 from 5 to 6-7 and make the accept unanimous.
+
+### Comparison with Round 18
+- **Soundness (overall): improved.** The last evaluation void (recall) is closed; R1 moves Weak→Adequate (7/10).
+- **The strict reviewer's objection changed shape.** Round 18: "marginal value asserted, recall missing." Round 19: recall is present, so R2 retreats to "underpowered + reachability still analytical" — a weaker, ceiling-lowering critique, not a gate.
+- **Overall: Weak Accept → Accept (borderline).** The move is now evidence-driven, not presentational.
