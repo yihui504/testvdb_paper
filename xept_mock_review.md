@@ -476,3 +476,144 @@ This round diverges from Rounds 14-15 (both ACCEPT, unanimous WA) on two dimensi
 - **Presentation**: Rounds 14-15 rated Presentation as Adequate (3/4). This round downgrades to Weak/Poor (1-2/4). The difference: I weigh readability as a gating factor for acceptance at a top venue. A paper this dense will lose reviewers under time pressure.
 - **Soundness**: Rounds 14-15 rated Soundness as majority Adequate. This round downgrades to majority Weak (2/4). The difference: I give more weight to the marginal-value gap (75% overlap with spec fuzzing) and the unmeasured discovery recall, treating them as substantive rather than acknowledged-and-therefore-mitigated limitations.
 - **Technical content is unchanged**: the same experiments, same numbers, same contributions. The disagreement is about how much weight presentation quality and marginal-value justification carry in the accept/reject decision.
+
+---
+---
+
+# Mock Review Report — Round 17 (post-overhaul re-review)
+> **Target Venue:** Top-tier SE/DB conference (ICSE / FSE / VLDB) &middot; **Overall Prediction:** Weak Accept &middot; **Date:** 2026-07-12
+> **Context:** Re-review after the author addressed Round 16 must-fixes. This round evaluates the *current* text independently, then diffs against Round 16.
+
+---
+
+## What Changed Since Round 16
+
+Round 16 raised two blockers (presentation, marginal-value justification) and a must-fix list. Verified against the current `.tex`:
+
+| Round 16 Must-Fix | Status | Evidence |
+|---|---|---|
+| Rewrite abstract (≤ ~150 words, ≤5 numbers) | <span style="color:#d97706">**Partial**</span> | Now ~165 words, 7 numeric tokens (43%, 111, 36, 28, 31%, 81%, 96.7%). Far tighter than the old 15+, but still above target. |
+| Trim contributions to 3 | <span style="color:#16a34a">**Done**</span> | Intro enumerate now has exactly 3 items. |
+| Restructure Section 5.3 into subsections | <span style="color:#16a34a">**Done**</span> | Five subsubsections: Controlled Retrospective / Aggregate / Sensitivity / Baselines / Anchor Attribution. |
+| Split Threats into labeled sub-paragraphs | <span style="color:#16a34a">**Done**</span> | Itemized with bold labels (Internal, Selection, External, Construct, LLM variance, Contamination, Recall scope, Excluded set, Single-layer CF). |
+| Add cost-benefit analysis | <span style="color:#16a34a">**Done**</span> | "Reproducibility and cost" paragraph: ~$10/target, ~10^3 calls/target, marginal value stated as threefold. |
+| Elevate model-free invariant oracle | <span style="color:#16a34a">**Done**</span> | Now Contribution 3 + dedicated RQ2 paragraph framing it as "most defensible technical finding." |
+| Complete bibliography | <span style="color:#dc2626">**Not done**</span> | `references.bib` still carries the "Round 6 additions (VERIFY)" block and "and others" author lists (wang22sc, ji23hall, hou23llmse, manes21, lin2023forest, lyu2023miner, chen2024dyner). |
+
+**Net effect:** Round 16's presentation blocker is substantially resolved; the marginal-value blocker is now *addressed in text* (cost paragraph + Contribution-3 elevation) even if not fully *resolved in evidence*. This moves my recommendation from BORDERLINE to **Weak Accept**.
+
+---
+
+## Score Summary
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Favorable) |
+|-----------|:---------:|:---------:|:---------:|
+| Significance | 3/4 | 3/4 | 4/4 |
+| Novelty | 3/4 | 2/4 | 3/4 |
+| Soundness | 3/4 | 2/4 | 3/4 |
+| Presentation | 3/4 | 2/4 | 3/4 |
+| **Overall** | **6/10** | **5/10** | **7/10** |
+
+Change vs. Round 16: Presentation +1 across the board (structural fixes landed); Soundness R1 +1 (cost/marginal-value now argued). R2 (strict) holds Novelty and Soundness at 2/4 for the reasons below.
+
+---
+
+## Reviewer 1 — Objective Reviewer
+> Confidence: 4/5
+
+**Summary.** The revised paper reads markedly better. The contribution list is now three tight claims, the evaluation is navigable by subsection, and a cost paragraph finally quantifies the pipeline's price ($\sim$$10/target) against its threefold marginal value. The two strongest assets are unchanged and remain strong: contract hallucination propagation (25% by-design rate, corroborated by a DeepSeek counterfactual) and the model-free invariant oracle subclass (COSINE>1.0, cross-vendor, no LLM). The honesty scaffolding (sensitivity interval, tiered baseline table, scope caveats) is now paired with enough structure that a reviewer can actually follow it.
+
+**Strengths**
+1. The controlled retrospective (52 candidates, blind, same population) cleanly isolates the source anchor: 31%→81% FP suppression at 96.7% TP retention. This is the paper's load-bearing result and it is methodologically sound.
+2. The model-free invariant oracle is now first-class (Contribution 3 + RQ2). It is the least model-contingent finding and the most portable.
+3. Table 4's tiered grouping (LLM-judged / API-acceptance / retrospective / maintainer-gold) makes cross-arm incomparability explicit instead of hiding it.
+
+**Weaknesses**
+1. <span style="color:#dc2626">**[Major]**</span> **End-to-end discovery recall is still unmeasured.** 96.7% is judgment-layer retention. The upstream 67% contract-coverage probe and the 2-bug pilot bound the problem but do not measure recall. After this many rounds, the absence of any recall number is the single largest remaining gap.
+2. <span style="color:#d97706">**[Minor]**</span> **Abstract is still above the target density.** 7 numeric tokens in ~165 words. Dropping the 31%/81%/96.7% triple to a single headline number would help a first-pass reader.
+3. <span style="color:#d97706">**[Minor]**</span> **Bibliography not camera-ready.** VERIFY block and "and others" author lists remain; foREST uses initials-only names. Cosmetic, but a diligent reviewer will notice.
+
+**Questions**
+- Q1: Can you produce even a small (n≈5) end-to-end rediscovery number on version-pinned bug-present images, to replace the retention-vs-recall hedge?
+
+---
+
+## Reviewer 2 — Strict Reviewer
+> Confidence: 3/5
+
+**Summary.** Presentation improved; the underlying value proposition did not. The paper now *states* marginal value (cost paragraph, three-fold claim) but the arithmetic still undercuts the LLM pipeline. 75% of yield is boundary/validation, which the authors' own 19-probe spec fuzzer reaches at 71% precision. The model-free invariants need no LLM. What remains uniquely attributable to the full multi-agent + CTS machinery is a handful of state/logic + diagnostic + spec-gap bugs (8/36 TPs by their own count), purchased at ~10^7 tokens in aggregate.
+
+**Weaknesses**
+1. <span style="color:#dc2626">**[Major]**</span> **Marginal value is asserted, not demonstrated.** The "threefold" claim (non-boundary yield, FP-suppression, spec-gap) is qualitative. There is no experiment isolating the *incremental* bugs found by the full pipeline that the spec-fuzzer + model-free oracle could not. Until that delta is measured, cost-effectiveness is an unfalsified assertion.
+2. <span style="color:#dc2626">**[Major]**</span> **The threat-model anchor still occupies architectural real estate it has not earned.** n=12, unstable (a boundary FP flips between runs), rescued only as a "noisy complement." It is a full node in Figure 1 and a subsection in Section 3 for what is, empirically, a diagnosed negative.
+3. <span style="color:#d97706">**[Minor]**</span> **The 45.6% single-layer number still mixes ground truths** (36 maintainer-adjudicated + 27 live-reprobed). Live-confirmation helps, but it is not the maintainer-gold tier it is compared against.
+
+**Questions**
+- Q1: Report the incremental-yield delta directly: of 36 TPs, how many are reachable *only* by the full pipeline (not spec-fuzzer, not model-free oracle)? Name them.
+- Q2: If the threat anchor is a noisy complement at n=12, why keep it as a co-equal node in Figure 1 rather than a footnote?
+
+---
+
+## Reviewer 3 — Favorable Reviewer
+> Confidence: 4/5
+
+**Summary.** This is a mature, honest systems-and-measurement paper on a real and underserved problem. VDBMS incorrect-behavior bugs (43%) lack oracles; TestVDB delivers a working contract oracle, 36 acknowledged real bugs (28 fixed), and a genuinely novel failure-mode characterization (contract hallucination propagation). The revision fixed the readability complaints and added the cost accounting reviewers asked for. The work will be used and cited.
+
+**Strengths**
+1. 36 maintainer-acknowledged, 28 fixed bugs in production systems — undeniable practical impact.
+2. Contract hallucination propagation is a transferable insight beyond VDBMSs (REST contract testing, policy-as-code). The generalization paragraph in the conclusion lands.
+3. The paper is unusually honest: sensitivity intervals, contamination canary (0/9), tiered baselines. This is the kind of rigor reviewers should reward, not punish.
+
+**Weaknesses**
+1. <span style="color:#d97706">**[Minor]**</span> Discovery recall unmeasured — but the scope is honestly drawn and future work is explicit.
+2. <span style="color:#d97706">**[Minor]**</span> Bibliography VERIFY tags should be cleared for camera-ready.
+
+**Questions**
+- Q1: Would you consider promoting the model-free invariant oracle to its own short section? It is your most portable result and currently lives inside RQ2.
+
+---
+
+## Verification
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R1 | "Contributions trimmed to 3" | <span style="color:#16a34a">**Valid**</span> | Intro enumerate = 3 items. |
+| 2 | R1 | "Section 5.3 restructured" | <span style="color:#16a34a">**Valid**</span> | 5 subsubsections present. |
+| 3 | R1 | "Cost paragraph added" | <span style="color:#16a34a">**Valid**</span> | "Reproducibility and cost", ~$10/target. |
+| 4 | R1/R3 | "Bibliography still has VERIFY / 'and others'" | <span style="color:#16a34a">**Valid**</span> | `references.bib` L64 + multiple entries. |
+| 5 | R1 | "Abstract still >5 numbers" | <span style="color:#16a34a">**Valid**</span> | 7 numeric tokens counted. |
+| 6 | R2 | "75% yield reachable by spec fuzzer" | <span style="color:#16a34a">**Valid**</span> | Sec 5.1 (27/36) + Sec 5.3 fuzzer 71% concession. |
+| 7 | R2 | "Marginal value asserted, not measured" | <span style="color:#16a34a">**Valid**</span> | Cost paragraph is qualitative; no incremental-delta experiment. |
+| 8 | R2 | "Threat anchor n=12, unstable" | <span style="color:#16a34a">**Valid**</span> | Sec 5.4 (RQ4) states exactly this. |
+| 9 | R1/R2 | "Discovery recall unmeasured" | <span style="color:#16a34a">**Valid**</span> | 96.7% is retention; recall probe only bounds. |
+| 10 | (mine) | "Template mismatch: sigconf acmart vs. PVLDB" | <span style="color:#d97706">**Misleading**</span> | Class is `[sigconf]{acmart}`; if VLDB is the true target, PVLDB uses its own `vldb.cls`, not acmart. Confirm venue before submission. |
+
+---
+
+## Action Plan
+
+<span style="color:#dc2626">**Must Fix**</span> — gating for a clear Accept
+- [ ] **Measure the incremental yield delta (R2-Q1).** Of the 36 TPs, list those reachable *only* by the full pipeline (not the 19-probe spec fuzzer, not the model-free oracle). This single table converts the "threefold marginal value" assertion into evidence and neutralizes R2's core objection. No new bug-hunting needed — reclassify existing 36.
+- [ ] **Clear the bibliography.** Remove VERIFY tags, expand every "and others" to full author lists, expand foREST initials. Purely mechanical; leaving it signals unfinished work.
+
+<span style="color:#d97706">**Should Fix**</span> — reduces reviewer friction
+- [ ] **Tighten the abstract to ≤5 numbers.** Keep 36-acknowledged + 31%→81%; drop the 43%, 111, 28, and 96.7% to the body.
+- [ ] **Demote the threat-model anchor in Figure 1** to a dashed/optional node with a one-line caption note, matching its "noisy complement, n=12" status in the text (addresses R2-W2).
+- [ ] **Confirm the target venue and fix the template** if it is PVLDB (acmart sigconf ≠ vldb.cls). If the target is truly an ACM sigconf venue, rename the file to stop implying VLDB.
+
+<span style="color:#6b7280">**Optional**</span> — polish
+- [ ] Promote the model-free invariant oracle to a short standalone subsection (R3-Q1).
+- [ ] Split the single-layer counterfactual paragraph (Sec 5.3) into two sub-paragraphs for readability.
+
+---
+
+## Meta Recommendation: **WEAK ACCEPT**
+
+The overhaul did what Round 16 asked. Presentation is no longer a blocker: the contribution list, evaluation structure, and Threats section are now navigable, and the cost paragraph directly answers the "why pay for the LLM" question at the argument level. The technical core — CTS, contract hallucination propagation, and the model-free invariant oracle — was always sound and is now framed to match its evidence.
+
+One substantive gap keeps this at Weak rather than clear Accept: **marginal value is argued but not measured.** The fastest path to a confident Accept is the incremental-yield table (Must-Fix #1), which requires zero new experiments — only reclassification of the 36 existing TPs. Pair that with a clean bibliography and the paper clears the bar.
+
+### Comparison with Round 16
+- **Presentation: Weak/Poor → Adequate.** The structural must-fixes (abstract, contributions, Section 5.3, Threats) all landed. This is the decisive change.
+- **Soundness (R1): Weak → Adequate.** The cost paragraph and Contribution-3 elevation address the marginal-value argument enough for the objective reviewer, though the strict reviewer still withholds (evidence vs. assertion).
+- **Overall: BORDERLINE → Weak Accept.** Same experiments and numbers as Round 16; the improvement is entirely presentational and rhetorical, which is exactly what Round 16 said was needed.
