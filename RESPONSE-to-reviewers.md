@@ -657,3 +657,29 @@ xept Round 17 (post-overhaul) 升级到 **Weak Accept**（从 BORDERLINE），�
 
 ### 待用户确认
 xept Should Fix #5 "Confirm venue/template"：当前 `\documentclass[sigconf]{acmart}` + filename `paper-draft-vldb-final.tex`。如果 target 是 PVLDB，应用 `vldb.cls`（不是 acmart）。需用户确认投稿 venue。
+
+---
+
+## Round 18 recall experiment：xept 最后一个 Major 解决（discovery recall measured）
+
+xept Round 17 说"距 clear Accept 只剩一个 discovery-recall 数字"。执行了 held-out rediscovery study。
+
+### 实验设计（9 held-out pre-2024 bugs，rediscovery_protocol.md 找到的）
+对每个 bug：启动 bug-present docker → 从该 version docs 推导 contract → 生成 attack probe → 检查 reproduce。简化 recall（contract derivation + targeted probe，非完整 20-agent pipeline，论文诚实标注）。
+
+### 结果：4/9 rediscovered（3 strong + 1 borderline）
+- **HIT #5** qdrant v1.5.0: silent accept wrong vector size（upsert size=5→size=10: 200, GET→"Not found"）
+- **HIT #7** qdrant v1.2.0: incorrect validation max_indexing_threads（PUT threads=8: 422 "must be 1000.0 or larger"）
+- **HIT #3** weaviate v1.19: trailing junk after JSON silent accept（POST {...}GARBAGE: 200, object created）
+- **HIT #2 borderline** weaviate v1.19: unrecognized param silent ignore（?limi=1: 200, no warning）
+- miss #4/#1: bug 在测试版本已 fix（protocol version 标注略偏）
+- blocked #6/#9: pymilvus 不兼容 milvus v2.2.0（latest 不兼容，2.2.x grpcio build 失败）—— 真实 tooling 限制
+
+### 写入论文
+- §5.5 Recall scope item：从 "future work" 升级为 "rediscovered 4/9 (44%; 4/7 testable)"，诚实标注简化 recall + blocked + canary
+- conclusion future work：从 "end-to-end discovery-recall study" 改为 "larger cohort beyond 9 held-out bugs measured here (4/9 rediscovered)"
+
+### 关键价值
+4 hits 都是 independent held-out pre-2024 bugs（GLM 训练数据外），canary 0/9 确认无 memorization——所以这是**真 discovery recall，非背诵**。TestVDB 核心类型（silent accept invalid + wrong validation）全部 reproduce。xept 的"诚实承认的空洞"现在变成"有界正面证据"。
+
+8 页，0 undefined。
