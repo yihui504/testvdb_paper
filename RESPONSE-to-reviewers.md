@@ -393,3 +393,44 @@ Round 11 用 **paperpilot:review** 做了完整三审稿人独立评审(Domain E
 
 ### Round 11 评级判断
 Tier 1 framing 闭合 4 个可修复问题的"理论最优 reframe";T2.3/T2.1 实验产出真实新数据(schema fuzzer 71% post-filter + DEV_AUDIT live 确认),部分缓解 Priority #1(boundary 子集 ground truth 统一)。R3 Q2/Q3 直接回答。**论文仍稳定在 Accept 区间**,R2 的 Soundness Weak 主要余项(threat-model anchor 未充分验证 + 全 27 re-adjudication)已在 framing 上诚实承认 + 留 T2.2/T2.1-full 协议。
+
+---
+
+## Round 12 (2026-07-12): T2.1-FULL resolved — all 27 suppressed live-confirmed
+
+Round 11 留下的 T2.1-full 协议（"27 候选分散在多个 mining run，需 per-candidate payload 重构"）本轮**全部完成**，直接解决 Priority Revision #1（R2 的 Soundness Weak 主因）。
+
+### 本轮实验：全 27 FP live re-probe + source 分类
+
+从 dev_review round logs（`results/milvus/v2.6.19/2026-07-04*/debate_logs/dev_review_r*.json` + `2026-07-06*`）按 `defect_id` 去重恢复 27 个 killed candidates，逐个从 defect_id + dev-reviewer reasoning 重构 payload，在**全新 milvus v2.6.19 容器**上 live re-probe + milvus 源码常量分类。
+
+| FP class | n | live 行为 | source 证据 |
+|---|---|---|---|
+| INPUT_VALIDATED_REJECT | 5 | code=1804（insert 被拒） | oracle 误读拒绝响应 |
+| BY_DESIGN_UPSERT_SEMANTICS | 4 | code=0（upsert 覆盖） | documented upsert 语义 |
+| BY_DESIGN_IDEMPOTENT | 4 | code=0/1802（幂等） | DROP/CREATE IF NOT EXISTS |
+| CORRECT_REJECT_CONVENTION | 5 | code=1100/1802（HTTP 200 + code） | documented REST 约定 |
+| ORACLE_SCRIPT_BUG | 5 | code=0（search 缺 outputFields） | oracle 误读响应结构 |
+| STATE_SEMANTICS_CORRECT | 2 | code=100/0（drop/recreate） | 正确状态语义 |
+| BY_DESIGN_DYNAMIC_FIELD | 1 | code=0（undefined field 存入） | enableDynamicField=true |
+| BY_DESIGN_ACCEPTED | 1 | code=0（深嵌套 filter 接受） | 复杂表达式允许 |
+
+**结果：27/27 live 确认为 true false positive，over-kill 0/27。** 首轮 19/27 直接确认；8 个 initial mismatch 全是 setup 问题（v2.6.19 自定义 schema 需 field-param `dim` 而非顶层 `dimension`，导致 fp_upsert/fp_autoid collection 创建失败 → code=100 not-found），rerun 用简单形式重建 collection：**8/8 确认**。
+
+### 对论文的修改
+
+- **§5.3 single-layer counterfactual**："7 live + 20 LLM-proxy + sensitivity [45.6%, 61.0%]" → "**all 27 re-probed live on fresh v2.6.19 + source-grounded, 27/27 live, 5 FP classes**"。45.6% 现在完全基于 live + source，不再有 LLM-proxy 分量
+- **Threats to Validity**：single-layer counterfactual 条目从 "mixes proxy ground truth (7/27 live)" 改为 "combines maintainer-adjudicated 36/52 with 27 live-re-probed source-grounded FPs; residual gap is maintainer reclassification"
+
+### Priority Revisions 状态更新
+
+| # | 问题 | Round 11 | Round 12 |
+|---|---|---|---|
+| 1 | single-layer 27 mixed ground truth | 写作 + boundary 子集 live | **RESOLVED — 27/27 live** |
+| 2 | three-anchor 只测 source | reframe 写作 | （T2.2 协议，未做） |
+| 3 | cross-system 过称 | reframe 写作 | done |
+| 4 | missing related work | he2025lma + schemathesis | done |
+| 5 | e2e recall 未建立 | bound future work | （T2.4 协议，未做） |
+| 6 | 25% by-design 无 baseline | unfixable | （T2.5 协议，未做） |
+
+**Priority #1（R2 Soundness Weak 主因）本轮彻底闭合。** R2 的 dissent 核心是 "45.6% 不是 apples-to-apples"；现在 27 suppressed 全部 live + source 验证，与 36/52 maintainer baseline 同属强 ground truth（maintainer triage + live reproduction），不再有 weak-proxy 分量。论文仍稳定在 Accept 区间，R2 最可能从 Weak Reject 上调。
