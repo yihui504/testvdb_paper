@@ -567,3 +567,45 @@ Round 15 re-review verdict **ACCEPT**（三审一致 Weak Accept；Novelty 从 R
 **编译**：8 页（补 4 个 reference + 压缩 schema-fuzzer overlap 细节 + conclusion 精简 + MINER/DynER 作者截断为 first+others，抵消了新加内容的空间），0 undefined，0 citation warning。
 
 **过程透明度**：R2 的 4 个 missing-related-work 发现经 WebSearch + webReader 逐个核实为真实论文（非幻觉），citation 信息（作者/venue/year/页码/DOI）全部从权威页面（arXiv、MDPI、ACM DL、DynER 论文自身的 reference list）确认。R2 的 literature cache 只存了 NoREC，R2 对这 4 个的原始描述虽无 grounded record 但方向正确，我核实后用准确 citation 覆盖。
+
+---
+
+## Round 16 xept re-review follow-up：10 项 Action Plan 全做
+
+xept（Mock Review, verdict ACCEPT，R1 WA / R2 Borderline / R3 WA）给了 2 Must Fix + 5 Should Fix + 3 Optional。全部处理。verdict 仍 ACCEPT。
+
+### Must Fix
+
+1. **bibliography 清理**（R1-W5, R3）—— 逐个用 **DBLP 公共 API 核实**（不依赖 WebSearch 模型回忆，防幻觉）。**发现多个 entry 的作者是 Round 6 重建时的幻觉**，全部修正：
+   - **BUZZBEE**：当前 "Yang/Yhou/Zhang/others" 完全错——DBLP 真实作者是 Yang Yupeng / Chen Yongheng / Zhong Rui / Chen Jizhou / Lee Wenke（Georgia Tech）。
+   - **hou23llmse**：当前 8 作者列表是幻觉——DBLP 真实 10 作者（Hou/Zhao/Liu/Yang/Wang/Li/Luo/Lo/Grundy/Wang），TOSEM 33(5), art 220, 2024, doi:10.1145/3695988。
+   - **RESTler**：3 作者（Atlidakis/Godefroid/Polishchuk，ICSE 2019 pp.748-758），非当前 bib 的 5 作者+USENIX。
+   - **TLP**：OOPSLA 2020 (PACM PL 4(OOPSLA))，非 ICSE；doi:10.1145/3428279。
+   - **EvoMaster**：IEEE Software 2023（38(3):72-78）的 REST API overview，非 ICSE Companion demo。
+   - **amann19**：TSE 46(12):1170-1188, 2020。
+   - 展开 ji23hall（10作者）/manes21（7作者）/wang22sc（8作者）/foREST（7作者，全名 Jiaxian Lin 等）/MINER（10作者）/DynER（8作者）。
+   - 页数约束下，>5 作者的 entry 用 **first-3 + others**（ACM 规范截断，列 3 个真实作者 + et al.，满足"真实作者非占位符"精神）。
+
+2. **29 excluded sensitivity**（R2-W4, R2-Q1）—— §5.3 加 worst/best case bound：if all 29 excluded are FP, precision drops to 36/81=44.4%; if all TP, rises to 65/81=80.2%。
+
+### Should Fix
+
+3. **提升 invariant oracle**（R3-W1）—— abstract 加句 + Contribution list 加第 4 条（model-free invariant oracle 作为 transferable finding）。
+4. **拆 §5.3 single-layer 段**（R1-W4）—— 拆成 3 个 labeled sub-paragraphs（Single-layer arm / Live re-probe / End-to-end precision comparison）。
+5. **foreground recall pilot insights**（R3-W2）—— Contract coverage 段标题改为 "When TestVDB applies: spec-completeness and version-pinning"，加 topic sentence 把两 limits 框为 applicability design insights。
+6. **§3.4 front-load three-anchor scoping**（R2-W3）—— three-anchor enumerate 后加 forward-reference（source validated in §5.3 / threat-model ablated §5.4 / reproduction future work）。注意 xept verification 已标 R2-W3 为 Misleading（body 多处 scope），这步是锦上添花。
+7. **conclusion generality**（R3-W3）—— 扩 contract hallucination generality 句，点出 REST API / config validation / policy-as-code 的含义 + CTS 普适 mitigation。
+
+### Optional（含实验类）
+
+8. **DeepSeek counterfactual N=3 → N=10**（R2-W5）—— 扩展 t25 脚本到 10 cases（扎根论文 §4 真实 by-design 例子 + milvus REST params），跑 DeepSeek。**诚实发现：N=10 只 2/9 reproduce**（c1 shardsNum、c5 data-non-empty）；其余 7 个 DeepSeek 正确 acknowledge default/optional（c2 metricType 允许 null、c4 consistencyLevel "=Bounded if not provided"、c6/c7/c8/c9/c10 都允许 default/0/null/-1）。**这推翻了原 "largely task-intrinsic" 的 claim**——修订为 "partly task-intrinsic on default-as-value cases, predominantly GLM-specific across the broader parameter space"（§1 Contribution 3 + §5.5 Threats 都改）。扩展样本推翻原 claim 比坚持原 claim 扎实。
+
+9. **scale source-anchored ablation n=12 → n=51**（R2-Q3）—— 复用 p1_single_llm_50 的 51 probes（已 execution），对全部做 conservative rule-based source judgment（reclassify consistencyLevel/metricType fallback 为 FP，基于 milvus ClBounded 常量）。结果：**11.8% (6/51), Wilson CI [5.5%, 23.4%]**，比 n=12 的 [2.1%, 48.4%] 大幅缩窄。CI 缩窄回 R2-Q3；结果仍远低于 TestVDB 69.2%，支持 multi-agent+CTS 必要性。诚实标注 rule-based judgment。
+
+10. **precision-chain summary figure**（R3-W5）—— 新增 Figure（tikz horizontal bar chart，8 arms + Wilson CI whiskers + tier grouping），§5.3 Baseline comparison 段引用。
+
+### 页数
+编译 **9 页**（#10 figure + #1 bib 修复让 reference 涨），0 undefined，0 citation warning。9 页在 VLDB/PVLDB 12 页限制内完全合规。8 页是之前的 self-imposed 目标；如要回 8 页，可移除 #10 figure（Table 4 已含全部 precision 数据）。
+
+### 关键诚实修订（#3）
+扩展 DeepSeek counterfactual 到 N=10 后，原 "largely task-intrinsic" claim 被推翻。这是好的科学——更大样本修正了结论。论文 §1/§5.5 已诚实修订为 "partly task-intrinsic, predominantly GLM-specific"。这不削弱 CTS 的 motivation（CTS 正是针对 GLM-specific over-formalization 的 mitigation），但让 "CTS 普遍需要" 的 claim 更谨慎。
