@@ -710,3 +710,29 @@ Table caption 列出 spec fuzzer 的 19 probe 范围（stateless single-paramete
 - Optional（split single-layer paragraph, 4/9 floor note）：polish，可后做。
 
 8 页，0 undefined。
+
+---
+
+## Round 20 xept：19-probe fuzzer 实跑背书 (0/5)
+
+xept Round 20 critique：Round 19 的 by-ID table 是"结构性论证"不是"实测跑一遍"。R2 原意是"拿 19-probe fuzzer 真的对着 5 个 TP 跑，报 0/5"。措辞 "structurally unable" 靠的是把 baseline 定义得很窄——对 diagnostic 子集（weaviate #12041, milvus #47636）一个加了状态码断言的稍强 fuzzer 可能碰到。
+
+### 措辞诚实化（P1）
+正文（882c9b1 已改）+ caption 都区分强度：state/logic = 任何 stateless oracle 都够不到（无懈可击）；diagnostic = 只是我们的 19-probe 实例，稍强 fuzzer 可能碰到；"5" 是 lower bound 非 fuzzer-class upper bound。caption "Each is verified unreachable by both" → "neither reaches the trigger"。
+
+### 实跑（[可选升分项] → done）
+找到 `TestVDB/scripts/schema_fuzzer.py`（论文的 19-probe fuzzer，milvus-only，BASE=localhost:19530）。起 milvus v2.6.19 容器，跑 fuzzer：**19 probe, 7 accepted, 12 rejected**（与论文 §5.3 "7 accepted, 5 genuine violations" 一致）。
+
+交叉确认 **0/3 milvus TP**：
+- #47636 (diag, malformed filter): fuzzer search 用 data 无 filter，query 用正常 filter `id > 0` → **0/19**
+- #47635 (state, load→search 序列): fuzzer 无 load probe、无 stateful 序列 → **0/19**
+- #50323 (state, delete filter+ids): fuzzer 19 probe 全是 create/search/query，**无 delete endpoint** → **0/19**
+
+qdrant #9039 / weaviate #12041：fuzzer milvus-only，by construction 不 target 这些系统。
+
+**总计 0/5。** table 加第 4 列 "19-probe run"（milvus 3 个 `0/19`，非 milvus 2 个 `milvus-only`）+ caption 加实跑说明 + 正文加 "We also ran the 19-probe fuzzer on milvus v2.6.19: none of its 19 probes triggers any of the three milvus TPs... backing the milvus subset by execution rather than argument"。证据存 `TestVDB/scripts/schema_fuzzer_audit.md`。
+
+### 价值
+把 Round 19 的"per-defect 结构论证"升级为"milvus 子集**实跑背书** + 非 milvus 子集 by-construction"。直接回应 R2 "run the fuzzer against the 5 TPs and report they miss"。xept 判断：能把 R2 从 6 推到 7（unanimous accept）。
+
+8 页，0 undefined。
