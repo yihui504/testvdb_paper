@@ -633,3 +633,27 @@ xept Independent Mock Review (Round 16) 给了 **BORDERLINE (Weak Accept/Weak Re
 **编译**：8 页（从 9 降回——overhaul 砍内容 + 重构），0 undefined，0 error。readability 指标全面改善（abstract -38% words, §5.3 -47% words, Threats 从 undivided 块→9 items）。
 
 **存档**：Round 16 ACCEPT 版本（pre-overhaul）在 `paper/archive/paper-draft-vldb-final-round16-accept.tex` + git tag `archive/round16-accept`，可随时恢复对比。
+
+---
+
+## Round 18 xept Round-17-Weak-Accept follow-up：2 Must Fix + 2 Should Fix
+
+xept Round 17 (post-overhaul) 升级到 **Weak Accept**（从 BORDERLINE），确认 overhaul 有效（"Presentation: Weak/Poor → Adequate"）。给了 2 Must Fix（gating clear Accept）+ Should Fix。全做。
+
+### Must Fix
+
+1. **Incremental yield delta**（R2-Q1，xept 说"neutralizes R2's core objection"）—— §5.1 Defect-type distribution 段加 reclassification：of 36 TPs，**5 (3 diagnostic-quality + 2 state/logic) reachable only by full LLM pipeline**；27 boundary/validation 在 spec-driven fuzzer 原则上能覆盖（19-probe 实际找 5）；3 result-correctness 由 model-free oracle 覆盖；1 crash 由 crash oracle（VDBFuzz）。Beyond these 5 unique TPs，CTS FP-suppression 跨 category 把 precision 从 45.6% 提到 69.2%。零新实验（reclassify existing 36）。
+
+2. **Bibliography camera-ready** —— 删 VERIFY 分节注释（line 2 顶部说明 + line 64 "Round 6 additions" 分节标记，Round 16 漏删的）+ 全展开 7 个 first-3+others entry 为完整 author list（wang22sc 8 人 / ji23hall 10 人 / manes21 7 人 / hou23llmse 10 人 / lin2023forest 7 人 / lyu2023miner 10 人 / chen2024dyner 8 人，全部 Round 16 DBLP 核实）。注意：xept 说 "Not done" 是部分误读——Round 16 做了 DBLP 核实 + 修幻觉作者，只是用 first-3+others 为 8 页；这轮补全展开（仍 8 页，overhaul 省的空间抵消）。
+
+### Should Fix
+
+3. **Abstract ≤5 numbers**（当前 7）—— 去掉 111（"five VDBMSs" 够）+ 28（"acknowledged 36" 够），保留 43%/36/31%/81%/96.7% = 5 numbers。
+
+4. **Figure 1 threat-model demote** —— caption 加 "dashed, optional" + "n=12 Milvus FPs (unstable)"，明确弱 evidence 状态（xept R2-W2："architectural real estate it has not earned"）。
+
+### 编译
+8 页（reference 全展开仍 8 页——overhaul 省的空间 + incremental yield 用 inline 文字而非 table 抵消），0 undefined，0 citation warning。bib 33 warnings 是 missing publisher/address/pages 提醒（acmart 严格，camera-ready 补但非阻塞）。
+
+### 待用户确认
+xept Should Fix #5 "Confirm venue/template"：当前 `\documentclass[sigconf]{acmart}` + filename `paper-draft-vldb-final.tex`。如果 target 是 PVLDB，应用 `vldb.cls`（不是 acmart）。需用户确认投稿 venue。
