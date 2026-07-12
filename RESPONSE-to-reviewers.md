@@ -357,3 +357,39 @@ Round 10 三方**首次全部 Weak Accept**(R1/R2 6/10, R3 7/10), Borderline 分
 
 ### Round 10 评级判断
 R3 原话: "一旦换模板, 我即给 clear accept"。R2 按承诺升 6。R1 content Major 全消。**剩余唯一步 = 模板(导师定 venue)**。论文经 10 轮审阅, 核心资产(28 修复 / contract hallucination propagation / COSINE 不变量 / 方法学诚实度)始终成立, 评估完整性从"只有内部消融"发展到"schema baseline + 单 LLM n=51 + source ablation + A1 反事实 + controlled retrospective + fuzzer overlap 量化 + comparison table"。换模板即可投 SE 顶会。
+
+## 18. Round 11 回复(2026-07-12,commit pending)
+
+Round 11 用 **paperpilot:review** 做了完整三审稿人独立评审(Domain Expert / Area Specialist / General Reviewer,technical paper,每份独立 fact-checked,verify-fix loop ≤3 轮)。完整文档:`.paperpilot/review/review-testvdb-2026-07-12.md`。
+
+### Round 11 评审结果
+- **Verdict: ACCEPT**(R1 Weak Accept / R2 Weak Reject / R3 Weak Accept;5 项 criterion 全部 consensus Adequate)。R2 dissent 真实但属 minority(Soundness 2/3 Adequate)。
+- 三方独立**共识的真正问题**(跨 reviewer major fixable):
+  1. Single-layer counterfactual mixed ground truth(R2 3.2 + R3 3.2)
+  2. Three-anchor CTS 只验证 source(R2 3.3 + R1 W2)
+  3. Cross-system overclaim(R1+R2+R3 三方)
+  4. Missing Related Work:多智能体 SE / LLM-as-oracle / Schemathesis(R1 2.4 + R2 2.3)
+  5. End-to-end discovery recall(R1 W4)
+  6. 25% by-design 无 counterfactual baseline(R3 2.2 [major, unfixable])
+- 三方共识的**真正亮点**:controlled retrospective(31%→81% FP suppression)+ model-free invariant oracles(cosine>1.0 跨 Milvus/Qdrant)
+
+### 本轮修复(理论最优 + 可行范围内)
+
+**Tier 1 写作(4 项 framing,全部落地编译):**
+- **(问题4)Related Work**:加 `he2025lma`(He 2025 TOSEM multi-agent SE survey,DOI 核实)+ `schemathesis`(tool)到 §6;LLM 段加 LLM-as-judge self-confirmation delta。**SWE-Debate 不引**(R2 agent literature fetch 失败 fallback 后提到,核实未验证到,拒冒险伪造)
+- **(问题3)Cross-system reframe**:Contribution #1 从 "validated on five VDBMSs" 改为 "validated on Milvus and Qdrant + breadth probes on three further VDBMSs...claim generalization of attack surface, not precision"
+- **(问题2)Three-anchor framing**:Contribution #2 明确 source anchor 是 empirically validated,reproduction/threat-model 为 design-level("we bound but do not fully isolate here")
+- **(问题1)Single-layer framing + sensitivity**:§5.3 加 mixed-ground-truth caveat + **sensitivity range [45.6%, 61.0%]**(只数 7 个 live-confirmed FP = 61.0%;全 27 = 45.6%;均 < TestVDB 69.2%)。这直接回答 R3 Q2
+
+**Tier 2 实验(Docker-only,真实新数据):**
+- **T2.3 schema fuzzer live + post-filter**(`T2_REPROBE_REPORT.md`):在**全新 milvus v2.6.19 容器**上复现 19 probes → 7 accepted(与论文一致)。对 7 个做 source-grounded 分类(milvus 源码常量 `DefaultConsistencyLevel=ClBounded`/`DefaultShardNumber=0` + #47729 maintainer fix):**5 genuine / 2 by-design = 71% post-filter precision**。回答 R3 Q3。search/query limit 不一致 live 确认(search code 1100 vs query code 0)
+- **T2.1 DEV_AUDIT re-probe**:8 个 dev-reviewer source-grounded FP 候选在 fresh v2.6.19 上**全部 live 复现**;7 个 source 确认 by-design。用 live+source 证据替代 LLM-proxy 判断(boundary/audit 子集)。论文 Table 4 脚注 ~79% → 精确 71%
+
+### Round 11 未做(需多 session / 外部资源)— 已留协议
+- **T2.1 全 27 suppressed**:27 候选分散在多个 mining run,需 per-candidate payload 重构后才能 live re-probe(本 session 仅覆盖 boundary+audit 子集)
+- **T2.2 threat-model anchor ablation**:需 populate blindspot set(从 12 by-design 提炼)+ GLM dev-reviewer 重跑 16 FP,测能否 catch source-missed 3 个 residual FP
+- **T2.4 discovery recall pilot 扩展**:需 bug-present 旧版本 Docker + full pipeline
+- **T2.5 25% by-design counterfactual**:需不同 LLM family API(非 GLM)重跑 contract extraction
+
+### Round 11 评级判断
+Tier 1 framing 闭合 4 个可修复问题的"理论最优 reframe";T2.3/T2.1 实验产出真实新数据(schema fuzzer 71% post-filter + DEV_AUDIT live 确认),部分缓解 Priority #1(boundary 子集 ground truth 统一)。R3 Q2/Q3 直接回答。**论文仍稳定在 Accept 区间**,R2 的 Soundness Weak 主要余项(threat-model anchor 未充分验证 + 全 27 re-adjudication)已在 framing 上诚实承认 + 留 T2.2/T2.1-full 协议。
