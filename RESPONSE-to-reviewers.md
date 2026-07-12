@@ -490,3 +490,17 @@ reframe 为 retroactive contract attribution：把 GLM 过度形式化的 3 个 
 | 6 | 25% by-design 无 baseline | ✅ Round 13 counterfactual（2/3 task-intrinsic）|
 
 **6 个 Priority Revisions 全部闭合。** R2 的两个 major（3.2 + 3.3）都有 live 实验 + 数据回应。
+
+---
+
+## Round 13 PaperPilot re-review follow-up：5 个 Priority Revisions
+
+Round 13 re-review verdict **ACCEPT**（R1 Accept / R2 WA / R3 WA，比 Round 11 更强：R2 从 Weak Reject 升 Weak Accept）。review 给了 5 个 Priority Revisions，全部处理：
+
+1. **Abstract cross-system qualification** — **已在 Round 11 完成**（abstract + intro 都已有 "adjudicated signal concentrated on Milvus and Qdrant"）。三 reviewer 漏读，无需再改。
+2. **Figure 1 threat-model anchor** — caption 原说 threat-model "not yet evaluated"（Round 11 时对的），但 Round 13 §5.4 已 ablate。更新 caption：source=primary validated（solid）、threat-model=ablated as noisy complement（dashed）、reproduction=design-level not yet evaluated（gray dashed）。方向和 reviewer 想的相反——不是 de-emphasize，是 caption under-sold 了已做的 evaluation。
+3. **Table 4 ground-truth tier 分组** — 重构表为 4 个 tier（LLM-judged weak proxy / API-acceptance weak proxy / retrospective same-pool blind / maintainer gold），加 midrule 分组 + tier 标注，asymmetry 结构化而非仅脚注。
+4. **Canary 作 recall positive control** — Recall-scope threat 加交叉引用：canary（0/9）不只控制 contamination，也是 recall claim 的 positive control——future rediscovery study 测的是真 pipeline 发现力，非背诵。
+5. **§5.4 "both" = union OR 标注** — 三条件 ablation 的 "both" 明确标注为独立判定的 OR（candidate 被 suppress 当且仅当任一 anchor 独立 flag），非 joint AND dispatch。
+
+编译 8 页 0 undefined 0 warning。
