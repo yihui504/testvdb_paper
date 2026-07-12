@@ -85,7 +85,7 @@ The naive design---an LLM extracts a contract from docs, then the same family of
 When no mechanical oracle is available, the only usable truth source is \emph{maintainer authority}---source code, prior PRs, by-design intent, issue history. It is scarce, so it must be proxied by an agent. We separate the \emph{assertion layer} (LLM-generated contracts and judgments) from a \emph{truth layer} and use the latter to falsify the former. The truth layer is a dev-reviewer agent that applies counter-evidence along three anchors: clean reproduction, source-grounded verification (the direct counter to hallucination), and threat-model cross-check. This mirrors how a maintainer adjudicates an incoming bug report.
 
 \paragraph{Results.}
-TestVDB produced 111 candidate issues across five VDBMSs, with adjudicated validation on Milvus and Qdrant and breadth probes on three further systems; maintainers acknowledged 36 (28 fixed, 8 accepted-open). On a controlled retrospective over all 52 maintainer-adjudicated candidates (same population), the dev-reviewer's source anchor lifts false-positive suppression from 31\% to 81\% while retaining 96.7\% of true positives ($n{=}30$); aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52), within $[43.9\%, 80.5\%]$ under pending-resolution sensitivity (Section~\ref{sec:eval-rq3}). We report the boundary honestly: 75\% of yield is boundary/validation compliance; crash bugs are excluded by design (complementary to VDBFuzz); soft result-correctness (ANN recall, ranking) remains open.
+TestVDB produced 111 candidate issues across five VDBMSs, with adjudicated validation on Milvus and Qdrant and breadth probes on three further systems; maintainers acknowledged 36 (28 fixed, 8 accepted-open). On a controlled retrospective over all 52 maintainer-adjudicated candidates (same population), the dev-reviewer's source anchor lifts false-positive suppression from 31\% to 81\% while retaining 96.7\% of true positives ($n{=}30$); aggregated over the five systems, maintainer-adjudicated precision is 69.2\% (36/52, Wilson 95\% CI $[55.7\%, 80.1\%]$); under pending-resolution sensitivity the worst-case bound widens to $[43.9\%, 80.5\%]$ (Section~\ref{sec:eval-rq3}). We report the boundary honestly: 75\% of yield is boundary/validation compliance; crash bugs are excluded by design (complementary to VDBFuzz); soft result-correctness (ANN recall, ranking) remains open.
 
 \paragraph{Positioning.}
 We respond to VDBFuzz's generation-side Future Work (LLM-generated diverse API interactions and staying current with evolving APIs). Our judgment side provides a contract oracle that extends detection beyond crash into the API-compliance subset of incorrect behavior. We do \emph{not} claim to solve VDBFuzz's oracle-for-correctness direction (result correctness of vector search), which remains open~\cite{roadmap25}.
@@ -136,7 +136,7 @@ TestVDB is a five-stage pipeline (Figure~\ref{fig:overview}): (1) contract extra
 
 \paragraph{Implementation.} All agents are LLM-driven and served by GLM-5.2; four heavy-reasoning agents (orchestrator, dev-reviewer, threat-modeler, bug-shape-extractor) run on the high-budget configuration and the remaining sixteen on the low-budget configuration---both the same GLM-5.2 backbone, differing in context window and max output tokens rather than model families. Four independent judges (evidence, novelty, severity, documentation) score each Stage-2 candidate; the orchestrator aggregates their verdicts and forwards survivors to the dev-reviewer, which suppresses a candidate if any of its three anchors (clean reproduction, source-grounding, threat-model) yields counter-evidence. An end-to-end trace (contract hallucination $\to$ source-grounded reclassification) appears in \S\ref{sec:hallucination}.
 
-\paragraph{Reproducibility and cost.} Target VDBMS versions are pinned per system (Milvus 2.6.19 for the single-LLM and single-layer ablations; the full version matrix is in the artifact). The pipeline is orchestrated by the Claude Code runtime, which dispatches each agent to the GLM-5.2 backbone under its default sampling configuration (no explicit temperature override), and each of the 20 agents is defined by a task-structured role prompt (full prompts in the artifact). A full pipeline run per target invokes the 20 agents over $O(10\text{--}50)$ generated attack candidates; wall-clock is dominated by the dev-reviewer's source-grounding step (repository clone and source retrieval) and live Docker re-probes rather than raw LLM latency. The 111-submission study plus three ablation batches (52-candidate retrospective, 15-probe single-layer A1, 15-probe single-LLM B9) constitutes the full LLM-call budget; in aggregate this is on the order of $10^4$ LLM calls ($\sim$$10^7$ tokens); per target, a full pipeline (contract extraction through dev-reviewer) costs on the order of $10^3$ calls ($\sim$$2{\times}10^6$ tokens) and completes in a few hours (on the order of \$10 per target at current LLM API pricing, comparable to a few hours of manual boundary testing). For this cost, TestVDB's marginal value over a hand-written boundary fuzzer is threefold: non-boundary yield (state/logic, diagnostic, result-correctness probes), source-grounded FP-suppression across all categories, and spec-gap detection where the doc is silent (\S\ref{sec:eval-rq3}). Precise per-token and wall-clock accounting is part of the anonymized artifact at \url{https://anonymous.4open.science/r/testvdb-anon-D644/}, to be made public on acceptance.
+\paragraph{Reproducibility and cost.} Target VDBMS versions are pinned per system (Milvus 2.6.19 for the single-LLM and single-layer ablations; the full version matrix is in the artifact). The pipeline is orchestrated by the Claude Code runtime, which dispatches each agent to the GLM-5.2 backbone under its default sampling configuration (no explicit temperature override), and each of the 20 agents is defined by a task-structured role prompt (full prompts in the artifact). A full pipeline run per target invokes the 20 agents over $O(10\text{--}50)$ generated attack candidates; wall-clock is dominated by the dev-reviewer's source-grounding step (repository clone and source retrieval) and live Docker re-probes rather than raw LLM latency. The 111-submission study plus three ablation batches (52-candidate retrospective, 15-probe single-layer A1, 15-probe single-LLM B9) constitutes the full LLM-call budget; in aggregate this is on the order of $10^4$ LLM calls ($\sim$$10^7$ tokens); per target, a full pipeline (contract extraction through dev-reviewer) costs on the order of $10^3$ calls ($\sim$$2{\times}10^6$ tokens) and completes in a few hours (on the order of \$10 per target at current LLM API pricing, comparable to a few hours of manual boundary testing). For this cost, TestVDB's marginal value over a hand-written boundary fuzzer is threefold: non-boundary yield (state/logic, diagnostic, result-correctness probes), source-grounded FP-suppression across all categories, and spec-gap detection where the doc is silent (\S\ref{sec:eval-rq3}). This threefold value is anchored by \emph{5 unique TPs} (3 diagnostic-quality, 2 state/logic) that only the full pipeline reaches---neither the hand-written boundary fuzzer nor the model-free invariant oracle (which independently covers only COSINE$>$1.0-class math bounds) surfaces them (Table~\ref{tab:incremental}). Precise per-token and wall-clock accounting is part of the anonymized artifact at \url{https://anonymous.4open.science/r/testvdb-anon-D644/}, to be made public on acceptance.
 
 \begin{figure}[t]
 \centering
@@ -266,15 +266,19 @@ Across five VDBMSs, 52/111 submissions are adjudicated (36 acknowledged, 12 by-d
 \[
 \mathrm{precision}_{\mathrm{adj}} = \frac{\mathrm{acknowledged}}{\mathrm{acknowledged}+\mathrm{by\text{-}design}+\mathrm{rejected}} = \frac{36}{36+12+4} = 69.2\%.
 \]
-This is an end-to-end operating point, not the ``after'' arm of the retrospective above (different population and denominator).
+This is an end-to-end operating point (Wilson 95\% CI $[55.7\%, 80.1\%]$ on $n{=}52$), not the ``after'' arm of the retrospective above (different population and denominator).
 
 \subsubsection{Sensitivity Analysis}
-Of 59 unadjudicated submissions, 30 are pending and 29 are excluded (closed-no-label or duplicate). As a bound on the 29 excluded: if all were false positives, precision over the 81 non-pending drops to $36/81{=}44.4\%$; if all were true positives, it rises to $65/81{=}80.2\%$. For the 30 pending: all-valid gives $(36{+}30)/82=80.5\%$, all-invalid gives $36/82=43.9\%$. Aggregate precision therefore lies in $[43.9\%, 80.5\%]$ ($69.2\%$ point estimate).
+Of 59 unadjudicated submissions, 30 are pending and 29 are excluded (closed-no-label or duplicate). As a bound on the 29 excluded: if all were false positives, precision over the 81 non-pending drops to $36/81{=}44.4\%$; if all were true positives, it rises to $65/81{=}80.2\%$. For the 30 pending: all-valid gives $(36{+}30)/82=80.5\%$, all-invalid gives $36/82=43.9\%$. Over the adjudicated 52, the Wilson 95\% CI is $[55.7\%, 80.1\%]$; the wider $[43.9\%, 80.5\%]$ is therefore a worst-case bound over unadjudicated submissions, not a statistical CI on the headline estimate.
 
 \subsubsection{Baseline Comparisons}
 \textbf{Within-system (same 52 pool).} Claim-only lets 11/16 FPs through (judgment-layer precision $33/44=75\%$); source-grounded lets $3/16$ through ($29/32=91\%$).\footnote{The two conditions use slightly different TP denominators (claim-only scored all 36; source-grounding scored 30 reachable via the GitHub API, 6 rate-limited), within the same 52-candidate pool.}
 
-\textbf{Single-layer counterfactual.} Removing the FP-suppression chain and re-running generation + 4-judge debate on milvus v2.6.19 confirmed 3 candidates (2 TP: \#47729 invalid \texttt{nprobe}=0, \#49844 empty-filter full scan; 1 FP: \#50193 eventual-consistency). To bound the arm's FP inflow without LLM-proxy judgment, we re-probed all 27 dev-reviewer-killed candidates live on a fresh v2.6.19 container and source-grounded each via milvus constants (\texttt{DefaultConsistencyLevel=ClBounded}, \texttt{DefaultShardNumber=0}); all 27 reproduce as true FPs (\emph{27/27 live, over-kill $0/27$}). Combining the 27 suppressed with the $36/52$ baseline gives single-layer precision $36/(36{+}16{+}27)=45.6\%$ vs.\ TestVDB's $69.2\%$. This $45.6\%$ rests on live + source grounding (not LLM-proxy); we report it as a directional lift at zero recall cost, treating the same-population $31\%\to 81\%$ as the cleaner head-to-head.
+\textbf{Single-layer counterfactual (A1).} Removing the FP-suppression chain and re-running generation + 4-judge debate on milvus v2.6.19 confirmed 3 candidates (2 TP: \#47729 invalid \texttt{nprobe}=0, \#49844 empty-filter full scan; 1 FP: \#50193 eventual-consistency).
+
+\textbf{Live FP audit (27 killed candidates).} To bound the arm's FP inflow without LLM-proxy judgment, we re-probed all 27 dev-reviewer-killed candidates live on a fresh v2.6.19 container and source-grounded each via milvus constants (\texttt{DefaultConsistencyLevel=ClBounded}, \texttt{DefaultShardNumber=0}); all 27 reproduce as true FPs (\emph{27/27 live, over-kill $0/27$}).
+
+\textbf{Derived single-layer precision.} Combining the 27 suppressed with the $36/52$ baseline gives single-layer precision $36/(36{+}16{+}27)=45.6\%$ vs.\ TestVDB's $69.2\%$. This $45.6\%$ rests on live + source grounding (not LLM-proxy); we report it as a directional lift at zero recall cost, treating the same-population $31\%\to 81\%$ as the cleaner head-to-head.
 
 \textbf{Single-LLM.} A single LLM end-to-end (no multi-agent debate, no CTS) produced 51 candidates, 13 LLM-judged TP ($25.5\%$, Wilson $[15.5\%, 38.9\%]$); a source-grounded self-judgment filter drops it to $11.8\%$ ($6/51$, $[5.5\%, 23.4\%]$) after by-design reclassification. Note the construction differs from the single-layer counterfactual above: that arm keeps the full multi-agent generation and 4-judge debate and removes only the FP-suppression chain ($45.6\%$), whereas this arm removes the multi-agent debate entirely ($25.5\%$). Both remain far below $69.2\%$, so multi-agent debate plus CTS contributes beyond source anchoring alone.
 
@@ -288,7 +292,7 @@ On the 16 FPs, the \emph{source} anchor drives the full lift (claim-only $5/16=3
 
 
 \begin{table}[t]
-\caption{Precision/ground-truth comparison across arms, grouped by truth tier (weak proxy $\to$ maintainer gold). Rows are \emph{not} directly comparable across tiers (different ground truths); the retrospective and maintainer tiers share the same 52-candidate pool. CI is Wilson 95\% \emph{except} the last row, whose $[43.9\%, 80.5\%]$ is the pending-resolution sensitivity interval (Section~\ref{sec:eval-rq3}), not a Wilson CI. $^{\dagger}$The schema-fuzzer 37\% is a probe$\to$accept rate (7 of 19 probes surfaced an API-accepted candidate), not a candidate precision; source-grounded post-filter classifies 5 of those 7 as genuine violations ($71\%$, live-confirmed on a fresh v2.6.19 container).}
+\caption{Precision/ground-truth comparison across arms, grouped by truth tier (weak proxy $\to$ maintainer gold). Rows are \emph{not} directly comparable across tiers (different ground truths); the retrospective and maintainer tiers share the same 52-candidate pool. CI is Wilson 95\%. The last row's worst-case pending-resolution bound $[43.9\%, 80.5\%]$ (Section~\ref{sec:eval-rq3}) is drawn separately in Figure~\ref{fig:precision} and is not a statistical CI on the adjudicated subset. $^{\dagger}$The schema-fuzzer 37\% is a probe$\to$accept rate (7 of 19 probes surfaced an API-accepted candidate), not a candidate precision; source-grounded post-filter classifies 5 of those 7 as genuine violations ($71\%$, live-confirmed on a fresh v2.6.19 container).}
 \label{tab:baselines}
 \small
 \begin{tabular}{@{}llccl@{}}
@@ -307,7 +311,7 @@ Single-layer 4-judge & 75\% & 44 & claim-only re-triage & --- \\
 TestVDB source-grounded & 91\% & 32 & source re-triage & --- \\
 \midrule
 \multicolumn{5}{@{}l}{\emph{Maintainer adjudication (gold)}} \\
-TestVDB (end-to-end) & 69.2\% & 52 & maintainer triage & [43.9\%, 80.5\%] \\
+TestVDB (end-to-end) & 69.2\% & 52 & maintainer triage & [55.7\%, 80.1\%] \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -322,11 +326,12 @@ TestVDB (end-to-end) & 69.2\% & 52 & maintainer triage & [43.9\%, 80.5\%] \\
   \draw (\xx,-0.4) -- (\xx,-0.2) node[below=-2pt,font=\tiny]{\p};
 }
 \node[font=\tiny,below=10pt] at (2.5,-0.4) {precision (\%)};
-% TestVDB end-to-end (maintainer gold) 69.2 [43.9, 80.5]
+% TestVDB end-to-end (maintainer gold) 69.2 Wilson [55.7, 80.1] solid; worst-case bound [43.9, 80.5] dashed
 \draw[fill=black!75] (0,5.7) rectangle (3.46,6.15);
-\draw[thick] (2.195,5.925) -- (4.025,5.925);
-\draw[thick] (2.195,5.7) -- (2.195,6.15);
-\draw[thick] (4.025,5.7) -- (4.025,6.15);
+\draw[dashed,thin,black!55] (2.195,5.925) -- (4.025,5.925);
+\draw[thick] (2.785,5.925) -- (4.005,5.925);
+\draw[thick] (2.785,5.7) -- (2.785,6.15);
+\draw[thick] (4.005,5.7) -- (4.005,6.15);
 \node[anchor=east,font=\tiny] at (-0.05,5.925) {TestVDB e2e (gold)};
 \node[anchor=west,font=\tiny] at (4.06,5.925) {69.2};
 % Single-layer counterfactual (retrospective, directional) 45.6
@@ -369,7 +374,7 @@ TestVDB (end-to-end) & 69.2\% & 52 & maintainer triage & [43.9\%, 80.5\%] \\
 \node[font=\tiny,gray,anchor=west] at (5.4,2.725) {API-accept};
 \node[font=\tiny,gray,anchor=west] at (5.4,0.725) {LLM-judged};
 \end{tikzpicture}
-\caption{Precision by ground-truth tier (darker = stronger). Whiskers = Wilson 95\% CI; $^\dagger$ = probe$\to$accept rate, not candidate precision. Details in Table~\ref{tab:baselines}.}
+\caption{Precision by ground-truth tier (darker = stronger). Whiskers = Wilson 95\% CI; for TestVDB e2e the \emph{dashed} whisker is the pending-resolution worst-case bound $[43.9\%, 80.5\%]$ (\S\ref{sec:eval-rq3}), wider than its Wilson CI. $^\dagger$ = probe$\to$accept rate, not candidate precision. Details in Table~\ref{tab:baselines}.}
 \label{fig:precision}
 \end{figure}
 
@@ -380,7 +385,7 @@ An earlier double-blind ablation on Milvus v2.6.17 (control with threat-model co
 \begin{itemize}[leftmargin=*,itemsep=2pt]
 \item \textbf{Internal.} Maintainer acknowledgment is a weak ground truth; triage may reflect report clarity rather than defect validity.
 \item \textbf{Selection.} The 111 submissions were filtered from a larger candidate pool by the novelty gate; the candidate-to-submission ratio is not instrumented, leaving submission-selection bias roughly bounded.
-\item \textbf{External.} The same-population ablation (RQ3) is Milvus-plus-Qdrant only; Weaviate submissions are largely undiagnosed.
+\item \textbf{External.} The same-population ablation (RQ3) is Milvus-plus-Qdrant only; Weaviate submissions are largely undiagnosed (21 of 30 remain pending/open, reflecting maintainer triage latency rather than substantive invalidation---none are rejected).
 \item \textbf{Construct.} Defect-type classification is title-based, pending per-defect confirmation.
 \item \textbf{LLM variance.} Re-adjudicating the 46 source-grounded candidates five times with independent agents yields $99.1\%$ pairwise agreement and $45/46$ unanimous verdicts; residual variance sits upstream in version-pinned source extraction.
 \item \textbf{Contamination.} GLM-5.2 may have seen pre-2024 Milvus source in training. A memorization canary (bare model, no docs) recalls general bug-class knowledge (e.g., ``cosine $\in [-1,1]$'') but \emph{0/9} held-out issues at issue-specificity, so the 9-bug cohort is not memorization-confounded; we flag the cosine$>$1 invariant as the one overlap with general mathematical knowledge rather than count it as independent evidence. A contract counterfactual (DeepSeek on the same doc passages) reproduces over-strict constraints in $2/9$ of an expanded $N{=}10$ set---partly task-intrinsic on default-as-value cases but predominantly GLM-specific, which CTS targets directly.
