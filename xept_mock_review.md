@@ -228,3 +228,251 @@ Compared to Round 15 (also ACCEPT, unanimous WA, Novelty unanimous Adequate), th
 - **The four new references** (foREST, MINER, DynER, LlamaRestTest) adequately address the Related Work gap identified in Round 15
 - **New action items** (bibliography cleanup, excluded-submission sensitivity, invariant-oracle prominence) are refinements rather than structural issues
 - **No new experimental demands** — the paper's evidence base is stable and sufficient
+
+---
+---
+
+# Independent Mock Review (Round 16)
+> **Target Venue:** Top-tier SE/DB conference (ICSE / FSE / VLDB) &middot; **Overall Prediction:** Borderline (Weak Accept / Weak Reject) &middot; **Date:** 2026-07-12
+> **Note:** This is an independent re-review with a more critical lens than Rounds 14-15. The previous rounds gave ACCEPT (unanimous WA); this round downgrades Presentation and Soundness based on persistent readability and marginal-value concerns.
+
+---
+
+## Score Summary
+
+| Dimension | R1 (Objective) | R2 (Strict) | R3 (Favorable) |
+|-----------|:---------:|:---------:|:---------:|
+| Significance | 3/4 | 3/4 | 4/4 |
+| Novelty | 3/4 | 2/4 | 3/4 |
+| Soundness | 2/4 | 2/4 | 3/4 |
+| Presentation | 2/4 | 1/4 | 2/4 |
+| Overall | 5/10 | 4/10 | 6/10 |
+
+---
+
+## Core Issues (Cross-Reviewer Consensus)
+
+### Consensus Issue 1: Readability Is Severely Lacking
+All three reviewers flag this. Specific evidence:
+- **Abstract:** ~200 words with 15+ numeric values and inline caveats ("validated on Milvus and Qdrant; Weaviate, MeiliSearch, and Chroma serve as breadth probes..."). Cannot be parsed in one reading.
+- **Section 5.3 (RQ3):** ~1500 words of continuous text with 9 `\paragraph` pseudo-sections, each packing multiple experiments, sensitivity analyses, and cross-references into 200+ word blocks.
+- **Threats to Validity:** ~450 words covering 9 distinct threat categories in a single undivided block.
+- **Sentence length:** Multiple sentences exceed 50-60 words with nested parenthetical qualifications.
+
+### Consensus Issue 2: Marginal Value of the LLM Pipeline Is Unclear
+- 75% of acknowledged bugs (27/36) are boundary/validation.
+- The paper concedes a hand-written spec fuzzer (19 probes, no LLM) achieves 71% source-grounded precision on the same target.
+- Only ~6 TPs are exclusive to the LLM pipeline (after removing boundary and model-free invariant cases).
+- No cost-effectiveness analysis (~10^7 tokens/target vs. manual testing effort).
+
+### Consensus Issue 3: Ground-Truth Inconsistency in Evaluation
+Table 4 groups arms by truth tier (LLM self-judgment / API-acceptance / blind re-triage / maintainer adjudication), but the surrounding text draws cross-tier directional conclusions ("Both arms remain far below TestVDB's 69.2%") that violate the paper's own caveat that "rows are not directly comparable across tiers."
+
+---
+
+## Reviewer 1 -- Objective Reviewer
+> Confidence: 4/5
+
+### Summary
+
+TestVDB targets API compliance defects in VDBMSs -- non-crash bugs where the system silently accepts inputs or behaviors violating its documented contract. The paper introduces Contract-Truth Separation (CTS), separating LLM-generated contract assertions from a truth layer that falsifies them via maintainer-authority evidence. The system produced 111 issues across five VDBMSs; maintainers acknowledged 36 (28 fixed). A controlled retrospective over 52 adjudicated candidates shows the dev-reviewer's source anchor lifts FP suppression from 31% to 81% while retaining 96.7% of true positives.
+
+The paper attacks a real gap and delivers real bugs. The contract hallucination propagation observation is a genuine insight. However, the paper suffers from severe presentation density, an evaluation that conflates multiple ground truths, and a cost-effectiveness gap: 75% of yield consists of boundary/validation bugs that a hand-written spec fuzzer can find at a fraction of the cost.
+
+### Strengths
+
+1. **S1: Well-motivated problem with real-world validation.** 36 maintainer-acknowledged bugs (28 fixed) across production VDBMSs is concrete evidence. The bug taxonomy grounding (43% incorrect-behavior vs. 23% crash/hang) effectively motivates why crash-focused fuzzers are insufficient.
+
+2. **S2: Contract hallucination propagation is a transferable insight.** The observation that LLMs self-confirm hallucinated constraints when the same model family generates and judges is simple, well-evidenced (12 by-design cases, 25% of adjudicated), and applies beyond VDBMSs.
+
+3. **S3: The controlled retrospective is the cleanest empirical evidence.** Same 52-candidate population, blind re-triage, two conditions. The 31% to 81% FP-suppression lift directly isolates the dev-reviewer's contribution.
+
+4. **S4: Model-free invariant oracle subclass is the most defensible contribution.** COSINE distance >1.0 for identical vectors, incomplete index results, payload filter violations. These violate hard mathematical or logical bounds, need no LLM judgment, reproduce across vendors, and are adoptable independently.
+
+5. **S5: Unusually honest scoping.** The paper qualifies almost every claim with appropriate caveats, reports sensitivity intervals, and concedes the schema-fuzzer overlap. Commendable transparency.
+
+### Weaknesses
+
+1. <span style="color:#dc2626">**[Major]**</span> **The paper is extremely difficult to read.** The abstract alone contains ~200 words with 15+ numeric values and reads like a compressed results section. Section 5.3 (RQ3) is a wall of text with `\paragraph` breaks as pseudo-subsections, each paragraph often exceeding 200 words of continuous, parenthetically-qualified prose. The Threats to Validity section is ~450 words of continuous text that reads more like a preemptive rebuttal. A reviewer who cannot follow the argument will not champion the paper.
+
+2. <span style="color:#dc2626">**[Major]**</span> **75% of acknowledged bugs are boundary/validation, which a simple spec fuzzer can find.** The paper concedes this: a hand-written boundary fuzzer with 19 probes achieved 5/7 = 71% source-grounded precision. The remaining 25% of yield (9 TPs: 3 diagnostic, 2 state/logic, 1 crash, 3 result-correctness) is the only slice where the full 20-agent LLM pipeline demonstrates unique value. For ~10^4 LLM calls and ~10^7 tokens per target, the marginal value over boundary fuzzing is thin. No cost-effectiveness analysis is provided.
+
+3. <span style="color:#dc2626">**[Major]**</span> **End-to-end discovery recall is unmeasured, and pilots suggest fundamental limits.** The 96.7% figure is judgment-layer TP retention, not discovery recall. The two held-out-bug pilots reveal structural ceilings: the qdrant dimension-mismatch bug is invisible because the spec does not describe it (spec-completeness limit), and the milvus cosine>1.0 bug was fixed before the release version (version-pinning limit). These are not just limitations -- they suggest TestVDB's practical recall on unknown bugs may be fundamentally constrained.
+
+4. <span style="color:#dc2626">**[Major]**</span> **The "5 VDBMSs" framing overstates cross-system evidence.** Milvus contributes 22 acknowledged bugs, Qdrant 11. Together: 33/36 = 92%. MeiliSearch (0), Chroma (0), and Weaviate (3 fixed, 21 still pending) provide negligible signal. The breadth-probe qualification is present but insufficient: claiming "5 VDBMSs" in the abstract and contributions while 92% of evidence comes from two systems is misleading.
+
+5. <span style="color:#d97706">**[Minor]**</span> **The Contributions list is overloaded.** Five contributions with sub-clauses and parenthetical statistics. Contribution 2 alone is ~100 words. A reader cannot quickly grasp the claims.
+
+6. <span style="color:#d97706">**[Minor]**</span> **The controlled retrospective is on the development population.** The 52 candidates were produced by TestVDB during iterative development. Re-running "blind" on the same population does not fully control for the system having been tuned to perform well on exactly these cases.
+
+### Questions for Authors
+
+- **Q1:** What is the actual dollar cost per pipeline run? How does this compare to a human tester spending one day on boundary testing of the same API?
+
+- **Q2:** Of the 9 non-boundary TPs, how many could a competent human tester have found from reading the same documentation?
+
+- **Q3:** Have you considered a prospective evaluation on a fresh (sixth) VDBMS not used during development?
+
+---
+
+## Reviewer 2 -- Strict Reviewer
+> Confidence: 4/5
+
+### Summary
+
+This paper presents TestVDB, a multi-agent LLM system for detecting API compliance defects in vector databases. The core mechanism, Contract-Truth Separation (CTS), uses a dev-reviewer agent to falsify LLM-generated contract assertions against maintainer-authority evidence. Results: 111 issues filed, 36 acknowledged (28 fixed), controlled retrospective showing source anchor lifts FP suppression from 31% to 81%.
+
+I see a genuine problem identification and a real engineering contribution. But the paper has fundamental issues. The evaluation conflates multiple incompatible ground truths. The practical marginal value over simple spec fuzzing is unclear for 75% of the yield. The writing quality is below the bar: the evaluation is impenetrably dense, the abstract is overloaded, and the threats section is a defensive wall. The paper reads as if it has been revised many times to address every possible objection, and in doing so has lost clarity of narrative.
+
+### Strengths
+
+1. **S1: Contract hallucination propagation is the paper's most interesting contribution.** Clean observation, concrete evidence (12 by-design cases, 25%), simple formalization. This alone could justify a publication if presented clearly.
+
+2. **S2: Model-free invariant oracle subclass is technically sound.** COSINE bounded in [-1,1] is a mathematical fact. Violations are unambiguous, LLM-independent, cross-vendor, reproducible.
+
+3. **S3: 28 bugs fixed across production VDBMSs.** Not toy targets. Real practical impact.
+
+4. **S4: Controlled retrospective methodology is well-designed.** Blind re-triage, label-isolated agents, same population.
+
+### Weaknesses
+
+1. <span style="color:#dc2626">**[Major]**</span> **The evaluation conflates incompatible ground truths.** Table 4 groups by "truth tier," but the paper draws cross-tier conclusions that are not valid. Single-LLM (25.5%) uses LLM self-judgment; schema fuzzer (37%) uses API-acceptance; retrospective (75%, 91%) uses blind re-triage; end-to-end (69.2%) uses maintainer adjudication. These numbers cannot establish TestVDB's superiority because they measure different things. The only valid comparison is the retrospective tier (75% vs. 91%), and even that uses slightly different TP denominators (36 vs. 30).
+
+2. <span style="color:#dc2626">**[Major]**</span> **Writing quality is below the bar for a top venue.** (a) Abstract: ~200 words, 15+ numbers, multiple inline caveats. (b) Section 5.3: ~1500 words in a continuous block with `\paragraph` pseudo-sections. (c) Threats to Validity: ~450 words, 9 threat categories in one undivided block. (d) Sentences routinely exceed 50 words with nested parentheticals. These are readability barriers that make the arguments hard to evaluate.
+
+3. <span style="color:#dc2626">**[Major]**</span> **Marginal value of LLM pipeline over spec fuzzing is not justified.** 27/36 TPs are boundary/validation. A hand-written fuzzer finds 5 genuine violations at 71% precision. The model-free invariant cases (3 TPs) need no LLM. This leaves ~6 TPs as the exclusive domain of the 20-agent pipeline. For ~10^7 tokens per target, finding 6 bugs a simpler tool cannot is a weak value proposition.
+
+4. <span style="color:#dc2626">**[Major]**</span> **GLM-5.2 monoculture raises generalizability concerns.** All 20 agents use GLM-5.2. The DeepSeek counterfactual covers only contract generation (N=10), not the full pipeline. Would CTS still be necessary with a model that hallucinates less?
+
+5. <span style="color:#d97706">**[Minor]**</span> **20-agent architecture lacks design rationale.** Why 4 judges instead of 3 or 5? Why separate boundary/semantic/state agents? No component-level ablation. "Full prompts in the artifact" does not substitute for in-paper justification.
+
+6. <span style="color:#d97706">**[Minor]**</span> **Bibliography has incomplete entries.** Multiple "and others," initials-only names, VERIFY comments. Placeholder ACM metadata.
+
+7. <span style="color:#d97706">**[Minor]**</span> **Template mismatch.** ACM sigconf template but filename indicates VLDB target.
+
+### Questions for Authors
+
+- **Q1:** If you remove boundary/validation TPs and model-free invariant TPs, how many unique bugs does the LLM pipeline contribute? Is ~6 bugs sufficient to justify 20 agents and ~10^7 tokens?
+
+- **Q2:** Have you tried replacing GLM-5.2 with a different model family for the entire pipeline?
+
+- **Q3:** The text mentions both "Claude Code runtime" and "GLM-5.2 backbone." Please clarify: is Claude Code the orchestration framework and GLM-5.2 the model backend?
+
+- **Q4:** The Threats section mentions possible pre-training contamination with Milvus source code. The memorization canary tests recall of specific issues. How do you rule out that the source anchor's effectiveness comes partly from pre-training familiarity with Milvus's codebase patterns?
+
+---
+
+## Reviewer 3 -- Favorable Reviewer
+> Confidence: 3/5
+
+### Summary
+
+TestVDB addresses a genuine gap: 43% of VDBMS bugs are incorrect-behavior, but existing tools only detect crashes. The paper introduces API compliance defects as a tractable formulation, proposes Contract-Truth Separation to address LLM oracle unreliability, and delivers 36 maintainer-acknowledged bugs (28 fixed). The controlled retrospective cleanly demonstrates the dev-reviewer's value. The contract hallucination propagation observation and model-free invariant oracle subclass are both transferable insights.
+
+The paper's main weakness is presentation: it reads as if every possible objection has been preemptively addressed, resulting in text that is thorough but exhausting. Despite this, the paper makes genuine contributions to an important problem.
+
+### Strengths
+
+1. **S1: The problem formulation is excellent.** API compliance defects as a tractable slice, with the API contract as the oracle. The exclusion table (Table 1) concisely justifies why an LLM is the only viable candidate.
+
+2. **S2: Real-world impact is demonstrated.** 28 bugs fixed. The case studies (nprobe=0, empty filter, get_stats) trace the system's reasoning end-to-end.
+
+3. **S3: Contract hallucination propagation is broadly applicable.** Simple, well-evidenced, relevant beyond VDBMSs to any LLM-driven spec-checking pipeline.
+
+4. **S4: Model-free invariant oracle subclass is elegant and independently valuable.** No LLM needed, cross-vendor, hard mathematical bounds. This is the paper's strongest technical finding.
+
+5. **S5: Controlled retrospective is rigorous.** Blind conditions, label-isolated agents, same population. The 2.6x FP-suppression lift is clean.
+
+### Weaknesses
+
+1. <span style="color:#dc2626">**[Major]**</span> **Presentation density undermines the paper's strengths.** Each revision round has added qualifications rather than clarity. Concrete recommendations: (a) Cut abstract to 150 words with at most 5 key numbers. (b) Break Section 5.3 into proper subsections. (c) Split Threats into labeled sub-paragraphs. (d) Consider moving some sensitivity/ablation details to an appendix.
+
+2. <span style="color:#d97706">**[Minor]**</span> **Model-free invariant oracle subclass deserves much more prominence.** Currently a paragraph in RQ2. Should anchor its own subsection, appear in the abstract, and be discussed in the conclusion as the starting point for future invariant-based VDBMS oracles.
+
+3. <span style="color:#d97706">**[Minor]**</span> **System contributions vs. empirical observations are not clearly separated.** CTS is a system contribution. Contract hallucination is an observation. The 36 bugs are practical impact. Mixing them in the contributions list makes it harder to evaluate what is being claimed.
+
+4. <span style="color:#d97706">**[Minor]**</span> **Cost-effectiveness is not discussed.** For practical adoption, knowing cost per bug matters. ~10^4 LLM calls and ~10^7 tokens per target is stated but not translated to dollars or compared with manual effort.
+
+5. <span style="color:#6b7280">**[Optional]**</span> **DeepSeek counterfactual could be expanded.** N=3 original + N=10 expanded is directional but thin. Testing 2-3 model families on all 12 by-design cases would strengthen the "predominantly model-specific" conclusion.
+
+### Questions for Authors
+
+- **Q1:** Could you provide a "one-paragraph elevator pitch" for TestVDB that a non-specialist PC member could understand?
+
+- **Q2:** For the model-free invariant oracle subclass, do you have a catalog of all identified invariants? A table of (invariant, VDBMSs where violated, evidence) would be a valuable standalone artifact.
+
+- **Q3:** What would a "TestVDB Lite" look like: model-free invariant oracles + spec-driven boundary fuzzer + source-grounded filter, without the full 20-agent pipeline? Would this capture 80% of the value at 10% of the cost?
+
+---
+
+## Verification
+
+| # | Source | Claim | Verdict | Note |
+|---|--------|-------|---------|------|
+| 1 | R1-W2 | "75% of yield is boundary/validation" | <span style="color:#16a34a">**Valid**</span> | Section 5.1: "27 (75%) are boundary/validation." Schema fuzzer achieves 71% precision on the same target. Paper concedes: "a spec-driven fuzzer is genuinely effective." |
+| 2 | R1-W4 | "92% of acknowledged bugs from Milvus+Qdrant" | <span style="color:#16a34a">**Valid**</span> | Table 2: Milvus 22 + Qdrant 11 = 33/36 = 91.7%. |
+| 3 | R2-W1 | "Cross-tier comparisons not valid" | <span style="color:#d97706">**Misleading**</span> | Paper warns "not directly comparable" and groups with midrules, but still draws cross-tier directional conclusions in the text. Partially valid. |
+| 4 | R2-W3 | "Only ~6 TPs exclusive to LLM pipeline" | <span style="color:#d97706">**Misleading**</span> | Arithmetic correct (36-27-3=6), but ignores that the LLM pipeline found boundary bugs first (the fuzzer rediscovered them), and CTS FP-suppression applies across all categories. Directionally fair but oversimplified. |
+| 5 | R2-Q3 | "Claude Code vs GLM-5.2 confusion" | <span style="color:#16a34a">**Valid**</span> | Paper mentions both "served by GLM-5.2" and "Claude Code runtime's default sampling configuration" without explaining the relationship. |
+| 6 | R3-W4 | "Cost-effectiveness not discussed" | <span style="color:#16a34a">**Valid**</span> | Paper states ~10^4 calls, ~10^7 tokens but provides no dollar cost or comparison to manual testing. |
+
+---
+
+## Action Plan
+
+<span style="color:#dc2626">**Must Fix**</span> -- not fixing risks rejection
+
+- [ ] **Rewrite the abstract (~150 words, at most 5 key numbers).** Remove all inline caveats and breadth-probe qualifications. Core message: problem, method, main result. Save qualifications for the body.
+- [ ] **Restructure Section 5.3 (RQ3) into proper subsections.** Replace 9 `\paragraph` blocks with: (a) Controlled Retrospective, (b) Aggregate Precision, (c) Sensitivity Analysis, (d) Baseline Comparisons (single-layer, single-LLM, schema-fuzzer as sub-paragraphs), (e) Anchor Attribution. Each self-contained and scannable.
+- [ ] **Trim Contributions list from 5 to 3.** Each 1-2 sentences max. Suggested: (1) First VDBMS API compliance defect detection system + empirical study, (2) Contract-Truth Separation design principle, (3) Model-free invariant oracle subclass. Move contract hallucination observation and threat-model details into the body.
+- [ ] **Split Threats to Validity into labeled sub-paragraphs.** Internal / Selection / External / Construct / LLM Variance / Contamination / Excluded Set.
+- [ ] **Complete bibliography.** Full author names, resolve VERIFY comments, fix template metadata.
+
+<span style="color:#d97706">**Should Fix**</span> -- significantly improves competitiveness
+
+- [ ] **Add cost-effectiveness analysis.** Dollar cost per pipeline run, comparison to "human tester + spec fuzzer" baseline.
+- [ ] **Elevate model-free invariant oracle.** Dedicated subsection, invariant catalog table, mention in abstract.
+- [ ] **Articulate LLM pipeline marginal value clearly.** Acknowledge 75% overlap, then quantify three unique sources: (a) non-boundary bugs, (b) CTS FP-suppression across categories, (c) spec-gap detection.
+- [ ] **Clarify Claude Code vs GLM-5.2 relationship.**
+- [ ] **Front-load three-anchor scoping into Section 3.4.**
+
+<span style="color:#6b7280">**Optional**</span> -- nice-to-have
+
+- [ ] Prospective evaluation on a fresh (sixth) VDBMS
+- [ ] Cross-model full-pipeline evaluation (GPT-4 or Claude replacing GLM-5.2)
+- [ ] Expand DeepSeek counterfactual to all 12 by-design cases
+- [ ] Design "TestVDB Lite" (invariants + spec fuzzer + source filter) and compare cost/effectiveness
+
+---
+
+## Meta-Review
+
+### Criterion Consensus
+
+| Criterion | R1 (Objective) | R2 (Strict) | R3 (Favorable) | Meta |
+|---|---|---|---|---|
+| Significance | Adequate (3/4) | Adequate (3/4) | Strong (4/4) | **Adequate** |
+| Novelty | Adequate (3/4) | Weak (2/4) | Adequate (3/4) | **Adequate (by majority)** |
+| Soundness | Weak (2/4) | Weak (2/4) | Adequate (3/4) | **Weak (by majority)** |
+| Presentation | Weak (2/4) | Poor (1/4) | Weak (2/4) | **Weak** |
+| **Overall** | **Borderline (5/10)** | **Weak Reject (4/10)** | **Weak Accept (6/10)** | **BORDERLINE** |
+
+### Meta Recommendation
+**BORDERLINE (Weak Accept / Weak Reject)**
+
+The paper's technical foundations are sound: CTS addresses a real failure mode, contract hallucination propagation is a valuable observation, model-free invariant oracle is a clean contribution, and 36 real bugs demonstrate practical impact.
+
+Two issues prevent a clear Accept:
+
+**1. Presentation is a major barrier.** All three reviewers flag this. The paper has absorbed extensive revision feedback, but each round added qualifications rather than clarity. The net effect is thorough and honest but exhausting. A paper that cannot be understood will not be championed.
+
+**2. Marginal value of the LLM pipeline is unclear.** 75% of yield overlaps with spec fuzzing. Model-free invariants need no LLM. The remaining ~6 unique bugs at ~10^7 tokens per target face a cost-effectiveness challenge the paper does not address.
+
+**Path to acceptance:** No new experiments needed. Focus on: (a) presentation overhaul (rewrite abstract, restructure evaluation, trim contributions), (b) cost-effectiveness analysis, (c) clearer marginal-value articulation. These are writing tasks. Completing them should move this to Accept.
+
+### Comparison with Historical Rounds (14-15)
+
+This round diverges from Rounds 14-15 (both ACCEPT, unanimous WA) on two dimensions:
+- **Presentation**: Rounds 14-15 rated Presentation as Adequate (3/4). This round downgrades to Weak/Poor (1-2/4). The difference: I weigh readability as a gating factor for acceptance at a top venue. A paper this dense will lose reviewers under time pressure.
+- **Soundness**: Rounds 14-15 rated Soundness as majority Adequate. This round downgrades to majority Weak (2/4). The difference: I give more weight to the marginal-value gap (75% overlap with spec fuzzing) and the unmeasured discovery recall, treating them as substantive rather than acknowledged-and-therefore-mitigated limitations.
+- **Technical content is unchanged**: the same experiments, same numbers, same contributions. The disagreement is about how much weight presentation quality and marginal-value justification carry in the accept/reject decision.
