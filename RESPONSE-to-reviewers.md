@@ -609,3 +609,27 @@ xept（Mock Review, verdict ACCEPT，R1 WA / R2 Borderline / R3 WA）给了 2 Mu
 
 ### 关键诚实修订（#3）
 扩展 DeepSeek counterfactual 到 N=10 后，原 "largely task-intrinsic" claim 被推翻。这是好的科学——更大样本修正了结论。论文 §1/§5.5 已诚实修订为 "partly task-intrinsic, predominantly GLM-specific"。这不削弱 CTS 的 motivation（CTS 正是针对 GLM-specific over-formalization 的 mitigation），但让 "CTS 普遍需要" 的 claim 更谨慎。
+
+---
+
+## Round 16 Independent Mock Review follow-up：presentation overhaul（5 项 Must Fix）
+
+xept Independent Mock Review (Round 16) 给了 **BORDERLINE (Weak Accept/Weak Reject)**，核心：readability 是 gating factor（dense paper 不会被 champion）+ marginal value thin。它的严厉和我们 paperpilot R16（ACCEPT，Presentation Excellent/Adequate）差距大。
+
+**fact-check xept 指控（用 grounding 方法核实）**：xept 的 density 指控**多数 grounded**——abstract 219 words/10 numbers（xept 说 ~200/15+，词数准、数字略夸）、§5.3 **2252 words/12 \paragraph**（xept 说 ~1500/9，**实际更严重**）、Threats **466 words undivided**（准）、marginal value 36-27-3=6 算术正确。差距源于评分标准：我们评 framing honest → Adequate/Excellent；xept 评 scannable → Weak/Poor。xept 的视角（top venue PC time pressure）更接近真实审稿。诚实承认：论文被过度修订（每轮加 qualification 而非 clarity），我前面的 #5-#9 framing 改动**加剧了 density**。xept 说对了。
+
+**5 项 Must Fix 全做（presentation overhaul，方向从"加"转为"砍"）：**
+
+1. **Abstract 砍到 ~150 words**：219→**136 words**, 10→7 numbers。移除 inline caveats（breadth-probe qualifier、anchor-scope 细节、invariant 句）到 body，保留 problem/method/main result。
+
+2. **Contributions 5→3**：合并（旧 1+5: system+study+dataset）/（旧 2+3: CTS+hallucination observation，threat-model 细节移 §5.4）/（旧 4: invariant oracle 保留）。每条 2-3 句。
+
+3. **§5.3 拆 5 proper subsubsection**：12 \paragraph → **5 \subsubsection**（Controlled Retrospective / Aggregate Precision / Sensitivity Analysis / Baseline Comparisons / Anchor Attribution）。2252→**1203 words**（砍 47%）。schema-fuzzer overlap 分析、within-system footnote、single-LLM DeepSeek 细节等冗余精简。"When TestVDB applies"（spec-completeness/version-pinning）移到 Threats 的 Recall scope item。
+
+4. **Threats 拆 itemize**：一大段（466 words undivided）→ **9 个 labeled \item**（Internal/Selection/External/Construct/LLM variance/Contamination/Recall scope/Excluded set/Single-layer counterfactual）。每 item 精简（<60 words）。DeepSeek counterfactual 细节压缩。
+
+5. **Cost-effectiveness + marginal value**：Implementation 加 "~\$10/target, comparable to a few hours manual boundary testing" + marginal value 三点（non-boundary yield / CTS FP-suppression / spec-gap detection）。
+
+**编译**：8 页（从 9 降回——overhaul 砍内容 + 重构），0 undefined，0 error。readability 指标全面改善（abstract -38% words, §5.3 -47% words, Threats 从 undivided 块→9 items）。
+
+**存档**：Round 16 ACCEPT 版本（pre-overhaul）在 `paper/archive/paper-draft-vldb-final-round16-accept.tex` + git tag `archive/round16-accept`，可随时恢复对比。
