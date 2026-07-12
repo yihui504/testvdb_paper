@@ -683,3 +683,30 @@ xept Round 17 说"距 clear Accept 只剩一个 discovery-recall 数字"。执�
 4 hits 都是 independent held-out pre-2024 bugs（GLM 训练数据外），canary 0/9 确认无 memorization——所以这是**真 discovery recall，非背诵**。TestVDB 核心类型（silent accept invalid + wrong validation）全部 reproduce。xept 的"诚实承认的空洞"现在变成"有界正面证据"。
 
 8 页，0 undefined。
+
+---
+
+## Round 19 xept re-review：5-TP by-ID table + Should Fix
+
+xept Round 19 verdict: **ACCEPT (borderline)**，mean overall 6.7/10（R1 7, R2 5, R3 8）。比 Round 18 (Weak Accept) 上升，decisive change = recall study (4/9)。Presentation 三审一致 Adequate+（R1/R3 Excellent），xept Round 16 BORDERLINE readability blocker 彻底解除。
+
+R2 剩余 3 Majors 都是"underpowered / argued not measured"——降低 ceiling 但非 gate。xept 点破：**R2-W2（5 TPs analytical not demonstrated）是唯一能推 R2 从 5→6-7、accept unanimous 的动作**。
+
+### Must-Fix #1：5-TP by-ID table（R2-W2 + R3-Q1）
+从 `.paperpilot/ideation/_52adjudicated.json` 的完整 36-TP ledger 按 title 精确识别 5 unique TPs（全部 maintainer acknowledged，有 GitHub issue #）：
+- **3 diagnostic**: milvus #47636 (expr parser code=0 + lexer leak), qdrant #9039 (async upsert silent-discard, title "Poor Diagnostics"), weaviate #12041 (batch delete HTTP 500 not 422)
+- **2 state/logic**: milvus #47635 (search code=0 after load), milvus #50323 (delete accepts filter+ids mutually exclusive)
+
+Table caption 列出 spec fuzzer 的 19 probe 范围（stateless single-parameter boundary: nprobe/ef/limit=0,$-1$; dimension out-of-range; consistencyLevel/metricType enum substitution; required-field omission）+ invariant oracle 的 3 个 per-response math bound（COSINE∈[-1,1], index completeness, payload-field presence），论证**结构性不可达**——把 R2 的"analytical not demonstrated"转成 per-defect 验证。每个 TP 都论证：为什么 19 probe 不覆盖 + 为什么 math bound 不违反。§5.1 文字补 "the claim is per-defect, not aggregate"。
+
+### Should Fix（3 项）
+1. **4/9 recall 加 Wilson 95% CI [18.9%, 73.3%]**（R2-Q2）：标注 "wide, but lower bound clears trivial zero-discovery baseline"。
+2. **reframe "five VDBMSs"**（R2-W4）：abstract 主体 + intro Results + contribution 1 三处 front-load "adjudicated on Milvus and Qdrant"。
+3. **clarify inference stack**（R1-W3）："The pipeline is orchestrated by the Claude Code runtime, which dispatches each agent to the GLM-5.2 backbone"——一句话说清编排框架 vs 模型后端。
+
+### 未做
+- R2-W1 (small n) / R2-W3 (CTS 1/3 anchors validated)：不可修，需更大 cohort / reproduction 实验。
+- venue/template：用户暂缓（xept: zero weight on scientific merit; 切换 vldb.cls 是重排工程）。
+- Optional（split single-layer paragraph, 4/9 floor note）：polish，可后做。
+
+8 页，0 undefined。
