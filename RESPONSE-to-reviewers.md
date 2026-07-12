@@ -504,3 +504,66 @@ Round 13 re-review verdict **ACCEPT**（R1 Accept / R2 WA / R3 WA，比 Round 11
 5. **§5.4 "both" = union OR 标注** — 三条件 ablation 的 "both" 明确标注为独立判定的 OR（candidate 被 suppress 当且仅当任一 anchor 独立 flag），非 joint AND dispatch。
 
 编译 8 页 0 undefined 0 warning。
+
+---
+
+## Round 14 PaperPilot re-review follow-up：4 个 Priority Revisions
+
+Round 14 re-review verdict **ACCEPT**（三审一致 Weak Accept；34 项结构校验全 PASS）。完整文档 `.paperpilot/review/review-testvdb-2026-07-12-round14.md`。review 给了 4 个 Priority Revisions。逐条诊断后发现：**4 条全部是 framing/positioning 问题，body 已含 honest 证据，无需新实验**。其中多数 reviewer flag 指向的内容论文已经写了，只是 framing 分散在 body 而 reviewer 盲读漏掉。本轮做最小 framing 前置让 caveat 更难漏读，并在下面把每个 flag 交叉引用到论文已有的回应行。
+
+1. **Cross-system generalization framing**（R1 2.3 / R2 W1+5.4 / R3 1.2，三方共识 [major,fixable]）
+   - **Round 14 改动**：abstract 收紧——原 "with adjudicated signal concentrated on Milvus and Qdrant" 改为显式区分："Adjudicated precision is validated on Milvus and Qdrant---Weaviate, MeiliSearch, and Chroma serve as breadth probes on the attack surface, not as precision evidence." 这样 abstract 自包含 precision-vs-attack-surface 边界，不依赖 body。
+   - **body 已有证据（reviewer 漏读）**：Contribution 1（§1）末句早已明确 "We claim cross-system generalization of the method's *attack surface*, not of its precision, which the data supports only for Milvus and Qdrant."；§5.1 RQ1 也写 "cross-system generalization is claimed primarily for Milvus and Qdrant, with Weaviate, MeiliSearch, and Chroma as breadth rather than statistical evidence."；Table 2 数据本身显示 Weaviate/MeiliSearch/Chroma acknowledged = 3/0/0。
+
+2. **Schema-fuzzer / REST API tester 边际价值定位**（R1 2.4+2.5 / R2 2.6+5.5 / R3 2.3+3.5，三方共识 [major,fixable]）
+   - **Round 14 改动**：§5.3 schema-fuzzer 段开头前置结论 topic sentence——"TestVDB's marginal value over a spec-driven fuzzer is its non-boundary yield plus source-grounded FP-suppression, not boundary-finding." 让读者进门即知结论，不必读到段末。
+   - **body 已有证据（reviewer 漏读）**：§5.3 schema-fuzzer 段已量化 "8/36 TPs are non-boundary" 并列三类 marginal value (state/logic + diagnostic + result-correctness probes / CTS FP-suppression / spec-gap bugs)，段末结论 "TestVDB is therefore not a boundary finder but a state/semantic + FP-suppression layer that complements schema fuzzing"；§6 Related Work 已定位 delta——Schemathesis "requires a standards-compliant specification---which VDBMS REST endpoints do not serve (we probe /swagger, /openapi.json, all 404)"，即 blocked by spec 缺失非根本不兼容；RESTler/EvoMaster/Schemathesis "target schema-conformance and crash at the API boundary; we extend the boundary to semantic compliance and to VDBMS-specific invariants"。
+   - **未做的实验及理由**：R1 Q3 / R3 W2 要求 head-to-head 跑 RESTler/EvoMaster。论文已在 §5.3 说明 Schemathesis head-to-head 被 Milvus 无 OpenAPI 阻塞（需手工编写 spec），且 §5.1 已论证 VDBFuzz 互补来自 oracle 定义（crash vs compliance），属 future work 而非当前 contribution 的漏洞。
+
+3. **Three-anchor validated scope**（R1 3.2 / R2 3.6 / R3 3.4，[major unfixable]+[minor fixable]）
+   - **Round 14 改动**：abstract 加一句 anchor scope 标注——"source is the validated primary anchor (threat-model a noisy complement, reproduction future work)"，让 abstract 自包含三锚点的验证状态。
+   - **body 已有证据（reviewer 漏读）**：Contribution 2（§1）早已 foreground——"source-grounded verification---the empirically validated primary anchor" + "we validate the source anchor in the controlled retrospective... we ablate the threat-model anchor after fixing a wiring gap: threat-alone is a noisy complement (6/12 vs source's 9/12; union 11/12)... The reproduction anchor is not exercised here"；§5.4 整节做三条件 ablation 并诚实诊断 wiring gap；Figure 1 caption（Round 13 已更新）视觉区分 source=solid primary / threat-model=dashed ablated / reproduction=gray design-level。
+   - **[major, unfixable] 的性质**：R3 3.4 把 threat-model n=12 标为 [major, unfixable]——这是 contribution-strength bounder（设计级 gap，revision 无法不改数据地完全闭合），不阻塞 verdict（三审仍一致 Weak Accept）。论文已诚实报告为 "diagnosed result"，未过度声称。
+
+4. **Single-layer counterfactual ground-truth caveat**（R2 3.5 / R3 3.6，[minor,fixable]）
+   - **Round 14 无 tex 改动**：45.6% 出现的两处（§5.3 single-layer 段 + §5.5 Threats）都已有 directional-lift caveat。§5.3 原文 "We treat the same-population 31%→81% FP-suppression result as the cleaner head-to-head, and report this end-to-end figure as a directional lift at zero recall cost (FP-suppression's precision advantage is not bought with lost bugs)" + "the residual gap to maintainer adjudication is that triage might reclassify a few, though for the classes above live reproduction is a strong proxy"；§5.5 Threats 原文 "the 45.6% single-layer figure combines the maintainer-Adjudicated 36/52 baseline with 27 live-re-probed, source-grounded FPs; the residual gap is that maintainer triage might reclassify a few of the 27, and the arm is bounded to one feedback cycle"；Table 4 caption 也标注 "Rows are not directly comparable across tiers"。abstract 与 Contribution 不引用 45.6%，故无散落风险。R3 3.6 自己承认 "The paper acknowledges the residual gap... but the comparison remains directional"。
+   - **Round 12 已做的实质实验**：27 个 suppressed candidates 全部 live re-probe（27/27 live-confirmed FP，over-kill 0/27），把 ground truth 从 "7 live + 20 LLM proxy" 提升为 "全部 live + source"，已是最强可得的非 maintainer-adjudication 证据。
+
+**编译**：8 页，0 undefined，0 LaTeX warning。
+
+**orchestrator note**：Round 14 的 checker 对 R2 报了 3 个 violation，经 grounding 核对全是 checker 自己的幻觉（引用了草稿里不存在的文本），R2 草稿实际干净，无需 patch。R1 修 4 处（数字 + 章节引用）、R3 修 2 处断引。
+
+---
+
+## Round 15 PaperPilot re-review follow-up：4 个 Priority Revisions
+
+Round 15 re-review verdict **ACCEPT**（三审一致 Weak Accept；Novelty 从 Round 14 的 R1-Weak/R2-Adequate/R3-Adequate 升为**三审一致 Adequate**——Round 14 的 abstract framing 改动起效，R1 不再降 Novelty 为 Weak）。完整文档 `.paperpilot/review/review-testvdb-2026-07-12-round15.md`。4 个 Priority Revisions 全部处理：
+
+1. **补 recent REST API testing/fuzzing related work**（R2 literature-verified [major,fixable] + R3 [minor]）—— **本轮最重要的新 action**。R2 用 specialty literature search 发现 4 个论文未 cite 的工作。我**先用 WebSearch + webReader 逐个核实真实性**（防止 sub-agent 幻觉——R2 的 literature cache 实际只存了 NoREC 一个 PDF，R2 records 目录为空，R2 对这 4 个的细节描述没有 grounded record）。4 个全部核实为真实论文，已补：
+   - `paper/references.bib`：加 `lin2023forest`（foREST, ISSRE 2023, pp.695-705）、`lyu2023miner`（MINER, USENIX Security 2023, pp.4517-4534）、`chen2024dyner`（DynER, Electronics MDPI 13(17):3476, doi:10.3390/electronics13173476）、`kim2025llamaresttest`（LlamaRestTest, FSE 2025 / arXiv 2501.08598）。foREST 作者用首字母（reference 只给首字母，避免猜错全名）；MINER/DynER 截断为 first author + others 省版面。
+   - §6 Related Work `REST API and schema testing` 段：加一句定位 foREST/MINER/DynER 为 RESTler/EvoMaster 之后在 sequence/parameter-value generation 上的进展，但"remain OpenAPI-driven with 5XX/crash oracles; none targets semantic compliance"——显式 delta。
+   - §6 Related Work `LLM-based testing and verification` 段：加一句 LlamaRestTest 为 concurrent LLM-driven REST testing，delta 是"CTS targets contract hallucination via maintainer-authority falsification, not input quality"——orthogonal 定位。
+
+2. **Cross-system generalization framing**（R1 1.2/2.2, R2 W3/1.4, R3 2.2/W1/Q4）—— **body + abstract 已充分覆盖，不再改 tex**。三审都 flag，但 R2 1.4 和 R3 都**承认 abstract 已 qualify**（"This honesty is commendable"），R1 还 flag 是漏读了 Round 14 加的 abstract qualifier。现有证据：
+   - abstract（Round 14 加）："Adjudicated precision is validated on Milvus and Qdrant---Weaviate, MeiliSearch, and Chroma serve as breadth probes on the attack surface, not as precision evidence."
+   - Contribution 1（§1）末句："We claim cross-system generalization of the method's *attack surface*, not of its precision, which the data supports only for Milvus and Qdrant."
+   - §5.1 RQ1："cross-system generalization is claimed primarily for Milvus and Qdrant, with Weaviate, MeiliSearch, and Chroma as breadth rather than statistical evidence."
+   - Table 2 数据本身显示 Weaviate/MeiliSearch/Chroma acknowledged = 3/0/0。
+   再改 tex 属过度（framing 已在 abstract + contribution + RQ1 三处 explicit）。R3 Q4 建议"prominent in Contributions list"——Contribution 1 开头已写 "validated on Milvus and Qdrant"，末句再澄清，已足够 prominent。
+
+3. **Three-anchor validated scope**（R1 W3/2.6/5.2, R2 W5/3.6, R3 W2/3.3）—— **body + abstract 已充分覆盖**。三审都 flag 但都**接受 honest framing**（"The paper is honest about this limitation"）。R3 标 [major,fixable] 但说"occupies significant design space without strong empirical support"——这已被 body 诚实承认。现有证据：
+   - abstract（Round 14 加）："source is the validated primary anchor (threat-model a noisy complement, reproduction future work)."
+   - Contribution 2（§1）："source-grounded verification---the empirically validated primary anchor" + "we ablate the threat-model anchor after fixing a wiring gap: threat-alone is a noisy complement (6/12 vs source's 9/12; union 11/12)... The reproduction anchor is not exercised here."
+   - §5.4 整节做三条件 ablation + 诚实诊断 wiring gap + "we do not claim the three-anchor design as a clean validated contribution on the strength of n=12."
+   - Figure 1 caption（Round 13 更新）：source=solid primary validated / threat-model=dashed ablated / reproduction=gray design-level。
+   anchor scope 已在 abstract + Contribution 2 + §5.4 + Figure 1 caption 四处 explicit。
+
+4. **Single-layer counterfactual caveat**（R1 3.2, R2 W4/3.7）—— **body 已有两处 caveat，无散落风险**。45.6% 只在 §5.3 和 §5.5 出现（abstract 与 Contribution 不引用 45.6%）。现有证据：
+   - §5.3 single-layer 段："We treat the same-population 31%→81% FP-suppression result as the cleaner head-to-head, and report this end-to-end figure as a directional lift at zero recall cost" + "the residual gap to maintainer adjudication is that triage might reclassify a few, though for the classes above live reproduction is a strong proxy."
+   - §5.5 Threats："the 45.6% single-layer figure combines the maintainer-adjudicated 36/52 baseline with 27 live-re-probed, source-grounded FPs; the residual gap is that maintainer triage might reclassify a few of the 27, and the arm is bounded to one feedback cycle."
+   - Table 4 caption："Rows are not directly comparable across tiers."
+   R3 3.6 自己承认 "The paper acknowledges the residual gap... but the comparison remains directional"。Round 12 已做的实质实验（27 suppressed 全部 live re-probe，27/27 live-confirmed FP，over-kill 0/27）是当前可得的最强非 maintainer-adjudication 证据。
+
+**编译**：8 页（补 4 个 reference + 压缩 schema-fuzzer overlap 细节 + conclusion 精简 + MINER/DynER 作者截断为 first+others，抵消了新加内容的空间），0 undefined，0 citation warning。
+
+**过程透明度**：R2 的 4 个 missing-related-work 发现经 WebSearch + webReader 逐个核实为真实论文（非幻觉），citation 信息（作者/venue/year/页码/DOI）全部从权威页面（arXiv、MDPI、ACM DL、DynER 论文自身的 reference list）确认。R2 的 literature cache 只存了 NoREC，R2 对这 4 个的原始描述虽无 grounded record 但方向正确，我核实后用准确 citation 覆盖。
