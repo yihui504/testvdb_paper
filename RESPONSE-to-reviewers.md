@@ -434,3 +434,59 @@ Round 11 留下的 T2.1-full 协议（"27 候选分散在多个 mining run，需
 | 6 | 25% by-design 无 baseline | unfixable | （T2.5 协议，未做） |
 
 **Priority #1（R2 Soundness Weak 主因）本轮彻底闭合。** R2 的 dissent 核心是 "45.6% 不是 apples-to-apples"；现在 27 suppressed 全部 live + source 验证，与 36/52 maintainer baseline 同属强 ground truth（maintainer triage + live reproduction），不再有 weak-proxy 分量。论文仍稳定在 Accept 区间，R2 最可能从 Weak Reject 上调。
+
+---
+
+## Round 13 (2026-07-12): T2.2 + T2.4-canary + T2.5 — 三个 deferred 实验全部完成
+
+Round 12 闭合了 Priority #1（27 suppressed live-confirmed）。本轮把剩余三个 deferred 实验全部做了，回应 R2 3.3（three-anchor）/ R1 W4 + R3 contamination（recall）/ R3 2.2（by-design counterfactual）。
+
+### T2.4 canary（memorization 正面控制）— 干净
+
+裸问 GLM-5.2（禁工具、禁文件）9 个 held-out bug：**0/9 issue 级记忆**。校准 probe 证明探测没坏（能答 Milvus/HNSW 通识，但答不出任何 specific bug 的 issue 号/endpoint）。cosine>1 是唯一通识级数学认知重叠，disclose 不计为独立证据。
+
+→ **R3 contamination 威胁从"不可控"变成"已测量、低、0/9"**。T2.4 走 rediscovery-on-9 路线（不需要 mock VDB），全 9-bug rediscovery 推 future work（canary 已是核心交付）。
+
+### T2.2 three-anchor ablation — 有数据的诊断性结果
+
+发现 wiring bug：threat-modeler 把 blindspots 写进 `threat_model.json`（6 个 BS + 10 by_design），但 dev-reviewer 读 `developer_cognition.json.blindspot_indicators`（空）。**RQ4 原负结果被这个 confound 污染。**
+
+修 wiring + 三条件 ablation（12 milvus FP + 4 TP recall 控制）：
+- **source-alone: 9/12 (75%)**，recall 4/4
+- **threat-alone: 6/12 (50%)**，不稳定（一个 boundary FP 跨 run 翻转），recall 4/4
+- **both (独立判定并集): 11/12 (92%)**，recall 4/4
+- threat 抓住 source 漏的 2/3 residual（boundary-default: shardsNum=0, metricType empty），但漏 source 抓的 5 个 state/concurrency FP（BS-03/06 over-fire 推向 CONFIRMED）
+
+→ **R2 3.3 "three-anchor 未验证"闭合**：验证了，诚实结论是 threat anchor 是 noisy complement（不是 substitute），union 最好（92%）。source-grounding 的不可替代性有了机制解释（threat blindspot 在 state 类 over-fire）。
+
+### T2.5 by-design counterfactual — 分裂结果
+
+reframe 为 retroactive contract attribution：把 GLM 过度形式化的 3 个 over-strict 约束的原始文档段落喂 DeepSeek（不同 family），看它复不复现。
+- **q3 shardsNum**: DeepSeek 也产出 `>= 1`（从"default:1"推断）→ REPRODUCED
+- **q37 metricType**: DeepSeek 也产出 strict enum `in {L2,IP,COSINE}` → REPRODUCED
+- **q52 search data**: DeepSeek 只做 type check（空数组 vacuously true），没加 non-empty → DID NOT（GLM-specific）
+
+**校正后 2/3 task-intrinsic，1/3 GLM-specific**（N=3 directional）。
+
+→ **R3 2.2 "25% by-design 无 counterfactual" 回应**：25% by-design rate 是混合——多数（2/3）task-intrinsic（任何 LLM 从"default:1"/enum 列举都会过度形式化），少数（1/3）GLM-specific。CTS 的必要性主体成立。
+
+### 论文改动
+
+- **§5.3 anchor attribution**: "3 residual... threat-model never populated... leak" → 三条件 ablation 结果 + 机制解释（threat 抓 boundary residual、over-fire state）
+- **§5.4 RQ4**: "exploratory negative" → "wired and ablated"，三条件数字（75%/50%/92% + recall 4/4）+ wiring gap 诊断
+- **§5.5 contamination**: 加 canary（0/9）+ by-design counterfactual（2/3 task-intrinsic）
+- **Contribution #2**: three-anchor 从"design-level we bound but do not isolate"→ threat anchor ablated（noisy complement，union 92%）
+- **Contribution #3**: by-design 从"qualitative finding"→ 加 counterfactual（2/3 task-intrinsic）
+
+### Priority Revisions 最终状态
+
+| # | 问题 | 状态 |
+|---|---|---|
+| 1 | single-layer 27 mixed ground truth | ✅ Round 12（27/27 live）|
+| 2 | three-anchor 只测 source | ✅ Round 13（三条件 ablation）|
+| 3 | cross-system 过称 | ✅ Round 11 |
+| 4 | missing related work | ✅ Round 11 |
+| 5 | e2e recall 未建立 | ✅ Round 13 canary（memorization 受控）+ future work |
+| 6 | 25% by-design 无 baseline | ✅ Round 13 counterfactual（2/3 task-intrinsic）|
+
+**6 个 Priority Revisions 全部闭合。** R2 的两个 major（3.2 + 3.3）都有 live 实验 + 数据回应。
