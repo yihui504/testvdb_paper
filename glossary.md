@@ -72,10 +72,11 @@
 - **实证**：12/48 已裁定提交（25%）被维护者判 by-design = 契约比真实意图更严 = 幻觉的直接观测。
 - **形式化**：单层判断假设 C_LLM = C_true；当 C_LLM ⊃ C_true（更严），真 by-design 行为被判违规，而 judge 共享生成端偏见不 dissent。
 
-### CTS (Contract-Truth Separation) —— ⚠️ 名实不符，待重定位（见 checklist B1）
-- **方法实质**：用一个能查源码的独立 agent 去证伪 LLM 的合规判断。
-- **问题**：名字（separation / principle 句式）撑不住内容，组会老师觉得「造词吹牛」；用户自评也觉得「就是查源码 agent」。
-- **候选**：降调为 `source-grounded falsification`（源码锚定证伪）。
+### CTS (Contract-Truth Separation) —— ❌ 退役（2026-07-15 B1 拍板）
+- **决定**：**CTS 缩写退役**，不再作为专有名词使用。
+- **原因**：① 老师反馈（造词）+ 自评（查源码 agent）+ 命名合法性测试（去名不丢信息）三重指向；② reproduction 实验后 dev-reviewer 是**多 anchor 证伪器**，「Separation」名不副实（不止分离，是多 anchor 证伪）；③ 真正值得命名的是 contract hallucination propagation（现象有实质）。
+- **替代**：方法用 `source-grounded falsification`（primary）+ multi-anchor 描述；framing 层描述性讲「分离合规判断与独立证伪层」。
+- **标题**：venue 定后从 `...via Contract-Truth Separation` 改（方向 `...via Source-Grounded Falsification`）。
 
 ### dev-reviewer（开发者视角审稿 agent）
 - 模拟维护者 triage bug report：独立复现 + 查源码 + 排除平凡解释 + 结构化裁决。论文 §3.4。双盲（不看 attack 脚本的断言逻辑）。

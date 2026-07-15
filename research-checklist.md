@@ -10,12 +10,20 @@
 
 - [x] **A1 术语 glossary** → [glossary.md](glossary.md)（治夹生饭 + 讲不清概念 + 带出 oracle taxonomy）。**起草完，待你校正**
 - [x] **A2 读 Barr et al. 2015 *The Oracle Problem in Testing: A Survey***（治排除法心虚的根）。**精华已并入 glossary 的「oracle taxonomy」节**；全文深读可选
-- [ ] **A3 读 3 个 testing 方法经典各 1 篇**：metamorphic / property-based / differential——让排除法逐类讲到审稿人服
+- [ ] **A3 读 3 个 testing 方法经典各 1 篇**（让排除法 Table 1 逐类讲到审稿人服）：
+  - **Metamorphic**: Chen et al. 2018 *Metamorphic Testing: A Review of Challenges and Opportunities* (ACM CSUR) → 讲清「合规是 accept/reject 是非判断，无 metamorphic relation 可变换」
+  - **Property-based**: Claessen & Hughes 2000 *QuickCheck* (ICFP，论文已 cite) → 讲清「需可机器表达的 property + 标准 schema；VDB 文档契约是自然语言 + 无 OpenAPI（/swagger 404）」
+  - **Differential**: Slutz 1998 *Massive Stochastic Testing of SQL* (VLDB)，现代补充 Rigger & Su 2020 *Testing Database Engines via Pivoted Query Synthesis* (OSDI / SQLancer) → 讲清「需多个可对比 reference impl；VDB API 跨厂商无统一语义」
 - [ ] **A4 读 LLM-as-judge self-preference bias 文献**（如 Panickssery et al. 2024）——界定 contract hallucination 的新颖性边界，**既防夸大也防自卑**
 
 ## B. Framing 决定（治「名实不符 / 老师觉得造词」）
 
-- [ ] **B1 CTS 命名决定**：降调为 `source-grounded falsification`，还是保留 `Contract-Truth Separation`？**影响论文标题**（现为 `...via Contract-Truth Separation`）
+- [x] **B1 CTS 命名决定**（2026-07-15 拍板）：**CTS 缩写退役**
+  - 核心发现名保留 `contract hallucination propagation`（有实质，该命名）
+  - 方法描述用 `source-grounded falsification`（primary anchor）+ multi-anchor（含 reproduction/threat）
+  - framing 层描述性讲「分离 LLM 合规判断与独立证伪层」，**不给专有缩写**
+  - 标题 `...via Contract-Truth Separation` → venue 定后改（方向：`...via Source-Grounded Falsification`）
+  - 落地：venue 定了 + 认知补完后一次性改（标题 + §3.4 + 贡献 2 措辞）。**现在不改论文**（现为 `...via Contract-Truth Separation`）
 - [ ] **B2 命名权重重分配**：把卖点重心从 CTS（方法，朴实）移到 contract hallucination propagation（现象，有实质）
 - [ ] **B3 介绍顺序定稿**：`constant.go 故事 → 听众顿悟 → 现象命名 → 朴实方法 → 结果`（永不先抛大词）
 
