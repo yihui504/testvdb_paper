@@ -14,7 +14,7 @@
 \affiliation{\institution{TBD (anonymity depends on venue)}\country{TBD}}
 
 \begin{abstract}
-Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on, yet a large class of their defects lacks a practical oracle. We study \emph{API conformance defects}: cases where a VDBMS silently accepts an input or behavior that violates its documented contract, such as accepting \texttt{nprobe=0}, accepting out-of-range index parameters such as \texttt{ef=0}, or returning success where the docs prescribe rejection. These defects corrupt query semantics and can return data the documented contract intended to exclude; the large majority produce no crash, so fuzzers miss them. The only reference for the intended behavior is the documentation, which is natural-language and ambiguous.
+Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on, yet a large class of their defects lacks a practical oracle. We study \emph{API conformance defects}: cases where a VDBMS silently accepts an input or behavior that violates its documented contract, such as accepting \texttt{nprobe=0} or out-of-range index parameters such as \texttt{ef=0}, or returning success where the docs prescribe rejection. These defects corrupt query semantics and can return data the documented contract intended to exclude; the large majority produce no crash, so fuzzers miss them. The only reference for the intended behavior is the documentation, which is natural-language and ambiguous.
 
 Across 111 submitted VDBMS issues (38 maintainer-acknowledged as defects), about 85\% are conformance defects that differential, metamorphic, and property-based oracles cannot reach. The reason is structural: an accept/reject decision against a natural-language contract does not compile into a deterministic assertion. That non-compilability rules out a mechanical oracle, so we adopt an LLM as the semantic judge. Prior REST-API oracle work avoids this setting by keeping deterministic, executable assertions. Inside this LLM-as-oracle setting, contract errors split in two. Family-specific self-preference is mitigated by cross-model validation. \emph{Task-intrinsic} errors, where ambiguous documentation makes different LLM families infer the same wrong contract, are not: a different family reproduces the over-strict contract in 2 of 9 cases. The natural automated ground truth that resolves task-intrinsic errors is the implementation.
 
@@ -66,7 +66,7 @@ The natural automated ground truth that resolves task-intrinsic errors is the im
 \paragraph{Contributions.}
 \begin{itemize}
   \item \textbf{The LLM-as-oracle setting (\S\ref{sec:regime}).} We frame VDBMS API conformance as a setting where a deterministic oracle is unavailable and we adopt an LLM as the semantic judge, and show this is the precise boundary that separates VDBMS conformance from prior REST-API oracle work.
-  \item \textbf{Quantification of the conformance residual.} Across 111 submitted issues (38 maintainer-acknowledged as defects), about 85\% are conformance defects unreachable by differential, metamorphic, or property-based oracles, mapping where each classical class fails.
+  \item \textbf{Quantification of the conformance residual.} About 85\% of the conformance defects we found are unreachable by differential, metamorphic, or property-based oracles, mapping where each classical class fails.
   \item \textbf{Task-intrinsic contract errors and the source-grounded counter.} We separate family-specific from task-intrinsic contract errors and show, on nine over-strict clauses, that cross-model judging misses the task-intrinsic subset (0/2) while source-grounded falsification catches all 9.
   \item \textbf{TestVDB and scale.} TestVDB surfaced 111 candidate issues across five VDBMSs; maintainers acknowledged 38 as defects. A controlled retrospective shows the source anchor suppresses 81\% of false positives (up from 31\%) at 96.7\% true-positive retention.
   \item \textbf{A reusable model-free invariant oracle subclass} (\texttt{COSINE} bounds, index completeness) that is classical-addressable, cross-vendor, and independent of TestVDB's LLM pipeline.
@@ -101,7 +101,7 @@ TestVDB instantiates source-grounded falsification. It treats an LLM-derived con
 
 The falsification rule is concrete. For a clause that asserts the API rejects inputs where a parameter violates a constraint (for example, \texttt{shardsNum} $\geq 1$), the dev-reviewer examines the implementation. If the source shows that \texttt{shardsNum = 0} selects the default shard number, the clause is over-strict and the verdict that relied on it is falsified, a false positive suppressed. If the source shows no such intended semantics yet the implementation still accepts a value the contract rejects, the violation stands as a real defect.
 
-This use of source is the opposite of MASTOR's~\cite{mastor26}. MASTOR reads source to \emph{generate} oracles that encode implemented behavior, with source as the truth, so by construction it cannot detect a gap between the documentation and the code. TestVDB reads source to \emph{falsify} clauses derived from the documentation, with the documentation as the intended behavior and the source as the actual behavior, so the gap is exactly what it detects.
+This use of source is the opposite of MASTOR's~\cite{mastor26}: MASTOR reads source to generate oracles that encode implemented behavior and so cannot detect a gap between the documentation and the code, whereas TestVDB reads source to falsify documentation-derived clauses and targets exactly that gap (Section~\ref{sec:related}).
 
 The pipeline has five stages. An LLM first extracts the documented contract as clauses. Attack agents then generate boundary inputs targeting each clause. An LLM-as-oracle judges whether each observed response conforms to the contract; this is the step whose two-layer unreliability we described in Section~\ref{sec:regime}. The dev-reviewer then falsifies the contract clauses and the LLM's verdicts against source. A novelty gate finally removes duplicates and known issues. The contract and the verdicts form the assertion layer; the dev-reviewer is the truth layer that falsifies them.
 
@@ -118,13 +118,55 @@ TestVDB runs as a multi-agent pipeline on the Claude Code runtime, with each of 
 We evaluate TestVDB on five VDBMSs (Milvus, Qdrant, Weaviate, MeiliSearch, Chroma) and ask four questions. \textbf{RQ1:} how many conformance defects does TestVDB surface, and how large is the residual beyond classical oracles? \textbf{RQ2:} does source-grounded falsification suppress false positives? \textbf{RQ3:} can cross-model validation resolve task-intrinsic contract errors, or is source needed? \textbf{RQ4:} does the model-free invariant subclass find real bugs on its own?
 
 \paragraph{RQ1: yield and the conformance residual.}
-TestVDB surfaced 111 candidate issues across the five systems; maintainers acknowledged 38 as defects (31 fixed, 7 accepted-open). Yield concentrates on Milvus (51 submissions) and Qdrant (26); Weaviate, MeiliSearch, and Chroma contribute breadth rather than statistical weight. To quantify the residual, we classified each submitted issue by fault model: classical-addressable (a mathematical-invariant or crash that a differential, metamorphic, or crash oracle could in principle find), conformance (an accept/reject violation only a semantic judge reaches), or concurrency (a race or atomicity violation). About 85\% of the issues are conformance defects that classical oracles cannot reach, and 89\% on the 38 maintainer-acknowledged subset; the remainder split between classical-addressable cases (about 10\%) and concurrency defects (about 5\%). The residual is the bulk of what we found, not a niche.
+TestVDB surfaced 111 candidate issues across the five systems; maintainers acknowledged 38 as defects (31 fixed, 7 accepted-open). Submissions span Milvus (51), Weaviate (30), and Qdrant (26), but maintainer acknowledgment concentrates on Milvus (22) and Qdrant (13); Weaviate, MeiliSearch, and Chroma contribute breadth rather than statistical weight (Table~\ref{tab:yield}). To quantify the residual, we classified each submitted issue by fault model: classical-addressable (a mathematical-invariant or crash that a differential, metamorphic, or crash oracle could in principle find), conformance (an accept/reject violation only a semantic judge reaches), or concurrency (a race or atomicity violation). About 85\% of the issues are conformance defects that classical oracles cannot reach, and 89\% on the 38 maintainer-acknowledged subset; the remainder split between classical-addressable cases (about 10\%) and concurrency defects (about 5\%). The residual is the bulk of what we found, not a niche.
+
+\begin{table}[t]
+\caption{Issues submitted and maintainer-acknowledged per VDBMS.}
+\label{tab:yield}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+VDBMS & Submitted & Acknowledged \\
+\midrule
+Milvus & 51 & 22 \\
+Weaviate & 30 & 3 \\
+Qdrant & 26 & 13 \\
+MeiliSearch & 3 & 0 \\
+Chroma & 1 & 0 \\
+\midrule
+Total & 111 & 38 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{RQ2: effect of source-grounded falsification.}
 On a controlled retrospective over the maintainer-adjudicated candidates, the dev-reviewer's source anchor suppresses 81\% of false positives, up from 31\% without it, while retaining 96.7\% of true positives ($n{=}30$). Aggregated end-to-end precision on the adjudicated pool is 69.2\% (Wilson 95\% CI $[55.7\%, 80.1\%]$; under pending-resolution sensitivity the worst-case bound widens to $[43.9\%, 80.5\%]$). The source anchor is the dominant contributor to precision; the other two anchors are ablated in the artifact.
 
 \paragraph{RQ3: cross-model validation vs source on task-intrinsic errors.}
 The central claim is that source-grounded falsification resolves task-intrinsic contract errors that cross-model validation cannot. We tested this directly on nine GLM-derived over-strict clauses (Milvus). We first asked a second family, DeepSeek, to formalize each contract independently; it reproduced GLM's over-strict clause in 2 of the 9, the task-intrinsic subset. We then asked DeepSeek to judge each of GLM's clauses against the documentation. Cross-model judging caught 6 of the 9 over-strict clauses but missed both task-intrinsic ones, where DeepSeek read the ambiguous documentation as GLM had. Source-grounded falsification contradicts all nine, because the implementation accepts the value each over-strict clause rejects. Cross-model validation therefore covers the family-specific subset but leaves the task-intrinsic residual to source. We state this as a pilot: nine clauses, one system; a head-to-head expansion across vendors and clauses is the priority for a larger study.
+
+\begin{table}[t]
+\caption{Cross-model judging vs source-grounded falsification on nine GLM over-strict Milvus clauses. TI marks the two task-intrinsic clauses (a second family independently reproduces the over-strict clause). Cross-model judging misses both TI clauses and one family-specific one; source-grounded falsification contradicts all nine.}
+\label{tab:e2}
+\small
+\begin{tabular}{@{}lp{0.10\columnwidth}p{0.20\columnwidth}p{0.18\columnwidth}@{}}
+\toprule
+Over-strict clause & TI & Cross-model judging & Source-grounded \\
+\midrule
+shardsNum $\geq 1$ & yes & missed & caught \\
+metricType strict enum & no & missed & caught \\
+consistencyLevel strict enum & no & caught & caught \\
+data non-empty & yes & missed & caught \\
+outputFields required & no & caught & caught \\
+limit $\geq 1$ & no & caught & caught \\
+roundDecimal $\geq 0$ & no & caught & caught \\
+offset $\geq 1$ & no & caught & caught \\
+dbName required & no & caught & caught \\
+\midrule
+Total & 2 & 6/9 & 9/9 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{RQ4: model-free invariant oracle subclass.}
 Separately from the LLM pipeline, a model-free invariant subclass detects violations of hard mathematical bounds: \texttt{COSINE} distance above 1 for identical vectors, an index returning 2 of 25 matching points, and a payload filter returning points that miss a required field. These reproduce across Milvus and Qdrant, need no LLM judgment, and are the least design-contingent part of the evaluation.
@@ -146,7 +188,7 @@ The RQ3 probe is small (nine clauses, Milvus) and is the most contingent finding
 % =====================================================================
 \section{Discussion and Limitations}
 
-The LLM-as-oracle setting is not specific to VDBMSs. Any system whose correctness criterion is a natural-language contract that cannot be compiled to a deterministic assertion enters it: REST contract testing where the schema is absent or silent on the semantics, configuration validation, and policy-as-code checks where the documentation is the only oracle. In each, a single LLM family that both extracts the specification and checks compliance is susceptible to the two-layer unreliability we describe, and source-grounded falsification is the natural mitigation. We have not tested these transfers and leave them to future work.
+The LLM-as-oracle setting is not specific to VDBMSs. Any system whose correctness criterion is a natural-language contract that cannot be compiled to a deterministic assertion enters it: REST contract testing where the schema is absent or silent on the semantics, configuration validation, and policy-as-code checks where the documentation is the only oracle. In each, a single LLM family that both extracts the specification and checks conformance is susceptible to the two-layer unreliability we describe, and source-grounded falsification is the natural mitigation. We have not tested these transfers and leave them to future work.
 
 The limitations are concrete. The RQ3 probe is a nine-clause pilot on Milvus, and the task-intrinsic claim, though directionally clear, needs a larger head-to-head study across vendors and clauses; this is the priority for the camera-ready version. All source-anchor results use a single model family (GLM-5.2), and a full cross-model ablation of the dev-reviewer remains open. Soft result correctness of vector search (ANN recall, ranking) is out of scope. The 111-submission yield rests on maintainer adjudication concentrated on Milvus and Qdrant; Weaviate, MeiliSearch, and Chroma are breadth probes.
 
