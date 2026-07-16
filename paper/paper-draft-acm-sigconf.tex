@@ -74,28 +74,25 @@ The only ground truth that resolves task-intrinsic errors is the implementation 
 
 % =====================================================================
 \section{Background and Problem Setup}
-\textit{Plan.}
-\begin{itemize}
-  \item Oracle taxonomy (Barr 2015): specified / derivable / implicit / none $\Rightarrow$ we sit in specified (contract) + derivable (math invariant), and argue the compliance residual is where all four classical classes fail.
-  \item VDB compliance vs correctness: compliance = accept/reject vs documented contract; correctness = result math (ANN recall). We do compliance; correctness stays open.
-  \item Why compliance is non-compilable: the accepted set is defined by NL docs, no formal grammar $\Rightarrow$ cannot become a deterministic assertion. (Sets up §3.)
-  \item Reuse bug-distribution framing (roadmap25 / bugstudy25) from v1.
-\end{itemize}
+
+Barr et al.~\cite{barr15} classify test oracles by the artifact that supplies the pass/fail verdict: \emph{specified} (from a specification or contract), \emph{derivable} (from execution, as in differential, metamorphic, or invariant testing), \emph{implicit} (a crash), or \emph{none} (a human). TestVDB uses two: a contract oracle for conformance defects, in the specified class, and a model-free invariant oracle for mathematical-bound violations, in the derivable class. The subset we care about is conformance, and the central observation is that on this subset the first three classes fail, leaving only the human oracle, or its scalable proxy, an LLM.
+
+We separate conformance from correctness. \emph{Conformance} asks whether the API's accept/reject behavior matches its documented contract. \emph{Correctness} asks whether a returned result is mathematically right, such as ANN recall or ranking. TestVDB targets conformance; result correctness of vector search remains open and is not our claim~\cite{roadmap25}.
+
+The focus is well-supported and structural. An empirical study~\cite{bugstudy25} finds that more than half of VDBMS bugs manifest as functional failures, and the roadmap~\cite{roadmap25} attributes about 43\% of VDBMS bugs to incorrect behavior. Conformance defects are a large slice of that, and about 85\% of the ones we collected are unreachable by differential, metamorphic, or property-based oracles (Section~\ref{sec:eval}). The reason is structural: the inputs an endpoint should accept are declared in natural-language documentation rather than a formal grammar, so they cannot be turned into a deterministic assertion. The contract is the only reference, and it is ambiguous prose. We formalize the consequence next.
 
 % =====================================================================
 \section{The LLM-as-Oracle Setting} \label{sec:regime}
-\textit{Plan --- NEW section, the conceptual core (§8/§9). This is what v1 lacked.}
-\begin{itemize}
-  \item \textbf{Definition:} a setting is in the LLM-as-checker regime when the oracle cannot be compiled to a deterministic assertion, so the pass/fail judgment must come from an LLM.
-  \item \textbf{Why VDB compliance forces it:} accept/reject semantics are NL-defined; contrast with AGORA+/SATORI/MASTOR, whose oracles ARE executable assertions $\Rightarrow$ deterministic checker $\Rightarrow$ they stay OUT of this regime (this is the precise distinction from the REST oracle line).
-  \item \textbf{Two failure modes inside the regime:}
-    \begin{itemize}
-      \item \emph{Family-specific} (self-preference, Panickssery 2024): same family generates contract + judges $\Rightarrow$ shared bias self-confirms. Mitigated by cross-model.
-      \item \emph{Task-intrinsic}: ambiguous docs make ALL families infer the same wrong (e.g., over-strict) contract. Cross-model CANNOT fix this --- both agree wrongly.
-    \end{itemize}
-  \item \textbf{t25 evidence:} feed the same doc passage to GLM vs DeepSeek; DeepSeek reproduces GLM's over-strict contract in only $\sim$half of cases $\Rightarrow$ the other half is task-intrinsic. (t25 N=9 pilot; expand for camera-ready.)
-  \item \textbf{Implication:} source-grounded falsification is needed precisely for the task-intrinsic subset --- implementation is the only ground truth that resolves what cross-model cannot. This is the precise, defensible ``why source'' argument.
-\end{itemize}
+
+A testing problem belongs to the \emph{LLM-as-oracle setting} when the pass/fail verdict for the behavior under test cannot be issued by a deterministic assertion and must instead come from a language model. The defining property is the absence of a mechanical oracle: no reference implementation, no equivalence transform, no checkable property. VDBMS API conformance belongs to this setting.
+
+The contrast with recent REST-API oracle work is sharp. AGORA+, SATORI, and MASTOR use a language model, but only to \emph{derive} an oracle that is then a deterministic assertion, such as a status code, a field-presence check, or an invariant.\footnote{Citations for AGORA+, SATORI, MASTOR, and for Panickssery et al.\ on LLM-as-judge self-preference are pending the Related Work pass.} A deterministic engine executes that assertion, so the model never issues a test verdict, and their problem sits outside the setting we define. VDBMS conformance has no such assertion, because the accept/reject boundary is natural-language prose, so the model must judge. This boundary is a property of the problem, not a choice of method, and it is what separates us from that line of work.
+
+Entering the setting exposes a reliability problem with two layers. The first is family-specific: when one LLM family both derives the contract and judges conformance, the two roles share biases, and the judge tends to confirm the generator's errors. This is the LLM-as-judge self-preference phenomenon (Panickssery et al.), and cross-model validation, in which a second family judges, mitigates it. The second layer is deeper. When the documentation itself is ambiguous, different LLM families infer the same wrong contract. For example, a parameter documented as ``optional, default 1'' is over-formalized by both families as ``must be at least 1,'' when the real semantics is that the value 0 selects the default. The error originates in the shared input rather than in either model, so cross-model validation cannot remove it.
+
+We confirmed the split with a counterfactual probe. We fed the same raw documentation passage to two LLM families, GLM and DeepSeek, and asked each to formalize the contract. DeepSeek reproduced GLM's over-strict contract in fewer than half of the nine cases we examined, and formalized the remainder correctly where GLM had not. The reproduced cases are task-intrinsic, and the rest are family-specific. We treat the probe as a pilot pending a larger study (Section~\ref{sec:eval}).
+
+The implication is the basis for our method. Cross-model validation covers the family-specific subset only. The task-intrinsic subset requires a ground truth that does not depend on the documentation, and the only candidate is the implementation. This motivates source-grounded falsification, developed in Section~\ref{sec:design}: treat the LLM-derived contract as a refutable hypothesis and falsify it against source, where the documentation expresses the intended behavior and the source expresses the actual behavior.
 
 % =====================================================================
 \section{TestVDB Design} \label{sec:design}
