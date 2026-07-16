@@ -109,18 +109,28 @@ Within the truth layer, the dev-reviewer applies three anchors: a clean reproduc
 
 % =====================================================================
 \section{Implementation} \label{sec:impl}
-\textit{Plan --- reuse v1. GLM-5.2 backbone via Claude Code runtime; 20 agent prompts; target version matrix; cost ($\sim$10/target, $10^4$ calls).}
+
+TestVDB runs as a multi-agent pipeline on the Claude Code runtime, with each of the 20 agents defined by a task-structured role prompt and dispatched to a GLM-5.2 backbone under the runtime's default sampling. Target VDBMSs run in pinned Docker versions (Milvus 2.6.19 for the single-LLM and single-layer ablations; the full version matrix is in the artifact). A complete run per target exercises the 20 agents over tens of generated candidates; wall-clock is dominated by the dev-reviewer's source-grounding step, repository clone and source retrieval, and live Docker re-probes, rather than by raw LLM latency. The 111-submission study plus the evaluation batches amount to on the order of $10^4$ LLM calls and roughly $\$10$ per target at current pricing, comparable to a few hours of manual boundary testing. The full prompts, target versions, and per-token accounting are in the artifact.
 
 % =====================================================================
 \section{Evaluation} \label{sec:eval}
-\textit{Plan --- reuse v1 eval structure, elevate E1 and t25 to first-class RQs.}
-\begin{itemize}
-  \item \textbf{RQ1 (yield + E1):} 111 submissions, 38 acknowledged across 5 VDBs; \emph{fault-model split} (E1): $\sim$90\% compliance residual, $\sim$10\% classical-addressable (math+crash). Table of per-DB yield + the M/C/X/V breakdown.
-  \item \textbf{RQ2 (source falsification effect):} retrospective 52 candidates; source anchor lifts FP-suppression 31\%$\to$81\%, TP retention 96.7\%; e2e precision 69.2\% (Wilson CI + pending bound).
-  \item \textbf{RQ3 (regime evidence / t25):} cross-family counterfactual --- GLM vs DeepSeek contract formalization on the same docs; family-specific vs task-intrinsic split. (Currently t25 N=9; state as pilot + camera-ready expansion plan.)
-  \item \textbf{RQ4 (model-free invariant):} COSINE$>$1 etc., cross-vendor (Milvus+Qdrant), the classical-addressable subclass.
-  \item Threats to validity: t25 N=9; single model family for CTS; soft result-correctness open; breadth-only for 3 VDBs.
-\end{itemize}
+
+We evaluate TestVDB on five VDBMSs (Milvus, Qdrant, Weaviate, MeiliSearch, Chroma) and ask four questions. \textbf{RQ1:} how many conformance defects does TestVDB surface, and how large is the residual beyond classical oracles? \textbf{RQ2:} does source-grounded falsification suppress false positives? \textbf{RQ3:} can cross-model validation resolve task-intrinsic contract errors, or is source needed? \textbf{RQ4:} does the model-free invariant subclass find real bugs on its own?
+
+\paragraph{RQ1: yield and the conformance residual.}
+TestVDB surfaced 111 candidate issues across the five systems; maintainers acknowledged 38 as defects (31 fixed, 7 accepted-open). Yield concentrates on Milvus (51 submissions) and Qdrant (26); Weaviate, MeiliSearch, and Chroma contribute breadth rather than statistical weight. To quantify the residual, we classified each submitted issue by fault model: classical-addressable (a mathematical-invariant or crash that a differential, metamorphic, or crash oracle could in principle find) or conformance (an accept/reject violation only a semantic judge reaches). About 85\% of the issues are conformance defects that classical oracles cannot reach, and 89\% on the 38 maintainer-acknowledged subset; the remainder split between classical-addressable cases (about 10\%) and concurrency defects (about 5\%). The residual is the bulk of what we found, not a niche.
+
+\paragraph{RQ2: effect of source-grounded falsification.}
+On a controlled retrospective over the maintainer-adjudicated candidates, the dev-reviewer's source anchor suppresses 81\% of false positives, up from 31\% without it, while retaining 96.7\% of true positives ($n{=}30$). Aggregated end-to-end precision on the adjudicated pool is 69.2\% (Wilson 95\% CI $[55.7\%, 80.1\%]$; under pending-resolution sensitivity the worst-case bound widens to $[43.9\%, 80.5\%]$). The source anchor is the dominant contributor to precision; the other two anchors are ablated in the artifact.
+
+\paragraph{RQ3: cross-model validation vs source on task-intrinsic errors.}
+The central claim is that source-grounded falsification resolves task-intrinsic contract errors that cross-model validation cannot. We tested this directly on nine GLM-derived over-strict clauses (Milvus). We first asked a second family, DeepSeek, to formalize each contract independently; it reproduced GLM's over-strict clause in 2 of the 9, the task-intrinsic subset. We then asked DeepSeek to judge each of GLM's clauses against the documentation. Cross-model judging caught 6 of the 9 over-strict clauses but missed both task-intrinsic ones, where DeepSeek read the ambiguous documentation as GLM had. Source-grounded checking contradicts all nine, because the implementation accepts the value each over-strict clause rejects. Cross-model validation therefore covers the family-specific subset but leaves the task-intrinsic residual to source. We state this as a pilot: nine clauses, one system; a head-to-head expansion across vendors and clauses is the priority for a larger study.
+
+\paragraph{RQ4: model-free invariant oracle subclass.}
+Separately from the LLM pipeline, a model-free invariant subclass detects violations of hard mathematical bounds: \texttt{COSINE} distance above 1 for identical vectors, an index returning 2 of 25 matching points, and a payload filter returning points that miss a required field. These reproduce across Milvus and Qdrant, need no LLM judgment, and are the least design-contingent part of the evaluation.
+
+\paragraph{Threats to validity.}
+The RQ3 probe is small (nine clauses, Milvus) and is the most contingent finding; the retrospective and the yield are the broader evidence base. All source-anchor results use a single model family (GLM-5.2); a full cross-model ablation of the dev-reviewer is open. Soft result correctness of vector search (ANN recall, ranking) remains out of scope. Generalization to Weaviate, MeiliSearch, and Chroma is breadth-only; statistical claims rest on Milvus and Qdrant.
 
 % =====================================================================
 \section{Related Work} \label{sec:related}
