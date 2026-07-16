@@ -7,24 +7,18 @@
 \settopmatter{printacmref=false}   % venue TBD; suppress boilerplate for now
 \settopmatter{printfolios=false}
 
-\title[TestVDB: source-grounded falsification for VDB API compliance]{TestVDB: Source-Grounded Falsification of LLM-Derived Contracts for API-Compliance Testing of Vector Databases}
+\title[TestVDB: source-grounded falsification for VDB API conformance]{TestVDB: Source-Grounded Falsification of LLM-Derived Contracts for API-Conformance Testing of Vector Databases}
 
 \author{Authors TBD}
 \email{tbd@example.org}
 \affiliation{\institution{TBD (anonymity depends on venue)}\country{TBD}}
 
 \begin{abstract}
-% Outline (rewrite per §8/§9, NOT the old propagation-centric abstract):
-% 1. Problem: VDB API compliance defects (~43\% of VDB bugs are incorrect-behavior) lack practical oracles; fuzzers catch only crash.
-% 2. Finding (E1): ~90\% of real VDB compliance defects form a residual that classical oracles (differential / metamorphic / property-based) and REST doc$\to$assertion oracles (AGORA+/SATORI/MASTOR) structurally cannot reach, because accept/reject semantics are not compilable to a deterministic assertion --- forcing an LLM checker (the \emph{LLM-as-checker regime}).
-% 3. Finding (t25): in that regime, contract errors are partly \emph{task-intrinsic} (all LLM families reproduce them from ambiguous docs); cross-model validation fixes only the family-specific subset (Panickssery-style self-preference).
-% 4. Method: TestVDB --- source-grounded falsification that resolves BOTH subsets using implementation as ground truth; complementary to cross-model, not redundant.
-% 5. Results: 5 VDBs, 111 defects submitted, 38 acknowledged; source anchor lifts FP-suppression 31\%$\to$81\% at 96.7\% TP retention.
-Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on, yet a large class of their defects lacks any practical oracle. We study \emph{API compliance defects}: cases where a VDBMS silently accepts an input or behavior that violates its documented contract, such as accepting \texttt{nprobe=0}, normalizing \texttt{shardsNum=-1}, or returning success where the docs prescribe rejection. These defects corrupt query semantics and widen the attack surface, but produce no crash; fuzzers miss them, and the only reference is the documentation, which is natural-language and ambiguous.
+Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on, yet a large class of their defects lacks any practical oracle. We study \emph{API conformance defects}: cases where a VDBMS silently accepts an input or behavior that violates its documented contract, such as accepting \texttt{nprobe=0}, normalizing \texttt{shardsNum=-1}, or returning success where the docs prescribe rejection. These defects corrupt query semantics and can return data the documented contract intended to exclude; the large majority produce no crash, so fuzzers miss them. The only reference is the documentation, which is natural-language and ambiguous.
 
-Across 111 real VDBMS compliance defects we collected, about 90\% form a residual that differential, metamorphic, and property-based oracles cannot reach. The reason is structural: an accept/reject decision against a natural-language contract does not compile into a deterministic assertion. That non-compilability forces the checker to be an LLM, a regime that prior REST-API oracle work avoids by keeping deterministic, executable assertions. Inside this LLM-as-checker regime, contract errors split in two. Family-specific self-preference is mitigated by cross-model validation. \emph{Task-intrinsic} errors, where ambiguous documentation makes every LLM family infer the same wrong contract, are not: a different family reproduces the over-strict contract in fewer than half of our cases. The only ground truth that resolves task-intrinsic errors is the implementation.
+Across 111 submitted VDBMS issues (38 maintainer-acknowledged as defects), about 90\% fall in a residual that differential, metamorphic, and property-based oracles cannot reach. The reason is structural: an accept/reject decision against a natural-language contract does not compile into a deterministic assertion. That non-compilability forces the oracle to be an LLM, a setting that prior REST-API oracle work avoids by keeping deterministic, executable assertions. Inside this LLM-as-oracle setting, contract errors split in two. Family-specific self-preference is mitigated by cross-model validation. \emph{Task-intrinsic} errors, where ambiguous documentation makes every LLM family infer the same wrong contract, are not: a different family reproduces the over-strict contract in fewer than half of our cases. The only ground truth that resolves task-intrinsic errors is the implementation.
 
-We instantiate this as TestVDB, which falsifies LLM-derived contracts against source. TestVDB found 111 defects across five VDBMSs; maintainers acknowledged 38, and a controlled retrospective shows the source anchor lifts false-positive suppression from 31\% to 81\% while retaining 96.7\% of true positives.
+We instantiate this as TestVDB, which falsifies LLM-derived contracts against source. TestVDB surfaced 111 candidate issues across five VDBMSs; maintainers acknowledged 38 as defects, and a controlled retrospective shows the source anchor lifts false-positive suppression from 31\% to 81\% while retaining 96.7\% of true positives.
 \end{abstract}
 
 \begin{CCSXML}
@@ -32,7 +26,7 @@ We instantiate this as TestVDB, which falsifies LLM-derived contracts against so
 \end{CCSXML}
 \ccsdesc[500]{Software and its engineering~Software testing and debugging}
 
-\keywords{Vector database, API compliance testing, test oracle, LLM-as-judge, source-grounded falsification, conformance testing}
+\keywords{Vector database, API conformance testing, test oracle, LLM-as-oracle, LLM-as-judge, source-grounded falsification}
 
 \begin{document}
 
@@ -41,40 +35,40 @@ We instantiate this as TestVDB, which falsifies LLM-derived contracts against so
 % =====================================================================
 \section{Introduction}
 
-Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on. Their defects are costly: an empirical study~\cite{bugstudy25} attributes about 43\% of real VDBMS bugs to incorrect behavior rather than crashes, and the VDBMS testing roadmap~\cite{roadmap25} names the missing oracle for this class as the central open challenge. Existing VDBMS fuzzers~\cite{vdbfuzz26} detect only crashes. We target a prevalent subset: \emph{API compliance defects}, where a VDBMS silently accepts an input or produces a behavior that violates its documented contract, such as accepting \texttt{nprobe=0}, silently normalizing \texttt{shardsNum=-1}, or returning success where the documentation prescribes rejection. These defects corrupt query semantics and widen the attack surface, yet produce no crash and no exception.
+Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-augmented LLM applications depend on. Their defects are costly: an empirical study~\cite{bugstudy25} attributes about 43\% of real VDBMS bugs to incorrect behavior rather than crashes, and the VDBMS testing roadmap~\cite{roadmap25} identifies oracle definition as a key challenge for VDBMS testing. Existing VDBMS fuzzers~\cite{vdbfuzz26} detect only crashes. We target a prevalent subset: \emph{API conformance defects}, where a VDBMS silently accepts an input or produces a behavior that violates its documented contract, such as accepting \texttt{nprobe=0}, silently normalizing \texttt{shardsNum=-1}, or returning success where the documentation prescribes rejection. These defects corrupt query semantics and can return data the documented contract intended to exclude (for example, a negative score threshold that disables a filter and returns all matches). Most produce no crash (37 of 38 acknowledged in our data).
 
-The oracle problem~\cite{barr15} is acute here. Across 111 real VDBMS compliance defects we collected, about 90\% form a residual that the standard oracle families cannot reach (Table~\ref{tab:exclusion}). Differential testing catches mathematical-invariant violations across vendors but cannot adjudicate accept/reject, which diverges across VDBMSs by design and admits no reference~\cite{roadmap25}. Metamorphic relations~\cite{metmap24} address result correctness but not input-acceptance decisions, because a metamorphic relation is an output relation, not an input-acceptance transform. Property-based testing needs a machine-checkable property and an OpenAPI schema, neither of which VDBMS endpoints serve. The root cause is uniform: an accept/reject decision against a natural-language contract does not compile into a deterministic assertion.
+The oracle problem~\cite{barr15} is acute here. Across 111 submitted VDBMS issues (38 maintainer-acknowledged as defects), about 90\% fall in a residual that the standard oracle families cannot reach (Table~\ref{tab:exclusion}). Differential testing catches mathematical-invariant violations across vendors but cannot adjudicate accept/reject, which diverges across VDBMSs by design and admits no reference~\cite{roadmap25}. Metamorphic relations~\cite{metmap24} address result correctness but not input-acceptance decisions, because a metamorphic relation is an output relation, not an input-acceptance transform. Property-based testing needs a machine-checkable property and an OpenAPI schema, neither of which VDBMS endpoints serve. The root cause is uniform: an accept/reject decision against a natural-language contract does not compile into a deterministic assertion.
 
 \begin{table*}[t]
-\caption{Oracle candidates by the defect class they reach, and why the API-compliance residual forces an LLM-as-checker. Rows 1 to 4 use a deterministic checker; row 5 (REST doc/spec-derived assertion oracles) also keeps a deterministic checker and so never enters the LLM-as-checker regime; only row 6 is forced into it.}
+\caption{Oracle candidates by the defect class they reach, and why the API-conformance residual forces an LLM-as-oracle. Rows 1 to 4 use a deterministic oracle; row 5 (REST doc/spec-derived assertion oracles) also keeps a deterministic oracle and so never enters the LLM-as-oracle setting; only row 6 is forced into it.}
 \label{tab:exclusion}
 \small
 \begin{tabular}{@{}p{0.22\textwidth}p{0.30\textwidth}p{0.40\textwidth}@{}}
 \toprule
-Candidate oracle & Reaches (defect class) & Why it misses the compliance residual \\
+Candidate oracle & Reaches (defect class) & Why it misses the conformance residual \\
 \midrule
-Crash (VDBFuzz~\cite{vdbfuzz26}) & crash/hang & compliance defects do not crash \\
-Differential testing & math invariants across vendors (our model-free subclass, \S\ref{sec:eval}) & cross-vendor accept/reject diverges by design; no compliance reference~\cite{roadmap25} \\
-Metamorphic relations~\cite{metmap24} & result correctness (top-$k$ monotonicity, recall vs.\ $ef$) & an MR is an output relation; compliance is an input accept/reject decision, and no transform preserves it \\
+Crash (VDBFuzz~\cite{vdbfuzz26}) & crash/hang & most conformance defects do not crash (37/38 acknowledged) \\
+Differential testing & math invariants across vendors (our model-free subclass, \S\ref{sec:eval}) & cross-vendor accept/reject diverges by design; no conformance reference~\cite{roadmap25} \\
+Metamorphic relations~\cite{metmap24} & result correctness (top-$k$ monotonicity, recall vs.\ $ef$) & an MR is an output relation; conformance is an input accept/reject decision, and no transform preserves it \\
 Property-based testing~\cite{claessen00,schemathesis,quickrest20} & math properties + schema conformance & needs a machine-checkable property and an OpenAPI schema; VDB endpoints serve neither \\
-REST doc/spec-derived oracles (AGORA+, SATORI, MASTOR) & status/field/invariant assertions from OpenAPI or source & require OpenAPI or treat code as truth; checked deterministically, so they do not enter the LLM-as-checker regime \\
-\textbf{LLM-as-checker (TestVDB)} & \textbf{accept/reject vs.\ documented contract} & \textbf{compliance semantics are not compilable to a deterministic assertion, forcing an LLM checker; the reliability problem this introduces is the subject of \S\ref{sec:regime}} \\
+REST doc/spec-derived oracles (AGORA+, SATORI, MASTOR) & status/field/invariant assertions from OpenAPI or source & require OpenAPI or treat code as truth; checked deterministically, so they do not enter the LLM-as-oracle setting \\
+\textbf{LLM-as-oracle (TestVDB)} & \textbf{accept/reject vs.\ documented contract} & \textbf{conformance semantics are not compilable to a deterministic assertion, forcing an LLM oracle; the reliability problem this introduces is the subject of \S\ref{sec:regime}} \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
-That non-compilability forces the checker to be an LLM. We call the resulting setting the \emph{LLM-as-checker regime}: the pass/fail judgment over an undocumented boundary must come from a language model because no mechanical oracle exists. Recent REST-API oracle work stays outside this regime by construction: AGORA+, SATORI, and MASTOR derive oracles that remain executable assertions, checked deterministically, so the LLM never judges a test outcome.\footnote{Citations for AGORA+, SATORI, MASTOR, and for Panickssery et al.\ on LLM-as-judge self-preference are pending the Related Work bibliography pass.} VDBMS compliance admits no such deterministic oracle, which places it inside the regime.
+That non-compilability forces the oracle to be an LLM. We refer to this as the \emph{LLM-as-oracle setting}: the pass/fail judgment over an undocumented boundary must come from a language model because no mechanical oracle exists. Recent REST-API oracle work stays outside this setting by construction: AGORA+, SATORI, and MASTOR derive oracles that remain executable assertions, checked deterministically, so the LLM never judges a test outcome.\footnote{Citations for AGORA+, SATORI, MASTOR, and for Panickssery et al.\ on LLM-as-judge self-preference are pending the Related Work bibliography pass.} VDBMS conformance admits no such deterministic oracle, which places it inside this setting.
 
-Entering the regime creates the reliability problem. A naive design has one LLM family both extract the contract from documentation and judge compliance against it, and the two roles share biases. This is the LLM-as-judge self-preference phenomenon (Panickssery et al.), which cross-model validation mitigates. A second failure mode is deeper: when the documentation is ambiguous, every LLM family infers the same wrong contract. We call these \emph{task-intrinsic} contract errors. On a counterfactual probe, a different family reproduces the over-strict contract in fewer than half of our cases. The remaining cases are task-intrinsic, and cross-model cannot resolve them, because both families agree, wrongly, on what the documentation says.
+Entering this setting creates the reliability problem. A naive design has one LLM family both extract the contract from documentation and judge whether behavior conforms to it, and the two roles share biases. This is the LLM-as-judge self-preference phenomenon (Panickssery et al.), which cross-model validation mitigates. A second failure mode is deeper: when the documentation is ambiguous, every LLM family infers the same wrong contract. We call these \emph{task-intrinsic} contract errors. On a counterfactual probe, a different family reproduces the over-strict contract in fewer than half of our cases. The remaining cases are task-intrinsic, and cross-model cannot resolve them, because both families agree, wrongly, on what the documentation says.
 
 The only ground truth that resolves task-intrinsic errors is the implementation itself. This motivates \emph{source-grounded falsification}: treat an LLM-derived contract as a refutable hypothesis and falsify it against source code, where the documentation expresses the intended behavior and the source expresses the actual behavior. The idea complements cross-model validation rather than replacing it: cross-model covers the family-specific subset, source covers both. We instantiate it in TestVDB, a detector that extracts contracts from documentation, probes VDBMS endpoints, and falsifies LLM verdicts against maintainer-authority evidence, primarily source.
 
 \paragraph{Contributions.}
 \begin{itemize}
-  \item \textbf{The LLM-as-checker regime (\S\ref{sec:regime}).} We frame VDBMS API compliance as a setting where a deterministic oracle is unavailable and an LLM checker is forced, and show this is the precise boundary that separates VDBMS compliance from prior REST-API oracle work.
-  \item \textbf{Quantification of the compliance residual.} Across 111 real defects, about 90\% are unreachable by differential, metamorphic, or property-based oracles, mapping where each classical class fails.
+  \item \textbf{The LLM-as-oracle setting (\S\ref{sec:regime}).} We frame VDBMS API conformance as a setting where a deterministic oracle is unavailable and an LLM oracle is forced, and show this is the precise boundary that separates VDBMS conformance from prior REST-API oracle work.
+  \item \textbf{Quantification of the conformance residual.} Across 111 submitted issues (38 maintainer-acknowledged as defects), about 90\% are unreachable by differential, metamorphic, or property-based oracles, mapping where each classical class fails.
   \item \textbf{Task-intrinsic contract errors and the source-grounded counter.} We separate family-specific from task-intrinsic contract errors, show that cross-model fixes only the former, and argue that source is the only ground truth for the latter, with counterfactual evidence.
-  \item \textbf{TestVDB and scale.} TestVDB found 111 defects across five VDBMSs; maintainers acknowledged 38. A controlled retrospective shows the source anchor lifts false-positive suppression from 31\% to 81\% at 96.7\% true-positive retention.
+  \item \textbf{TestVDB and scale.} TestVDB surfaced 111 candidate issues across five VDBMSs; maintainers acknowledged 38 as defects. A controlled retrospective shows the source anchor lifts false-positive suppression from 31\% to 81\% at 96.7\% true-positive retention.
   \item \textbf{A reusable model-free invariant oracle subclass} (\texttt{COSINE} bounds, index completeness) that is classical-addressable, cross-vendor, and independent of TestVDB's LLM pipeline.
 \end{itemize}
 
@@ -89,7 +83,7 @@ The only ground truth that resolves task-intrinsic errors is the implementation 
 \end{itemize}
 
 % =====================================================================
-\section{The LLM-as-Checker Regime} \label{sec:regime}
+\section{The LLM-as-Oracle Setting} \label{sec:regime}
 \textit{Plan --- NEW section, the conceptual core (§8/§9). This is what v1 lacked.}
 \begin{itemize}
   \item \textbf{Definition:} a setting is in the LLM-as-checker regime when the oracle cannot be compiled to a deterministic assertion, so the pass/fail judgment must come from an LLM.
