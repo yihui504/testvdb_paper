@@ -1,35 +1,34 @@
-# Paper Restructure Todo（post-grilling，2026-07-15 建档）
+# Paper Restructure Todo（v2 重构，收尾状态 2026-07-16）
 
-> 来源：novelty-reassessment.md §8（两轮反驳 + 术语审计 + MASTOR 全文 + 传播检索后的修订）。
-> venue 未定（导师未拍板，软目标 ISSTA 2027-01）；以下为 venue 无关的地基工作。
-> 顺序：Task 2 ✅ → E1/E2（现在做，定生死）→ 写作准备。
+> v2 重构稿：[paper/paper-draft-acm-sigconf.tex](paper/paper-draft-acm-sigconf.tex)（ACM sigconf，5 页）。
+> 定位：LLM-as-oracle setting + task-intrinsic + source-grounded falsification。
+> 状态：**完整、跨节一致、全引用、mock-review Accept 区**。venue 未定（导师未拍板，软目标 ISSTA 2027-01）。
+> 旧稿 v1（VLDB propagation-centric）存档于 git tag `archive/v1-vldb-pre-rewrite`。
 
-## ✅ 已完成
-- **Task 2-A：MASTOR 全文深读**（arXiv 2606.10465）→ 两 hinge 解决：checker 确定性（不进 LLM-as-checker 区）；参考系=代码（§7.4.2 排除 doc-vs-code）。forcing 上移到 LLM-as-checker 区，更干净。
-- **Task 2-B：传播检索** → 同族自我确认 = **self-preference bias**（Panickssery 2024, arXiv 2404.13076）。支柱①重构为 forcing 论证 + source-falsification countermeasure + 域实证（非新概念）。
-- **Task 3：术语审计** → oracle/falsification ✅；compliance→conformance 待定；hallucination propagation 改挂 self-preference 线。
-- **E1：111 bug fault-model 分类** → 经典可发现 M+C=11/111 (10%)；残差 V+Vs+X=100/111 (90%)，0 待核；acknowledged 38 → 4 vs 34 (11%/89%)。见 [data/e1-bug-classification.md](data/e1-bug-classification.md)。🔥 弹药：qdrant #9027 的 OAS 明确不给 score_threshold 加 min/max（limit 却有 minimum:1）→ Schemathesis/AGORA+ **结构性必漏**，纯语义只有 LLM 够。MASTOR bonus：mutation 范式把原码当真相，111 条 pre-existing bug 一条都找不到（正交，非 scoop）。
+## ✅ 已完成（重构闭环）
 
-## 🔴 P0 待做（定生死，自家数据）
-- [x] **E1 ✅（见上 ✅ 区）｜原计划：111 bug 按 fault model 分类**：{classical 可发现（数学/crash/状态） / doc-vs-code compliance-only 残差}。产出：残差占比 + 逐 bug 标注。**决定贡献体量** + 验证 bug 真属 MASTOR §7.4.2 够不到的类。⚠️ 分类不干净（"靠 compliance 发现但根是数学"需人工裁）。
-- [x] **E2 核心已由 t25 回答（2026-07-15）**。[t25_contract_counterfactual](TestVDB/scripts/t25_contract_counterfactual.py)（Round 13）已跑跨家族检验：同文档喂 GLM vs DeepSeek，DeepSeek 复现 GLM 过严契约 ≈2-4/9 → 偏差约一半 family-specific（异族能修）/ 一半 task-intrinsic（异族也复现，源码才能解）。**→ 支柱①重构**：source-falsification 真价值=解 task-intrinsic 契约错误（cross-family 结构性修不了），与 cross-family 互补不冗余。比"同族传播"框架更强、不撞 Panickssery。详见 novelty-reassessment.md §9。
-- [ ] **E2 剩余（可选，judge-level）**：51-probe 集对 judge-level 无效（38 FP 全 response_code≠0，0 hard FP；GLM 25.5% 是 HTTP200 方法学 bug 非 self-preference）。若要做 judge-level，需新建 accepted-but-by-design probe 集。优先级低——generation-level 的 t25 已支撑重构。
-- [ ] **t25 扩 N（2026-07-15 再评估：ground-truth 瓶颈，暂缓）**：自动挖（[t25_expand_mine.py](TestVDB/scripts/t25_expand_mine.py)，optional+严约束）仅出 3 候选，契约形式参差+匹配脆弱。根因：over-strict **判定需 ground truth**（API 是否接受 0/-1/empty），来源只有 by-design bug（池子~已用尽）或**活体特殊值测试**（起 5 Docker + 跑 probe，重组件、venue 未定偏早）。**结论：N=9 已定性支撑 §9 重构；发表级 N 走活体测试，待 venue 定了再做。** 当前优先 D1/D2/B。
-- [ ] **P2 新增**：THEORETICAL_FRAMEWORK.md 补传播/self-preference 形式化（现 grep 不到，§8 未进代码库文档）。
-- [ ] **P2 新增**：qdrant 有 v1.18_openapi.json → 支柱③"VDB 无 OpenAPI"软化成"OpenAPI 不充分（#9027 score_threshold 无 min/max 即证）"。
+**地基（novelty-reassessment.md §8/§9）**：四篇论文 grilling（Barr/Slutz/Chen/QuickCheck）→ 贡献地图 → 两轮反驳修正（传播非强制 / classical 覆盖子集）→ 术语审计（compliance→conformance, LLM-as-checker→LLM-as-oracle, propagation→self-preference 线）→ MASTOR 全文（两 hinge 化解）。
 
-## 🟡 P1（E1/E2 后，写作前）
-- [x] **D1 Table 1 重做 ✅（2026-07-16）**：[paper-draft-vldb-final.tex](paper/paper-draft-vldb-final.tex) L62/L64-79/L130 改为 §8/§9 措辞——三列（覆盖缺陷类/为何够不到 compliance 残差），加"确定性 vs LLM checker 区"区分，新增 AGORA+/SATORI/MASTOR 行（保持确定性 checker、不进 LLM-as-checker 区），LLM 行改为"被迫进入+可靠性留下段"。差分/蜕变按反驳 H/I 收窄（不再"unsuitable"）。
-  - ⚠️ **遗留**：第 5 行 AGORA+/SATORI/MASTOR 暂为文本无 `\cite`（避免未定义引用）→ D2 堵 Related Work 时一起加 bib + cite。
-  - ⚠️ **遗留**：L82/摘要(L47)/结论(L410) 仍用旧"contract hallucination propagation"措辞，待 propagation→self-preference+task-intrinsic 重构（独立 P1 任务，非 D1 范围）。
-- [ ] **Related Work 堵漏**：补 AGORA+/SATORI/MASTOR + 综述 Golmohammadi 2022 + **Panickssery 2024（self-preference bias，支柱①文献锚）**。
-- [ ] **术语定调**：compliance → conformance（NIST 背书）？hallucination propagation → 改挂 self-preference bias 线（别自称发明）。
-- [ ] **roadmap25 = arXiv 2502.20812 核实** + 差分原话"may face challenges"照原口径修正（现论文"unsuitable"过武断）。
+**实验**：
+- E1：111 bug fault-model 分类（85% conformance 残差 / 89% on 38 acknowledged）。[data/e1-bug-classification.md](data/e1-bug-classification.md)
+- E2：cross-model judging vs source（9 Milvus over-strict 条款；cross-model 漏 0/2 task-intrinsic、source 全抓 9/9）。[TestVDB/scripts/e2_judgment.py](TestVDB/scripts/e2_judgment.py)
+- E2 跨厂商：Qdrant v1.18.2 活体探针——over-strict 集中在 Milvus（Qdrant 文档明确 minimum、基本执行）；其 doc-code 缺口是 conformance bug（timeout=0 已提交 Qdrant，pending）。[TestVDB/scripts/e2_qdrant_probe.py](TestVDB/scripts/e2_qdrant_probe.py)
+- classical-oracle 基线：Qdrant v1.18.2 metamorphic MR 套件（0 数学违规 + 0 合规，结构确认）。[TestVDB/scripts/baseline_metamorphic_qdrant.py](TestVDB/scripts/baseline_metamorphic_qdrant.py)
+- retrospective（v1）：source anchor 31%→81% FP 抑制，96.7% TP 留存。
 
-## 🟢 P2（核实类）
-- [ ] AGORA+ FP 启发式全文核实（算术比较类统计过滤）。
-- [ ] MASTOR 会议/发表状态核实（现 arXiv 2026-06，copyright 标 JACM 占位，未确认正式发表；若投 ISSTA 2027-01 属 prior art 须 cite+区分）。
-- [ ] neuro-symbolic invariant（Wu ASE'24）ground-truth 区分锐化（数学真理 vs 源码实然）。
+**写作**：abstract + §1–§9 全正文；Table 1（exclusion）+ Table 2（yield）+ Table 3（E2）；bibliography（含 AGORA+/SATORI/MASTOR/Panickssery，全核验）。
+
+**质量**：多轮 rigor（口径/归因/例子/过度宣称）+ 跨节一致性 + mock-review（3 审稿，Weak Accept→Accept 区）+ Must/Should/Optional 全清 + narrative 收紧（intro/§3 去重）。见 [mock-review.md](mock-review.md)。
+
+## 🟡 剩余（venue 无关，可选）
+- [ ] **decision-tree 图**（LLM-as-oracle setting 可视化，深化概念贡献）——需画图（TikZ/工具）。
+- [ ] THEORETICAL_FRAMEWORK.md 补 self-preference/task-intrinsic 形式化（可选，代码库文档层面）。
+- [ ] Qdrant timeout=0 issue 等回复 → 回来更新 yield（38→39?）+ §6。
+
+## 🔴 camera-ready（venue 定了再做）
+- [ ] **全空间残差估计**：capture-recapture 或无偏缺陷采样——把"85%（TestVDB findings 组成）"升级为"真实缺陷分布的残差估计"。重。
+- [ ] **E2 扩 N**（受 ground-truth 瓶颈限制，over-strict 集中 Milvus）——诚实，能扩则扩到 ~15-20，不能则保持 prevalence 刻画。
+- [ ] 页数合规、匿名、正式 mock-review。
 
 ## ⏸ 阻塞（待 venue）
-- setup-venue → write-paper 正式流水线。venue 导师未拍板。
+- 导师拍板 venue → setup-venue → write-paper 正式流水线。软目标 ISSTA 2027-01。
