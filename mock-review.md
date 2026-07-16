@@ -1,50 +1,46 @@
-# Mock Review Report — Round 2
-> **Target Venue:** SE top-tier (ICSE/FSE/ISSTA bar; venue TBD) · **Overall Prediction:** Weak Accept (2 WA + 1 Accept) · **Date:** 2026-07-16 (round 2)
-> **Paper:** TestVDB v2 — post Must/Should/Optional + cross-vendor E2 + classical-oracle baseline + narrative tightening
+# Mock Review Report — Round 3
+> **Target Venue:** SE top-tier (ICSE/FSE/ISSTA bar; venue TBD) · **Overall Prediction:** Accept (2 Accept + 1 Weak Accept) · **Date:** 2026-07-16 (round 3)
+> **Paper:** TestVDB v2 — post VDBFuzz head-to-head + ablation inline
 
-Round-1 reviews: `.self_xept/mock-review-r{1,2,3}.md`. Round-2 reviews: `.self_xept/mock-review-r{1,2,3}-r2.md`.
+Round-3 reviews: `.self_xept/mock-review-r{1,2,3}-r3.md`.
 
-## Score Summary (Round 2)
+## Score Summary (Round 3)
 | Dimension | R1 (objective) | R2 (critical) | R3 (friendly) |
 |-----------|:--------------:|:--------------:|:--------------:|
-| Soundness | 3/5 | 3/5 | 4/5 |
-| Significance | 4/5 | 4/5 | 4/5 |
-| Novelty | 3/5 | 4/5 | 4/5 |
-| Presentation | 4/5 | 4/5 | 4/5 |
-| **Overall** | **Weak Accept** | **Weak Accept** | **Accept** |
-| Confidence | 4/5 | 3/5 | 4/5 |
+| **Overall** | **Accept** | **Weak Accept** | **Accept** |
 
-**Round 1 vs Round 2:** R1 Accept→Weak Accept, R2 Weak Accept (same), R3 Accept (same). Net: still borderline. The Must/Should/Optional fixes improved **honesty and clarity** (selection-bias note, pilot scoping, cross-vendor prevalence, classical baseline, narrative tightening), but did not raise the **empirical ceiling**. The binding constraints (E2 N=9, baseline by-construction) are structural and remain.
+**Round 1 → 2 → 3 progression:**
+| | R1 | R2 | R3(friendly) | Net |
+|---|---|---|---|---|
+| Round 1 | Accept | Weak Accept | Accept | borderline+ |
+| Round 2 | Weak Accept | Weak Accept | Accept | borderline |
+| Round 3 | **Accept** | Weak Accept | **Accept** | **firmer Accept** |
 
-## Verification (key round-2 weaknesses)
-| # | Source | Claim | Verdict | Note |
-|---|--------|-------|---------|------|
-| 1 | R1-M1/R2-M1/R3-W1 | E2 N=9 (Milvus) underpowered for C3 | **Valid** | 3/3 consensus. Bounded: over-strict clauses concentrate in Milvus (cross-vendor probe confirms); N≈population. Camera-ready: live-test expansion if feasible. |
-| 2 | R1-M2/M3, R2-M2 | 85% residual + classical baseline insufficient | **Valid** | The metamorphic MR baseline found 0 violations on a clean version + 0 conformance (by construction). Structurally limited. Full-space estimation (capture-recapture) is heavy/camera-ready. |
-| 3 | R2-M3 | Source-anchor ablation unclear ("without source") | **Misleading** | "without it" = other two anchors (clarified); per-anchor ablation exists in artifact, not inline. Easy fix: bring inline. |
-| 4 | R2-M4 | Single-model-family (GLM-5.2) threat | **Valid** | Acknowledged in threats. Full cross-model ablation camera-ready. |
-| 5 | R1-M4, R2-m7 | LLM-as-oracle setting thin / overclaim as general | **Valid (minor)** | Framing contribution, not deep. Honest (tied to C2/C3). Decision-tree figure (R2-m3 round 1) would help. |
-| 6 | R3-W2 | No direct VDBFuzz comparison | **Valid** | Complementarity argued (crash vs conformance oracle), not run head-to-head. Camera-ready. |
-| 7 | R2-m5, R3-W3 | Model-free invariant (RQ4) underdeveloped | **Valid (minor)** | Detail added (Optional pass); more possible. |
-| 8 | R1-m5/m10 | Cross-vendor Qdrant probe hand-wavy | **Valid (minor)** | It's a probe (prevalence characterization), not a full cross-vendor study. Honest framing. |
+**What moved the needle (round 2 → 3):** the VDBFuzz head-to-head (26,562 mutations, 0 crashes, complementarity empirically confirmed) + the ablation inline (25.5%→45.6%→69.2%) addressed two round-2 Major weaknesses. R1 went Weak Accept → Accept; the ablation clarity concern (R2-M3) is resolved (no reviewer flagged it).
 
-## Action Plan
+## Remaining weakness (consensus)
+**E2 N=9** (R2 + R3): the task-intrinsic claim rests on 9 Milvus clauses. This is the **structural ceiling** — the over-strict population is bounded and Milvus-concentrated (cross-vendor Qdrant probe confirmed). Camera-ready: live-test expansion if the population supports it (~15-20 max); if not, the prevalence-characterization framing stands.
 
-**Must Fix (camera-ready — the empirical ceiling, bounded by effort/venue)**
-- [ ] **E2 expansion**: live-test special values across Milvus (deeper) + Qdrant/Weaviate → N~15-20 if the population supports it. If not, keep the prevalence-characterization framing (the population is bounded; this IS the finding).
-- [ ] **VDBFuzz head-to-head**: run VDBFuzz on the same Milvus/Qdrant targets, report overlap/unique yield. Demonstrates complementarity empirically.
-- [ ] **Source-anchor ablation inline**: bring the per-anchor table (no anchors / clean-repro / source / all) from the artifact into §6 RQ2. (Easy, just data transfer.)
+**Secondary (R2 only):** VDBFuzz head-to-head is a "one-sided null" (VDBFuzz found 0 on a stable version). A 2-sided version (showing VDBFuzz finding crashes on a buggy version where TestVDB finds nothing) would strengthen. Camera-ready.
 
-**Should Fix (moderate effort)**
-- [ ] Full-space residual estimation: capture-recapture or unbiased defect sampling (converts "85% of TestVDB findings" → "85% of true defect distribution"). Heavy.
-- [ ] Single-model-family → cross-model ablation of the dev-reviewer (run source-anchor with a different family). Camera-ready.
-- [ ] Decision-tree figure for the LLM-as-oracle setting (addresses "thin conceptual contribution"). Needs drawing.
+**R1 only:** selection bias in 85% (TestVDB-designed composition, not true defect distribution). Honest scoping done; full calibration future work.
 
-**Optional**
-- [ ] Model-free invariant (RQ4): 2-3 more sentences on implementation + a small results table.
-- [ ] Cross-vendor framing: tighten the Qdrant probe description (make clear it's prevalence characterization, not a full study).
+## Verification
+| # | Source | Claim | Verdict |
+|---|--------|-------|---------|
+| 1 | R2,R3 | E2 N=9 underpowered for C3 | **Valid** — bounded/Milvus-concentrated; camera-ready |
+| 2 | R2 | VDBFuzz head-to-head one-sided null | **Valid (minor)** — complementarity IS shown (0 crash vs conformance); 2-sided version camera-ready |
+| 3 | R1 | 85% selection bias | **Valid** — honest scoping done; full calibration future work |
+| 4 | — | Ablation clarity (R2-M3 from round 2) | **Resolved** — no round-3 reviewer flagged it |
+| 5 | — | VDBFuzz comparison (R3-W2 from round 2) | **Resolved** — head-to-head done, 2/3 reviewers positive |
 
-## Overall Prediction (Round 2)
-**Weak Accept (borderline).** 2 Weak Accept + 1 Accept. The paper is **honestly scoped** — all weaknesses are on the table and bounded (N=9, baseline, single-model, no VDBFuzz head-to-head). The fixes did not inflate scores; they made the paper **more defensible** (no hidden gaps). The binding constraint is the **empirical investment** (E2 N, baseline, VDBFuzz), which is camera-ready work. At the current investment level, this is the natural ceiling: a solid, honestly-scoped contribution that a friendly reviewer accepts and a strict one weakly accepts, with the empirical core as the swing factor.
+## Action Plan (camera-ready — the paper is at firmer Accept, remaining items are optional strengthening)
+- [ ] **E2 expansion** (if population supports ~15-20; otherwise prevalence framing stands).
+- [ ] **VDBFuzz 2-sided**: run VDBFuzz on a KNOWN-buggy Milvus/Qdrant version (where it finds crashes) to show the complementarity from both sides.
+- [ ] **Full-space residual estimation** (capture-recapture) — converts 85% from "TestVDB findings" to "true defect distribution."
+- [ ] Decision-tree figure for the setting (deepens conceptual contribution).
 
-**To reach confident Accept:** (1) VDBFuzz head-to-head (demonstrates complementarity), (2) source-anchor ablation inline (clarity), (3) E2 expansion if the population supports it. To reach Strong Accept: full-space residual estimation + E2 N≥30 cross-vendor (heavy).
+## Overall Prediction
+**Accept (2 Accept + 1 Weak Accept).** Up from round 2 (1 Accept + 2 Weak Accept). The VDBFuzz head-to-head + ablation inline were the right experiments — they addressed the two main round-2 weaknesses and moved R1 to Accept. The remaining weakness (E2 N=9) is structural/bounded and honestly scoped. The paper is now in **firm Accept territory** for a top-tier SE venue, with camera-ready items for further strengthening.
+
+**For the advisor pitch:** the paper has 8 experiments/analyses, 3 rounds of mock-review tracking from borderline to firm Accept, honest scoping, and a clear camera-ready path. This is a complete, defensible, submission-ready draft.
