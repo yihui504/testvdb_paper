@@ -134,29 +134,26 @@ The RQ3 probe is small (nine clauses, Milvus) and is the most contingent finding
 
 % =====================================================================
 \section{Related Work} \label{sec:related}
-\textit{Plan --- restructure around the regime distinction (closes the v1 zero-citation hole).}
-\begin{itemize}
-  \item \textbf{VDBMS testing:} VDBFuzz (crash), roadmap25, bugstudy25.
-  \item \textbf{REST doc$\to$oracle line:} AGORA+ (Daikon dynamic invariants), SATORI (LLM from OpenAPI), MASTOR (multi-agent from source). Position via the deterministic-checker regime: all three stay out of the LLM-as-checker regime; MASTOR additionally treats code as truth (mutation paradigm) and explicitly cannot detect doc-vs-code compliance (§7.4.2) --- orthogonal fault model.
-  \item \textbf{LLM-as-judge reliability:} Panickssery et al. 2024 (self-preference bias) --- anchor for the family-specific subset; we extend to the pipeline setting + identify the task-intrinsic residual beyond it.
-  \item \textbf{DB correctness oracles:} NoREC/TLP/DQE/DDLCheck (SQL semantics; not applicable to VDB compliance).
-  \item \textbf{Property-based / metamorphic:} QuickCheck, Schemathesis, QuickREST, MeTMaP --- cover the math subset, structurally miss compliance (Table 1).
-\end{itemize}
+
+\paragraph{VDBMS testing.} VDBFuzz~\cite{vdbfuzz26} is the first dedicated VDBMS fuzzer and uses crash as its oracle, which makes it complementary to this work. The roadmap~\cite{roadmap25} sets the agenda we build on, and the empirical bug study~\cite{bugstudy25} the taxonomy; both point to the conformance subset we target.
+
+\paragraph{REST-API oracle generation.} A recent line derives test oracles for REST APIs from specifications or source code. AGORA+ learns dynamic invariants from request and response traces, SATORI uses an LLM to read the OpenAPI specification, and MASTOR uses a multi-agent system over source code.\footnote{Citations for AGORA+, SATORI, MASTOR, and Panickssery et al.\ are pending the bibliography pass.} These are not in our setting: each produces an oracle that remains an executable assertion, checked deterministically, so the LLM never issues a test verdict (Section~\ref{sec:regime}). MASTOR is the closest, since it also uses source, but it reads source to generate oracles that encode implemented behavior and treats source as the truth, so by construction it cannot detect a gap between the documentation and the code; TestVDB reads source to falsify documentation-derived clauses, and that gap is exactly what it targets.
+
+\paragraph{LLM-as-judge reliability.} Self-preference bias, in which an LLM evaluator favors its own family's outputs, is established for general text evaluation (Panickssery et al.). Our family-specific layer is an instance of this in the test-oracle pipeline, and cross-model validation mitigates it as expected. Our addition is the task-intrinsic layer, where the error is in the shared documentation rather than the model, and which cross-model validation cannot remove.
+
+\paragraph{Database and property-based oracles.} NoREC~\cite{norec20}, TLP~\cite{tlp20}, DQE~\cite{dqe20}, and DDLCheck~\cite{ddlcheck25} test SQL correctness against reference semantics that VDBMS conformance lacks. Property-based testing~\cite{claessen00} and its REST instances, Schemathesis~\cite{schemathesis} and QuickREST~\cite{quickrest20}, together with metamorphic testing (MeTMaP~\cite{metmap24}), cover the mathematical-invariant subset; the conformance residual is where they, by construction, stop.
 
 % =====================================================================
 \section{Discussion and Limitations}
-\textit{Plan.}
-\begin{itemize}
-  \item t25 is a pilot (N=9); camera-ready expansion via live special-value testing across 5 VDBs.
-  \item Cross-model CTS validation (full 3-arm) is the primary open direction.
-  \item Soft result-correctness (ANN recall/ranking) remains open.
-  \item Breadth-only generalization for Weaviate/MeiliSearch/Chroma; statistical claims on Milvus+Qdrant.
-  \item Terminology: we adopt \emph{conformance} (NIST) over \emph{compliance} where precision matters (Task-3 audit).
-\end{itemize}
+
+The LLM-as-oracle setting is not specific to VDBMSs. Any system whose correctness criterion is a natural-language contract that cannot be compiled to a deterministic assertion enters it: REST contract testing where the schema is absent or silent on the semantics, configuration validation, and policy-as-code checks where the documentation is the only oracle. In each, a single LLM family that both extracts the specification and checks compliance is susceptible to the two-layer unreliability we describe, and source-grounded falsification is the natural mitigation. We have not tested these transfers and leave them to future work.
+
+The limitations are concrete. The RQ3 probe is a nine-clause pilot on Milvus, and the task-intrinsic claim, though directionally clear, needs a larger head-to-head study across vendors and clauses; this is the priority for the camera-ready version. All source-anchor results use a single model family (GLM-5.2), and a full cross-model ablation of the dev-reviewer remains open. Soft result correctness of vector search (ANN recall, ranking) is out of scope. The 111-submission yield rests on maintainer adjudication concentrated on Milvus and Qdrant; Weaviate, MeiliSearch, and Chroma are breadth probes.
 
 % =====================================================================
 \section{Conclusion}
-\textit{Plan --- one paragraph: VDB API conformance is a residual that rules out a mechanical oracle and leads us to adopt an LLM as the semantic judge; the resulting task-intrinsic contract errors are resolvable by source-grounded falsification (complementary to cross-model); TestVDB demonstrates at scale (111 candidate issues, 38 acknowledged).}
+
+VDBMS API conformance is a defect class where no deterministic oracle exists, which leads us to adopt an LLM as the semantic judge. The LLM's contract errors split into a family-specific layer that cross-model validation mitigates and a task-intrinsic layer that it cannot, because the ambiguity lives in the documentation. Source-grounded falsification resolves the task-intrinsic layer by treating the LLM-derived contract as a hypothesis and the implementation as the ground truth. TestVDB demonstrates the approach at scale: 111 candidate issues across five VDBMSs, 38 maintainer-acknowledged, with the source anchor suppressing 81\% of false positives. The boundary we draw, between problems whose oracle can be checked deterministically and those that require a semantic judge, is where we see the testing of LLM-dependent systems heading.
 
 % =====================================================================
 \bibliographystyle{ACM-Reference-Format}
