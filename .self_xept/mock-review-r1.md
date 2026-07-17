@@ -1,116 +1,51 @@
-# Mock Review — TestVDB (ACM SIGCONF format)
+## Summary
 
-**Summary:**  
-TestVDB targets API conformance defects in vector databases by treating an LLM-derived contract as a hypothesis and falsifying it against source code. The work introduces the "LLM-as-oracle setting" to demarcate problems that lack a deterministic oracle, and validates source-grounded falsification on five systems, reporting 38 acknowledged defects from 111 submissions with an 81% false-positive suppression rate.
-
----
+The paper addresses API conformance testing for Vector Database Management Systems (VDBMSs), targeting a class of defects where systems silently accept inputs violating their documentation (e.g., out-of-range parameters like `nprobe=0`, `ef=0`). The authors argue that approximately 85% of conformance defects are unreachable by classical oracles (differential, metamorphic, property-based) because accept/reject decisions are documented in natural language rather than formal specifications. They propose TestVDB, which uses an LLM to extract behavioral claims from documentation and judges conformance, then falsifies these claims against source code to address LLM interpretation errors. Across five VDBMSs, TestVDB surfaced 111 candidate issues with 38 maintainer-acknowledged defects; a controlled retrospective shows source-grounded falsification suppresses 81% of false positives (up from 31%) while retaining 96.7% of true positives. The core contribution is identifying and addressing "task-intrinsic" documentation-interpretation errors that cross-model validation cannot catch, through source-grounded falsification.
 
 ## Strengths
 
-- **Clear problem articulation.** The paper cleanly distinguishes conformance (accept/reject vs. documented contract) from correctness (result quality), and quantifies the residual left by classical oracles (≈85% unreachable by differential/metamorphic/property-based approaches). Table 1 effectively maps where each classical oracle fails.
+1. **Clear problem framing with quantitative motivation** (Table 1, Section 3): The paper systematically maps where classical oracles fail on the conformance defect residual. The 85% figure (38 acknowledged defects classified) provides concrete scope for the problem space, and the exclusion analysis (Table 1) is methodical.
 
-- **Honest scoping.** The work explicitly bounds its claims: conformance only, not result correctness of vector search. The threat-to-validity section is direct about the limitations (RQ3 is a nine-clause pilot; Weaviate/MeiliSearch/Chroma are breadth-only).
+2. **Empirically grounded two-layer reliability model** (Section 4): The separation of family-specific vs. task-intrinsic LLM errors is well-motivated. The nine-clause Milvus probe (Table 2) provides direct evidence: cross-model judging caught 6/9 over-strict clauses but missed both task-intrinsic ones, while source-grounded falsification caught all 9. This isolates where source adds value beyond cross-model validation.
 
-- **Concrete method.** Source-grounded falsification is crisply defined: a clause asserting "reject if param < X" is falsified if source shows that value triggers default semantics. This is implementable and falsifiable.
+3. **Substantial real-world evaluation** (Section 6): 111 submitted issues across five VDBMSs with 38 maintainer-acknowledged defects provides meaningful scale. The acknowledgment rate (34.2% overall, 43.1% on Milvus, 50% on Qdrant) indicates the surfaced issues are non-trivial. The controlled retrospective (54 adjudicated candidates) with Wilson 95% CI [55.7%, 80.1%] precision is rigorous.
 
-- **Source-as-truth contrast.** The distinction from MASTOR is well-drawn: MASTOR reads source to generate oracles that encode implemented behavior (truth = code) and therefore cannot detect doc/code gaps; TestVDB reads source to falsify doc-derived clauses and targets exactly those gaps.
+4. **Clear positioning against prior work** (Section 7): The paper carefully distinguishes its setting from REST-API oracle work (AGORA+, SATORI, MASTOR), explaining why those approaches don't transfer: they extract from structured sources (OpenAPI, traces, source) where constraints are explicit, whereas VDBMS documentation is ambiguous natural language requiring interpretation. The contrast with MASTOR is particularly sharp: MASTOR tests what the implementation does (source as reference), while TestVDB tests what documentation prescribes (source as actual-behavior reference).
 
-- **Useful model-free invariant subclass.** RQ4 contributes a reusable, LLM-free invariant oracle (COSINE distance >1 for identical vectors, index completeness, payload-filter correctness) that is classical-addressable and cross-vendor.
-
----
+5. **Rigorous ablation and threat analysis** (Section 6, Table 2, RQ2): The single-LLM (25.5% precision) → single-source-cycle (45.6%) → full-multi-agent-with-source (69.2%) progression cleanly shows where precision gains come from. The threats-to-validity section is explicit about the small RQ3 probe being the most contingent finding.
 
 ## Weaknesses
 
-### [Major] C3 (task-intrinsic errors) rests on a fragile empirical foundation.
+1. **[Major] Small sample for the central task-intrinsic claim** (Section 6, RQ3): The nine-clause Milvus probe (Table 2) is the primary evidence that cross-model validation misses task-intrinsic errors. The paper treats this as a "pilot," but without a larger study, the 2/9 task-intrinsic fraction (22%) is highly contingent. A binomial confidence interval on 2/9 would be wide (approximately [3%, 60%] at 95% CI), and generalization to other VDBMSs or documentation patterns is speculative. Fix: Expand the probe to 30+ clauses across Milvus and at least one additional VDBMS, or clearly frame this as an initial finding requiring further validation.
 
-**Evidence:** Section 5 (RQ3, Table 3) reports that cross-model judging misses both task-intrinsic clauses while source catches all 9. But this is N=9 clauses on Milvus only. The text labels this a "pilot," but the conceptual contribution (task-intrinsic errors + source-grounded resolution) rests on this single, small experiment.
+2. **[Major] Unclear construct validity for "task-intrinsic" classification** (Section 4, RQ3): The paper defines task-intrinsic errors as those where "a different family independently reproduces the over-strict clause" (line 88), but the operational procedure is not fully specified. Did the second family (DeepSeek) reproduce the clause *verbatim*, or was there semantic equivalence judgment involved? If semantic judgment was required, who judged it—another LLM or a human? If another LLM, the classification may itself be LLM-dependent. Fix: Specify the exact decision procedure for classifying a clause as task-intrinsic, including who/what determines "reproduces" and whether inter-rater reliability was measured.
 
-**Fix:** Expand RQ3 to at least three vendors and 30–50 clauses. If resource constraints prevent full expansion, reframe C3 as a hypothesis validated on a pilot and de-emphasize claims about "task-intrinsic" as a separate, stable category.
+3. **[Major] Selection bias threat under-specified** (Section 6, RQ1): The paper states "This composition reflects what TestVDB is designed to surface, not the true defect distribution" (line 118), but doesn't quantify the selection bias. TestVDB targets documentation-specified constraints, so it will naturally find conformance defects. However, without a random defect sample or capture-recapture estimation, the 85% conformance residual cannot be interpreted as a population parameter. Fix: Add a sentence estimating the selection bias direction (e.g., "TestVDB is biased toward finding conformance defects, so the 85% residual likely overestimates the true population fraction") or conduct a capture-recapture study if feasible.
 
----
+4. **[Minor] No statistical testing on precision gains** (Section 6, RQ2): The paper reports 81% FP suppression with source vs. 31% without, but does not test whether this difference is statistically significant. Given n=54 adjudicated candidates, McNemar's test or a similar paired test could assess significance. Fix: Add a statistical significance test (e.g., McNemar's test on the paired before/after FP suppression) or a confidence interval on the 81% vs. 31% difference.
 
-### [Major] "LLM-as-oracle setting" is a weak conceptual contribution.
+5. **[Minor] Threat to internal validity on "task-intrinsic" probe scope** (Section 6, Threats): The paper notes the RQ3 probe is small and Milvus-specific, but doesn't address whether the nine clauses were selected randomly or cherry-picked. If they were selected because the authors already suspected they were task-intrinsic, the probe may overestimate the phenomenon's prevalence. Fix: Specify the selection procedure for the nine clauses (random sample from all over-strict clauses? purposively selected?) and, if purposive, acknowledge the selection bias explicitly.
 
-**Evidence:** Section 3 defines the setting as "where the pass/fail verdict cannot be issued by a deterministic assertion." This is a relabeling of "LLM-as-judge" (cited Panickssery et al. 2024) with a boundary drawn around "deterministic vs. semantic judge." The paper does not introduce a new theoretical lens, only a naming of an existing design point.
-
-**Fix:** Strengthen the contribution by either (a) providing a deeper characterization of when problems enter this setting (e.g., a decision procedure or property checklist), or (b) reducing Section 3's framing and treating the setting as background rather than a named contribution.
-
----
-
-### [Major] Empirical scale is modest for a defect-finding claim.
-
-**Evidence:** 111 submitted / 38 acknowledged across five systems is the headline result, but acknowledgments are heavily skewed (Milvus 22, Qdrant 13; Weaviate 3; others 0). The paper acknowledges this as "breadth-only" but still presents the yield as a general result (Table 2, paragraph 1 of RQ1).
-
-**Fix:** Either (a) accumulate more data on Weaviate/MeiliSearch/Chroma to support general claims, or (b) reframe the yield as Milvus/Qdrant-focused with exploratory probes on other vendors.
-
----
-
-### [Minor] Overclaim on "85% residual" without baseline comparator.
-
-**Evidence:** The abstract and RQ1 assert "about 85% are conformance defects that differential, metamorphic, and property-based oracles cannot reach." Table 1 maps where each classical oracle fails, but the paper does not actually run those oracles on the same defects and report their yield. The 85% is a manual classification, not an empirical comparison.
-
-**Fix:** Either (a) run at least one classical oracle (e.g., a metamorphic tester) on the submitted defects and report empirical coverage, or (b) soften the claim to "by our classification, about 85% are..." and acknowledge the absence of a head-to-head empirical comparison.
-
----
-
-### [Minor] "Deterministic-checker setting" distinction from prior work is underdeveloped.
-
-**Evidence:** Section 3.2 and Related Work assert that AGORA+/SATORI/MASTOR are outside the LLM-as-oracle setting because they "produce an oracle that remains an executable assertion, checked deterministically." This is accurate but not deeply explored—the paper does not analyze why those problems admit deterministic assertions while VDBMS conformance does not, beyond noting that VDB endpoints serve "no schema that encodes these constraints."
-
-**Fix:** Expand the contrast with a more detailed analysis: what properties of a REST API contract admit deterministic extraction (e.g., OpenAPI with explicit status-code invariants) versus those that do not? This would clarify the boundary and strengthen the "LLM-as-oracle setting" as a descriptive contribution.
-
----
-
-### [Minor] Source anchor precision metric is conditional on "maintainer-adjudicated candidates."
-
-**Evidence:** RQ2 reports 69.2% precision on "the adjudicated pool" and 96.7% true-positive retention on n=30. The paper does not define how candidates enter the adjudicated pool (presumably they were submitted to maintainers), but this makes the precision metric conditional on submission quality, not end-to-end from raw candidates.
-
-**Fix:** Clarify the pipeline: raw candidates → post-novelty-gate → submitted to maintainers → adjudicated pool. Report precision at each stage, or at least make explicit that 69.2% is precision on submitted issues, not on all raw candidates before the novelty gate.
-
----
-
-### [Minor] No discussion of recall.
-
-**Evidence:** The evaluation focuses on yield and precision but does not estimate recall. Without a ground-truth defect catalog, recall is unknowable, but the paper could at least discuss lower bounds (e.g., "we found X defects; vendor Y's changelog mentions Z acknowledged issues in this period, of which we reproduced W").
-
-**Fix:** Add a brief discussion of recall estimation, even if only to state that it is unavailable and why (e.g., no public bug corpus for VDBMSs).
-
----
+6. **[Minor] No discussion of computational cost beyond raw LLM calls** (Section 5): The paper reports "on the order of $10^4$ LLM calls and roughly $\$10$ per target" (line 110), but doesn't break down where time/cost goes (e.g., what fraction is dev-reviewer source-reading vs. attack generation vs. live API probes). Fix: Add a brief cost breakdown (e.g., "60% dev-reviewer, 20% attack agents, 20% live probes") to help readers assess scalability.
 
 ## Questions for Authors
 
-1. **C3 scope:** Would you characterize the task-intrinsic finding as a hypothesis validated on a pilot, or as a stable categorization? If the latter, what evidence would convince you that the split generalizes beyond Milvus?
+1. **RQ3 generalization:** The nine-clause Milvus probe is the key evidence for task-intrinsic errors. Do you have plans (or preliminary data) from a larger study—either more clauses in Milvus or clauses from another VDBMS—that would strengthen confidence that this phenomenon generalizes beyond the initial pilot?
 
-2. **LLM-as-oracle setting:** What would a stronger characterization of this setting look like for you? Is there a decision procedure or property checklist that could determine whether a problem enters it?
+2. **Task-intrinsic classification procedure:** You define task-intrinsic as when a second family "independently reproduces the over-strict clause." Was this reproduction verbatim, or did you allow semantic equivalence? Who made the equivalence judgment, and did you measure inter-rater reliability if multiple humans were involved?
 
-3. **Empirical expansion:** What is the priority order for camera-ready? Is RQ3 expansion (more vendors/clauses) ahead of accumulating more submissions on Weaviate/MeiliSearch/Chroma?
-
-4. **Comparator oracles:** Have you considered running a classical oracle (e.g., a metamorphic tester or differential fuzzer) on the same systems to empirically measure the residual, rather than classifying post hoc?
-
-5. **MASTOR contrast:** Could you articulate more concretely what properties of a REST API contract make it amenable to deterministic oracle generation (as in MASTOR/SATORI) versus forcing an LLM-as-oracle regime (as in TestVDB)?
-
----
+3. **Selection bias quantification:** You acknowledge that the 85% conformance residual reflects TestVDB's design rather than the true distribution. Have you considered (or could you add) a simple capture-recapture estimate or a random defect sample to bound the population fraction, even roughly?
 
 ## Scores
 
-| Dimension | Score (1–5) | Rationale |
-|-----------|-------------|-----------|
-| **Soundness** | 4 | Method is well-defined and honestly scoped; RQ3 is the weak link but treated as a pilot. Threats to validity are explicit. |
-| **Significance** | 4 | Target problem (API conformance in VDBMSs) is real and underexplored; 38 acknowledged defects is evidence of relevance. "LLM-as-oracle setting" is a useful frame but not deep. |
-| **Novelty** | 3 | Source-grounded falsification is novel in this context; task-intrinsic errors are novel but empirically fragile. LLM-as-oracle setting is mostly a relabeling. |
-| **Presentation** | 5 | Clear structure, honest scoping, good use of tables. Weaknesses are explicit, not hidden. |
-| **Overall** | **Accept** | Solid empirical work on a real problem with a concrete method. C3 needs expansion but is honestly framed as a pilot. |
+- **Soundness:** 4/5 — The method is technically sound and the evaluation is rigorous, but the central task-intrinsic claim rests on a small sample (nine clauses) that limits confidence in generalization. The controlled retrospective and ablation study are solid, but the construct validity for task-intrinsic classification could be sharper.
 
-**Confidence:** 4 (familiar with VDBMS testing, LLM-as-judge literature, and oracle problem space)
+- **Significance:** 4/5 — The problem is real and the solution (source-grounded falsification) addresses a genuine gap in LLM-as-judge reliability. The 85% conformance residual quantifies a meaningful limitation of classical oracles, and the approach is reusable beyond VDBMSs (as acknowledged in Discussion). The impact would be higher with stronger evidence for task-intrinsic errors.
 
----
+- **Novelty:** 4/5 — The separation of family-specific vs. task-intrinsic LLM errors is novel, and the use of source to falsify LLM-derived claims (rather than as the oracle itself, as in MASTOR) is a clear advance over prior REST-API oracle work. The positioning against AGORA+, SATORI, and MASTOR is sharp.
 
-## Recommendation
+- **Presentation:** 4/5 — The writing is clear and the structure is logical. Table 1 (oracle exclusion analysis) and Table 2 (cross-model vs. source) are excellent. The main weakness is that the small RQ3 probe could be flagged more prominently as a preliminary finding. The Related Work section is thorough.
 
-**Accept** with revisions prioritized as follows:
-1. Expand C3 (RQ3) to at least three vendors and 30–50 clauses.
-2. Rebalance Section 3: either deepen the "LLM-as-oracle setting" or reduce its role as a named contribution.
-3. Soften the 85% residual claim to reflect classification vs. empirical comparison.
-4. Clarify precision metrics' conditioning on the adjudicated pool.
+- **Overall:** 4/5 — (Weak accept). The paper addresses a real problem with a well-motivated solution and strong empirical evaluation (111 submissions, 38 acknowledged). The method is sound and the contributions are clear. The primary limitation is the small sample for the task-intrinsic claim, which is central but presented as a pilot. With broader validation of that finding, this would be a strong accept. As is, it's a solid contribution that moves the field forward.
 
-The paper is a useful, honestly-scoped contribution to VDBMS testing. The core weakness (C3's empirical foundation) is acknowledged and fixable for camera-ready.
+- **Confidence:** 4/5 — I am confident in my assessment of the paper's strengths and weaknesses. The evaluation metrics and study design are clear, and the threats to validity are explicit. My only uncertainty is about the generalizability of the task-intrinsic finding, which the paper itself flags as contingent.

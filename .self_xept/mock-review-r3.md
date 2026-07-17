@@ -1,156 +1,46 @@
-# Mock Review: TestVDB — Source-Grounded Falsification for VDB API Conformance
-
-**Reviewer**: Friendly SE researcher, LLM-for-testing/oracle-problem inclined  
-**Venue target**: ICSE/FSE/ISSTA tier  
-**Date**: 2026-07-16  
-**Confidence**: 4/5
-
----
-
 ## Summary
 
-This paper addresses the test oracle problem for Vector Database Management Systems (VDBMSs), specifically targeting API conformance defects—cases where a system silently accepts inputs or behaviors that violate documented contracts (e.g., accepting `nprobe=0` or out-of-range index parameters). The core problem is that conformance judgments against natural-language documentation cannot be compiled into deterministic assertions, ruling out mechanical oracles (differential, metamorphic, property-based). The authors adopt an LLM as the semantic judge, framing this as the "LLM-as-oracle setting" that distinguishes their work from prior REST-API oracle research.
-
-The key insight is that LLM-derived contract errors split into two layers: (1) family-specific self-preference, mitigated by cross-model validation; and (2) task-intrinsic errors where ambiguous documentation causes different LLM families to infer the same wrong contract, which cross-model validation cannot catch. The solution is **source-grounded falsification**: treat LLM-derived contracts as refutable hypotheses and falsify them against source code (implementation as ground truth).
-
-The authors present TestVDB, a multi-agent pipeline that extracts contracts from documentation, probes VDBMS endpoints, and falsifies LLM verdicts against source. Empirical results: 111 candidate issues across 5 VDBMSs, 38 maintainer-acknowledged defects, with source anchoring suppressing 81% of false positives (up from 31%) while retaining 96.7% of true positives. On nine over-strict clauses, cross-model judging missed 2 task-intrinsic cases while source-grounded falsification caught all 9.
-
-The paper is well-motivated, honestly scoped, and introduces a genuinely useful conceptual framing. However, the empirical evidence for the central claim (task-intrinsic errors requiring source) is preliminary (N=9), and the presentation obscures the contribution's magnitude by over-emphasizing the REST-API boundary distinction rather than the practical utility of source-grounded falsification.
-
----
+TestVDB addresses a real and timely gap in VDBMS testing: detecting API conformance defects where the documented behavior (accept/reject decisions) diverges from actual implementation. The authors demonstrate that about 85% of conformance defects they found are unreachable by classical oracles (differential, metamorphic, property-based), which motivates an LLM-derived oracle. The core insight—that LLM interpretation of ambiguous natural-language documentation produces two layers of error (family-specific self-preference, and deeper task-intrinsic errors where multiple families infer the same wrong claim)—is well-observed and the proposed source-grounded falsification counter is conceptually sound. At scale, TestVDB surfaced 111 candidate issues with 38 maintainer-acknowledged defects, and a controlled retrospective shows the source anchor suppresses 81% of false positives while retaining 96.7% of true positives. The work is timely given the rapid adoption of VDBMSs in LLM applications, and the method's separation from prior REST-API oracle work (which operates on structured sources like OpenAPI) is clear.
 
 ## Strengths
 
-### 1. **Strong conceptual framing of the LLM-as-oracle setting**
+1. **The problem is real and underexplored.** API conformance defects—where a system silently accepts inputs it should reject—are prevalent in VDBMSs and invisible to crash-based fuzzers like VDBFuzz. The authors correctly identify that 85% of the defects they found lie outside the reach of classical oracles (Table 1), mapping where each method fails (differential testing cannot adjudicate divergent accept/reject decisions by design; metamorphic relations relate outputs, not input acceptance; property-based testing needs machine-checkable schemas VDBMSs don't serve). This residual is substantial and justifies an LLM-based approach.
 
-The paper cleanly separates VDBMS conformance from prior REST-API oracle work (AGORA+, SATORI, MASTOR) by defining when a problem *requires* a semantic judge: when the pass/fail verdict cannot be issued by a deterministic assertion. This is a property of the problem space, not a methodological choice. The distinction is crisp: prior work uses LLMs to derive oracles that remain executable assertions (checked deterministically), whereas VDBMS conformance has no such assertion because the accept/reject boundary is natural-language prose.
+2. **The two-layer reliability analysis of LLM-derived oracles is insightful.** The distinction between family-specific self-preference (mitigated by cross-model validation) and task-intrinsic documentation-interpretation errors (unmitigated, because the ambiguity lives in the documentation) is the paper's clearest conceptual contribution. The nine-clause probe on Milvus (Table 2) empirically demonstrates that cross-model judging misses both task-intrinsic errors (2/2) while source-grounded falsification catches all 9. This validates the central claim that source is needed to resolve the task-intrinsic layer.
 
-This framing is valuable beyond VDBMSs. Any system where correctness is defined against natural-language contracts that cannot be compiled to deterministic assertions enters this setting: REST contract testing without schemas, configuration validation, policy-as-code. The paper correctly identifies that the LLM-as-judge reliability problem (self-preference + task-intrinsic errors) will reappear in these transfers, and that source-grounded falsification is the natural mitigation.
+3. **Quantitative results are solid.** 111 submitted issues with 38 maintainer-acknowledged is meaningful scale for VDBMSs. The controlled retrospective (RQ2) shows the source anchor is the dominant precision contributor: single-LLM self-judgment achieves 25.5% precision; adding one source-grounded cycle lifts it to 45.6%; the full multi-agent debate with source reaches 69.2%. The per-anchor breakdown in the artifact (not fully in the paper) indicates source-grounded checking is the key suppressor. The 81% false-positive suppression (up from 31%) with 96.7% true-positive retention is strong evidence the source anchor works.
 
-### 2. **Two-layer error taxonomy is genuinely useful**
+4. **The boundary with prior REST-API oracle work is clearly drawn.** The authors explicitly separate TestVDB from AGORA+, SATORI, and MASTOR, which extract from structured sources (OpenAPI, traces, source) where constraints are explicit, and where the LLM's role is transcription rather than interpretation. TestVDB's setting—natural-language documentation where the LLM must infer intent—is distinct, and the reliability consequences (task-intrinsic errors) are specific to it. MASTOR is correctly identified as the closest prior work, and the contrast is sharp: MASTOR tests what the implementation does (with source as reference), so it cannot detect doc-code gaps; TestVDB tests what the documentation prescribes (with source as reference for actual behavior), and that gap is exactly what it targets.
 
-The split between family-specific self-preference (mitigated by cross-model validation) and task-intrinsic contract errors (mitigated by source) is a real contribution. The RQ3 probe (Table 2), though small (N=9), demonstrates that cross-model validation can indeed fail when ambiguous documentation causes different families to infer the same wrong contract. The two cases marked "TI" (shardsNum ≥ 1 and data non-empty) are reproduced across GLM and DeepSeek, showing that the error originates in the shared input rather than in either model.
+5. **The model-free invariant subclass is a clean contribution.** The mathematical-bound checks (COSINE distance >1 for identical vectors, index completeness) are classical, cross-vendor, and design-contingent. They provide a minimal classical-addressable complement to the LLM pipeline and surface real bugs (Milvus, Qdrant) without any LLM involvement.
 
-This is not just a theoretical concern. The consequence is real: cross-model judging missed both task-intrinsic clauses and one family-specific one (6/9 caught), while source-grounded falsification contradicted all 9 because the implementation accepts the value each over-strict clause rejects. The practical takeaway is clear: when the documentation is ambiguous, source is the only reliable ground truth.
-
-### 3. **Source-grounded falsification avoids the MASTOR scoop**
-
-The paper correctly positions itself against MASTOR. MASTOR reads source to generate oracles encoding implemented behavior, treating source as truth, so by construction it cannot detect gaps between documentation and code. TestVDB reads source to falsify documentation-derived clauses, targeting exactly that gap. This is the opposite use of source and is a meaningful distinction.
-
-The paper is honest about the limitation: if source and docs are both wrong, source-grounded falsification cannot catch it. But it correctly notes that this is acceptable when the docs are the primary oracle (as in VDBMSs), because the implementation is the closest automated proxy for intended behavior.
-
-### 4. **Empirical yield is meaningful and honestly scoped**
-
-111 candidate issues across 5 VDBMSs, with 38 maintainer-acknowledged, is solid scale for a pilot. The 85% conformance residual (issues unreachable by classical oracles) quantifies the gap this work targets. The source-anchor precision improvement (81% false-positive suppression vs. 31% baseline, at 96.7% true-positive retention) is the strongest evidence that source-grounded falsification adds value beyond cross-model validation.
-
-The paper is appropriately cautious about its limitations: RQ3 is a nine-clause pilot on Milvus; source-anchor results use only GLM-5.2 (no cross-model ablation); Weaviate/MeiliSearch/Chroma are breadth probes; statistical claims rest on Milvus and Qdrant. This honesty builds trust.
-
-### 5. **Model-free invariant oracle is a clean, reusable contribution**
-
-Separate from the LLM pipeline, the model-free invariant subclass (COSINE distance >1 for identical vectors, index completeness, payload filter field checks) detects hard mathematical-bound violations that reproduce across Milvus and Qdrant. This is the least design-contingent part of the evaluation and is independently valuable: it's a classical-addressable, cross-vendor invariant oracle that needs no LLM judgment.
-
----
+6. **Honesty about limitations and threats.** The authors explicitly state the RQ3 probe is small (nine clauses, one VDBMS) and is the most contingent finding, with broader retrospective evidence as the stronger base. They acknowledge they do not estimate recall (no ground-truth catalog for VDBMSs), that generalization beyond Milvus/Qdrant is breadth-only, and that the 85% residual is the composition of TestVDB's findings (biased toward conformance by design) rather than an estimate of true defect distribution. This transparency is commendable.
 
 ## Weaknesses
 
-### [Major] **RQ3 evidence is preliminary for the central claim**
+1. **[Major] The RQ3 probe is too small to fully support the task-intrinsic claim.** While the nine-clause Milvus probe is a useful pilot, it is the core evidence for the central claim—that cross-model validation cannot resolve task-intrinsic documentation-interpretation errors but source can. The binomial interval on the 2/2 task-intrinsic catch rate is wide, and the probe is confined to one VDBMS. The authors acknowledge this as the most contingent finding, but the paper's theoretical contribution rests heavily on it. A larger head-to-head study (as the authors propose for future work) would significantly strengthen the claim.
 
-The task-intrinsic error claim—the core novelty beyond cross-model validation—is supported by only nine clauses from one VDBMS (Milvus). The paper correctly labels this as a "pilot" and calls out the need for a larger head-to-head study, but the SE top-tier bar expects stronger evidence for a foundational claim. The 2/9 task-intrinsic cases are directionally clear but statistically fragile.
+2. **[Major] No recall estimation limits understanding of true defect prevalence.** The authors cannot estimate recall because there is no public ground-truth defect catalog for VDBMSs. This is an honest constraint, but it leaves open the question of how large the conformance defect space truly is. The 85% residual is the composition of TestVDB's findings (which are biased toward conformance by design), not an unbiased estimate of the true distribution. Capture-recapture or an unbiased sampling approach (as the authors suggest) would be valuable future work to contextualize the 111 submissions.
 
-**Suggested improvement**: Expand the probe to at least 30-50 clauses across 2-3 VDBMSs. Run the same three-way comparison (GLM formalize → DeepSeek formalize; DeepSeek judge GLM clauses; source-grounded falsification) to quantify how often task-intrinsic errors appear in practice. If resource-constrained, prioritize this over additional VDBMS breadth; the claim is about the error taxonomy, not coverage.
+3. **[Minor] The evaluation leans heavily on Milvus and Qdrant.** Weaviate, MeiliSearch, and Chroma contribute breadth (3, 3, 1 submissions; 3 acknowledged total) rather than statistical weight. The paper is transparent about this, but it limits the generalizability of the quantitative results. The model-free invariants reproduce across Milvus and Qdrant, which is solid, but the LLM pipeline's performance is primarily validated on two systems.
 
-### [Major] **Abstract overstates the REST-API boundary distinction**
+4. **[Minor] Single-model-family source anchor leaves an ablation open.** All source-anchor results use a single model family (GLM-5.2). A full cross-model ablation of the dev-reviewer (i.e., does a different family reading source produce different falsification rates?) is noted as open but would strengthen the claim that source-grounded falsification is robust to model choice.
 
-The abstract states: "Prior REST-API oracle work avoids this setting by keeping deterministic, executable assertions." This is true, but the paper then spends significant text (Section 3, Table 1, Section 6) reinforcing this boundary rather than focusing on the practical utility of source-grounded falsification. The consequence is that the contribution reads as "we're in a different setting" rather than "here's a technique that solves a real problem."
-
-**Suggested improvement**: Reframe the abstract and introduction to lead with the two-layer error taxonomy and source-grounded falsification as the solution, with the LLM-as-oracle setting as contextual motivation rather than the headline. Keep the boundary distinction (it's valid), but move it earlier and shorter.
-
-### [Major] **No discussion of when source-grounded falsification is infeasible**
-
-The paper correctly notes that source-grounded falsification requires access to source code. But it doesn't discuss when this is impractical: closed-source VDBMSs, proprietary systems, or environments where source is unavailable. The LLM-as-oracle setting applies equally to these cases, but the proposed solution doesn't. This limits the transferability claim to systems with available source.
-
-**Suggested improvement**: Add a subsection in Discussion/Limitations analyzing when source-grounded falsification is infeasible and what alternatives exist. If no alternatives exist, state that explicitly as a boundary of the approach. This would strengthen the contribution by clarifying its scope.
-
-### [Minor] **MASTOR distinction could be sharpened**
-
-The Related Work section states: "MASTOR reads source to generate oracles that encode implemented behavior and treats source as the truth, so by construction it cannot detect a gap between the documentation and the code." This is correct, but the phrasing could be sharper. MASTOR's goal is to test *against implementation*, whereas TestVDB's goal is to test *against documentation*. The distinction is testing *what is documented* vs. testing *what is implemented*.
-
-**Suggested improvement**: Rephrase as: "MASTOR treats source as the reference semantics and tests against implementation correctness; TestVDB treats documentation as the reference semantics and tests against conformance. MASTOR cannot detect doc-code gaps because it never consults the documentation as an oracle."
-
-### [Minor] **RQ2 precision analysis could be more transparent**
-
-The paper reports 69.2% precision (Wilson CI [55.7%, 80.1%]) and notes a "pending-resolution sensitivity" worst-case bound of [43.9%, 80.5%]. But it doesn't explain what "pending-resolution sensitivity" means or why it widens the interval. Is this the CI if all unresolved cases are false positives? Clarifying this would strengthen the empirical rigor.
-
-**Suggested improvement**: Add a brief sentence explaining the pending-resolution assumption (e.g., "the worst-case bound assumes all unresolved candidates are false positives").
-
-### [Minor] **No discussion of cost/scalability beyond raw LLM calls**
-
-The paper notes "roughly $10 per target at current pricing" and "on the order of 10^4 LLM calls." But it doesn't discuss how this scales to larger VDBMSs or more extensive testing. Is the $10/target dominated by the dev-reviewer's source-grounding step? How does wall-clock time compare to manual testing?
-
-**Suggested improvement**: Add a short paragraph in Implementation or Discussion quantifying the dominant cost components (e.g., "dev-reviewer source retrieval accounts for ~60% of wall-clock time"). This would help readers assess practical scalability.
-
-### [Minor] **Threats to validity could be more structured**
-
-The threats paragraph is honest but mixes different threat types (internal validity: RQ3 sample size; external validity: generalization to other VDBMSs; construct validity: single model family). Structuring these by threat category would make the limitations clearer.
-
-**Suggested improvement**: Split into three subsections: Internal validity (RQ3 scope, single-model ablation), External validity (generalization beyond VDBMSs), and Construct validity (precision metric, maintainer adjudication).
-
----
+5. **[Minor] Precision interval widens substantially in the worst-case bound.** The aggregated precision is 69.2% (Wilson 95% CI [55.7%, 80.1%]) on adjudicated candidates, but when treating all ~30 pending submissions as false positives, the interval widens to [43.9%, 80.5%]. The lower bound dropping below 50% is worth noting, even if the adjudicated-pool precision is the more interpretable metric.
 
 ## Questions for Authors
 
-1. **RQ3 expansion**: Can you prioritize expanding RQ3 to more clauses/VDBMSs over adding more VDBMSs? The task-intrinsic claim is the core novelty, and stronger evidence there would significantly strengthen the paper.
+1. **RQ3 scope:** Beyond the planned larger head-to-head study, are there concrete plans to expand the task-intrinsic probe to other VDBMSs (e.g., Qdrant, which the paper notes has different documentation patterns), or to develop a synthetic benchmark with seeded ambiguous documentation to systematically measure task-intrinsic error rates?
 
-2. **Closed-source transfer**: How would you adapt source-grounded falsification to closed-source VDBMSs? Is binary analysis or gray-box testing feasible, or is this approach fundamentally limited to open-source systems?
+2. **Recall estimation:** Given the lack of a public defect catalog, have you considered capture-recapture methods (e.g., using multiple detection approaches or manual audit sampling) to even partially bound recall? Even rough bounds would help contextualize whether 111 submissions represent the tip of the iceberg or a substantial fraction of the conformance defect space.
 
-3. **Cost breakdown**: Can you break down the $10/target cost more granularly? What fraction is LLM calls vs. dev-reviewer source operations vs. Docker reprobing?
-
-4. **MASTOR alternative**: Have you considered combining MASTOR's oracle generation with TestVDB's source-grounded falsification? Could MASTOR generate oracles that TestVDB then falsifies against documentation?
-
----
+3. **Transferability:** The Discussion section notes that this setting generalizes to REST APIs without OpenAPI, configuration validation, and policy-as-code checks. Are there early plans or preliminary explorations to validate the transfer to one of these domains, which would strengthen the claim that the two-layer reliability problem and source-grounded falsification are not VDBMS-specific?
 
 ## Scores
 
-### **Soundness: 4/5**
-- The LLM-as-oracle framing is sound and correctly distinguishes the work from prior REST-API oracles.
-- The two-layer error taxonomy is conceptually valid, though the empirical support (N=9) is preliminary.
-- The source-grounded falsification mechanism is well-defined and logically consistent.
-- Deduction for RQ3's small sample size relative to the claim's centrality.
-
-### **Significance: 4/5**
-- Addresses a real problem: 85% of conformance defects are unreachable by classical oracles.
-- Source-grounded falsification solves a genuine gap (task-intrinsic errors) that cross-model validation cannot.
-- 111 issues / 38 acknowledged defects is meaningful scale for a pilot.
-- Deduction for unclear cost/scalability analysis and limited discussion of when the approach is infeasible.
-
-### **Novelty: 4/5**
-- The two-layer error taxonomy (family-specific vs. task-intrinsic) is new and useful.
-- Source-grounded falsification is distinct from MASTOR's use of source and is a meaningful advance.
-- The LLM-as-oracle setting as a conceptual boundary is novel framing.
-- Deduction for relying heavily on a distinction from prior work rather than leading with the technique's utility.
-
-### **Presentation: 3/5**
-- The paper is well-structured and clearly written, with honest scoping of limitations.
-- However, the abstract and introduction over-emphasize the REST-API boundary distinction at the expense of the practical contribution.
-- Table 1 is useful but could be shorter; the related work comparison could be integrated into the main text.
-- Minor deductions for incomplete threat structure and unclear precision analysis.
-
----
-
-## Overall Band: **Accept**
-
-**Confidence: 4/5**
-
-This paper makes a genuine contribution to the LLM-as-oracle space. The two-layer error taxonomy and source-grounded falsification are useful, well-motivated, and honestly scoped. The empirical yield (111 issues, 38 acknowledged, 81% false-positive suppression) demonstrates practical value. The central weaknesses—preliminary RQ3 evidence and overemphasis on the REST-API boundary—are addressable in revision.
-
-I recommend acceptance with the following revisions as priority:
-1. Expand RQ3 to a larger clause set (30-50 clauses, 2-3 VDBMSs).
-2. Reframe abstract/introduction to lead with the two-layer taxonomy and source-grounded falsification.
-3. Sharpen the MASTOR distinction to "testing what is documented vs. what is implemented."
-4. Add discussion of when source-grounded falsification is infeasible.
-
-With these changes, the paper would be a strong fit for ICSE/FSE/ISSTA. The LLM-as-oracle framing and the source-grounded falsification technique are contributions that the SE community should build on.
-
----
-
-*Review generated with friendly intent—appreciative of the direction, constructive on the gaps.*
+- **Soundness:** 4/5 – The method is well-founded and the evaluation is careful, but the RQ3 probe is small and recall is unestimated, which limits full confidence in the quantitative claims.
+- **Significance:** 5/5 – The problem is real and timely (VDBMSs in LLM stacks), the 85% conformance residual is substantial, and the approach addresses a gap classical oracles cannot reach.
+- **Novelty:** 4/5 – The two-layer reliability analysis (family-specific vs. task-intrinsic LLM errors) and source-grounded falsification counter are novel contributions clearly separated from prior REST-API oracle work; the LLM-as-judge self-preference connection is known but applied in a new testing context.
+- **Presentation:** 4/5 – The paper is clearly written, the tables (especially Table 1's oracle exclusion mapping and Table 2's cross-model vs. source comparison) are effective, and the Related Work section is thorough. The abstract and introduction are dense but coherent.
+- **Overall:** 4.5/5 – This is a strong contribution. The core insight is sound, the results are solid, and the work is timely. The main weaknesses are the size of the RQ3 probe (acknowledged) and the lack of recall estimation (a constraint of the domain). The paper would benefit from a larger task-intrinsic validation study, but it is already a valuable addition to the VDBMS testing and LLM-derived oracle literature.
+- **Confidence:** 4/5 – I am familiar with VDBMSs, LLM-as-judge reliability, and REST-API oracle work, but not a domain expert in VDBMS internals. The paper's grounding in concrete systems (Milvus, Qdrant) and detailed quantitative evaluation support confident assessment.
