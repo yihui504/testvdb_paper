@@ -98,7 +98,7 @@ bg.fill.solid(); bg.fill.fore_color.rgb = HEADER_BG; bg.line.fill.background()
 tb = s.shapes.add_textbox(Inches(0.8), Inches(2.4), Inches(11.7), Inches(2.2))
 tf = tb.text_frame; tf.word_wrap = True
 p = tf.paragraphs[0]; p.text = "TestVDB"; p.font.size = Pt(54); p.font.bold = True; p.font.color.rgb = WH
-p2 = tf.add_paragraph(); p2.text = "Source-Grounded Falsification of LLM-Derived Behavioral Claims for Documentation-Implementation Consistency Testing of Vector Databases"
+p2 = tf.add_paragraph(); p2.text = "Using LLMs to Find Bugs Where the Code Diverges from Its Documentation"
 p2.font.size = Pt(22); p2.font.color.rgb = RGBColor(0xCC, 0xDD, 0xEE)
 meta = s.shapes.add_textbox(Inches(0.8), Inches(5.5), Inches(11.7), Inches(1.5))
 for i, line in enumerate(["Authors (TBD)", "Affiliation", "Venue / Session (TBD)"]):
@@ -106,7 +106,7 @@ for i, line in enumerate(["Authors (TBD)", "Affiliation", "Venue / Session (TBD)
     p.text = line; p.font.size = Pt(16); p.font.color.rgb = RGBColor(0xAA, 0xCC, 0xDD)
 
 # P2 merged opening (RAG image + data table)
-s = slide(2, "Opening", "VDBMSs store embeddings LLMs depend on; their defects are costly and mostly functional")
+s = slide(2, "Opening", "VDBMS defects are costly — and mostly functional")
 image(s, "fig1_rag_arch.png", top=1.3, left=2.5, w=8.3)
 table(s, ["Source", "Finding"],
       [["Empirical bug study (Xie et al. 2025)", "> 50% of VDBMS bugs are functional failures"],
@@ -115,7 +115,7 @@ table(s, ["Source", "Finding"],
       top=4.7, h=2.2)
 
 # P3-P5 problem
-s = slide(3, "Problem", "Documentation-implementation defects: the API silently accepts what the docs prescribe rejecting")
+s = slide(3, "Problem", "Doc-implementation defects: the API silently accepts what docs reject")
 bullets(s, [
     ("Documentation-implementation consistency — does the API's accept/reject behavior match its documentation?", TD),
     ("Correctness — is a returned result mathematically right (ANN recall, ranking)?", TD),
@@ -126,12 +126,12 @@ bullets(s, [
 s = slide(4, "Problem", "A negative score threshold disables a filter and returns all matches")
 image(s, "fig2_cases.png", top=1.5, left=1.2, w=11)
 
-s = slide(5, "Problem", "37 of 38 acknowledged defects do not crash, so fuzzers miss them")
+s = slide(5, "Problem", "37 of 38 defects do not crash — fuzzers miss them")
 big_number(s, "37 / 38", "acknowledged defects produce no crash",
            "crash-based fuzzers (e.g. VDBFuzz) cannot reach this class")
 
 # P6 Table 1 complete (direct, no P7 3-row version)
-s = slide(6, "Naive oracles", "The documentation-implementation residual leaves only an LLM as the practical oracle")
+s = slide(6, "Naive oracles", "Only an LLM reaches the doc-implementation residual")
 table(s, ["Candidate oracle", "Reaches", "Why it misses the residual"],
       [["Crash (VDBFuzz)", "crash / hang", "37 of 38 acknowledged do not crash"],
        ["Differential testing", "math invariants across vendors", "accept/reject diverges by design"],
@@ -141,7 +141,7 @@ table(s, ["Candidate oracle", "Reaches", "Why it misses the residual"],
        ["LLM-derived oracle (TestVDB)", "accept/reject vs API documentation", "residual needs semantic judgment"]])
 
 # P7-P10 core insight (P9 preview cut)
-s = slide(7, "Core insight", "The source-ambiguity gap: structured sources yield assertions, ambiguous docs yield claims")
+s = slide(7, "Core insight", "The source-ambiguity gap: assertions vs claims")
 image(s, "fig3_source_ambiguity_gap.png", top=1.3, left=0.8, w=11.7)
 
 s = slide(8, "Core insight", "Family-specific errors: the judge confirms the extractor's biases")
@@ -163,7 +163,7 @@ two_col(s, "family-specific",
         lc=AB, rc=AO)
 
 # P11 evidence (probe + transition merged)
-s = slide(11, "Evidence", "On 12 over-strict parameter clauses: cross-model catches 7, source catches 12")
+s = slide(11, "Evidence", "12 over-strict clauses: cross-model 7, source 12")
 table(s, ["Over-strict clause", "TI", "Cross-model", "Source"],
       [["shardsNum >= 1", "yes", "missed", "caught"],
        ["metricType strict enum", "no", "missed", "caught"],
@@ -182,7 +182,7 @@ image(s, "fig5_pipeline.png", top=1.3, left=0.5, w=12.3)
 note(s, "5-stage: extract -> attack -> judge -> dev-review (source falsify) -> novelty. Multi-agent on Claude Code runtime; ~$10^4 calls, ~$10/target.")
 
 # P13 falsification rule
-s = slide(13, "Method", "The falsification rule: if source shows shardsNum=0 selects the default, the over-strict clause is falsified")
+s = slide(13, "Method", "Falsification rule: shardsNum=0 selects the default")
 two_col(s, "Over-strict clause (from LLM)",
         ["shardsNum >= 1", "probe: create collection shardsNum=0 -> API 200", "LLM verdict: 'violation'"],
         "Source-grounded falsification",
@@ -213,21 +213,21 @@ for i, row in enumerate([["Milvus","51","22"],["Weaviate","30","3"],["Qdrant","2
         for p in c.text_frame.paragraphs: p.font.size = Pt(11); p.font.color.rgb = TD
 
 # P15-P19 evaluation results
-s = slide(15, "Evaluation", "~85% are doc-impl defects; VDBFuzz found 0 crashes on the same version")
+s = slide(15, "Evaluation", "~85% doc-impl defects; VDBFuzz: 0 crashes")
 two_col(s, "Composition (not prevalence)",
         ["~85% doc-implementation defects", "~10% classical-addressable", "~5% concurrency", "89% on acknowledged subset"],
         "VDBFuzz head-to-head (Qdrant v1.18.2)",
         ["we ran VDBFuzz: 26,000 requests", "0 crashes, 0 non-200", "TestVDB found doc-impl defects", "disjoint defect classes"],
         lc=AB, rc=AG)
 
-s = slide(16, "Evaluation", "The source anchor suppresses 81% of false positives (up from 31%) at 96.7% TP")
+s = slide(16, "Evaluation", "Source anchor: 81% FP suppression (up from 31%)")
 big_number(s, "81%", "false positives suppressed by the source anchor",
            "up from 31% with other anchors alone; 96.7% TP retention (n=30)")
 
 s = slide(17, "Evaluation", "Precision scales with the source anchor: 25.5% -> 45.6% -> 69.2%")
 image(s, "fig7_ablation.png", top=1.5, left=2.5, w=8.3)
 
-s = slide(18, "Evaluation", "RQ3 at n=29: source catches all 16 over-strict; 0/13 on explicit bounds; kappa=1.0")
+s = slide(18, "Evaluation", "RQ3 n=29: source 16/16; explicit-bound 0/13; kappa=1.0")
 table(s, ["Subtype", "n", "Task-intrinsic", "Cross-model", "Source"],
       [["Parameter over-strict", "12", "5 / 12", "7 / 12", "12 / 12"],
        ["Behavior over-strict", "4", "4 / 4", "0 / 4", "4 / 4"],
@@ -242,7 +242,7 @@ table(s, ["Invariant", "Observation", "Cross-vendor"],
        ["Payload filter field", "filter on absent field returns points missing it", "Milvus + Qdrant"]])
 
 # P20-P22 closing
-s = slide(20, "Related work", "Prior work stays in low-ambiguity sources; TestVDB enters the ambiguous regime")
+s = slide(20, "Related work", "Prior work: low-ambiguity; TestVDB: ambiguous regime")
 table(s, ["Line of work", "Representative", "Difference"],
       [["VDBMS testing", "VDBFuzz / roadmap / bug study", "crash vs doc-implementation"],
        ["REST-API oracle", "AGORA+ / SATORI / MASTOR", "low-ambiguity sources; we use NL docs"],

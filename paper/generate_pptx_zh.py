@@ -88,28 +88,28 @@ bg=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,0,0,prs.slide_width,prs.slide_height)
 bg.fill.solid(); bg.fill.fore_color.rgb=HBG; bg.line.fill.background()
 tb=s.shapes.add_textbox(Inches(0.8),Inches(2.4),Inches(11.7),Inches(2.2)); tf=tb.text_frame; tf.word_wrap=True
 p=tf.paragraphs[0]; p.text="TestVDB"; _f(p,54,WH,True)
-p2=tf.add_paragraph(); p2.text="基于源码证伪的 LLM 行为声明：VDBMS 文档-实现一致性测试"; _f(p2,22,RGBColor(0xCC,0xDD,0xEE))
+p2=tf.add_paragraph(); p2.text="用 LLM 发现代码偏离文档的缺陷"; _f(p2,22,RGBColor(0xCC,0xDD,0xEE))
 m=s.shapes.add_textbox(Inches(0.8),Inches(5.5),Inches(11.7),Inches(1.5))
 for i,ln in enumerate(["作者（待定）","单位","会议/Session（待定）"]):
     p=m.text_frame.paragraphs[0] if i==0 else m.text_frame.add_paragraph(); p.text=ln; _f(p,16,RGBColor(0xAA,0xCC,0xDD))
 
-s=slide(2,"开场","VDBMS 存储 RAG 依赖的嵌入；缺陷代价高且多数功能性失败")
+s=slide(2,"开场","VDBMS 缺陷代价高 —— 多数为功能性失败")
 image(s,"fig1_rag_arch.png",top=1.3,left=2.5,w=8.3)
 table(s,["来源","发现"],
       [["bug 研究 (Xie 2025)","> 50% VDBMS bug 是功能性失败"],
        ["测试 roadmap (Wang 2025)","~43% 归为错误行为；oracle 是关键挑战"],
        ["VDBFuzz (Wang 2026)","首个 VDBMS fuzzer —— 用 crash 作 oracle"]],top=4.7,h=2.2)
 
-s=slide(3,"问题","文档-实现缺陷：API 静默接受文档规定应拒绝的输入")
+s=slide(3,"问题","文档-实现缺陷：API 静默接受文档拒绝的输入")
 bullets(s,[("文档-实现一致性 —— API accept/reject 是否匹配文档？",TD),
     ("正确性 —— 返回结果是否数学正确？",TD),("TestVDB 针对文档-实现一致性。",TD),("文档边界是自然语言，非形式化语法。",AO)])
 
 s=slide(4,"问题","负的 score threshold 禁用过滤器并返回所有匹配"); image(s,"fig2_cases.png",top=1.5,left=1.2,w=11)
 
-s=slide(5,"问题","38 个确认缺陷中 37 个不崩溃，fuzzer 检测不到")
+s=slide(5,"问题","38 个中 37 个不崩溃 —— fuzzer 检测不到")
 bn(s,"37 / 38","确认的缺陷不产生 crash","基于 crash 的 fuzzer 无法触及")
 
-s=slide(6,"朴素 oracle","文档-实现残差只剩 LLM 作为可行 oracle")
+s=slide(6,"朴素 oracle","只有 LLM 能触及文档-实现残差")
 table(s,["候选 oracle","触及","为何触及不了"],
       [["Crash (VDBFuzz)","crash/hang","38 个中 37 个不 crash"],
        ["差分测试","跨厂商数学不变量","accept/reject 设计上分叉"],
@@ -118,7 +118,7 @@ table(s,["候选 oracle","触及","为何触及不了"],
        ["REST 文档 oracle","状态/字段断言","从低歧义源可靠提取"],
        ["LLM oracle (TestVDB)","accept/reject vs 文档","残差需语义判断"]])
 
-s=slide(7,"核心洞察","源歧义鸿沟：结构化源产生断言，歧义文档产生 claim"); image(s,"fig3_source_ambiguity_gap.png",top=1.3,left=0.8,w=11.7)
+s=slide(7,"核心洞察","源歧义鸿沟：断言 vs claim"); image(s,"fig3_source_ambiguity_gap.png",top=1.3,left=0.8,w=11.7)
 
 s=slide(8,"核心洞察","家族特定错误：judge 确认 extractor 偏差")
 bullets(s,["一个 LLM 家族同时提取 claim 和裁决，共享偏差","judge 倾向确认 extractor 错误 —— self-preference",
@@ -130,7 +130,7 @@ s=slide(10,"核心洞察","跨模型验证覆盖家族特定，不覆盖任务�
 tc(s,"家族特定",["consistencyLevel —— GLM/DeepSeek 说法不同","跨模型能发现分歧"],
      "任务内在",["timeout —— 都提取 '>= 1'（同错）","跨模型看到一致（都错）","只有源码能证伪"],lc=AB,rc=AO)
 
-s=slide(11,"证据","12 个 over-strict 子句：跨模型捕获 7，源码捕获 12")
+s=slide(11,"证据","12 个 over-strict 子句：跨模型 7，源码 12")
 table(s,["Over-strict 子句","TI","跨模型","源码"],
       [["shardsNum >= 1","是","漏","捕获"],["metricType strict enum","否","漏","捕获"],
        ["consistencyLevel strict enum","否","捕获","捕获"],["data non-empty","是","漏","捕获"],
@@ -143,7 +143,7 @@ s=slide(12,"方法","TestVDB pipeline：提取，裁决，用源码证伪")
 image(s,"fig5_pipeline.png",top=1.3,left=0.5,w=12.3)
 note(s,"五阶段：extract → attack → judge → dev-review(源码证伪) → novelty。多 agent；~10⁴ 调用，~$10/target。")
 
-s=slide(13,"方法","证伪规则：若源码显示 shardsNum=0 选默认值，over-strict 子句被证伪")
+s=slide(13,"方法","证伪规则：shardsNum=0 选默认值")
 tc(s,"Over-strict 子句（LLM）",["shardsNum >= 1","probe: shardsNum=0 → API 200","LLM 裁决：'违规'"],
      "源码证伪",["源码: if shardsNum==0 { use default }","0 选默认 —— over-strict","FP 消除","与 MASTOR (as designed) 反向"],lc=AR,rc=AG)
 
@@ -167,16 +167,16 @@ for i,row in enumerate([["Milvus","51","22"],["Weaviate","30","3"],["Qdrant","26
         c=g2.cell(i+1,j); c.text=v; c.fill.solid(); c.fill.fore_color.rgb=LB if i%2==0 else WH
         for p in c.text_frame.paragraphs: _f(p,11,TD)
 
-s=slide(15,"实验","~85% 是 doc-impl 缺陷；VDBFuzz 同版本 0 crash")
+s=slide(15,"实验","~85% doc-impl 缺陷；VDBFuzz: 0 crash")
 tc(s,"组成（非普遍率）",["~85% 文档-实现缺陷","~10% 经典可寻址","~5% 并发","确认子集 89%"],
      "VDBFuzz 对比 (Qdrant v1.18.2)",["我们跑了 VDBFuzz: 26,000 请求","0 crash, 0 非-200","TestVDB 发现 doc-impl 缺陷","不相交缺陷类"],lc=AB,rc=AG)
 
-s=slide(16,"实验","源码 anchor 抑制 81% 误报（从 31%），真阳性 96.7%")
+s=slide(16,"实验","源码 anchor: 81% FP 抑制（从 31%）")
 bn(s,"81%","源码 anchor 抑制的误报","相比其他 anchor 的 31%；真阳性 96.7%（n=30）")
 
 s=slide(17,"实验","精度随源码 anchor 扩展：25.5% → 45.6% → 69.2%"); image(s,"fig7_ablation.png",top=1.5,left=2.5,w=8.3)
 
-s=slide(18,"实验","RQ3 在 n=29：源码捕获全部 16 over-strict；显式边界 0/13；κ=1.0")
+s=slide(18,"实验","RQ3 n=29: 源码 16/16; 显式边界 0/13; κ=1.0")
 table(s,["子型","n","任务内在","跨模型","源码"],
       [["参数 over-strict","12","5/12","7/12","12/12"],["行为 over-strict","4","4/4","0/4","4/4"],
        ["显式边界 negative","13","0/13","—","—"],["厂商内对比","—","56% vs 0%","—","—"],
@@ -186,7 +186,7 @@ s=slide(19,"实验","无模型不变量子类独立发现缺陷")
 table(s,["不变量","观测","跨厂商"],[["COSINE 距离","相同向量距离 > 1.0","Milvus+Qdrant"],
      ["索引完整性","索引返回 25 中 2 个","Milvus+Qdrant"],["Payload 过滤","过滤缺失字段返回点","Milvus+Qdrant"]])
 
-s=slide(20,"相关工作","已有工作停留在低歧义源；TestVDB 进入歧义领域")
+s=slide(20,"相关工作","已有工作: 低歧义; TestVDB: 歧义领域")
 table(s,["工作线","代表","差异"],
       [["VDBMS 测试","VDBFuzz/roadmap/bug study","crash vs doc-impl"],
        ["REST oracle","AGORA+/SATORI/MASTOR","低歧义源；我们用 NL 文档"],
