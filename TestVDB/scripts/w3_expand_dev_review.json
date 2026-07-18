@@ -1,0 +1,193 @@
+{
+  "judge": "dev-review-w3-expand",
+  "runtime_note": "non-GLM backbone, blind to GLM historical verdicts. All candidates tested via curl against localhost:19530 (Milvus v2.6.19).",
+  "verdicts": [
+    {
+      "defect_id": "cand_insert_dim_mismatch",
+      "endpoint": "entities+insert",
+      "defect_type": "Type1_InputValidationViolation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create collectionName=test_w3_dim dimension=8 metricType=COSINE; wait 2s; POST /v2/vectordb/entities/insert with vector=[0.1,0.2,0.3,0.4] (dim=4)",
+          "observed": "code=1804, message='fail to deal the insert data, error: []float32 size 4 doesn't equal to vector dimension 8 of FloatVector: invalid parameter'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_w3_dim\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+            "doc_quote: Insert entities into a collection"
+          ],
+          "note": "Contract does not explicitly prohibit dimension mismatch, but response code 1804 with 'invalid parameter' indicates proper input validation rejection."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - error response itself is falsification of 'bug exists' claim",
+          "observed": "Milvus rejects dimension mismatch with error code 1804 (invalid parameter), demonstrating input validation works correctly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "input_validation_working_as_intended"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No by-design pattern matches. Dimension mismatch is rejected with proper error message - this is expected input validation behavior."
+      },
+      "root_cause_if_fp": "input_validation_working_as_intended",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus correctly rejects vectors with dimension=4 into a dim=8 collection with code 1804 'invalid parameter'. This is proper input validation, not a bug. The reporter's claim 'dimension mismatch is a bug' contradicts the observed error response."
+    },
+    {
+      "defect_id": "cand_insert_empty_vector",
+      "endpoint": "entities+insert",
+      "defect_type": "Type1_InputValidationViolation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/insert with vector=[] (empty array)",
+          "observed": "code=1804, message='fail to deal the insert data, error: []float32 size 0 doesn't equal to vector dimension 8 of FloatVector: invalid parameter'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_w3_dim\", \"data\": [{\"id\": 2, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "note": "Contract does not explicitly ban empty vectors, but Milvus validates and rejects them."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Error response falsifies bug claim",
+          "observed": "Milvus rejects empty vector with code 1804, demonstrating proper validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "input_validation_working_as_intended"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Empty vector rejection is expected input validation behavior."
+      },
+      "root_cause_if_fp": "input_validation_working_as_intended",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus correctly rejects empty vector (dim=0) with code 1804 'invalid parameter'. This is proper input validation, not a bug."
+    },
+    {
+      "defect_id": "cand_insert_dup_pk",
+      "endpoint": "entities+insert",
+      "defect_type": "Type3_StateLogicViolation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with batch containing duplicate PK id=10 twice",
+          "observed": "code=0, insertCount=2, insertIds=[10,10]. Query /get shows only id=10 with vector=[0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9] (last write wins)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_w3_dim\", \"data\": [{\"id\": 10, \"vector\": [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8]}, {\"id\": 10, \"vector\": [0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "note": "Insert endpoint spec does not explicitly define duplicate PK behavior within single batch."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/get with id=[10] to verify actual stored state",
+          "observed": "Only one entity with id=10 exists, containing the second vector value. Milvus implements 'last write wins' upsert semantics, which is standard database behavior."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["concurrency_race", "eventual_consistency"],
+          "surviving": "standard_upsert_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Last-write-wins is standard upsert/idempotency behavior across vector DBs. Not unique to Milvus."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "Duplicate PK in batch results in 'last write wins' behavior - only the second (final) value persists. This is standard upsert/idempotency semantics (common in databases: SQL ON CONFLICT, MongoDB upsert, etc.). The reporter's claim 'duplicate PK in batch is a bug' misunderstands normal API semantics."
+    },
+    {
+      "defect_id": "cand_drop_nonexist",
+      "endpoint": "collections+drop",
+      "defect_type": "Type3_StateLogicViolation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop with collectionName=nonexistent_collection_xyz",
+          "observed": "code=0, data={}. Drop succeeds with no error despite collection not existing.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/drop' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+            "doc_quote: Drop (delete) a collection permanently"
+          ],
+          "note": "Contract does not explicitly specify whether drop should fail on non-existent collection or succeed idempotently."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list to verify collection state after drop",
+          "observed": "Idempotent drop is standard REST API practice (DELETE should be idempotent, per RFC 7231). Collection does not exist before or after drop."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["env_noise", "concurrency_race"],
+          "surviving": "idempotent_delete_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Idempotent DELETE is standard REST practice. Milvus follows REST conventions where DELETE is safe to call multiple times."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "Drop of non-existent collection succeeds with code=0. This is standard idempotent DELETE behavior (REST principle: DELETE operations should be idempotent). The reporter's claim 'drop non-existent should error' misunderstands REST API conventions. Milvus follows standard practice where ensuring idempotency (no error if resource already gone) is preferred over strict 'must exist' validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 4,
+    "confirmed": 0,
+    "false_positive": 4,
+    "root_cause_distribution": {
+      "input_validation_working_as_intended": 2,
+      "mundane_api_semantics": 2
+    }
+  }
+}
