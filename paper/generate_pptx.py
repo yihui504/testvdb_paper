@@ -142,18 +142,18 @@ bullets(s,[("Doc-implementation consistency — does API accept/reject match doc
 defect_example(s)
 
 # P4 merged (fig2 cases + 37/38 big number)
-s=slide(4,"Problem","37 of 38 defects do not crash — fuzzers miss them")
-tb=s.shapes.add_textbox(Inches(1),Inches(5.0),Inches(11.3),Inches(1.2))
-p=tb.text_frame.paragraphs[0]; p.text="37 / 38"; p.alignment=PP_ALIGN.CENTER; p.font.size=Pt(64); p.font.bold=True; p.font.color.rgb=AO
-lb=s.shapes.add_textbox(Inches(1),Inches(6.2),Inches(11.3),Inches(0.5))
-lp=lb.text_frame.paragraphs[0]; lp.text="acknowledged defects produce no crash — fuzzers cannot reach this class"
-lp.alignment=PP_ALIGN.CENTER; lp.font.size=Pt(16); lp.font.color.rgb=TD
+s=slide(4,"Naive oracles","Only an LLM reaches the doc-implementation residual")
+table(s,["Candidate oracle","Reaches","Why it misses the residual"],
+      [["Crash (VDBFuzz)","crash/hang","37 of 38 do not crash"],
+       ["Differential testing","math invariants","accept/reject diverges by design"],
+       ["Metamorphic relations","result correctness","output relation, not input-acceptance"],
+       ["Property-based testing","math + schema","needs machine-checkable property + OpenAPI"],
+       ["REST doc/spec oracles","status/field assertions","reliable from low-ambiguity sources"],
+       ["LLM-derived oracle (TestVDB)","accept/reject vs documentation","residual needs semantic judgment"]])
 
-# P5 Table 1 (was P6)
-# P6 naive pipeline (was P7)
 s=slide(5,"Method","TestVDB: LLM extracts claims and judges conformance")
 naive_pipeline(s)
-note(s,"Crash/differential/metamorphic/property-based oracles all miss this residual. Only an LLM can judge accept/reject vs documentation. This naive pipeline produces false positives — the LLM judge is unreliable (next).")
+note(s,"This naive pipeline produces false positives — the LLM judge is unreliable (next).")
 
 # P7-P10 core insight (was P8-P11)
 s=slide(6,"Core insight","The source-ambiguity gap: assertions vs claims")

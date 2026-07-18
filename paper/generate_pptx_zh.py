@@ -131,14 +131,17 @@ s=slide(3,"问题","文档-实现缺陷：实际行为偏离文档")
 bullets(s,[("文档-实现一致性 —— API accept/reject 匹配文档？",TD),("正确性 —— 结果数学正确？",TD)],top=1.3,sz=16)
 defect_example(s)
 
-s=slide(4,"问题","38 个中 37 个不崩溃 —— fuzzer 检测不到")
-tb=s.shapes.add_textbox(Inches(1),Inches(5.0),Inches(11.3),Inches(1.2))
-p=tb.text_frame.paragraphs[0]; p.text="37 / 38"; p.alignment=PP_ALIGN.CENTER; p.font.size=Pt(64); p.font.bold=True; p.font.color.rgb=AO
-lb=s.shapes.add_textbox(Inches(1),Inches(6.2),Inches(11.3),Inches(0.5))
-lp=lb.text_frame.paragraphs[0]; lp.text="确认缺陷不产生 crash —— fuzzer 无法触及"; lp.alignment=PP_ALIGN.CENTER; _f(lp,16,TD)
+s=slide(4,"朴素 oracle","只有 LLM 能触及文档-实现残差")
+table(s,["候选 oracle","触及","为何触及不了"],
+      [["Crash (VDBFuzz)","crash/hang","38 个中 37 个不 crash"],
+       ["差分测试","跨厂商不变量","accept/reject 设计上分叉"],
+       ["蜕变关系","结果正确性","输出关系，非输入接受性"],
+       ["属性测试","数学+schema","需可检查 property+OpenAPI"],
+       ["REST 文档 oracle","状态/字段断言","从低歧义源可靠提取"],
+       ["LLM oracle (TestVDB)","accept/reject vs 文档","残差需语义判断"]])
 
 s=slide(5,"方法","TestVDB：LLM 提取 claim 并裁决一致性"); naive_pipeline(s)
-note(s,"crash/差分/蜕变/属性 oracle 都到不了此残差；只有 LLM 能裁决 accept/reject。这个朴素 pipeline 会产生误报 —— LLM judge 不可靠（下页）。")
+note(s,"这个朴素 pipeline 会产生误报 —— LLM judge 不可靠（下页）。")
 
 s=slide(6,"核心洞察","源歧义鸿沟：断言 vs claim"); image(s,"fig3_source_ambiguity_gap.png",top=1.3,left=0.8,w=11.7)
 
