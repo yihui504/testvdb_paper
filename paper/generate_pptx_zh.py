@@ -88,7 +88,7 @@ bg=s.shapes.add_shape(MSO_SHAPE.RECTANGLE,0,0,prs.slide_width,prs.slide_height)
 bg.fill.solid(); bg.fill.fore_color.rgb=HBG; bg.line.fill.background()
 tb=s.shapes.add_textbox(Inches(0.8),Inches(2.4),Inches(11.7),Inches(2.2)); tf=tb.text_frame; tf.word_wrap=True
 p=tf.paragraphs[0]; p.text="TestVDB"; _f(p,54,WH,True)
-p2=tf.add_paragraph(); p2.text="用 LLM 发现代码偏离文档的缺陷"; _f(p2,22,RGBColor(0xCC,0xDD,0xEE))
+p2=tf.add_paragraph(); p2.text="用 LLM 发现实际行为偏离文档的缺陷"; _f(p2,22,RGBColor(0xCC,0xDD,0xEE))
 m=s.shapes.add_textbox(Inches(0.8),Inches(5.5),Inches(11.7),Inches(1.5))
 for i,ln in enumerate(["作者（待定）","单位","会议/Session（待定）"]):
     p=m.text_frame.paragraphs[0] if i==0 else m.text_frame.add_paragraph(); p.text=ln; _f(p,16,RGBColor(0xAA,0xCC,0xDD))

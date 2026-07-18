@@ -98,7 +98,7 @@ bg.fill.solid(); bg.fill.fore_color.rgb = HEADER_BG; bg.line.fill.background()
 tb = s.shapes.add_textbox(Inches(0.8), Inches(2.4), Inches(11.7), Inches(2.2))
 tf = tb.text_frame; tf.word_wrap = True
 p = tf.paragraphs[0]; p.text = "TestVDB"; p.font.size = Pt(54); p.font.bold = True; p.font.color.rgb = WH
-p2 = tf.add_paragraph(); p2.text = "Using LLMs to Find Bugs Where the Code Diverges from Its Documentation"
+p2 = tf.add_paragraph(); p2.text = "Using LLMs to Find Bugs Where Actual Behaviour Diverges from Its Documentation"
 p2.font.size = Pt(22); p2.font.color.rgb = RGBColor(0xCC, 0xDD, 0xEE)
 meta = s.shapes.add_textbox(Inches(0.8), Inches(5.5), Inches(11.7), Inches(1.5))
 for i, line in enumerate(["Authors (TBD)", "Affiliation", "Venue / Session (TBD)"]):
