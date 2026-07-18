@@ -142,25 +142,25 @@ note(s,"crash/差分/蜕变/属性 oracle 都到不了此残差；只有 LLM 能
 
 s=slide(6,"核心洞察","源歧义鸿沟：断言 vs claim"); image(s,"fig3_source_ambiguity_gap.png",top=1.3,left=0.8,w=11.7)
 
-s=slide(6,"核心洞察","家族特定错误：judge 确认 extractor 偏差")
+s=slide(7,"核心洞察","家族特定错误：judge 确认 extractor 偏差")
 bullets(s,["一个 LLM 家族同时提取 claim 和裁决，共享偏差","judge 确认 extractor 错误 —— self-preference","Panickssery (2024); Wataoka (2024)",("缓解：跨模型验证",AG)])
 
-s=slide(6,"核心洞察","任务内在错误：不同家族推断相同错误 claim"); image(s,"fig4_two_layer_venn.png",top=1.3,left=0.9,w=11.5)
+s=slide(8,"核心洞察","任务内在错误：不同家族推断相同错误 claim"); image(s,"fig4_two_layer_venn.png",top=1.3,left=0.9,w=11.5)
 
-s=slide(6,"核心洞察","跨模型验证覆盖家族特定，不覆盖任务内在")
+s=slide(9,"核心洞察","跨模型验证覆盖家族特定，不覆盖任务内在")
 tc(s,"家族特定",["consistencyLevel —— GLM/DeepSeek 说法不同","跨模型能发现分歧"],
      "任务内在",["timeout —— 都提取 '>= 1'（同错）","跨模型看到一致","只有源码能证伪"],lc=AB,rc=AO)
 
-s=slide(6,"方法","完整 pipeline：源码证伪解决跨模型解决不了的问题")
+s=slide(10,"方法","完整 pipeline：源码证伪解决跨模型解决不了的问题")
 image(s,"fig5_pipeline.png",top=1.3,left=0.5,w=12.3)
 note(s,"加到朴素 pipeline（P6）：dev-reviewer 读源码证伪。12 子句 pilot：跨模型 7/12，源码 12/12（n=29 见 P17）。")
 
-s=slide(6,"方法","证伪规则：shardsNum=0 选默认值")
+s=slide(11,"方法","证伪规则：shardsNum=0 选默认值")
 tc(s,"Over-strict 子句（LLM）",["shardsNum >= 1","probe: shardsNum=0 → API 200","LLM 裁决：'违规'"],
      "源码证伪",["源码: if shardsNum==0 { use default }","0 选默认 —— over-strict","FP 消除","与 MASTOR (as designed) 反向"],lc=AR,rc=AG)
 note(s,"+ dev-reviewer 读源码证伪；novelty gate 去重。抑制朴素 pipeline 误报（P6）。")
 
-s=slide(6,"实验","四个 RQ；提交 111，确认 38")
+s=slide(12,"实验","四个 RQ；提交 111，确认 38")
 g1=s.shapes.add_table(5,2,Inches(0.4),Inches(1.5),Inches(5.8),Inches(3.8)).table; g1.first_row=True; g1.horz_banding=False
 for j,h in enumerate(["RQ","问题"]):
     c=g1.cell(0,j); c.text=h; c.fill.solid(); c.fill.fore_color.rgb=AB
@@ -178,26 +178,26 @@ for i,row in enumerate([["Milvus","51","22"],["Weaviate","30","3"],["Qdrant","26
         c=g2.cell(i+1,j); c.text=v; c.fill.solid(); c.fill.fore_color.rgb=LB if i%2==0 else WH
         for p in c.text_frame.paragraphs: _f(p,11,TD)
 
-s=slide(6,"实验","~85% doc-impl 缺陷；VDBFuzz: 0 crash")
+s=slide(13,"实验","~85% doc-impl 缺陷；VDBFuzz: 0 crash")
 tc(s,"组成（非普遍率）",["~85% 文档-实现缺陷","~10% 经典","~5% 并发","确认子集 89%"],
      "VDBFuzz (Qdrant v1.18.2)",["我们跑了 VDBFuzz: 26,000 请求","0 crash, 0 非-200","TestVDB 发现 doc-impl 缺陷","不相交缺陷类"],lc=AB,rc=AG)
 
-s=slide(6,"实验","源码 anchor: 81% FP 抑制（从 31%）")
+s=slide(14,"实验","源码 anchor: 81% FP 抑制（从 31%）")
 bn(s,"81%","源码 anchor 抑制的误报","相比 31%；真阳性 96.7%（n=30）")
 
-s=slide(6,"实验","精度随源码 anchor 扩展：25.5% → 45.6% → 69.2%"); image(s,"fig7_ablation.png",top=1.5,left=2.5,w=8.3)
+s=slide(15,"实验","精度随源码 anchor 扩展：25.5% → 45.6% → 69.2%"); image(s,"fig7_ablation.png",top=1.5,left=2.5,w=8.3)
 
-s=slide(6,"实验","RQ3 n=29: 源码 16/16; 显式边界 0/13; κ=1.0")
+s=slide(16,"实验","RQ3 n=29: 源码 16/16; 显式边界 0/13; κ=1.0")
 table(s,["子型","n","任务内在","跨模型","源码"],
       [["参数 over-strict","12","5/12","7/12","12/12"],["行为 over-strict","4","4/4","0/4","4/4"],
        ["显式边界 negative","13","0/13","—","—"],["厂商内对比","—","56% vs 0%","—","—"],
        ["跨模型 κ (n=20)","20","—","κ=1.0","—"]],top=1.5)
 
-s=slide(6,"实验","无模型不变量子类独立发现缺陷")
+s=slide(17,"实验","无模型不变量子类独立发现缺陷")
 table(s,["不变量","观测","跨厂商"],[["COSINE 距离","相同向量距离 > 1.0","Milvus+Qdrant"],
      ["索引完整性","索引返回 25 中 2 个","Milvus+Qdrant"],["Payload 过滤","过滤缺失字段返回点","Milvus+Qdrant"]])
 
-s=slide(6,"相关工作","已有工作: 低歧义; TestVDB: 歧义领域")
+s=slide(18,"相关工作","已有工作: 低歧义; TestVDB: 歧义领域")
 table(s,["工作线","代表","差异"],
       [["VDBMS 测试","VDBFuzz/roadmap/bug study","crash vs doc-impl"],
        ["REST oracle","AGORA+/SATORI/MASTOR","低歧义；我们用 NL 文档"],
@@ -205,11 +205,11 @@ table(s,["工作线","代表","差异"],
        ["DB 正确性","NoREC/TLP/DQE/DDLCheck","有参考语义；我们没有"],
        ["LLM-judge","Panickssery/Wataoka/Haldar","正交 —— source grounding"]],top=1.4,h=5.6)
 
-s=slide(6,"收尾","威胁与结论")
+s=slide(19,"收尾","威胁与结论")
 tc(s,"威胁",["over-strict (n=16) 最 contingent","限 Milvus+Qdrant","机制相关非因果"],
      "结论",["doc-impl 抗确定性检查","LLM: 家族特定+任务内在","超越 VDBMS"],lc=AR,rc=AG)
 
-s=slide(6,"收尾","TestVDB —— 四个核心结果"); image(s,"fig8_summary.png",top=1.4,left=1.5,w=10.3)
+s=slide(20,"收尾","TestVDB —— 四个核心结果"); image(s,"fig8_summary.png",top=1.4,left=1.5,w=10.3)
 
 prs.save(OUT)
 print(f"[wrote] {OUT} ({len(prs.slides._sldIdLst)} slides)")
