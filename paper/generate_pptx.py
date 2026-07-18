@@ -23,7 +23,7 @@ def header(sl,title,n,sec):
     tf=tb.text_frame; tf.word_wrap=True; tf.vertical_anchor=MSO_ANCHOR.MIDDLE
     p=tf.paragraphs[0]; p.text=title; p.font.size=Pt(22); p.font.bold=True; p.font.color.rgb=WH
     pb=sl.shapes.add_textbox(Inches(10.8),Inches(0.12),Inches(2.3),Inches(0.45))
-    pp=pb.text_frame.paragraphs[0]; pp.text=f"P{n}/21 {sec}"; pp.alignment=PP_ALIGN.RIGHT
+    pp=pb.text_frame.paragraphs[0]; pp.text=f"P{n}/20 {sec}"; pp.alignment=PP_ALIGN.RIGHT
     pp.font.size=Pt(11); pp.font.color.rgb=RGBColor(0xBB,0xCC,0xDD)
     st=sl.shapes.add_shape(MSO_SHAPE.RECTANGLE,0,Inches(1.05),prs.slide_width,Inches(0.06))
     st.fill.solid(); st.fill.fore_color.rgb=AO; st.line.fill.background()
@@ -143,7 +143,6 @@ defect_example(s)
 
 # P4 merged (fig2 cases + 37/38 big number)
 s=slide(4,"Problem","37 of 38 defects do not crash — fuzzers miss them")
-image(s,"fig2_cases.png",top=1.2,left=2.7,w=7.8)
 tb=s.shapes.add_textbox(Inches(1),Inches(5.0),Inches(11.3),Inches(1.2))
 p=tb.text_frame.paragraphs[0]; p.text="37 / 38"; p.alignment=PP_ALIGN.CENTER; p.font.size=Pt(64); p.font.bold=True; p.font.color.rgb=AO
 lb=s.shapes.add_textbox(Inches(1),Inches(6.2),Inches(11.3),Inches(0.5))
@@ -151,47 +150,38 @@ lp=lb.text_frame.paragraphs[0]; lp.text="acknowledged defects produce no crash �
 lp.alignment=PP_ALIGN.CENTER; lp.font.size=Pt(16); lp.font.color.rgb=TD
 
 # P5 Table 1 (was P6)
-s=slide(5,"Naive oracles","Only an LLM reaches the doc-implementation residual")
-table(s,["Candidate oracle","Reaches","Why it misses the residual"],
-      [["Crash (VDBFuzz)","crash/hang","37 of 38 do not crash"],
-       ["Differential testing","math invariants","accept/reject diverges by design"],
-       ["Metamorphic relations","result correctness","output relation, not input-acceptance"],
-       ["Property-based testing","math + schema","needs machine-checkable property + OpenAPI"],
-       ["REST doc/spec oracles","status/field assertions","reliable from low-ambiguity sources"],
-       ["LLM-derived oracle (TestVDB)","accept/reject vs documentation","residual needs semantic judgment"]])
-
 # P6 naive pipeline (was P7)
-s=slide(6,"Method","TestVDB: LLM extracts claims and judges conformance")
+s=slide(5,"Method","TestVDB: LLM extracts claims and judges conformance")
 naive_pipeline(s)
-note(s,"This naive pipeline produces false positives — the LLM judge is unreliable (next).")
+note(s,"Crash/differential/metamorphic/property-based oracles all miss this residual. Only an LLM can judge accept/reject vs documentation. This naive pipeline produces false positives — the LLM judge is unreliable (next).")
 
 # P7-P10 core insight (was P8-P11)
-s=slide(7,"Core insight","The source-ambiguity gap: assertions vs claims")
+s=slide(6,"Core insight","The source-ambiguity gap: assertions vs claims")
 image(s,"fig3_source_ambiguity_gap.png",top=1.3,left=0.8,w=11.7)
 
-s=slide(8,"Core insight","Family-specific errors: the judge confirms the extractor's biases")
+s=slide(6,"Core insight","Family-specific errors: the judge confirms the extractor's biases")
 bullets(s,["one LLM family extracts claims AND judges — shared biases","judge confirms extractor errors — self-preference","Panickssery (2024); Wataoka (2024)",("mitigation: cross-model validation",AG)])
 
-s=slide(9,"Core insight","Task-intrinsic errors: different families infer the same wrong claim")
+s=slide(6,"Core insight","Task-intrinsic errors: different families infer the same wrong claim")
 image(s,"fig4_two_layer_venn.png",top=1.3,left=0.9,w=11.5)
 
-s=slide(10,"Core insight","Cross-model validation covers family-specific, not task-intrinsic")
+s=slide(6,"Core insight","Cross-model validation covers family-specific, not task-intrinsic")
 two_col(s,"family-specific",["consistencyLevel — GLM/DeepSeek disagree","cross-model catches divergence"],
      "task-intrinsic",["timeout — both extract '>= 1' (same error)","cross-model sees agreement","only source falsifies"],lc=AB,rc=AO)
 
 # P11 complete pipeline architecture (was P12)
-s=slide(11,"Method","Complete pipeline: source-grounded falsification resolves what cross-model cannot")
+s=slide(6,"Method","Complete pipeline: source-grounded falsification resolves what cross-model cannot")
 image(s,"fig5_pipeline.png",top=1.3,left=0.5,w=12.3)
 note(s,"Added to naive pipeline (P6): dev-reviewer reads source to falsify LLM claims. 12-clause pilot: cross-model 7/12, source 12/12 (see P17 for n=29).")
 
 # P12 falsification rule (was P13)
-s=slide(12,"Method","Falsification rule: shardsNum=0 selects the default")
+s=slide(6,"Method","Falsification rule: shardsNum=0 selects the default")
 two_col(s,"Over-strict clause (LLM)",["shardsNum >= 1","probe: shardsNum=0 -> API 200","LLM verdict: 'violation'"],
      "Source-grounded falsification",["source: if shardsNum==0 { use default }","0 selects default — over-strict","FP killed","opposite of MASTOR (as currently designed)"],lc=AR,rc=AG)
 note(s,"+ dev-reviewer reads source to falsify claims; novelty gate removes duplicates. Suppresses FPs from naive pipeline (P6).")
 
 # P13-P21 evaluation + closing (was P14-P22, all -1)
-s=slide(13,"Evaluation","Four RQs; 111 submitted, 38 acknowledged")
+s=slide(6,"Evaluation","Four RQs; 111 submitted, 38 acknowledged")
 g1=s.shapes.add_table(5,2,Inches(0.4),Inches(1.5),Inches(5.8),Inches(3.8)).table; g1.first_row=True; g1.horz_banding=False
 for j,h in enumerate(["RQ","Question"]):
     c=g1.cell(0,j); c.text=h; c.fill.solid(); c.fill.fore_color.rgb=AB
@@ -209,27 +199,27 @@ for i,row in enumerate([["Milvus","51","22"],["Weaviate","30","3"],["Qdrant","26
         c=g2.cell(i+1,j); c.text=v; c.fill.solid(); c.fill.fore_color.rgb=LB if i%2==0 else WH
         for p in c.text_frame.paragraphs: p.font.size=Pt(11); p.font.color.rgb=TD
 
-s=slide(14,"Evaluation","~85% doc-impl defects; VDBFuzz: 0 crashes")
+s=slide(6,"Evaluation","~85% doc-impl defects; VDBFuzz: 0 crashes")
 two_col(s,"Composition (not prevalence)",["~85% doc-implementation defects","~10% classical","~5% concurrency","89% on acknowledged"],
      "VDBFuzz (Qdrant v1.18.2)",["we ran VDBFuzz: 26,000 requests","0 crashes, 0 non-200","TestVDB found doc-impl defects","disjoint classes"],lc=AB,rc=AG)
 
-s=slide(15,"Evaluation","Source anchor: 81% FP suppression (up from 31%)")
+s=slide(6,"Evaluation","Source anchor: 81% FP suppression (up from 31%)")
 bn(s,"81%","FP suppressed by source anchor","up from 31%; 96.7% TP retention (n=30)")
 
-s=slide(16,"Evaluation","Precision scales: 25.5% -> 45.6% -> 69.2%")
+s=slide(6,"Evaluation","Precision scales: 25.5% -> 45.6% -> 69.2%")
 image(s,"fig7_ablation.png",top=1.5,left=2.5,w=8.3)
 
-s=slide(17,"Evaluation","RQ3 n=29: source 16/16; explicit-bound 0/13; kappa=1.0")
+s=slide(6,"Evaluation","RQ3 n=29: source 16/16; explicit-bound 0/13; kappa=1.0")
 table(s,["Subtype","n","Task-intrinsic","Cross-model","Source"],
       [["Parameter over-strict","12","5/12","7/12","12/12"],["Behavior over-strict","4","4/4","0/4","4/4"],
        ["Explicit-bound negative","13","0/13","-","-"],["Within-vendor contrast","-","56% vs 0%","-","-"],
        ["Cross-model kappa (n=20)","20","-","kappa=1.0","-"]],top=1.5)
 
-s=slide(18,"Evaluation","A model-free invariant subclass finds bugs on its own")
+s=slide(6,"Evaluation","A model-free invariant subclass finds bugs on its own")
 table(s,["Invariant","Observation","Cross-vendor"],[["COSINE bound","distance > 1.0 identical vectors","Milvus+Qdrant"],
      ["Index completeness","index returns 2 of 25","Milvus+Qdrant"],["Payload filter","filter absent field returns points","Milvus+Qdrant"]])
 
-s=slide(19,"Related work","Prior work: low-ambiguity; TestVDB: ambiguous regime")
+s=slide(6,"Related work","Prior work: low-ambiguity; TestVDB: ambiguous regime")
 table(s,["Line of work","Representative","Difference"],
       [["VDBMS testing","VDBFuzz/roadmap/bug study","crash vs doc-impl"],
        ["REST oracle","AGORA+/SATORI/MASTOR","low-ambiguity; we use NL docs"],
@@ -237,11 +227,11 @@ table(s,["Line of work","Representative","Difference"],
        ["DB correctness","NoREC/TLP/DQE/DDLCheck","reference semantics; ours lacks"],
        ["LLM-judge","Panickssery/Wataoka/Haldar","orthogonal — source grounding"]],top=1.4,h=5.6)
 
-s=slide(20,"Closing","Threats and conclusion")
+s=slide(6,"Closing","Threats and conclusion")
 two_col(s,"Threats",["over-strict (n=16) most contingent","Milvus+Qdrant only","mechanism correlative"],
      "Conclusion",["doc-impl resists checking","LLM: family-specific + task-intrinsic","generalizes beyond VDBMSs"],lc=AR,rc=AG)
 
-s=slide(21,"Closing","TestVDB — four core results")
+s=slide(6,"Closing","TestVDB — four core results")
 image(s,"fig8_summary.png",top=1.4,left=1.5,w=10.3)
 
 prs.save(OUT)
