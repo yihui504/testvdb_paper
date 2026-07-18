@@ -148,14 +148,9 @@ s=slide(11,"Core insight","Cross-model validation covers family-specific, not ta
 two_col(s,"family-specific",["consistencyLevel — GLM/DeepSeek disagree","cross-model catches divergence"],
      "task-intrinsic",["timeout — both extract '>= 1' (same error)","cross-model sees agreement","only source falsifies"],lc=AB,rc=AO)
 
-s=slide(12,"Evidence","12 over-strict clauses: cross-model 7, source 12")
-table(s,["Over-strict clause","TI","Cross-model","Source"],
-      [["shardsNum >= 1","yes","missed","caught"],["metricType strict enum","no","missed","caught"],
-       ["consistencyLevel strict enum","no","caught","caught"],["data non-empty","yes","missed","caught"],
-       ["limit >= 1","no","caught","caught"],["timeout >= 1 (Qdrant)","yes","caught","caught"],
-       ["group_size >= 1 (Qdrant)","yes","missed","caught"],["score_threshold in [0,1]","yes","missed","caught"],
-       ["Total","5","7/12","12/12"]],top=1.4,h=4.8)
-note(s,"Extended to n=29 (behavior + explicit-bound subtypes); see P18.")
+s=slide(12,"Method","Complete pipeline: source-grounded falsification resolves what cross-model cannot")
+image(s,"fig5_pipeline.png",top=1.3,left=0.5,w=12.3)
+note(s,"Added to naive pipeline (P7): dev-reviewer reads source to falsify LLM claims. 12-clause pilot: cross-model 7/12, source 12/12 (see P18 for n=29).")
 
 # P13 source-grounded falsification (was P13 + pipeline-back note)
 s=slide(13,"Method","Falsification rule: shardsNum=0 selects the default")

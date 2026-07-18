@@ -145,14 +145,9 @@ s=slide(11,"核心洞察","跨模型验证覆盖家族特定，不覆盖任务�
 tc(s,"家族特定",["consistencyLevel —— GLM/DeepSeek 说法不同","跨模型能发现分歧"],
      "任务内在",["timeout —— 都提取 '>= 1'（同错）","跨模型看到一致","只有源码能证伪"],lc=AB,rc=AO)
 
-s=slide(12,"证据","12 个 over-strict 子句：跨模型 7，源码 12")
-table(s,["Over-strict 子句","TI","跨模型","源码"],
-      [["shardsNum >= 1","是","漏","捕获"],["metricType strict enum","否","漏","捕获"],
-       ["consistencyLevel strict enum","否","捕获","捕获"],["data non-empty","是","漏","捕获"],
-       ["limit >= 1","否","捕获","捕获"],["timeout >= 1 (Qdrant)","是","捕获","捕获"],
-       ["group_size >= 1 (Qdrant)","是","漏","捕获"],["score_threshold ∈[0,1]","是","漏","捕获"],
-       ["合计","5","7/12","12/12"]],top=1.4,h=4.8)
-note(s,"扩展到 n=29（行为+显式边界子型）；见 P18。")
+s=slide(12,"方法","完整 pipeline：源码证伪解决跨模型解决不了的问题")
+image(s,"fig5_pipeline.png",top=1.3,left=0.5,w=12.3)
+note(s,"加到朴素 pipeline（P7）：dev-reviewer 读源码证伪。12 子句 pilot：跨模型 7/12，源码 12/12（n=29 见 P18）。")
 
 # P13 source-grounded falsification + note
 s=slide(13,"方法","证伪规则：shardsNum=0 选默认值")
