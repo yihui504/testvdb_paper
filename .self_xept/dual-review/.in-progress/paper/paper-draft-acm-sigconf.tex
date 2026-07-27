@@ -1,12 +1,9 @@
-% TestVDB v3 - PPT v2.3 driven rewrite (2026-07-27).
-% Spine = testvdb_v2.3_20260726.pptx (no TI layer; FP = hallucination + self-preference).
-% Format: acmart sigconf (double-column ACM SIG). Page limit: none (venue TBD).
 \documentclass[sigconf]{acmart}
 \usepackage{tikz}
 \usetikzlibrary{positioning, arrows.meta}
-\emergencystretch=2em   % absorb minor overfull hbox in the two-column body
+\emergencystretch=2em   
 
-\settopmatter{printacmref=false}   % venue TBD; suppress boilerplate for now
+\settopmatter{printacmref=false}   
 \settopmatter{printfolios=false}
 
 \title[TestVDB: doc-implementation defects in VDBMSs]{TestVDB: Detecting Documentation-Implementation Defects in Vector Databases via LLM-Derived Behavioral Claims}
@@ -30,7 +27,6 @@ Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-
 
 \maketitle
 
-% =====================================================================
 \section{Introduction}
 \label{sec:intro}
 
@@ -54,8 +50,6 @@ We instantiate this as TestVDB, a four-stage pipeline (Section~\ref{sec:approach
   \item \textbf{Evaluation.} 107 submitted issues with 49 maintainer-acknowledged true-positive defects (15 merged-PR-fixed) across three VDBMSs; a 48-candidate retrospective showing the source anchor lifts recall from 37\% to 74\%; and a bidirectional probe against VDBFuzz that explores complementary coverage (Section~\ref{sec:eval}).
 \end{itemize}
 
-% =====================================================================
-% =====================================================================
 \section{Background and Problem Setup}
 \label{sec:background}
 
@@ -83,7 +77,6 @@ REST doc/spec-derived oracles (AGORA+~\cite{agoraplus25}, SATORI~\cite{satori25}
 \end{tabular}
 \end{table*}
 
-% =====================================================================
 \section{TestVDB Approach}
 \label{sec:approach}
 
@@ -131,7 +124,6 @@ Milvus documents \texttt{nprobe} as an integer in $[1, 16384]$. The contract-for
 
 \paragraph{LLM automation.}
 TestVDB runs as a multi-agent pipeline~\cite{hou23llmse} on the Claude Code runtime, with each of the 20 agents defined by a task-structured role prompt and dispatched to a GLM-5.2 backbone under default sampling. For source-grounded falsification, TestVDB clones each target's source at the pinned version (\texttt{milvus-src}~v2.6.19, \texttt{qdrant-src}~v1.18.2, \texttt{weaviate-src}~v1.38.2), and the dev-reviewer greps the clone to trace constants and call chains, rather than fetching a single source URL; the clone is the only ground truth for what the implementation actually does. Wall-clock per target is dominated by source-grounding and live Docker re-probes rather than raw LLM latency; a full run is on the order of $10^4$ LLM calls and roughly $\$10$ per target at current API pricing. Roughly half of the calls are dev-reviewer source-grounding steps (the dominant wall-clock cost), a quarter are claim extraction and test generation, and the rest are judging and the novelty gate. The full prompts, target versions, and per-token accounting are in the artifact, which we will release at a persistent URL upon acceptance.
-% =====================================================================
 \section{The False-Positive Problem}
 \label{sec:fp}
 
@@ -148,7 +140,6 @@ A natural counter is to replace the single judge with a panel. We tried a multi-
 
 The two modes point to different fixes. Hallucination calls for a falsifier that does not depend on the documentation for ground truth, and self-preference calls for a signal that does not come from the same family. The most accessible independent signal is the implementation. The API's actual behavior is a fact the LLM cannot argue with. This motivates the dev-reviewer.
 
-% =====================================================================
 \section{Dev-Reviewer: Source-Grounded Falsifier}
 \label{sec:devreviewer}
 
@@ -194,7 +185,6 @@ The checks draw on three evidence anchors. A \emph{clean-reproduction} anchor re
 Qdrant issue \#9255, a payload-filter false positive, illustrates falsification in action. The original oracle flagged a search returning points whose \texttt{payload} appeared absent as a filter violation, but the raw request had not set \texttt{with\_payload=true}, so the absence was a projection artifact rather than a stored-data gap. The dev-reviewer rebuilt the request with \texttt{with\_payload=true} and confirmed every returned point carried the filtered field; the candidate was suppressed as a false positive whose root cause was \texttt{assertion\_depends\_on\_unrequested\_field}. This is the failure mode the multi-perspective panel misses, because every judge reads the same response and none re-issues the request.
 
 The dev-reviewer is not a second extractor that reads the documentation again. It reads the source, where the actual behavior is defined, and uses the contract only as the assertion under test. This separation is what breaks self-preference: the falsifier's ground truth is the implementation, not the same family's prior claim.
-% =====================================================================
 \section{Evaluation}
 \label{sec:eval}
 
@@ -305,7 +295,6 @@ v1.18.2 & --- (TestVDB's target version) & both fixed \\
 \emph{External validity.} Generalization to Weaviate is yield-only; the controlled retrospective covers Milvus and Qdrant. Result correctness of vector search (ANN recall, ranking) is out of scope. Transfer to documentation regimes beyond VDBMSs (REST APIs without OpenAPI, configuration validation, policy-as-code) is claimed on structural grounds only and is not empirically tested; even one non-VDBMS case study would strengthen the claim.
 
 \emph{Construct validity.} All dev-reviewer results use a single LLM family (GLM-5.2); a cross-model check on twenty candidates (a diversity-stratified, non-random sample; Wilson 95\% CI on the agreement proportion $[83\%, 100\%]$, so moderate family-specificity remains statistically compatible) suggests the verdict is not strongly family-specific when source evidence is explicit. The check measures agreement, not recall, and we do not estimate recall because no public ground-truth defect catalog for VDBMSs exists. The implementation-as-correct assumption (Section~\ref{sec:disc}) bounds the approach: an implementation bug can wrongly falsify a clause whose documentation is right.
-% =====================================================================
 \section{Related Work}
 \label{sec:related}
 
@@ -321,7 +310,6 @@ Self-preference bias, in which an LLM evaluator favors its own family's outputs,
 \paragraph{Documentation-derived oracles.}
 Toradocu~\cite{toradocu16} pioneered oracle extraction from natural-language documentation, using NLP and pattern matching to translate Javadoc \texttt{@throws} comments into assertions; its deterministic extraction handles simple syntactic patterns but acknowledges false positives from extraction failures without correcting them. Doc2OracLL~\cite{doc2oracll25} extended this line to LLMs and showed that documentation quality directly impacts oracle correctness. AugmenTest~\cite{augmentest25} infers oracles from the available documentation, and ChatAssert~\cite{chatassert24} addresses false positives through iterative prompt repair guided by compilation and execution feedback. Testora~\cite{testora26} uses natural-language PR descriptions as a regression oracle, reaching about 55\% precision even with a multi-question classifier. All of these treat the LLM as the final semantic arbiter and verify through runtime behavior (compilation feedback, differential execution); TestVDB differs by using implementation source, not runtime behavior, as an independent verification source, falsifying LLM-derived claims and targeting the ambiguous-prose regime that Javadoc and OpenAPI extraction do not enter.
 
-% =====================================================================
 \section{Discussion and Limitations}
 \label{sec:disc}
 
@@ -331,7 +319,6 @@ Beyond the threats in Section~\ref{sec:eval}, two limitations bound the approach
 
 Our 107-submission yield is biased by the tool's design toward documentation-implementation defects, so the proportion we observe is not an estimate of the distribution in VDBMSs at large. A full-space estimation with capture-recapture or an unbiased defect sample is future work.
 
-% =====================================================================
 \section{Conclusion}
 \label{sec:concl}
 
