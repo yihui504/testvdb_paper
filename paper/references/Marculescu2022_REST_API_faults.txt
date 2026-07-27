@@ -1,0 +1,208 @@
+On the Faults Found in REST APIs by Automated Test Generation
+Bogdan Marculescu, Man Zhang, Andrea Arcuri
+ACM Transactions on Software Engineering and Methodology (TOSEM),
+  Vol. 31, Issue 3, Article No. 41, Pages 1-43
+Published: 07 March 2022   DOI: 10.1145/3491038
+Downloaded as text from ACM DL (free HTML full text).
+
+================================================================
+Abstract
+================================================================
+RESTful web services are often used for building a wide variety of enterprise applications. The diversity and increased number of applications using RESTful APIs means that increasing amounts of resources are spent developing and testing these systems. Automation in test data generation provides a useful way of generating test data in a fast and efficient manner. However, automated test generation often results in large test suites that are hard to evaluate and investigate manually.
+
+This article proposes a taxonomy of the faults we have found using search-based software testing techniques applied on RESTful APIs. The taxonomy is a first step in understanding, analyzing, and ultimately fixing software faults in web services and enterprise applications. We propose to apply a density-based clustering algorithm to the test cases evolved during the search to allow a better separation between different groups of faults. This is needed to enable engineers to highlight and focus on the most serious faults.
+
+Tests were automatically generated for a set of eight case studies, seven open-source and one industrial. The test cases generated during the search are clustered based on the reported last executed line and based on the error messages returned, when such error messages were available. The tests were manually evaluated to determine their root causes and to obtain additional information.
+
+The article presents a taxonomy of the faults found based on the manual analysis of 415 faults in the eight case studies and proposes a method to support the classification using clustering of the resulting test cases.
+
+================================================================
+1 Introduction
+================================================================
+The Representational State Transfer (REST) is an architectural style for distributed hypermedia systems. REST is an abstraction that ignores details of implementation and focuses on roles of components, constraints upon the interactions between components, and their interpretation of the data. This allows a degree of flexibility that has led to the widespread use of REST to provide web services.
+
+The flexibility that has enabled the widespread use of RESTful web services, however, also makes testing such systems more difficult. While some constraints are defined as part of REST, most of the business logic is up to individual developers. Moreover, REST allows web services to call upon other web services, further improving their usefulness and flexibility, but complicating testing.
+
+Automation provides a useful way of generating large amounts of test data in a fast and efficient manner. In particular, search-based techniques have been applied to an increasing extent to the problem of software testing. However, many of the faults found as a result of these efforts may not be critical. It is important to provide engineers with an overview of the different failure types that automated systems have revealed, and the tools to identify and prioritize the more important of those faults.
+
+In this article, we propose a taxonomy for software faults found by automatically generated tests in RESTful web services. This was based on manual analysis of 415 detected faults. In addition, we propose a method to automatically support such a classification by clustering test cases based on the similarities between their error messages.
+
+The clustering of test cases is implemented as an extension of EvoMaster, an open-source test case generation tool that supports both black-box and white-box testing. EvoMaster uses the Many Independent Objectives algorithm (MIO) to generate test cases. Lines of code and potential faults are labeled as separate objectives by MIO, and tests are generated to maximize the number of objectives covered by the test suite. EvoMaster is primarily focused on RESTful APIs. It generates and runs HTTP calls with generated input data to maximize code coverage and fault detection.
+
+================================================================
+2 Background
+================================================================
+The Hypertext Transfer Protocol (HTTP) is a protocol that defines a set of rules for data communication over a network. HTTP actions are defined by HTTP verbs (POST, PUT, GET, DELETE) for CRUD operations. The server returns a response with a status code:
+- 1xx: request received, continuing process
+- 2xx: request successfully carried out
+- 3xx: additional actions required (redirection)
+- 4xx: client error (request contains errors or cannot be performed)
+- 5xx: server error (apparently valid request that server could not complete; considered a fault in the server)
+
+Representational State Transfer (REST) is an architectural style on top of HTTP. REST is an architectural style rather than a protocol — the guidelines are proposed and recommended but not enforced. This leads to the possibility of non-conforming APIs being developed and used.
+
+OpenAPI is a programming language-agnostic interface description for REST APIs, the purpose of which is to allow machine and human clients to understand the capabilities of a web service without requiring access to its source code, additional documentation, or other data sources. Earlier versions of OpenAPI (pre-3.0.0) were also known as Swagger.
+
+EvoMaster is an automated tool that uses evolutionary algorithms and dynamic program analysis to automatically generate system level test cases for RESTful APIs. Potential faults considered for fault finding are based on HTTP responses with 500 status codes and discrepancies between the API responses and what is expected based on the OpenAPI schemas.
+
+================================================================
+3 Related Work
+================================================================
+The popularity of RESTful APIs has led to a significant amount of frameworks that support development and deployment, and more recently, in research on testing such systems. Efforts are mostly focused on black-box automated test case generation, based on the OpenAPI schema definitions.
+
+- QuickREST (Karlsson et al.): uses the OpenAPI specification to derive properties of inputs and then uses the specification as an oracle. The authors describe the faults as "input validation bugs." APIs are often under-specified — OpenAPI restrictions are looser than valid inputs of the underlying API.
+- RESTTESTGEN (Viglianisi et al.): uses OpenAPI + runtime information to identify dependencies between resources and operations, expressed as an Operation Dependency Graph.
+- Ed-douibi: using OpenAPI to derive models of the RESTful API for test generation.
+- Atlidakis et al. (RESTler): using OpenAPI as a basis for fuzzing RESTful APIs.
+
+Two major knowledge gaps emerge:
+1. It is not clear what types of faults can be found with automated testing (existing studies rely on user session data or seeded faults).
+2. The absence of a general means of supporting developers in classifying test data, especially from novel sources.
+
+================================================================
+4 Method
+================================================================
+Research Questions:
+(1) What faults are actually found in RESTful systems by automated testing?
+(2) What types of faults are more common across the SUTs being studied?
+(3) How can automated support for the classification of faults be provided?
+  (a) To what extent is automated support for fault classification useful in distinguishing between different faults?
+  (b) To what extent is a subset of test cases derived from sampling each automatically identified category representative of the categories of faults found in practice?
+
+A "potential fault" is defined as an HTTP call that results in a 500 status code. Additionally, an HTTP call that results in a code not supported by the OpenAPI specification is also considered erroneous (e.g., returning a 400 when such code is not explicitly stated in the schema). Codes in the 5xx family are technically unexpected; the "Expectation Faults" category only includes responses with status codes not supported by the OpenAPI specification but not 500.
+
+Case studies (8 total: 7 open-source from EvoMasterBenchmark + 1 industrial "Ind0"):
+| SUT | Classes | LOCs | Endpoints |
+| rest-ncs | 9 | 602 | 6 |
+| rest-scs | 13 | 859 | 11 |
+| rest-news | 10 | 718 | 7 |
+| catwatch | 69 | 5,442 | 13 |
+| feature-service | 23 | 2,347 | 18 |
+| proxyprint | 68 | 7,534 | 74 |
+| scout-api | 75 | 7,479 | 49 |
+| ind0 (industrial) | 75 | 4,573 | 20 |
+| Total | 342 | 29,554 | 198 |
+
+Search budget: 100,000 HTTP calls per run, 10 runs per SUT. The run with the highest target coverage was selected for manual analysis. Total 415 faults (500-status) manually analyzed.
+
+================================================================
+5 Taxonomy
+================================================================
+The taxonomy was developed using a facet-based classification structure (per Usman et al.). Faults fall under four major categories:
+
+(A) Configuration and Execution Faults — faults related to setup of frameworks, testing scaffolding, or external systems.
+  - Framework Misconfiguration: e.g., framework rejects strings containing ";" as malicious → 500 instead of 4xx. Manifests as Rejected Calls and Timeouts.
+  - Inconsistent Behavior: Multiple Execution inconsistencies; Fail by Succeeding (unexpected 2xx); Unexpected 500; Try-Catch (timeouts wrapped).
+
+(B) Schema Conflicts — mismatches between the OpenAPI schema and the underlying SUT.
+  - Format: mismatch in acceptable formats (e.g., date regex allows "42" as month).
+  - Type: type not clearly specified (e.g., JSON body expected numerical but schema says string).
+  - Missing or Null Values: SUT expects input not mandatory in schema.
+  - Negative: input expected non-negative (e.g., offset) but no schema restriction.
+  - Pre-approved List: input must be from a list (e.g., 247 country names) not in schema.
+  - Invalid Combination: multi-parameter constraints (not supported by OpenAPI).
+  - Semantic: semantic meaning not captured (e.g., invalid but well-formed dates).
+  - Unsupported Code: HTTP response codes not supported by OpenAPI.
+
+(C) Data Related Faults — initialization, data consistency, database injection.
+  - DB Operations: DB.OptimisticLock, DB.Key, Constraint Violation Exception.
+  - DB Injection: inconsistent data injected directly into DB.
+  - Seeding: incomplete seeded data causing NullPointerException.
+
+(D) Faults in the Business Logic — general unwanted behaviors / crashes in business logic.
+  - Hardcoded: hardcoded values invalid under testing (e.g., sublist of 10).
+  - Not Found: improper handling of missing resources (should be 404, crashes with 500).
+  - Unsafe Cast: ClassCastException from unsafe casts.
+
+The most prevalent fault is "Not Found" (mishandling of requests on non-existent resources). "Schema Conflicts" (mismatches between OpenAPI and SUT) are also frequent, present in all but two (artificial) systems.
+
+Conclusion: mishandling resources that are not found and mismatches between OpenAPI specifications and the RESTful APIs they describe are common types of faults.
+
+Fault counts per class (Table 5, top entries):
+- scout-api / NotFound: 107
+- proxyprint / Specification.Custom.MissingOrNull: 28
+- proxyprint / NotFound: 28
+- scout-api / Specification.Custom.Semantic: 24
+- ind0 / Specification.Custom.Semantic: 23
+- features-service / NotFound: 20
+- scout-api / DB.OptimisticLock: 16
+- scout-api / Constraint.Null: 15
+- ... (Total 415)
+
+================================================================
+6 Clustering — Results and Interpretation
+================================================================
+The clustering uses DBSCAN (Density Based Spatial Clustering of Applications with Noise). DBSCAN does not require the number of clusters to be defined in advance — useful for stochastic search output. Parameters: epsilon (neighborhood) and minPts (minimum points per cluster).
+
+Two distance metrics:
+1. Textual similarity between error messages (Levenshtein-based, normalized by length).
+   - Downside: generic error messages give no differentiation; security wrapping obscures messages.
+2. Textual similarity of the path of the last executed statement.
+   - Downside: fault location may be imprecise; identical code on different lines; SUT structure misleading.
+
+Results (proxyprint case study): Separation is high (most fault classes exist in one cluster), but Cohesion is low (each cluster contains more than one class of fault). Clustering does separate different fault classes but clusters are not cohesive — a cluster is "a bin where several classes of fault, which manifest in similar ways or have similarity in terms of error message, are grouped."
+
+Initial results: clustering can separate between different types of faults and has the potential to provide test engineers with automated support when classifying large numbers of test cases.
+
+================================================================
+7 Discussion
+================================================================
+The taxonomy is meant to be a flexible and robust description of faults encountered in practice, not only in the case studies. The current EvoMaster oracle: any 500 response = possible fault (crash oracle). Most common 500 fault = mismatch between OpenAPI schema (used to generate inputs) and SUT, i.e., mishandling invalid inputs. Mismatches between OpenAPI schemas and SUTs are interesting because most OpenAPIs in the case studies are automatically generated — improvements can be made in auto-derivation tools.
+
+The large number of "Unsupported Code" and "Schema Conflict" faults indicates current OpenAPI schemas are under-specified. As automated testing tools improve, this could generate large amounts of false positives.
+
+================================================================
+8 Threats to Validity
+================================================================
+- Conclusion validity: search randomness; 10 runs per SUT; results not outliers.
+- Construct validity: stopping criterion = number of HTTP calls (100,000).
+- Internal validity: manual evaluation of 415 faults; analyzed by one author, checked by second; disagreements discussed until agreement.
+- External validity: 8 diverse case studies (open-source artificial + real + industrial); taxonomy designed to be extensible to new fault classes.
+
+================================================================
+9 Conclusions
+================================================================
+A taxonomy of 415 faults found by EvoMaster in RESTful APIs is proposed. It describes diverse faults ranging from RESTful-specific framework misconfigurations and schema mismatches to generic software faults. Large numbers of Unsupported Code and Schema Conflict faults indicate current OpenAPI schemas are under-specified, which could generate false positives as automated testing becomes more widespread. An initial means of automatically classifying software faults based on error-message similarity (DBSCAN clustering) is proposed; clustering separates several categories when error messages are informative. EvoMaster is open-source at www.evomaster.org.
+
+================================================================
+Appendix: Failed clustering
+================================================================
+- scout-api: wraps all errors by default, removes all info except "code 500" → all faults in one cluster.
+- feature-service: removes all text from error → no clustering possible.
+- Last executed line: problematic because textual similarity misled by module structure.
+
+================================================================
+References
+================================================================
+[1] S. Ali, L. C. Briand, H. Hemmati, and R. K. Panesar-Walawege. 2010. A systematic review of the application and empirical investigation of search-based test-case generation. IEEE Trans. Softw. Eng. 36, 6 (2010), 742-762.
+[2] Mohammad Alshraideh and Leonardo Bottaci. 2006. Search-based software test data generation for string data using program-specific search operators. Softw. Test., Verif., Reliab. 16, 3 (2006), 175-203.
+[3] Andrea Arcuri. 2018. EvoMaster: Evolutionary multi-context automated system test generation. In IEEE ICST.
+[4] Andrea Arcuri. 2018. Test suite generation with the Many Independent Objective (MIO) algorithm. Inf. Softw. Technol. 104 (2018), 195-206.
+[5] Andrea Arcuri. 2019. RESTful API automated test case generation with EvoMaster. ACM Trans. Softw. Eng. Methodol. 28, 1 (2019), 3.
+[6] Andrea Arcuri. 2021. Automated blackbox and whitebox testing of RESTful APIs with EvoMaster. IEEE Softw. 38, 3 (2021).
+[7] A. Arcuri and L. Briand. 2011. Adaptive random testing: An illusion of effectiveness? In ISSTA. 265-275.
+[8] Andrea Arcuri and Juan Pablo Galeotti. 2020. Handling SQL databases in automated system test generation. ACM Trans. Softw. Eng. Methodol. 29, 4 (2020), 1-31.
+[9] Andrea Arcuri, Juan Pablo Galeotti, Bogdan Marculescu, and Man Zhang. 2021. EvoMaster: A search-based system test generation tool. J. Open Source Softw. 6, 57 (2021), 2153.
+[10] Vaggelis Atlidakis, Patrice Godefroid, and Marina Polishchuk. 2019. RESTler: Stateful REST API Fuzzing. In ICSE'19. 748-758.
+[11] Mustafa Bozkurt, Mark Harman, and Youssef Hassoun. 2013. Testing and verification in service-oriented architecture: A survey. Softw. Test., Verif. Reliab. 23, 4 (2013), 261-313.
+[12] Gerardo Canfora and Massimiliano Di Penta. 2009. Service-oriented architectures testing: A survey. In Software Engineering. Springer, 78-105.
+[13] Hamza Ed-douibi, Javier Luis Cánovas Izquierdo, and Jordi Cabot. 2018. Automatic generation of test cases for REST APIs: A specification-based approach. In EDOC. 181-190.
+[14] S. Elbaum, G. Rothermel, S. Karre, and M. Fisher II. 2005. Leveraging user-session data to support Web application testing. IEEE Trans. Softw. Eng. 31, 3 (2005), 187-202.
+[15] Martin Ester, Hans-Peter Kriegel, Jörg Sander, Xiaowei Xu. 1996. A density-based algorithm for discovering clusters in large spatial databases with noise. In KDD. 226-231.
+[16] Roy Thomas Fielding. 2000. Architectural Styles and the Design of Network-based Software Architectures. Ph.D. Dissertation. UC Irvine.
+[17] Ines Hajri, Arda Goknil, Fabrizio Pastore, and Lionel C. Briand. 2020. Automating System Test Case Classification and Prioritization for Use Case-Driven Testing in Product Lines. arxiv:cs.SE/1905.11699.
+[18] M. Harman and B. F. Jones. 2001. Search-based software engineering. J. Inf. Softw. Technol. 43, 14 (2001), 833-839.
+[19] Mark Harman, S. Afshin Mansouri, and Yuanyuan Zhang. 2012. Search-based software engineering: Trends, techniques and applications. ACM Comput. Surv. 45, 1 (2012), 11.
+[20] Stefan Karlsson, Adnan Causevic, and Daniel Sundmark. 2020. QuickREST: Property-based test generation of OpenAPI described RESTful APIs. In IEEE ICST.
+[21] Vladimir I. Levenshtein. 1966. Binary codes capable of correcting deletions, insertions, and reversals. In Soviet Physics Doklady, Vol. 10. 707-710.
+[22] Alberto Martin-Lopez, Sergio Segura, Carlos Muller, and Antonio Ruiz-Cortés. 2021. Specification and automated analysis of inter-parameter dependencies in web APIs. IEEE Trans. Serv. Comput. (2021).
+[23] Alberto Martin-Lopez, Sergio Segura, and Antonio Ruiz-Cortés. 2020. RESTest: Black-box constraint-based testing of RESTful web APIs. In ICSOC. 459-475.
+[24] X. Nguyen, P. Nguyen, and V. Nguyen. 2019. Clustering automation test faults. In KSE. 1-7.
+[25] P. Ralph. 2019. Toward methodological guidelines for process theories and taxonomies in software engineering. IEEE Trans. Softw. Eng. 45, 7 (2019), 712-735.
+[26] S. Sampath, S. Sprenkle, E. Gibson, L. Pollock, and A. Souter Greenwald. 2007. Applying concept analysis to user-session-based testing of web applications. IEEE Trans. Softw. Eng. 33, 10 (2007), 643-658.
+[27] Sergio Segura, José A. Parejo, Javier Troya, and Antonio Ruiz-Cortés. 2018. Metamorphic testing of RESTful web APIs. IEEE Trans. Softw. Eng. 44, 11 (2018).
+[28] Muhammad Usman, Ricardo Britto, Jürgen Börstler, and Emilia Mendes. 2017. Taxonomies in software engineering: A systematic mapping study and a revised taxonomy development method. Inf. Softw. Technol. 85 (2017), 43-59.
+[29] Matej Črepinšek, Shih-Hsi Liu, and Marjan Mernik. 2013. Exploration and exploitation in evolutionary algorithms: A survey. ACM Comput. Surv. 45, 3 (2013).
+[30] Emanuele Viglianisi, Michael Dallago, and Mariano Ceccato. 2020. RESTTESTGEN: Automated black-box testing of RESTful APIs. In IEEE ICST.
+[31] Man Zhang, Bogdan Marculescu, and Andrea Arcuri. 2019. Resource-based test case generation for RESTful web services. In GECCO. 1426-1434.
+[32] Sai Zhang, Darioush Jalali, Jochen Wuttke, Kıvanç Muşlu, Wing Lam, Michael D. Ernst, and David Notkin. 2014. Empirically revisiting the test independence assumption. In ISSTA'14. 385-396.

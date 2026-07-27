@@ -1,0 +1,85 @@
+{
+  "family": "r1",
+  "model": "deepseek-reasoner",
+  "url": "https://api.deepseek.com/chat/completions",
+  "cases": [
+    {
+      "id": "shardsNum",
+      "db": "milvus",
+      "param": "shardsNum",
+      "glm_clause": "shardsNum >= 1",
+      "family_clause": "shardsNum must be an integer.",
+      "real_semantics": "0 means use the default shard number",
+      "ti_hold": false,
+      "crossmodel_judgment": "caught",
+      "verdict_raw": "YES_overstrict The assertion requires shardsNum to be at least 1, but the documentation only states it is an optional integer with a default of 1, without specifying any minimum constraint.",
+      "time_formalize_s": 3.2,
+      "time_judge_s": 2.1
+    },
+    {
+      "id": "data_search",
+      "db": "milvus",
+      "param": "data",
+      "glm_clause": "data must be a non-empty array of non-empty float arrays",
+      "family_clause": "data is required and must be an array of arrays of floats.",
+      "real_semantics": "an empty data array is tolerated (returns empty)",
+      "ti_hold": false,
+      "crossmodel_judgment": "caught",
+      "verdict_raw": "YES_overstrict\nThe assertion adds the requirement of non-empty outer and inner arrays, while the documentation only specifies that it is a required array of arrays of floats, without stating any non-empty condition.",
+      "time_formalize_s": 5.1,
+      "time_judge_s": 1.9
+    },
+    {
+      "id": "timeout",
+      "db": "qdrant",
+      "param": "timeout",
+      "glm_clause": "timeout >= 1",
+      "family_clause": "timeout is an integer.",
+      "real_semantics": "0 means no wait (async)",
+      "ti_hold": false,
+      "crossmodel_judgment": "caught",
+      "verdict_raw": "YES_overstrict The assertion requires timeout to be at least 1, but the documentation allows timeout to be 0 (no wait) as the default.",
+      "time_formalize_s": 3.5,
+      "time_judge_s": 2.7
+    },
+    {
+      "id": "group_size",
+      "db": "qdrant",
+      "param": "group_size",
+      "glm_clause": "group_size >= 1",
+      "family_clause": "group_size must be an integer.",
+      "real_semantics": "0 is accepted (returns empty groups)",
+      "ti_hold": false,
+      "crossmodel_judgment": "caught",
+      "verdict_raw": "YES_overstrict The documentation does not specify a minimum value for group_size, so requiring it to be >=1 is stricter than the documented behavior.",
+      "time_formalize_s": 5.0,
+      "time_judge_s": 3.1
+    },
+    {
+      "id": "score_threshold",
+      "db": "qdrant",
+      "param": "score_threshold",
+      "glm_clause": "score_threshold in [0, 1]",
+      "family_clause": "score_threshold must be either null or a float.",
+      "real_semantics": "values like 2.0/-0.5 accepted",
+      "ti_hold": false,
+      "crossmodel_judgment": "caught",
+      "verdict_raw": "YES_overstrict The assertion restricts score_threshold to [0,1], but the documentation only says it's a float without specifying upper or lower bounds.",
+      "time_formalize_s": 2.7,
+      "time_judge_s": 2.1
+    },
+    {
+      "id": "bits",
+      "db": "qdrant",
+      "param": "bits",
+      "glm_clause": "bits >= 1",
+      "family_clause": "bits must be an integer.",
+      "real_semantics": "0 is accepted",
+      "ti_hold": false,
+      "crossmodel_judgment": "missed",
+      "verdict_raw": "NO_supported The documentation states \"bit-width,\" which inherently implies a positive integer value, supporting the assertion that bits are at least 1.",
+      "time_formalize_s": 1.9,
+      "time_judge_s": 10.5
+    }
+  ]
+}

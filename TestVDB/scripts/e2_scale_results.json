@@ -1,0 +1,26 @@
+{
+  "summary": "RQ3 scaling extension (Option B, pipeline-matched). GLM-side via TestVDB contract-formalizer agent; impl via live Docker probe (Milvus v2.4.0, Qdrant v1.18.2); cross-model via DeepSeek API.",
+  "methodology_note": "GLM-side clauses produced by dispatching the TestVDB contract-formalizer plugin agent (natural over-formalization, not hand-authored). DeepSeek independent re-formalization + cross-model judgment via api.deepseek.com. Live-probe is ground truth.",
+  "new_overstrict": [
+    {"param": "ef", "db": "milvus", "glm_clause": "ef >= 1", "probe": "ef=0 and ef=-1 both HTTP200 with results", "deepseek": "no constraint stated", "TI": false, "crossmodel": "missed"},
+    {"param": "nprobe", "db": "milvus", "glm_clause": "nprobe >= 1", "probe": "nprobe=0 and nprobe=-1 both HTTP200", "deepseek": "no constraint stated", "TI": false, "crossmodel": "missed"},
+    {"param": "level", "db": "milvus", "glm_clause": "level >= 0", "probe": "level=-1 HTTP200 with results", "deepseek": "no constraint stated", "TI": false, "crossmodel": "caught"},
+    {"param": "replicaNumber", "db": "milvus", "glm_clause": "replicaNumber >= 1", "probe": "replicaNumber=0 load accepted", "deepseek": "replicaNumber == 1", "TI": false, "crossmodel": "missed"},
+    {"param": "m", "db": "qdrant", "glm_clause": "m >= 2", "probe": "m=0 and m=1 both HTTP200 accepted on collection create", "deepseek": "m == 16", "TI": false, "crossmodel": "missed"}
+  ],
+  "new_explicit_bound_negatives": [
+    {"param": "M", "db": "milvus", "enforced": "M out of range: [1, 2048]"},
+    {"param": "efConstruction", "db": "milvus", "enforced": "efConstruction out of range: [1, 2147483647]"},
+    {"param": "ef_construct", "db": "qdrant", "enforced": "HTTP 422 validation error on ef_construct=0"},
+    {"param": "full_scan_threshold", "db": "qdrant", "enforced": "HTTP 400 invalid integer on -1"}
+  ],
+  "updated_counts": {
+    "overstrict_param_set": "12 -> 17",
+    "param_TI": "5/17 = 29.4% (Wilson 95% CI [13%, 53%])  [was 5/12 = 42%, CI 19-68%]",
+    "param_crossmodel_caught": "8/17 = 47%  [was 7/12]",
+    "explicit_bound_negatives": "13 -> 17, over-formalize 0/17",
+    "pooled_param_plus_behavior_TI": "9/21 = 43% (Wilson 95% CI [23%, 66%])  [was 9/16 = 56%]",
+    "predictor": "17 over-strict all optional-default-no-bound; 0/17 explicit-bound over-formalize"
+  },
+  "interpretation": "Task-intrinsic over-formalization persists at a somewhat lower rate than the twelve-clause pilot (29% vs 42%) with a tighter CI; the phenomenon is concentrated in collection-creation default-based parameters (the original 5 TI), while search/example-based and several default-based params are family-specific (GLM over-formalizes, DeepSeek does not). The optional-default vs explicit-bound predictor holds cleanly at 17 vs 17."
+}
