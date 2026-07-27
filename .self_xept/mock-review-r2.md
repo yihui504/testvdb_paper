@@ -1,113 +1,93 @@
-# Mock Review: Reviewer 2 (Critical)
+# Reviewer 2: Mock Review of TestVDB
 
 ## Summary
 
-TestVDB addresses the oracle problem for API conformance defects in Vector Database Management Systems by proposing source-grounded falsification of LLM-derived behavioral claims. The authors distinguish between family-specific LLM errors (mitigated by cross-model validation) and task-intrinsic documentation-interpretation errors (requiring source as ground truth). Across 5 VDBMSs, TestVDB surfaced 111 issues; maintainers acknowledged 38 as defects, with the source anchor suppressing 81% of false positives. While the problem is real and the two-layer error model is conceptually sound, the evaluation has methodological limitations: the central task-intrinsic error claim rests on a small probe (N=9 clauses), the "85% conformance residual" is a biased sample composition rather than a population estimate, and key components lack cross-model validation. The paper is a promising contribution but needs stronger empirical support for its novelty claims.
+This paper proposes TestVDB, a four-stage pipeline that uses LLMs to detect documentation-implementation defects in vector database management systems (VDBMSs). The authors motivate this problem class by observing that most VDBMS defects are logical bugs that do not crash, and thus escape existing crash-oracle fuzzers such as VDBFuzz. Their core technical contribution is the introduction of a "dev-reviewer" agent that acts as a source-grounded falsifier to suppress false positives arising from two failure modes: LLM hallucination in behavioral-claim extraction and self-preference bias in judgment. The paper reports 49 maintainer-acknowledged true-positive defects across three VDBMSs (Milvus, Qdrant, Weaviate), with 15 fixed via merged PRs. On a 48-candidate maintainer-adjudicated retrospective, the dev-reviewer achieves 67% precision and 74% recall (3-run any-confirmed ensemble), compared to 37% recall without source grounding. A bidirectional probe against VDBFuzz shows complementary coverage on Qdrant.
+
+The work addresses a real and timely problem—LLM-derived oracles for natural-language documentation—and the source-grounded falsification approach is technically sound. However, the evaluation has several post-hoc characteristics that weaken confidence in the reported operating points, and the paper would benefit from more explicit acknowledgment of these limitations and clearer motivation for the chosen ensemble strategy.
 
 ## Strengths
 
-1. **Clear problem articulation.** The VDBMS conformance defect class is well-defined with concrete examples (nprobe=0, ef=0, negative score thresholds). Table 1 effectively maps each oracle family to the defect subset it cannot reach, establishing the residual that motivates the LLM-as-oracle setting.
+1. **Well-motivated problem setting.** The distinction between crash-oracle detection (VDBFuzz) and documentation-implementation consistency is clearly articulated. The example case (Milvus #49823: `nprobe=0`) effectively illustrates the defect class.
 
-2. **Conceptual contribution: two-layer error model.** The distinction between family-specific self-preference and task-intrinsic documentation-interpretation errors is insightful and grounded in a plausible mechanism. Section 4 clearly articulates why cross-model validation covers the former but not the latter, motivating source-grounded falsification as the necessary countermeasure.
+2. **Technical contribution is properly motivated.** The two false-positive modes (extraction hallucination, judgment self-preference) are clearly explained, and the structural insufficiency of multi-perspective judging (80% precision, 15% recall) is a credible baseline that justifies the need for an independent signal (source code).
 
-3. **Controlled ablation design.** The precision ablation (single-LLM 25.5% → single source cycle 45.6% → full pipeline 69.2%) isolates incremental contributions and shows that each component adds value, not just the end-to-end system.
+3. **RQ1 demonstrates practical impact.** The 49 maintainer-acknowledged true positives with 15 merged-PR fixes across three production VDBMSs provide concrete evidence of practical relevance.
 
-4. **Statistical transparency.** The paper reports Wilson binomial confidence intervals for precision (69.2%, 95% CI [55.7%, 80.1%]) and acknowledges the pending-resolution worst-case bound ([43.9%, 80.5%]), which is more rigorous than point estimates alone.
-
-5. **Honest limitation statements.** Section 8 explicitly bounds the approach (requires source, treats implementation as correct) and the threats section acknowledges the small RQ3 probe size and single-model-family limitation, showing commendable candor.
+4. **Oracle-exclusion argument (Table 1) is systematic.** The paper walks through standard oracle candidates and explains why each misses the documentation-implementation residual, which helps justify why an LLM-derived oracle is necessary in this regime.
 
 ## Weaknesses
 
-### **[Major] 1. Insufficient statistical support for the central task-intrinsic error claim (RQ3).**
+### **[HIGH, partially fixable] Post-hoc operating point selection in RQ2**
 
-**Location:** Section 7, RQ3, lines 142-143; Table 2; Abstract, line 20
+The paper reports multiple operating points (single run, 3-run union, 5-run union, 5-run majority) in Table 2 and selects the 3-run union as the headline, explicitly labeling it a "post-hoc operating point justified by falsifier semantics." This selection is concerning for two reasons:
 
-**Issue:** The core novelty claim—that source-grounded falsification resolves task-intrinsic documentation-interpretation errors that cross-model validation cannot—rests on a probe of only nine clauses from a single VDBMS (Milvus). The paper acknowledges this as "the most contingent finding" and treats it as "a pilot pending a larger study," yet the abstract and contributions present it as a supported finding. With n=9, the observed 2/9 task-intrinsic rate has a 95% Wilson interval of approximately [7%, 56%], which is too wide to support strong claims about prevalence or generality. A single additional task-intrinsic clause would change the rate to 33%, undermining the stability of the phenomenon.
+1. **Statistical inference problem.** When multiple operating points are computed on the same 48-candidate set and one is selected post-hoc as the headline, standard confidence intervals do not account for selection bias. The Wilson 95% CIs reported (e.g., precision [49%, 81%]) understate the true uncertainty because they condition on the chosen operating point rather than the full exploratory process.
 
-**Fix:** Scale the probe to a statistically powered sample (n≥50 clauses across multiple VDBMSs) and report exact binomial confidence intervals. If scaling is infeasible, reframe RQ3 as exploratory evidence and remove the "task-intrinsic" terminology from the abstract until confirmed. The current presentation outpaces the empirical support.
+2. **Lack of pre-registered analysis plan.** The paper does not describe a pre-specified rule for when the 3-run union vs. 5-run union vs. majority would be selected. The justification ("under-confirmation is costlier than forwarding a false positive") is a semantic rationale for preferring high-recall operating points, but it does not explain why 3 runs is the optimal trade-off rather than 1 or 5.
 
-### **[Major] 2. Missing cross-model validation for the dev-reviewer's source-grounded falsification.**
+The threat would be mitigated if the paper reported the full exploratory analysis (including operating points that were tried and abandoned) and provided a principled decision rule (e.g., "we select the highest-recall operating point with precision ≥ 60%"). As written, the selection appears cherry-picked.
 
-**Location:** Section 6, line 110; Section 7, threats to validity, line 172
+### **[HIGH, not easily fixable] Limited statistical power in cross-model check**
 
-**Issue:** All source-anchor results use a single model family (GLM-5.2). The paper claims source-grounded falsification addresses task-intrinsic errors, but if the dev-reviewer itself exhibits family-specific bias when reading source code, the 81% FP suppression may be inflated. The threats section states "a full cross-model ablation of the dev-reviewer is open," but this is a methodological gap, not a future-work item. Without at least a consistency check that a second family produces similar source-grounded verdicts on a subset of candidates, we cannot rule out that the 81% figure is partially a GLM-specific artifact.
+The paper reports a cross-model check where DeepSeek re-runs the dev-reviewer on twenty candidates and achieves Cohen's κ = 1.0 with GLM-5.2, then concludes "the verdict does not appear strongly family-specific when source evidence is explicit." This claim is statistically weak:
 
-**Fix:** Run a cross-model consistency check on the 54 adjudicated candidates: have a second family (e.g., DeepSeek) perform the dev-reviewer's source-grounded falsification on a random subset (e.g., 20 candidates) and report agreement rate (Cohen's κ). If κ < 0.6, the single-family results are unreliable; if κ ≥ 0.6, report this validation and note the remaining uncertainty.
+1. **Sample size is too small.** Twenty candidates with κ = 1.0 yields a Wilson 95% CI on agreement of [83%, 100%]. This interval is compatible with moderate family-specificity (agreement as low as 83%) but the paper presents the result as strong evidence against family-specificity.
 
-### **[Major] 3. The "85% conformance residual" is a sample composition, not a population estimate.**
+2. **Selection bias.** The twenty candidates were not randomly sampled from the 48-candidate retrospective. Without explicit description of the selection criteria, it is unclear whether they were chosen because they were "easy" cases (clear source evidence) or because they were representative of the full distribution.
 
-**Location:** Abstract, line 22; Section 7, RQ1, lines 117-118
+3. **No estimate of recall.** The paper explicitly states "we do not estimate recall because no public ground-truth defect catalog for VDBMSs exists." This creates an asymmetry: the dev-reviewer's precision is evaluated against maintainer adjudication, but its recall (the probability it detects a defect that exists) is unknown. The κ = 1.0 result on twenty candidates suggests consistency, not sensitivity.
 
-**Issue:** The abstract states "about 85% are, by our classification, conformance defects that classical oracles cannot reach" and presents this as a central finding. However, this is not an estimate of the true VDBMS defect distribution—it is the composition of TestVDB's own biased sample, which the paper acknowledges only in Section 8. The presentation in the abstract and RQ1 reads as a population claim ("the residual is 85%") when it is actually a sample-composition figure ("our findings are 85% conformance"). Without capture-recapture estimation or an unbiased defect sample, the 85% figure cannot support general claims about the prevalence of conformance defects in VDBMSs.
+A stronger cross-model validation would either (a) report performance on the full 48-candidate set under DeepSeek, or (b) provide a statistical power analysis showing that twenty candidates is sufficient to detect a meaningful family-specificity effect given the observed κ = 1.0.
 
-**Fix:** Reword the abstract and RQ1 to clearly state that this is the composition of TestVDB's findings, not an estimate of the true defect distribution. For example: "Of the 111 issues TestVDB surfaced, 85% are, by our classification, conformance defects that classical oracles cannot reach." Avoid language that implies this proportion generalizes to all VDBMS defects.
+### **[MEDIUM, fixable] VDBFuzz bidirectional probe is hypothesis-generating only**
 
-### **[Major] 4. Incomplete ablation of the dev-reviewer's three anchors.**
+RQ3 reports a bidirectional reachability probe between TestVDB and VDBFuzz on Qdrant. The paper correctly states "each direction is n=1; we treat these as hypothesis-generating controlled cases rather than a generalized result." However, two limitations weaken the section's contribution:
 
-**Location:** Section 5, line 108-109; Section 7, RQ2, line 140
+1. **Template limitation claim is not independently verified.** The paper interprets VDBFuzz's failure to detect TestVDB's #9045 as a "limitation of VDBFuzz's current templates and input coverage" rather than a fundamental limitation of crash oracles. This claim would be stronger if the paper examined VDBFuzz's template source or ran VDBFuzz with a `wait=false` seed to confirm the limitation.
 
-**Issue:** The dev-reviewer applies three anchors (clean reproduction, source-grounded falsification, threat-model cross-check), but the paper claims "the source anchor suppresses 81% of false positives (up from 31%)" without clarifying what "without it" means. Is the 31% baseline with no anchors at all, or with only the clean-reproduction anchor? Without per-anchor ablation, we cannot assess whether source-grounded falsification is the primary contributor or whether the live API re-probe does most of the work. The threat-model anchor is never described or ablated.
+2. **No discussion of oracle asymmetry.** The paper observes that TestVDB reaches a VDBFuzz crash (integer overflow on `size=2^63`) by contract reasoning, while VDBFuzz misses a TestVDB silent-accept defect (#909045). This suggests an asymmetry: crash-oracle tools are a subset of documentation-implementation testing. The paper does not explicitly discuss whether this asymmetry is expected (i.e., whether VDBFuzz is *designed* to miss silent-accept defects) or whether it represents a gap in VDBFuzz's coverage.
 
-**Fix:** Report per-anchor ablation: precision/recall for (a) no anchors, (b) clean reproduction only, (c) source only, (d) all three. Replace "up from 31% without it" with "up from 31% when only the clean-reproduction anchor is applied" (or whatever the baseline actually was). Explain the threat-model anchor and ablate it.
+The section would be strengthened by framing the bidirectional probe as an analysis of *oracle coverage* rather than just tool comparison, and by more explicitly grounding the "template limitation" claim in VDBFuzz's design or configuration.
 
-### **[Minor] 5. Missing statistical test for the 81% vs. 31% FP suppression comparison.**
+### **[MEDIUM, fixable] Multi-perspective judging baseline under-specified**
 
-**Location:** Section 7, RQ2, line 140
+Section 5 (The False-Positive Problem) states that multi-perspective judging reaches "about 80% precision but only about 15% recall" but does not provide details on the judge design, voting rule, or operating point selection. This baseline is critical to the paper's core claim (that source grounding is necessary because multi-perspective judging is insufficient), yet it receives only two sentences of description.
 
-**Issue:** The paper claims "the source anchor suppresses 81% of false positives (up from 31%)" but does not report whether this difference is statistically significant. With n=54 adjudicated candidates, a McNemar's test for paired binary outcomes or Fisher's exact test could assess whether the source anchor adds predictive power beyond the other anchors.
+The paper would benefit from a brief table or figure showing:
+- The four specialized judge roles (documentation, evidence, severity, novelty) and their prompts/objectives
+- The voting rule (majority? unanimity? weighted?)
+- The precision/recall operating points for different voting thresholds
+- Why 15% recall is the selected operating point (is it the highest-recall configuration that still achieves 80% precision? or the result of a specific parameter setting?)
 
-**Fix:** Perform a statistical test (McNemar's or Fisher's exact) on the 2×2 table (source anchor present/absent × FP/TP) and report the p-value. If p < 0.05, state that the improvement is significant; if not, soften the claim to "suggestive improvement."
+Without these details, it is difficult to assess whether multi-perspective judging is fundamentally insufficient (as the paper claims) or whether it was under-tuned.
 
-### **[Minor] 6. Incomplete comparison with recent LLM-based oracle work.**
+### **[LOW, not fixable] Page limit constraints}
 
-**Location:** Section 9, lines 179-186
+At 6 pages (ACM sigconf format), the paper is at the lower bound for SE top-conference full papers. The condensed treatment of RQ2 (multiple operating points, ensemble selection) and RQ3 (bidirectional probe) is likely due to space constraints, but the trade-off is a weakened evaluation story. If the venue allows, extending to 8-10 pages would allow the paper to (a) describe the cross-model check methodology more thoroughly, (b) expand the multi-perspective judging baseline, and (c) provide a more principled discussion of operating point selection.
 
-**Issue:** The paper compares against AGORA+, SATORI, MASTOR, Toradocu, Doc2OracLL, ChatAssert, and Testora, but the critical distinction—source vs. runtime verification—is under-explored. ChatAssert uses compilation and execution feedback; Testora uses differential execution. Both rely on runtime behavior, which cannot distinguish between a correct implementation and a bug that coincidentally satisfies the LLM's oracle. The related work section does not explicitly state whether these tools would or would not detect the task-intrinsic errors on the nine-clause Milvus probe, leaving readers uncertain whether TestVDB is strictly better or merely better-validated.
+## Questions
 
-**Fix:** Add a sentence clarifying that ChatAssert, Testora, and Toradocu rely on runtime feedback and therefore cannot distinguish correct implementations from bugs that happen to satisfy the LLM's interpretation. Explicitly state that the Milvus nine-clause probe is, by definition, inaccessible to runtime-only methods.
+1. **Operating point selection.** Beyond the semantic justification ("under-confirmation is costlier"), is there a quantitative criterion for selecting the 3-run union over the 5-run union or majority? For example, did you pre-specify a target precision threshold (e.g., ≥ 60%) and select the highest-recall operating point that meets it? Or did you evaluate the full exploratory analysis and then select the 3-run union post-hoc?
 
-### **[Minor] 7. Missing reproducibility details for LLM sampling.**
+2. **Cross-model validation.** Why was the cross-model check limited to twenty candidates rather than the full 48-candidate retrospective? Were the twenty candidates selected randomly, or were they chosen based on some criterion (e.g., availability of source evidence, diversity of defect types)? If the former, what was the sampling procedure?
 
-**Location:** Section 6, line 110
+3. **VDBFuzz template limitation.** You claim that VDBFuzz's failure to detect #9045 is due to a "limitation of VDBFuzz's current templates." Did you examine VDBFuzz's template source or run VDBFuzz with a manually specified `wait=false` input to verify this claim? Or is the claim inferred from the fact that VDBFuzz found 0 crashes on the version where #9045 is live?
 
-**Issue:** The paper states agents use "the runtime's default sampling" but does not specify temperature, top-p, or whether random seeds are fixed. For reproducibility and to rule out the possibility that the 81% FP suppression is sampling-dependent, the implementation section should report the sampling parameters and whether results vary across multiple runs.
+4. **Multi-perspective judging.** The paper reports 80% precision and 15% recall for multi-perspective judging. What voting rule achieved these numbers (majority, unanimity, weighted)? Does 15% recall represent the highest-recall operating point that maintains ≥ 80% precision, or is it a specific configuration you tested?
 
-**Fix:** Report temperature and top-p values for the LLM backbone, and run a small reproducibility check: execute the full pipeline on one VDBMS with three different random seeds and report variance. If variance is low, note this as evidence of stability; if high, report the range and flag reproducibility as a limitation.
-
-### **[Minor] 8. Unclear boundary between model-free invariant oracle and LLM pipeline.**
-
-**Location:** Section 7, RQ4, lines 168-169
-
-**Issue:** The model-free invariant subclass (COSINE bounds, index completeness) is presented as separately detecting mathematical-invariant violations with no LLM involvement, but it is unclear whether these findings are included in the 111 total submissions or counted separately. If included, they inflate the denominator without leveraging TestVDB's core novelty. If separate, the paper should report the count explicitly.
-
-**Fix:** Explicitly state how many of the 111 submissions come from the model-free invariant subclass versus the LLM pipeline. Break down the 38 acknowledged defects by source (LLM vs. model-free) and clarify whether the 69.2% precision applies to the full set or only to LLM-derived candidates.
-
-### **[Minor] 9. Limited external validity beyond two VDBMSs.**
-
-**Location:** Section 7, threats to validity, line 172
-
-**Issue:** The paper correctly notes that "statistical claims rest on Milvus and Qdrant," but this narrow scope undermines generalizability. Weaviate (30 submissions, 3 acknowledged), MeiliSearch (3, 0), and Chroma (1, 0) provide breadth but not statistical weight. The abstract and introduction do not explicitly state that the quantitative results (precision, FP suppression, task-intrinsic catch rate) are primarily validated on two systems.
-
-**Fix:** Qualify all quantitative claims in the abstract and introduction with "on Milvus and Qdrant" or similar. For example: "A controlled retrospective on Milvus and Qdrant shows the source anchor suppresses 81% of false positives." Avoid presenting these figures as universally applicable to all five VDBMSs.
-
-## Questions for Authors
-
-1. **On the task-intrinsic error probe:** What stopping rule determined the nine-clause sample size for RQ3? If this is meant to be exploratory, why is it presented as a supported contribution in the abstract rather than as preliminary evidence? Do you have plans to scale this probe, and what would constitute adequate statistical power?
-
-2. **On the 81% FP suppression claim:** To what extent does this figure depend on GLM-5.2's specific behavior when reading source code? Have you validated that a second LLM family produces similar source-grounded falsification verdicts on the adjudicated set? If not, how should readers interpret the reliability of this number?
-
-3. **On the 85% conformance residual:** You acknowledge this is the composition of your findings, not a population estimate. Do you have any evidence about whether conformance defects are equally prevalent in practice, or is TestVDB's focus on conformance purely a design choice that may miss other defect classes?
+5. **Yield calculation.** In RQ1, you report 49 true positives out of 107 submitted issues (45.8% worst-case yield precision). Did you estimate the false-negative rate (defects that exist but TestVDB failed to detect)? If not, is there a way to bound this quantity (e.g., by manual inspection of a random sample of closed/resolved issues that TestVDB did not flag)?
 
 ## Scores
 
-- **Soundness:** 3/5 (Acceptable). The method is conceptually sound and the ablations are well-designed, but the core task-intrinsic error claim rests on a probe that is too small to support strong quantitative assertions (n=9), and the lack of cross-model validation for the dev-reviewer introduces uncertainty about whether the 81% FP suppression is a general effect or a GLM-specific artifact.
+- **Soundness:** 3/5 — The core approach (source-grounded falsification) is sound, but the evaluation has post-hoc characteristics (operating point selection, cross-model sample selection) that weaken confidence in the reported metrics. The threats to validity section acknowledges some limitations, but not the post-hoc selection bias in RQ2.
 
-- **Significance:** 3/5 (Acceptable). The problem setting is real and the two-layer error model is a meaningful conceptual contribution. However, the practical impact is unclear without evidence that the approach scales beyond Milvus and Qdrant, and the 85% residual figure is misleadingly presented as a prevalence estimate rather than a sample composition.
+- **Significance:** 4/5 — The problem is real (49 maintainer-acknowledged defects, 15 merged-PR fixes), and the dev-reviewer is a practical contribution. However, the limited recall evaluation (no estimate of false-negative rate) means the true yield in production VDBMSs is unknown.
 
-- **Novelty:** 4/5 (Good). The source-grounded falsification approach is a genuine advance over prior LLM-based oracle work, which relies on runtime feedback or structured specifications. The distinction between family-specific and task-intrinsic errors is novel and well-motivated.
+- **Novelty:** 4/5 — LLM-derived oracles for REST APIs have been explored (AGORA+, SATORI, MASTOR), but the application to natural-language documentation and the source-grounded falsification approach are novel. The paper clearly articulates the distinction between low-ambiguity structured sources (OpenAPI, traces) and high-ambiguity prose documentation.
 
-- **Presentation:** 4/5 (Good). The paper is clearly written, with excellent use of concrete examples and a strong table mapping oracle families to defect subsets. However, the abstract overstates the statistical support for the task-intrinsic claim, and the 85% residual is presented without sufficient qualification.
+- **Presentation:** 4/5 — The writing is clear and the oracle-exclusion table (Table 1) effectively motivates the problem. However, the multi-perspective judging baseline is under-specified (two sentences), and the operating point selection discussion could be more explicit about the exploratory analysis process.
 
-- **Overall:** 3/5 (Acceptable). The core idea is solid, and the evaluation is more honest than most (confidence intervals, ablations, explicit limitations). However, the methodological weaknesses—small probe size for the central novelty claim, lack of cross-model validation for the dev-reviewer, and the misleading 85% residual presentation—limit confidence in the quantitative results. With revision to address the major issues, particularly scaling the RQ3 probe and adding cross-model checks, this would be a stronger paper.
+**Overall:** 4/10 — The technical contribution is solid and the problem is well-motivated, but the evaluation has post-hoc characteristics that limit confidence in the reported operating points. With a more principled operating point selection criterion and a fuller cross-model validation, this would be a stronger paper.
 
-- **Confidence:** 4/5 (High). I am familiar with the LLM-as-judge literature and REST-API oracle work, and I have read the full paper carefully. The statistical critique is grounded in standard binomial proportion methods, and the cross-model ablation gap is a straightforward methodological requirement. I am confident in the assessment but leave room for the authors to provide additional data that would change the scores.
+**Confidence:** 4/5 — I am familiar with LLM-as-judge reliability issues and VDBMS testing, but I am not an expert on vector database internals or the specific VDBFuzz implementation. My assessment of the post-hoc operating point selection is based on general statistical principles and SE evaluation standards, not domain-specific knowledge of VDBMS testing benchmarks.

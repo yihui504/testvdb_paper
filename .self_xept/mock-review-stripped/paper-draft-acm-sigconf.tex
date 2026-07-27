@@ -1,10 +1,7 @@
-% TestVDB v3 - PPT v2.3 driven rewrite (2026-07-27).
-% Spine = testvdb_v2.3_20260726.pptx (no TI layer; FP = hallucination + self-preference).
-% Format: acmart sigconf (double-column ACM SIG). Page limit: none (venue TBD).
 \documentclass[sigconf]{acmart}
-\emergencystretch=2em   % absorb minor overfull hbox in the two-column body
+\emergencystretch=2em   
 
-\settopmatter{printacmref=false}   % venue TBD; suppress boilerplate for now
+\settopmatter{printacmref=false}   
 \settopmatter{printfolios=false}
 
 \title[TestVDB: doc-implementation defects in VDBMSs]{TestVDB: Detecting Documentation-Implementation Defects in Vector Databases via LLM-Derived Behavioral Claims}
@@ -28,7 +25,6 @@ Vector Database Management Systems (VDBMSs) store the embeddings that retrieval-
 
 \maketitle
 
-% =====================================================================
 \section{Introduction}
 \label{sec:intro}
 
@@ -48,8 +44,6 @@ We instantiate this as TestVDB, a four-stage pipeline (Section~\ref{sec:approach
   \item \textbf{Evaluation.} 107 submitted issues with 49 maintainer-acknowledged true-positive defects (15 merged-PR-fixed) across three VDBMSs; a 48-candidate retrospective showing the source anchor lifts recall from 37\% to 74\%; and a bidirectional probe against VDBFuzz that clarifies what each tool reaches (Section~\ref{sec:eval}).
 \end{itemize}
 
-% =====================================================================
-% =====================================================================
 \section{Background and Problem Setup}
 \label{sec:background}
 
@@ -77,7 +71,6 @@ REST doc/spec-derived oracles (AGORA+~\cite{agoraplus25}, SATORI~\cite{satori25}
 \end{tabular}
 \end{table*}
 
-% =====================================================================
 \section{TestVDB Approach}
 \label{sec:approach}
 
@@ -100,7 +93,6 @@ Milvus documents \texttt{nprobe} as an integer in $[1, 16384]$. The contract-for
 
 \paragraph{LLM automation.}
 TestVDB runs as a multi-agent pipeline~\cite{hou23llmse} on the Claude Code runtime, with each of the 20 agents defined by a task-structured role prompt and dispatched to a GLM-5.2 backbone under default sampling. Wall-clock per target is dominated by source-grounding and live Docker re-probes rather than raw LLM latency; a full run is on the order of $10^4$ LLM calls and roughly $\$10$ per target at current API pricing. The full prompts, target versions, and per-token accounting are in the artifact, which we will release at a persistent URL upon acceptance.
-% =====================================================================
 \section{The False-Positive Problem}
 \label{sec:fp}
 
@@ -117,7 +109,6 @@ A natural counter is to replace the single judge with a panel. We tried a multi-
 
 The two modes point to different fixes. Hallucination calls for a falsifier that does not depend on the documentation for ground truth, and self-preference calls for a signal that does not come from the same family. The most accessible independent signal is the implementation. The API's actual behavior is a fact the LLM cannot argue with. This motivates the dev-reviewer.
 
-% =====================================================================
 \section{Dev-Reviewer: Source-Grounded Falsifier}
 \label{sec:devreviewer}
 
@@ -135,7 +126,6 @@ For each candidate, the dev-reviewer applies:
 The checks draw on three evidence anchors. A \emph{clean-reproduction} anchor re-probes the live API to filter tooling-artifact false positives. A \emph{source-grounded} anchor (the primary falsifier) reads the implementation source across the full clone, tracing constants and call chains, to check whether the constraint is real and whether the source implements it. An optional \emph{threat-model} anchor compares the candidate against maintainer-acknowledged by-design and wont-fix patterns. The same LLM family produces both the behavioral claims and the verdicts; the implementation, an independent information source, is what falsifies them.
 
 The dev-reviewer is not a second extractor that reads the documentation again. It reads the source, where the actual behavior is defined, and uses the contract only as the assertion under test. This separation is what breaks self-preference: the falsifier's ground truth is the implementation, not the same family's prior claim.
-% =====================================================================
 \section{Evaluation}
 \label{sec:eval}
 
@@ -207,7 +197,6 @@ v1.18.2 & --- (TestVDB's target version) & both fixed \\
 
 \paragraph{Threats to validity.}
 \emph{Internal validity.} Single-run recall varies widely (15--78\%); we report an any-confirmed union operating point and the full per-run band. The 48-candidate retrospective is maintainer-adjudicated but non-random. \emph{External validity.} Generalization to Weaviate is yield-only; the controlled retrospective covers Milvus and Qdrant, and result correctness of vector search (ANN recall, ranking) is out of scope. \emph{Construct validity.} All dev-reviewer results use a single LLM family (GLM-5.2); a cross-model check on twenty candidates suggests the verdict is not strongly family-specific when source evidence is explicit, but we do not estimate recall because no public ground-truth defect catalog for VDBMSs exists.
-% =====================================================================
 \section{Related Work}
 \label{sec:related}
 
@@ -223,7 +212,6 @@ Self-preference bias, in which an LLM evaluator favors its own family's outputs,
 \paragraph{Documentation-derived oracles.}
 Toradocu~\cite{toradocu16} pioneered oracle extraction from natural-language documentation, using NLP and pattern matching to translate Javadoc \texttt{@throws} comments into assertions. Doc2OracLL~\cite{doc2oracll25} extended this line to LLMs, and AugmenTest~\cite{augmentest25} infers oracles from the available documentation. ChatAssert~\cite{chatassert24} addresses false positives through iterative prompt repair guided by compilation and execution feedback, and Testora~\cite{testora26} uses natural-language PR descriptions as a regression oracle. All of these treat the LLM as the final semantic arbiter. TestVDB differs by using implementation source, not runtime behavior, as an independent verification source, falsifying LLM-derived claims and targeting the ambiguous-prose regime they do not address.
 
-% =====================================================================
 \section{Discussion and Limitations}
 \label{sec:disc}
 
@@ -233,7 +221,6 @@ Beyond the threats in Section~\ref{sec:eval}, two limitations bound the approach
 
 Our 107-submission yield is biased by the tool's design toward documentation-implementation defects, so the proportion we observe is not an estimate of the distribution in VDBMSs at large. A full-space estimation with capture-recapture or an unbiased defect sample is future work.
 
-% =====================================================================
 \section{Conclusion}
 \label{sec:concl}
 
