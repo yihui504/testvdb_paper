@@ -1,92 +1,66 @@
-# Dual-Review Report — TestVDB v3（PPT v2.3 重写版）
+# Dual-Review Report — TestVDB v3（第二版）
 
-> Paper: TestVDB v3（7 页，2 figures + 6 tables + 9 节，无 TI layer）
-> Date: 2026-07-27 · venue TBD → SE 顶会 fallback
-> 6 reviewer（3 态度 + 3 expertise）独立审稿。**评分不合并**——两 verdict 并列。
+> Paper: TestVDB v3（含 minus-source ablation + cross-model κ 修正 + CouchDB external validity + reduce-ai）
+> Date: 2026-07-28 · 6 reviewer（3 态度 + 3 expertise）· **评分不合并**
 
 ## 顶层摘要（两 verdict 并列）
 
-| 半边 | Verdict | 关键 |
+| 半边 | Verdict | 变化（vs 第一版）|
 |---|---|---|
-| **态度**（会议 1-5）| **Weak Accept (~7/10)** | R1 7/10, R2 3/5 weak-accept, R3 4/5 accept。比 mock-review（6.3 borderline）改善——action plan 改生效 |
-| **expertise**（四档 + Meta）| **ACCEPT** | R1 Accept（Novelty Excellent）/ R2-R3 Weak Accept → unanimous shortcut |
+| **态度** | ~6.5/10 weak-accept（R1 6 / R2 ~5.4 / R3 8）| 略降（7→6.5）——κ 修正 + minus-source isolation concern |
+| **expertise** | **ACCEPT**（三位 Weak Accept → unanimous）| 仍 ACCEPT（但 R1 从 Accept 降到 Weak Accept——Novelty Weak）|
 
-### 共识（两半边一致）
-
-- **核心 framing 站得住**：3 态度 + 3 expertise 都认可 doc-impl + hallucination/self-preference + source-grounded falsifier。**无 reviewer 质疑新故事线**（vs archive 旧版 TI 被 5-family 实验挑战，重写成功规避）
-- **最强 weakness 共识**：post-hoc 操作点 selection bias（5 reviewer）+ external validity / VDBMS 外泛化（5 reviewer）
-
-### 分歧（dual-review 设计预期）
-
-- 态度 R2 严（post-hoc 标 [CRITICAL, not fixable]）vs expertise R1 宽（Novelty Excellent, Accept）—— R1 用 cache verified novelty delta vs MASTOR，R2 严方法论统计。这是双套互补：expertise 看到 novelty 真实，态度看到统计风险。
+**核心 framing 站得住**——无 reviewer 质疑 doc-impl + dev-reviewer + source grounding。minus-source ablation 被 R2-attitude 挑战"没完全隔离 source"（仍含 clean-repro + threat-model），但其他 reviewer 认可。
 
 ## Score Summary
 
-| Dimension | 态度 R1 | 态度 R2 | 态度 R3 | expertise R1 | expertise R2 | expertise R3 |
+| Dimension | 态度 R1 | 态度 R2 | 态度 R3 | exp R1 | exp R2 | exp R3 |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Soundness | 4 | 3 | 4 | Adequate | **Weak** | Adequate |
+| Soundness | 3 | 3 | 4 | Adequate | **Weak** | Adequate |
 | Significance | 4 | 3 | 4 | Adequate | Adequate | Adequate |
-| Novelty | 4 | 3 | 4 | **Excellent** | Adequate | Adequate *(prov)* |
-| Presentation | 4 | 3 | 5 | **Excellent** | Adequate | Adequate |
-| **Overall** | **7/10** | **3/5** | **4/5** | **Accept** | **Weak Accept** | **Weak Accept** |
+| Novelty | 4 | 3 | 4 | **Weak** | **Excellent** | Adequate *(prov)* |
+| Presentation | 4 | 3 | 5 | Adequate | **Weak** | Adequate |
+| **Overall** | **6/10** | **2.7/5** | **4/5** | **Weak Accept** | **Weak Accept** | **Weak Accept** |
 
 ## Attitude Half
 
-3 review：[r1.md](.self_xept/dual-review/.in-progress/attitude/r1.md) 客观 / [r2.md](.self_xept/dual-review/.in-progress/attitude/r2.md) 严格 / [r3.md](.self_xept/dual-review/.in-progress/attitude/r3.md) 友好
+3 review：[r1.md](.in-progress/attitude/r1.md) / [r2.md](.in-progress/attitude/r2.md) / [r3.md](.in-progress/attitude/r3.md)
 
-- **R1 (7/10 weak-accept)**：W post-hoc 操作点 / external validity / yield selection bias
-- **R2 (3/5 weak-accept)**：W post-hoc [CRITICAL] / multi-perspective baseline / VDBFuzz n=1
-- **R3 (4/5 accept)**：S oracle 排除论证 / dev-reviewer 设计 / 49 TP 实际影响
+- **R1 (6/10)**：post-hoc CI [CRITICAL] / cross-family unproven [HIGH] / no recall catalog [HIGH]
+- **R2 (2.7/5 weak-accept)**：minus-source isolation [HIGH] / post-hoc CI [HIGH] / cross-model κ undermines [HIGH]
+- **R3 (4/5 accept)**：oracle exclusion S / dev-reviewer design S / evaluation rigor S（Bonferroni + threats）
 
 ## Expertise Half
 
-完整：[expertise-report.md](.self_xept/dual-review/.in-progress/expertise/expertise-report.md)（3 review + Meta-Review）
+完整：[expertise-report.md](.in-progress/expertise/expertise-report.md)（3 review + Meta-Review）
 
-- **R1 Domain Expert（Accept）**：Novelty Excellent（source-as-falsifier vs MASTOR source-as-oracle 是 verified delta）；Presentation Excellent。W: single-model / post-hoc / VDBMS-only
-- **R2 Area Specialist（Weak Accept）**：Soundness Weak（post-hoc selection bias [major, unfixable]）。注：R2 称漏 AugmenTest/ChatAssert——**三态核实 False**（论文 §7 有 cite，reviewer 漏看）
-- **R3 General（Weak Accept）**：全 Adequate（Novelty provisional）。W: novelty vs REST-API 边界 / post-hoc / external validation
-- **Meta**：**ACCEPT**（unanimous shortcut）
+- **R1 Domain Expert（Weak Accept）**：Novelty **Weak**（source-grounded falsification 是 known technique）/ Verifiability **Weak**。竞品 verified（VDBFuzz/AGORA+/SATORI/MASTOR/Toradocu）
+- **R2 Area Specialist（Weak Accept）**：Novelty **Excellent**（domain-specific application is novel）/ Soundness **Weak**（post-hoc selection）/ Presentation **Weak**。Specialty: LLM-as-judge + DB testing
+- **R3 General（Weak Accept）**：全 Adequate（Novelty provisional）
+- **Meta**：**ACCEPT**（unanimous shortcut；无 consensus Poor / 无 substance consensus Weak——各准则 Weak 来自不同 reviewer）
+
+**Novelty 分歧**：R1 Weak（known technique）vs R2 Excellent（domain-specific novel）——这是正常 reviewer 分歧，论文可强化"source as falsifier（非 oracle）的方向性不对称"framing。
 
 ## Unified Action Plan
 
-完整：[merged-action-plan.md](.self_xept/dual-review/.in-progress/merged-action-plan.md)
+完整：[merged-action-plan.md](.in-progress/merged-action-plan.md)
 
-**[both] + major（4 簇，must-fix）**：
-1. **post-hoc 操作点 selection-aware CI**（5 reviewer 共识，最强信号）—— 报告 selection-aware CI 或显式标"conditional on selected operating point"
-2. **external validity mini case**（5 reviewer 共识）—— 1 个 non-VDBMS case 或更显 future work
-3. single LLM backbone 第三 family —— 标 highest-value next experiment
-4. impl-as-correct false negative —— 已讨论，可补量化
+**[both] major（must-fix）**：
+1. **post-hoc selection-aware CI**（4 reviewer 共识，最强信号）—— 论文已加 Bonferroni 估算，reviewer 仍觉 headline CI 未充分 caveat
+2. **cross-family κ 在 abstract/contributions 显式 caveat**（4 reviewer）—— 论文 §6 已诚实报告，但 abstract 仍广义 claim "LLM-derived oracle"
+3. **external validity 扩展**（2 reviewer）—— CouchDB 只 1 个 non-VDBMS，无 defect found
 
-**[both] + minor（2 簇）**：VDBFuzz n=1 降调 / Novelty vs REST-API 边界强化
+**[attitude-only] major**：minus-source fully crossed ablation（R2：minus-source 仍含其他 anchor，没完全隔离 source）
 
-**[attitude-only]（2 簇 minor）**：multi-perspective 表 / yield selection bias
+**[expertise-only] minor**：Novelty positioning（R1 Weak vs R2 Excellent 分歧）
 
-**[expertise-only]（1 簇 minor + 1 False）**：cost 表 / 漏 AugmenTest（False，论文有）
+## 对比 v3 第一版 dual-review
 
-## 三态核实亮点
-
-| Weakness | Verdict | Note |
+| | 第一版（无 minus-source/κ 修正/CouchDB）| **第二版（本版）** |
 |---|---|---|
-| post-hoc 操作点 selection bias | **Valid** | 论文加了 rationale，但 Wilson CI 未含 selection uncertainty（统计本质）|
-| external validity / VDBMS 外泛化 | **Valid** | §8 future work，无 case study |
-| single LLM backbone + κ=1.0 | **Valid** | 已加 Wilson [83,100]，可更显 limitation |
-| 漏 AugmenTest/ChatAssert（R2）| **False** | 论文 §7 line 311-313 有 cite，reviewer 漏看 |
+| 态度 | ~7 weak-accept | ~6.5 weak-accept（略降：κ 修正引入新 weakness）|
+| expertise Meta | ACCEPT（R1 Accept）| ACCEPT（全 Weak Accept——R1 因 Novelty Weak 降）|
+| 核心 framing | 站得住 | **站得住** |
+| 最大变化 | — | κ=1.0 修正（诚实报告 family-specific）+ minus-source ablation（source 是 recall 核心）+ CouchDB（external validity 探索）|
 
-## 对比 mock-review（重写前 6.3）vs dual-review（重写+改+扩后）
-
-| 项 | mock-review（重写后立即）| dual-review（action plan 改 + 扩展后）|
-|---|---|---|
-| 态度 Overall | 6.3 borderline（R1 7/R2 4/R3 8）| ~7 weak-accept（R1 7/R2 6/R3 8）|
-| expertise Meta | （未跑）| **ACCEPT** |
-| post-hoc 操作点 | R2 4/10 拒稿信号 | 5 reviewer 仍提，但论文已加 selection rationale，降为"selection-aware CI"建议（fixable）|
-| multi-perspective 展开 | R2 拒稿（未展开）| 已加 voting rule + operating point，R2 仍提但弱化 |
-| 核心 framing | 站得住 | **站得住**（无 reviewer 质疑新故事线）|
-
-**重写 + action plan 改 + 扩展的整体效果**：从 mock-review 的 borderline（6.3）升到 dual-review 的 weak-accept 共识（~7）+ expertise ACCEPT。R2 的拒稿信号（post-hoc）从"未展开"降为"selection-aware CI 可改"。
-
-## 流程透明
-
-- 6 reviewer 同步并行（避免 background session-restart 丢，上次 dual-review 教训）
-- 剥注释 330 行 0 残留
-- expertise R1/R2 cache abstract-first（MASTOR/SATORI abstract-level，避免 fetch 慢）
-- 主 agent 三态核实（合并 checker 角色，避免上次 checker 幻觉误报）
+**总评**：第二版比第一版**更诚实**（κ 修正 + minus-source + CouchDB），但引入了新 weakness（cross-family caveat + minus-source isolation）。核心贡献不变，Meta 仍 ACCEPT。投稿前需在 abstract/contributions 显式标 single-backbone limitation（回应 4-reviewer 共识）。
