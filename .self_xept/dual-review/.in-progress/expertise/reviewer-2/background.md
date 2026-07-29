@@ -1,73 +1,74 @@
-# Reviewer 2 Background - Specialty Areas
+# Reviewer 2 Background: Competitor Analysis
 
-## Specialty Areas
-1. **LLM-as-judge / evaluator reliability** (self-preference bias, self-inconsistency, hallucination)
-2. **REST-API test-oracle extraction from structured sources** (OpenAPI/traces/source-as-oracle)
+## Cached Literature Analysis
 
-## Core Competitors Verified
+### MASTOR (Deng et al. 2026)
+**Paper's Characterization**: MASTOR described as "state-of-the-art in LLM-based semantic oracle generation" with multi-agent architecture achieving 75.4% mutation score, +49.4 pp over SATORI.
 
-### REST-API Oracle Extraction (Specialty b)
+**Actual Characterization**: 
+- Multi-agent system: SourceExtractionAgent → SingleOpOracleAgent/MultiOpOracleAgent → ChallengerAgent review
+- Two-phase design (analysis → generation with review/regeneration)
+- Source-code grounded via transitive import closure
+- 75.4% MS across 13 REST APIs (251K LoC, 296 operations)
+- Per-API scores: 69.0%-95.9%
 
-**SATORI (satori25)**: Static approach using LLM to analyze OpenAPI spec (field names/descriptions) → generates status/field oracles. F1 74.3% vs AGORA+ 69.3%. 18 bugs found. Key limitation: reads OAS, not implementation source—cannot detect gaps between documentation and code.
+**Novelty Delta**: TestVDB extends beyond REST APIs to vector databases. TestVDB's multi-agent architecture (16 agents across 5 phases) is significantly more complex than MASTOR's 2-phase design. TestVDB targets specialized DB operations (index type mismatches, search semantics, vector parameter validation) rather than generic REST patterns. TestVDB's dev-reviewer phase simulates developer cognition, absent from MASTOR.
 
-**MASTOR (mastor26)**: Multi-agent approach reading implementation source code → generates semantic oracles (status, field, cross-operation consistency). 75.4% mutation score, 69.9% vs SATORI 20.5% on same oracle types. Uses source as ground truth, not documentation.
+### SATORI (Alonso et al. 2025)
+**Paper's Characterization**: SATORI as "only prior work on LLM-based semantic oracle generation for REST APIs" with static specification-only approach (74.3% F1), significantly outperformed by MASTOR (+49.4 pp gap).
 
-**AGORA+ (agoraplus25)**: Dynamic invariant inference from execution traces. Requires diverse test suite; limited by traffic coverage. (Paywall—abstract only).
+**Actual Characterization**:
+- Black-box static analysis from OpenAPI Specification
+- 17 unary oracle types (string, boolean, number, array properties)
+- 74.3% F1-Score (vs. AGORA+U 69.3%)
+- Found 18 real bugs in 7 APIs ($0.28 per bug)
+- Limitation: requires detailed OAS, unary oracles only
 
-### LLM-as-Judge Reliability (Specialty a)
+**Novelty Delta**: TestVDB applies LLM-based oracle generation to vector database domain (no OAS equivalent). TestVDB uses source-code analysis (like MASTOR) not specification-only (like SATORI). TestVDB's domain-specific oracles (HNSW parameters, ef/search consistency, collection state transitions) have no analog in SATORI's generic REST patterns. TestVDB's focus on semantic fault detection (search correctness, parameter interactions) vs. SATORI's format/value constraints.
 
-**Panickssery et al. (panickssery24)**: Established that LLM evaluators favor their own outputs (self-preference bias). Shows linear correlation between self-recognition capability and self-preference strength. GPT-4 shows 73.5% self-recognition accuracy.
+### Panickssery et al. (2024)
+**Paper's Characterization**: Demonstrates "LLM-as-judge systems exhibit significant self-preference bias" — inflation when judge evaluates own outputs. Quantitative framework for measuring bias via Equal Opportunity metric.
 
-**Wataoka et al. (wataoka24)**: Quantifies self-preference bias metric using Equal Opportunity framework. GPT-4 exhibits significant self-preference bias. Identifies perplexity as root cause—LLMs prefer lower-perplexity (more familiar) texts regardless of authorship.
+**Actual Characterization**:
+- LLMs show self-recognition ability (>50% out-of-the-box, >90% after fine-tuning)
+- Linear correlation between self-recognition and self-preference
+- GPT-4: 73.5% self-recognition, highest self-preference
+- Causal evidence: fine-tuning amplifies both properties
+- Root cause: LLMs prefer outputs they recognize as their own
 
-**Haldar et al. (haldar25)**: "Rating Roulette: Self-Inconsistency in LLM-As-A-Judge Frameworks" (EMNLP 2025). Not yet available—abstract-only.
+**Novelty Delta**: TestVDB's LLM-as-judge mechanism (judge-evidence, judge-novelty, judge-severity) uses LLMs to evaluate defect candidates. TestVDB mitigates self-preference by using separate models for generation (defect finding) and judgment (evidence review), but does not explicitly measure or correct for bias. Panickssery's framework could quantify bias in TestVDB's judge agents.
 
-## Relational Verification (Two-Column Check)
+### Wataoka et al. (2025)
+**Paper's Characterization**: Alternative explanation for self-preference — "LLMs prefer texts more familiar to them (lower perplexity)" regardless of self-generation. Quantitative metric based on fairness theory.
 
-### SATORI Characterization
-Paper's claim (§3.2, Table 1 row 4): "reliable extraction from low-ambiguity structured sources; the ambiguous-prose regime is out of scope."
+**Actual Characterization**:
+- GPT-4 shows highest self-preference (0.52 on 0-1 scale)
+- Root cause: perplexity familiarity, not explicit self-recognition
+- LLMs assign higher scores to lower-perplexity texts
+- Correlation holds across all tested models except two
+- LLMs exhibit lower perplexity on own outputs
 
-**Verdict**: ✓ ACCURATE. SATORI explicitly analyzes OpenAPI specs—field names and descriptions are semi-structured, not free-form prose. The paper correctly places SATORI in the low-ambiguity regime.
+**Novelty Delta**: TestVDB's judge agents may exhibit similar bias — assigning higher scores to defect candidates that match expected patterns (lower perplexity) regardless of actual quality. Wataoka's metric could measure bias in TestVDB's judge-evidence and judge-severity agents. The perplexity-based explanation suggests TestVDB could use style transfer or paraphrasing to reduce familiarity bias.
 
-### MASTOR Characterization
-Paper's claim: "source code... and so cannot detect a gap between documentation and code; TestVDB reads source as a falsifier of documentation-derived claims."
+## Domain Comparison
 
-**Verdict**: ✓ ACCURATE. MASTOR reads source to encode implemented behavior—it documents what code does, not whether documentation matches. TestVDB's falsification direction is novel.
+| Dimension | REST APIs (MASTOR/SATORI) | Vector DBs (TestVDB) |
+|-----------|---------------------------|---------------------|
+| **Interface** | HTTP/JSON (OpenAPI) | Native APIs (Python/JS clients) |
+| **State Model** | Stateless resources | Collection/index state, server configuration |
+| **Fault Types** | Status codes, field constraints, cross-endpoint consistency | Index type mismatches, search semantics, parameter validation |
+| **Oracle Grounding** | Source code (MASTOR) or OAS (SATORI) | Implementation + documentation + contract formalization |
+| **Test Generation** | Fuzzing, model-based, search-based | Multi-strategy attacks (boundary, semantic, state) |
+| **Multi-Agent Design** | 7 agents (MASTOR) | 16 agents across 5 phases |
 
-### Self-Preference Characterization
-Paper's claim (§2.3, Panickssery citation): "the judge tends to confirm the extractor's claim."
+## Key Takeaways for Reviewer 2
 
-**Verdict**: ✓ SUPPORTED. Panickssery shows self-recognition correlates with self-preference. If the same family extracts and judges, confirmation bias is expected. The paper's diagnosis is sound.
+1. **LLM-as-Judge Reliability**: Both Panickssery and Wataoka demonstrate systematic biases in LLM evaluation. TestVDB's judge agents (judge-evidence, judge-novelty, judge-severity) are vulnerable to these biases but does not measure or mitigate them.
 
-### Wataoka Root Cause
-Paper's claim (§2.3): Self-preference "compounds hallucination: an over-strict extracted claim is more likely to be confirmed."
+2. **Semantic Oracle Generation**: MASTOR demonstrates source-code analysis outperforms specification-only approaches (+49.4 pp). TestVDB follows MASTOR's implementation-grounded approach rather than SATORI's black-box method.
 
-**Verdict**: ✓ STRENGTHENED by Wataoka. Wataoka shows the root cause is perplexity (familiarity), not authorship awareness per se. Over-strict claims from the same family share training distribution → lower perplexity for that family → higher confirmation. This reinforces the compound-effect claim.
+3. **Domain Specificity**: TestVDB targets vector database defects with no analog in REST API testing. Specialized oracles (ef/search consistency, HNSW parameter validation) go beyond generic format/value checking.
 
-## Missing Work (Coverage Gaps)
+4. **Multi-Agent Complexity**: TestVDB's 16-agent architecture is significantly more complex than MASTOR's 7-agent system. Additional phases (threat modeling, orchestration, developer simulation) increase system complexity but enable domain-specific fault detection.
 
-**Haldar et al. (haldar25)**: Self-inconsistency (same judge, same input, different runs). The paper addresses this indirectly through variance in single-run recall (15-78%) and the any-confirmed ensemble, but doesn't cite Haldar explicitly. This is a minor gap—empirical acknowledgment exists, but formal citation missing.
-
-**AugmenTest (augmentest25)**: LLM-driven oracles from documentation. Cited in §4, but positioning could be clearer. AugmenTest infers oracles from available docs and verifies via runtime; TestVDB uses source as falsifier. The delta is real but could be more explicit.
-
-## Coverage Search (Within Specialty)
-
-Scoped search for "REST API test oracle LLM documentation 2024 2025" on arXiv:
-- RESTOR (Zhou et al. 2026): Single-traffic oracle via LLM fine-tuning. Focuses on field selection from traces, not documentation interpretation. Out of scope for TestVDB's prose-interpretation regime.
-- Various LLM-as-judge calibration papers: TestVDB's falsifier approach sidesteps calibration entirely by using implementation source as ground truth. Relevant but not direct competition.
-
-No uncited highly-related work within specialty. The paper's Related Work covers the key REST-oracle line (AGORA+, SATORI, MASTOR) and the LLM-judge reliability line (Panickssery, Wataoka).
-
-## Novelty Delta Verdict (Within Specialty)
-
-**REST-oracle extraction**: TestVDB's novelty is the **falsification direction**—reading source to disconfirm documentation-derived claims. SATORI/MASTOR/AGORA+ all source ground-truth in one direction (spec or implementation); TestVDB does bidirectional checking. Clear, non-trivial delta.
-
-**LLM-as-judge**: Source-grounded falsification as a mitigation for self-preference/self-inconsistency is novel. Prior work addresses calibration (PAIRS, debiasing) but not independent implementation-source anchoring.
-
-## Cross-Family Generalization Caveat
-
-Paper acknowledges cross-model re-run shows family-specific verdicts (κ = 0.14/0.37/0.51). This is an honest limitation—no claim of universal backbone robustness. The 3-run any-confirmed ensemble operating point is post-hoc; the paper flags this with Wilson CIs and bootstrap validation. Methodologically sound given the exploratory nature of LLM-as-judge work.
-
-## Summary
-
-The paper accurately characterizes its competitors within my specialty areas. The novelty delta (source-grounded falsification) is real and well-differentiated from SATORI/MASTOR/AGORA+. Minor citation gap for Haldar's self-inconsistency work, but empirical acknowledgment exists. No missing highly-related uncited work within the scoped search.
+5. **Evidence Grounding**: Both MASTOR and TestVDB ground assertions in source code (MASTOR via transitive import closure, TestVDB via source bundle analysis). This grounding improves oracle precision over specification-only approaches.

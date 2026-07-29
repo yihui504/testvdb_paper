@@ -1,60 +1,49 @@
-# Unified Action Plan（v4 第四版 dual-review weakness 去重）
+# Unified Action Plan（v5 第五版 dual-review weakness 去重）
 
-> 6 reviewer（3 态度 + 3 expertise）。评分不合并，仅 weakness 语义聚类去重。
-> 来源标：`[both]`（两半边都点到，最强信号）/ `[attitude-only]`（方法论/三态视角）/ `[expertise-only]`（novelty/cache 视角）。
-> severity 跟原 reviewer tag；态度三态核实结果（Valid/Misleading/False）折入描述。
+> 6 reviewer（3 态度 + 3 expertise）。评分不合并，仅 weakness 语义聚类。
+> **独立性 caveat**：v5 expertise R1/R2 Detailed Assessment 大量雷同（论文+cache 相同→措辞趋同，仅 1.2/2.4 specialty 不同），R3 为独立确认。共识强度按此加权。
 
-## [both] + major（两半边共识，优先）
+## [both] + major（两半边共识，优先 — inherent）
 
-- **[both] [major, fixable]** post-hoc 操作点 selection-aware CI — 见态度 R1-W2 / R2-W1 / R2-W5 / R3-W2（均 Valid）/ 见 expertise R1-3.4 / R2-W1/3.3 / Meta-1
-  **6 reviewer 共识（最强信号）**。3-run union 是四操作点中事后选的，Wilson CI 未校正多重比较。论文已有 Bonferroni（[44,84]/[51,89]）+ bootstrap 2000（[53,83]/[71,96]）+ selection rationale；residual 是 **inherent limitation**（需 pre-registered 选择规则才能根本消除），文字层面已尽。
+- **[both] [major, fixable]** post-hoc 操作点 selection-aware CI — 态度 R1-W2/R2-W1/R3-W2 + expertise R1-3.2/R2-W4/R3-3.2
+  6 reviewer 共识。已有 Bonferroni（[44,84]/[51,89]）+ bootstrap（[53,83]/[71,96]）。**v5 新具体建议（R1）：Bonferroni CI 进 Table 5**（cheap，显式化）。residual inherent（需 pre-registration）。
 
-- **[both] [major, fixable]** cross-family / single-backbone generalization — 见态度 R1-W1（Misleading）/ R2-W2（Valid）/ R3-W1（Misleading）/ 见 expertise R1-W1/3.3 / Meta-4
-  headline 67%/74% 是 GLM-5.2 的；3-family κ=0.14/0.37/0.51 + recall 18–56% 显示 backbone-dependent。论文 abstract + §8 已标 open question，§6 有 3-family 数据。两半边分歧在定性：态度 R1/R3 称"未充分 address"（Misleading，因已有 caveat），R2 称"undercuts"（Valid，inherent）。**residual inherent**——§6 可更显式标 "backbone-specific"。
+- **[both] [major, fixable]** cross-family / single-backbone — 态度 R1-W1/R2-W3 + expertise R1-W1/1.2/R3-W2
+  inherent。v4 加 backbone 标注，但 R1 1.2 仍说 headline "67%/74%" 未 fully qualify "on GLM-5.2"（abstract/intro/RQ2 header）。
 
-- **[both] [major, fixable]** external validation 仅 portability — 见态度 R1-W4（Valid）/ R2-W7（Valid）/ 见 expertise R1-1.4 / R2-W2/3.4 / R3-W2/4.3 / Meta-2
-  CouchDB / Elasticsearch 各 1 次 end-to-end（0 defect，mature API 严格校验），是 method-portability 非 generalization 证据。论文已标 portability framing；Discussion 的 "REST API / config / policy-as-code" transfer claim 可显式 hedge 为 "preliminary portability"；一个 non-VDBMS defect case 会显著加强。
+- **[both] [major, fixable]** external validation 仅 portability — 态度 R1/R2/R3 + expertise R1-W4/R2-W3/R3-1.2
+  inherent（需 non-VDBMS defect case）。
 
-## [expertise-only] + major
+## [expertise-only] + major（v5 新抓，fixable）
 
-- **[expertise-only] [major, fixable]** AugmenTest 前置定位 — 见 expertise R3-W1/2.2 / Meta-3
-  最直接可比的 LLM-derived-from-documentation oracle 工作被埋在 §7 末尾，应前置到 positioning 处澄清 TestVDB 的 source-grounded falsification delta。态度半边未提（其视角偏方法论/novelty-delta 不重叠）。
+- **[expertise-only] [major, fixable]** Verifiability: prompts / sampling / 48-candidate catalog — expertise R3-4.1/4.2
+  **v5 新**（v4 R3 patch 后 Adequate，v5 R3 更严格 bar）。R3 要求关键 prompts（contract-formalizer/attack/judge/dev-reviewer）+ sampling 参数 + 48-candidate issue ID 移入 appendix（不只 artifact promise）。修订周期可解。
 
-- **[expertise-only] [major, fixable]** defect-class scope boundary 模糊 — 见 expertise R1-1.3
-  "documentation-implementation defect" 与 result-correctness 的边界在实践模糊（如 invalid `ef` 被接受导致 wrong recall：是 consistency 还是 correctness？）。§2 分了 consistency/correctness 但实践边界不清。态度半边未单独提（R1-W3 的 implementation-as-correct 是相邻但不同的点）。
+- **[expertise-only] [major, fixable]** LLM-as-judge bias 未独立测量 — expertise R2-W1/1.2/2.4
+  **v5 新**（R2 specialty 独特）。R2 指出论文 cite Panickssery/Wataoka 作 motivation 但未 apply 其 bias metric（Wataoka Equal Opportunity / Panickssery self-recognition）测 TestVDB judge 是否真降 bias。建议报 single-LLM / multi-perspective / dev-reviewer 三配置的 bias metric。这是新 experimental 建议（中等工作）。
 
-## [attitude-only] + major
+## [attitude-only] + major（Misleading — v4 reframe 后仍被漏读）
 
-- **[attitude-only] [major, fixable]** ensemble fairness（3-run dev-reviewer vs single-run baseline）— 见态度 R2-W3（Misleading）
-  R2-严格 批比较不公平（混淆 source grounding 与 ensemble 贡献）。**核实为 Misleading**：12-FP/4-TP ablation 已隔离 source grounding 贡献（source alone 抑制 75% FP + 保留全部 TP），minus-source 74→19% 证明 gain 主来自 source 非 ensemble。expertise 半边未提此批评（R1-3.2 反而肯定 ablation triangulation 严谨）。补 3-run single-LLM baseline 对照表会更显式。
+- **[attitude-only] [major, fixable]** VDBFuzz crash baseline on v1.18.2 — 态度 R2-W2（**Misleading**）
+  R2 称"0/14 incomparable without baseline"，但论文 §6.3 已有"26k requests, 0 crash"baseline。v4 reframe（systematic vs controlled）未让 R2 读到。**fix：§6.3 更显著标 'crash baseline'**（一句明确"this 26k-request run is the crash baseline; 0 crashes means VDBFuzz detects none, not that it was not run"）。
 
-## [both] + minor
+## [expertise-only] + minor（v5 新抓）
 
-- **[both] [minor, unfixable]** recall estimation absent — 见态度 R1-W5（Valid）/ R2-W6（Valid）/ 见 expertise R1-W4
-  无 public GT catalog，74% 是相对 37% baseline 非绝对。**inherent**——论文诚实承认；capture-recapture 是 future work。
+- **[expertise-only] [minor, fixable]** §6.2 cross-model "85%" 口径 — expertise R3-4.3
+  **v5 新**。"18-56% vs. 85%" 中 85% 是 GLM 5-run union recall，但 κ 比较的是 vs GLM single-run；比较 basis 应显式（R3 抓的 valid coherence 点）。
 
-- **[both] [minor, fixable]** implementation-as-correct 假设未量化 — 见态度 R1-W3（Valid）/ 见 expertise R2-5.1
-  §8 提 limitation（implementation bug 可错误 falsify 正确 doc）但未量化 23 rejected 中 doc-error 比例。audit 23 rejected（"wont-fix, docs will update" vs "behavior correct"）会加强。
-
-## [expertise-only] + minor
-
-- **[expertise-only] [minor, fixable]** residual FP 未分类 — 见 expertise R1-3.6 / Meta-5
-  ~8/48 residual FP（hallucination vs source-grounding 失败 vs threat-model 漏覆盖）未分类。附录分类表会澄清边界。
-
-- **[expertise-only] [minor, fixable]** 20-agent 架构细节稀疏 — 见 expertise R3-4.2 / Meta-6
-  §3 仅列 5 stage-aligned 角色，prompts/dispatch/JSON 收集未述。artifact 需补。
-
-- **[expertise-only] [minor, fixable]** §6 记号与 density — 见 expertise R1-5.2/5.3/5.4 / Meta-7
-  Wilson vs bootstrap CI 关系、"any-confirmed"/"majority" 定义、Figure 6 per-run band 含义应加 caption/footnote。R1 Presentation Weak 的主因。
-
-## [attitude-only] + minor
-
-- **[attitude-only] [minor, fixable]** VDBFuzz probe n=1 underpowered — 见态度 R2-W4（Valid）
-  每方向 n=1，论文已标 "hypothesis-generating"。**两半边分歧**：态度 R2 批 underpowered，expertise R1-2.1 称 bidirectional probe "strong reachability result"。VDBFuzz fixed-budget run 会强化（即使 negative 结果 VDBFuzz reaches 0/49 也比 n=1 强）。
-
-- **[attitude-only] [minor, fixable]** RQ3 complementarity framing 措辞 — 见态度 R3-W3（Misleading）
-  §6 已 frame 为 bidirectional reachability + complementarity，R3 建议确保一致用 "complementary" 而非 "superiority"。
+- **[both] [minor, fixable]** worst-case-bound framing — expertise R1-W3/5.1/R2-W2/5.1
+  abstract 应 lead with adjudicated 68%，worst-case 46% 作 sensitivity。v4 加了 68%/46%，但 R1/R2 认为仍偏保守。
 
 ## 结论
 
-residual weakness 集中在 3 个 **[both] major inherent limitation**（post-hoc / cross-family / external validation）——文字层面已尽（Bonferroni + bootstrap + caveat + open question + portability framing），根本解决需实际改进（pre-registration / 更多 family / non-VDBMS defect case），非文字修改能消除。其余为显式化/补细节/措辞性 minor。论文已诚实面对 inherent limitation，适合投稿。
+v5 验证 v4 修订**部分成功**：
+✓ Presentation consensus 升（v4 R1 Weak → v5 全 Adequate，Table 5 caption 起效）
+✓ R3 internal coherence 确认（abstract/§6.1/§6.3/Table 5 一致）
+✓ AugmenTest §2 positioning（R1 2.2 确认 delta 准确）
+⚠ backbone 标注（v4 加了，但 R1 1.2 仍说未 fully qualify headline）
+⚠ VDBFuzz systematic framing（v4 reframe，但 R2 漏读，需更显式标 "crash baseline"）
+
+**v5 新增 fixable 项**（非 inherent）：① Verifiability prompts/catalog appendix；② LLM-as-judge bias metric 测量；③ 85% 口径澄清；④ Bonferroni CI 进表；⑤ §6.3 显式 "crash baseline"。这些都是修订周期可解，不需重实验。
+
+3 个 [both] major inherent limitation（post-hoc / cross-family / external）仍文字已尽。论文适合投稿。
