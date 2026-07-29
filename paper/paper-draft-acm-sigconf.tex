@@ -259,7 +259,7 @@ Total & 107 & 49 \\
 \end{table}
 
 \paragraph{RQ2: false-positive suppression.}
-On a controlled retrospective over 48 maintainer-adjudicated candidates (27 true-positive, 21 by-design or rejected; Milvus 32, Qdrant 16), the dev-reviewer (GLM-5.2 backbone, 3-run any-confirmed ensemble) reaches 65\% accuracy, 67\% precision (Wilson 95\% CI $[49\%, 81\%]$), and 74\% recall, against a single-LLM baseline (no source anchor) of 48\%/56\%/37\%; the source-grounded contract anchor drives the recall gain ($37\%\to74\%$). Single runs vary widely: across five independent runs, recall ranges $15$--$78\%$ (accuracy $44$--$65\%$, precision $50$--$73\%$), because some runs are conservative and confirm few candidates. We report the any-confirmed (union) ensemble as the operating point: the dev-reviewer is a falsifier, so a candidate that survives any independent falsification is more likely a true defect, and under-confirmation is costlier than forwarding a false positive for human triage. Table~\ref{tab:opr} reports four operating points. Among those that keep precision at least 60\%, the 3-run union has the highest recall; the 5-run union reaches higher recall (85\%) but lower precision (62\%) and lower accuracy (62\% vs.\ 65\%), and majority voting collapses recall to 26\%. We select the 3-run union as the headline because it sits at the knee of the precision-recall trade-off at modest reproducibility cost. We flag it as a post-hoc operating point justified by falsifier semantics, not a pre-registered rule, and the Wilson CIs above do not account for this selection. A Bonferroni correction across the four operating points (at $\alpha=0.05/4$) would widen the 3-run precision CI to roughly $[44\%, 84\%]$ and the recall CI to roughly $[51\%, 89\%]$, which does not change the qualitative claim that source grounding lifts recall above the 37\% baseline. A bootstrap resampling validation (2000 resamples of the 48-candidate set) gives precision 95\% CI $[53\%, 83\%]$ and recall $[71\%, 96\%]$, supporting that the operating point is not an artifact of the specific candidate sample.
+On a controlled retrospective over 48 maintainer-adjudicated candidates (27 true-positive, 21 by-design or rejected; Milvus 32, Qdrant 16), the dev-reviewer (GLM-5.2 backbone, 3-run any-confirmed ensemble) reaches 65\% accuracy, 67\% precision (Wilson 95\% CI $[49\%, 81\%]$), and 74\% recall, against a single-LLM baseline (no source anchor) of 48\%/56\%/37\%; the source-grounded contract anchor drives the recall gain ($37\%\to74\%$). Single runs vary widely: across five independent runs, recall ranges $15$--$78\%$ (accuracy $44$--$65\%$, precision $50$--$73\%$, Figure~\ref{fig:perrun}), because some runs are conservative and confirm few candidates. We report the any-confirmed (union) ensemble as the operating point: the dev-reviewer is a falsifier, so a candidate that survives any independent falsification is more likely a true defect, and under-confirmation is costlier than forwarding a false positive for human triage. Table~\ref{tab:opr} reports four operating points. Among those that keep precision at least 60\%, the 3-run union has the highest recall; the 5-run union reaches higher recall (85\%) but lower precision (62\%) and lower accuracy (62\% vs.\ 65\%), and majority voting collapses recall to 26\%. We select the 3-run union as the headline because it sits at the knee of the precision-recall trade-off at modest reproducibility cost. We flag it as a post-hoc operating point justified by falsifier semantics, not a pre-registered rule, and the Wilson CIs above do not account for this selection. A Bonferroni correction across the four operating points (at $\alpha=0.05/4$) would widen the 3-run precision CI to roughly $[44\%, 84\%]$ and the recall CI to roughly $[51\%, 89\%]$, which does not change the qualitative claim that source grounding lifts recall above the 37\% baseline. A bootstrap resampling validation (2000 resamples of the 48-candidate set) gives precision 95\% CI $[53\%, 83\%]$ and recall $[71\%, 96\%]$, supporting that the operating point is not an artifact of the specific candidate sample.
 
 \begin{table}[t]
 \caption{Dev-reviewer operating points (GLM-5.2). \emph{Per-run band} = min--max over five runs; \emph{any-confirmed} = union; \emph{majority} $\ge 3/5$. The 3-run union is the post-hoc headline. Wilson 95\% CIs in brackets; Bonferroni over the four points ($\alpha{=}0.05/4$) widens the 3-run CI to roughly $[44,84]/[51,89]$, and a bootstrap over the candidate set gives $[53,83]/[71,96]$.}
@@ -276,6 +276,26 @@ Single run (per-run band) & 44--65\% & 50--73\% & 15--78\% \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1.1cm, y=0.045cm]
+  \draw[->] (0,0) -- (6.2,0) node[right]{\footnotesize run};
+  \draw[->] (0,0) -- (0,108);
+  \foreach \v in {0,20,40,60,80,100} \draw (-0.1,\v) -- (0.1,\v) node[left]{\scriptsize \v};
+  \foreach \x in {1,...,5} \node[below] at (\x,0) {\scriptsize \x};
+  \filldraw (1,33) circle (2.5pt);
+  \filldraw (2,59) circle (2.5pt);
+  \filldraw (3,19) circle (2.5pt);
+  \filldraw (4,15) circle (2.5pt);
+  \filldraw (5,78) circle (2.5pt);
+  \draw[dashed, gray] (0,37) -- (6,37) node[right]{\scriptsize baseline 37\%};
+  \draw[blue, thick] (0,74) -- (6,74) node[right]{\scriptsize 3-run 74\%};
+  \draw[green!50!black, dashed] (0,85) -- (6,85) node[right]{\scriptsize 5-run 85\%};
+\end{tikzpicture}
+\caption{Per-run recall across five independent dev-reviewer runs (dots), against the single-LLM baseline (37\%) and any-confirmed ensembles (3-run 74\%, 5-run 85\%). Single-run recall spans 15--78\% because some runs are conservative; the union ensemble absorbs this variance and lifts recall above the baseline.}
+\label{fig:perrun}
+\end{figure}
 
 A three-condition ablation on a 12-FP/4-TP control (Milvus v2.6.19, blind) isolates the dev-reviewer's two anchors (Table~\ref{tab:ablation}). Source alone suppresses 9/12 false positives (75\%), the threat-model anchor alone 6/12 (50\%, unstable on state and concurrency FPs), and their union 11/12 (91\%), each retaining all 4 true positives. The source-grounded anchor is the dominant contributor, and the threat-model anchor adds coverage on by-design patterns that source grounding alone reads as implementation choices. The precision gain from the single-LLM baseline (56\%) to the dev-reviewer (67\%), together with this ablation's 75\% false-positive suppression, directly measures the self-preference reduction~\cite{panickssery24,wataoka24}: the same-family judge over-confirms its own extracted claims, and the source anchor is what breaks that over-confirmation.
 
