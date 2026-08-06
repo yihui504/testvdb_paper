@@ -16,17 +16,44 @@ except ImportError:
 
 
 # 路径模板——所有 path 含 {name}（qdrant RESTful 风格，path 参数是 collection name）
+# ponytail: paths verified against live qdrant v1.18.3 container (2026-08-05); recover uses /recover (not /restore)
 PATHS = {
     "create_collection":   "/collections/{name}",
     "describe_collection": "/collections/{name}",
     "drop_collection":     "/collections/{name}",
     "list_collections":    "/collections",
     "create_index":        "/collections/{name}/index",
+    "delete_index":        "/collections/{name}/index/{field_name}",
     "upsert_points":       "/collections/{name}/points",
+    "get_point":           "/collections/{name}/points/{point_id}",
     "delete_points":       "/collections/{name}/points/delete",
     "search":              "/collections/{name}/points/search",
+    "search_groups":       "/collections/{name}/points/search/groups",
     "query":               "/collections/{name}/points/query",
+    "query_groups":        "/collections/{name}/points/query/groups",
     "count":               "/collections/{name}/points/count",
+    "update_collection":   "/collections/{name}",
+    "update_aliases":      "/collections/aliases",
+    "list_aliases":        "/collections/aliases",
+    "list_snapshots":      "/collections/{name}/snapshots",
+    "create_snapshot":     "/collections/{name}/snapshots",
+    "get_snapshot":        "/collections/{name}/snapshots/{snapshot_name}",
+    "delete_snapshot":     "/collections/{name}/snapshots/{snapshot_name}",
+    "recover_snapshot":    "/collections/{name}/snapshots/recover",
+    "cluster_status":      "/cluster",
+    "collection_cluster":  "/collections/{name}/cluster",
+    "update_shards":       "/collections/{name}/shards",
+    "scroll":              "/collections/{name}/points/scroll",
+    "discover":            "/collections/{name}/points/discover",
+    "recommend":           "/collections/{name}/points/recommend",
+    "root":                "/",
+    "healthz":             "/healthz",
+    "metrics":             "/metrics",
+    # ponytail: aliases for agent-generated path_key naming variants (map to canonical paths)
+    "get_cluster":         "/cluster",
+    "get_collection_cluster": "/collections/{name}/cluster",
+    "group_search":        "/collections/{name}/points/query/groups",
+    "get_snapshot":        "/collections/{name}/snapshots/{snapshot_name}",
 }
 
 DISTANCE_MAP = {"Cosine": "Cosine", "Euclid": "Euclidean", "Dot": "Dot"}
@@ -134,8 +161,10 @@ def drop_collection(name: str) -> None:
 
 def _self_check() -> None:
     """ponytail: 静态自检 PATHS 模板 + path_params 替换 + bad key 抛 KeyError。"""
+    # ponytail: global paths (no collection name)
+    _NAMELESS = {"list_collections", "update_aliases", "list_aliases", "cluster_status", "get_cluster", "root", "healthz", "metrics"}
     for k, v in PATHS.items():
-        if k == "list_collections":
+        if k in _NAMELESS:
             assert "{name}" not in v, f"{k} should not have {{name}}"
         else:
             assert "{name}" in v, f"{k}={v!r} 缺 {{name}} 占位符"
