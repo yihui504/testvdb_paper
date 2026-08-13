@@ -1,0 +1,131 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50353",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search {\"collectionName\": \"test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0}",
+          "observed": "HTTP 200 with error: {\"code\":65535,\"message\":\"topk [0] is invalid, it should be in range [1, 16384], but got 0\"}",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "validated_assumptions": [
+            "Request explicitly provided limit=0 parameter",
+            "Response indicates validation occurred and rejected the value",
+            "Error message clearly states the expected range [1, 16384]"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_entities_search_001 (implied from API spec and validation logic)",
+            "structured_contract.json: entities+search endpoint defines limit as required parameter with range validation",
+            "api_templates.md: POST /v2/vectordb/entities/search specifies limit parameter"
+          ],
+          "contract_assertion": "The REST v2 API contract requires limit/topk parameter to be in range [1, 16384]. This is enforced by the validation layer."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "validateLimit",
+            "topk.*invalid.*should be in range",
+            "TopKLimit",
+            "it should be in range"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/search_util.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "pkg/util/paramtable/quota_param.go"
+          ],
+          "source_excerpt": "// File: internal/proxy/util.go, Lines 199-208\nfunc validateLimit(limit int64, largeTopKEnabled bool) error {\n\ttopKLimit := Params.QuotaConfig.TopKLimit.GetAsInt64()\n\tif largeTopKEnabled {\n\t\ttopKLimit = Params.QuotaConfig.LargeTopKLimit.GetAsInt64()\n\t}\n\tif limit <= 0 || limit > topKLimit {\n\t\treturn fmt.Errorf(\"it should be in range [1, %d], but got %d\", topKLimit, limit)\n\t}\n\treturn nil\n}\n\n// File: internal/proxy/search_util.go, Lines 192-204\nif err := validateLimit(topK, largeTopKEnabled); err != nil {\n\tif isIterator {\n\t\t// iterator workaround: set topK to QuotaLimit\n\t\tif largeTopKEnabled {\n\t\t\ttopK = Params.QuotaConfig.LargeTopKLimit.GetAsInt64()\n\t\t} else {\n\t\t\ttopK = Params.QuotaConfig.TopKLimit.GetAsInt64()\n\t\t}\n\t} else {\n\t\treturn nil, fmt.Errorf(\"%s [%d] is invalid, %w\", TopKKey, topK, err)\n\t}\n}",
+          "call_chain_traced": "REST v2 Handler → parseSearchRequest → validateLimit(topK=0) → returns error 'it should be in range [1, 16384], but got 0' → wrapped as 'topk [0] is invalid, it should be in range [1, 16384], but got 0'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:validateLimit函数在internal/proxy/util.go中明确检查limit <= 0 || limit > topKLimit,当limit=0时返回错误。该验证在search_util.go的parseRankParams中第192行被调用,对于非iterator请求直接返回错误。这不是漏洞,而是正确的参数验证行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted to reproduce the claimed 'bug' by testing limit=0, limit=-1, limit=16385",
+          "observed": "All invalid values (0, -1, 16385) are correctly rejected with appropriate error messages indicating the valid range [1, 16384]",
+          "conclusion": "No bug exists - the API correctly validates and rejects out-of-range limit values"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - test on clean Milvus 2.6.17 instance",
+            "Concurrency issues - single request test",
+            "Request parameter typos - limit=0 is explicit and intentional",
+            "API semantic misunderstanding - validation clearly documented"
+          ],
+          "surviving_explanation": "None - this is proper parameter validation, not a bug"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "limit/topk parameter must be in range [1, 16384] (enforced by validateLimit function)",
+          "source_implements_check": true,
+          "api_observed_value": "limit=0 correctly rejected with error code 65535 and message 'topk [0] is invalid, it should be in range [1, 16384], but got 0'",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED",
+          "note": "The contract requires range validation, and the source code implements it correctly. This is not a bug - it's working as designed."
+        },
+        "physical": {
+          "objective_constraint": "Search limit/topk must be >= 1 (cannot return 0 results in a single search request - use query/empty filter instead)",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "source_evidence": "validateLimit in util.go explicitly checks limit <= 0 and returns clear error message. parseRankParams in search_util.go shows this is intentional validation, not a missing check.",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED → final=REFUTED (all three perspectives agree this is proper validation, not a bug)",
+        "final_verdict": "REFUTED"
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001 (expected_behavior)",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "pattern_id": "RP-001",
+        "note": "This candidate matches rejection pattern RP-001: proper parameter validation is expected behavior, not a bug. The Milvus team has documented range limits for search parameters."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate claims that 'limit=0' being rejected is a bug. However, source code analysis confirms this is intentional parameter validation: (1) validateLimit() in internal/proxy/util.go explicitly checks limit <= 0, (2) parseRankParams() in search_util.go calls this validation and rejects invalid values, (3) the REST v2 API contract specifies limit as required with range [1, 16384], (4) the error message 'topk [0] is invalid, it should be in range [1, 16384], but got 0' clearly indicates this is expected validation behavior, not a defect. All three perspectives (contract, physical, behavioral) agree this is proper API design, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "review_timestamp": "2025-08-14T02:50:00Z",
+    "source_clone_verified": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "steps_completed": [
+      "clean_repro",
+      "assumption_audit",
+      "contract_grounding",
+      "source_grounding",
+      "falsification",
+      "mundane_explanation",
+      "perspective_analysis"
+    ]
+  }
+}

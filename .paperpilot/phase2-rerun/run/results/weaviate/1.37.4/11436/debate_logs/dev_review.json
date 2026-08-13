@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11436",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with vectorIndexConfig.ef=-1",
+          "observed": "HTTP 200 - Collection created successfully with ef=-1 in response",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestEfneg\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes ef=-1 is invalid and should be rejected",
+            "Defect assumes negative ef values are always illegal"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json about ef parameter validation",
+            "Contract only documents ef as a field in vectorIndexConfig without range restrictions"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "DefaultEF",
+            "ef.*int",
+            "validate",
+            "efConstruction"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "usecases/schema/parser.go",
+            "entities/vectorindex/hnsw/config_test.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 25-44\nconst (\n\t// Set these defaults if the user leaves them blank\n\tDefaultCleanupIntervalSeconds = 5 * 60\n\tDefaultMaxConnections         = 32\n\tDefaultEFConstruction         = 128\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\tDefaultDynamicEFMin           = 100\n\tDefaultDynamicEFMax           = 500\n\tDefaultDynamicEFFactor        = 8\n\t...\n\t// Fail validation if those criteria are not met\n\tMinmumMaxConnections  = 4\n\tMaximumMaxConnections = 2047\n\tMinmumEFConstruction  = 4\n)\n\n// lines 171-175: ef parsing\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"ef\", func(v int) {\n\tuc.EF = v\n}); err != nil {\n\treturn uc, err\n}\n\n// lines 260-290: validate() function - NO ef validation present\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections { ... }\n\tif u.MaxConnections > MaximumMaxConnections { ... }\n\tif u.EFConstruction < MinmumEFConstruction { ... }\n\t// NO validation for u.EF field - negative values accepted\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn { ... }\n}",
+          "call_chain_traced": "ParseAndValidateConfig → OptionalIntFromMap('ef') → validate() → no ef range check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: ef=-1 是 DefaultEF 常量，注释说明 'let Weaviate pick'。validate() 函数中没有对 ef 参数做范围校验，ef=-1 是有意义的默认值而非错误。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested ef values: -1, 0, 10, -5",
+          "observed": "All ef values (including negative) accepted with HTTP 200 - API behavior consistent with by-design default value"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发竞态",
+            "缓存延迟"
+          ],
+          "surviving": "by_design_default_value"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "If the behavior matches documentation, it is considered correct",
+        "note": "命中 developer_cognition.json 中的 rejection_pattern RP-001: expected_behavior。ef=-1 是文档化的默认值行为，源码注释明确说明其用途。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint requiring ef ≥ 0 or ef range validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint on ef being non-negative",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED (by design in source) → final_verdict=REFUTED",
+        "final_verdict": "REFUTED"
+      },
+      "rationale": "原 oracle 声称 ef=-1 是参数验证缺陷，应被拒绝。但源码接地发现：(1) DefaultEF = -1 是定义的常量，注释明确说明 'let Weaviate pick'；(2) validate() 函数中没有对 ef 参数做任何范围校验；(3) 这是有意设计的默认值，用于启用动态 ef 选择机制。测试复现确认 API 接受 ef=-1 并返回 HTTP 200，且 ef=0/10/-5 等其他值也被接受，说明这是 by-design 行为而非漏洞。命中 developer_cognition.json 中的 RP-001 (expected_behavior) 模式——匹配文档和源码设计的行为应被视为正确。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "reviewed_at": "2026-08-14T00:00:00Z",
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/weaviate/1.37.4/11436",
+    "source_clone_available": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4"
+  }
+}

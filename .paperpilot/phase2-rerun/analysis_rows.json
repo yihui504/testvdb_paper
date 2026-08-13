@@ -1,0 +1,1273 @@
+[
+ {
+  "did": "milvus_47635",
+  "vendor": "milvus",
+  "num": 47635,
+  "verdict": "CONFIRMED",
+  "conf": 0.92,
+  "root": null,
+  "rationale": "源码接地证实了缺陷存在: handler_v2.go 第913行当 searchResp.Results.TopK == int64(0) 时直接返回 HTTP 200 + 空数组。独立复现使用 pymilvus SDK 成功触发该行为。三视角分析确认: 契约视角要求错误时返回 400，物理视角要求 HTTP 状态码反映真实结果，行为视角显示这不是优雅的默认处理。这是真 bug，不是误报。",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v1.go",
+   "internal/proxy/task_search.go",
+   "internal/proxy/impl.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_47729",
+  "vendor": "milvus",
+  "num": 47729,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "通过源码接地与实际 curl 复现双重确认: Milvus REST v2 API 的 generateSearchParams 函数完全缺失对 searchParams 中数值参数的范围校验,允许 nprobe=0/-1 等违反 IVF 算法物理约束的值通过。这是真缺陷,源于 REST v2 层参数处理逻辑不完善。配置文件与文档明确指出 nprobe 必须 < nlist 且 > 0,但代码未强",
+  "files": [
+   "internal/distributed/proxy/httpserver/utils.go (line 2076-2131: generateSearchParams function)",
+   "internal/distributed/proxy/httpserver/handler_v2.go (line 1485: search params generation)",
+   "internal/proxy/task_search.go (search task execution, no nprobe validation)",
+   "configs/milvus.yaml (line 471: config comment 'nprobe ... must smaller than nlist')",
+   "docs/developer_guides/chap02_schema.md (line 79-100: IVF algorithm docs showing nprobe semantics)"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_47752",
+  "vendor": "milvus",
+  "num": 47752,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "源码接地 + 双盲复现均确认缺陷:IndexChecker 接口只提供 CheckTrain() (建索引时校验 efConstruction ∈ [1, 2147483647]),完全没有 CheckSearch() 方法校验搜索时 ef 参数。Proxy 层 parseSearchInfo() 提取 searchParamStr 后直接透传,不做范围检查。实测证实:POST /entities",
+  "files": [
+   "internal/proxy/task_search.go",
+   "internal/proxy/search_util.go",
+   "internal/proxy/task_validator.go",
+   "internal/util/indexparamcheck/index_checker.go",
+   "internal/util/indexparamcheck/constraints.go",
+   "internal/util/indexparamcheck/hnsw_checker_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_47755",
+  "vendor": "milvus",
+  "num": 47755,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Clean reproduction confirms Milvus REST v2 API accepts structurally invalid IN expressions in delete filters without validation. Source code analysis (newTermExpr/sortGenericValues in rewriter/util.go",
+  "files": [
+   "internal/parser/planparserv2/rewriter/term_in.go",
+   "internal/parser/planparserv2/rewriter/util.go",
+   "internal/parser/planparserv2/rewriter/range_test.go",
+   "internal/parser/planparserv2/rewriter/term_in_test.go",
+   "internal/proxy/task_delete.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_47763",
+  "vendor": "milvus",
+  "num": 47763,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Milvus v2.6.10 with enableDynamicField=true accepts insert of data with invalid field names (123field, @field) but cannot query these fields. Source code analysis reveals that ParseIdentifier (interna",
+  "files": [
+   "internal/proxy/util.go",
+   "internal/parser/planparserv2/plan_parser_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "tests/python_client/milvus_client_v2/test_milvus_client_search_invalid.py",
+   "tests/go_client/testcases/query_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_47766",
+  "vendor": "milvus",
+  "num": 47766,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Clean reproduction confirms REST v2 /entities/insert accepts integer value for VarChar field without validation. Contract explicitly requires 'data field types match collection schema' (milvus_type_en",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_47767",
+  "vendor": "milvus",
+  "num": 47767,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.85,
+  "root": "missing_raw_evidence",
+  "rationale": "Source code grounding reveals EXPLICIT validation logic exists in CheckIfDatabaseDroppable (meta_table.go:405-427): (1) DefaultDBName check prevents dropping 'default' database with error 'can not dro",
+  "files": [
+   "internal/rootcoord/meta_table.go",
+   "internal/rootcoord/ddl_callbacks_drop_database.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "pkg/util/constant.go",
+   "tests/restful_client_v2/testcases/test_database_operation.py"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_49059",
+  "vendor": "milvus",
+  "num": 49059,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Bug CONFIRMED: Milvus COSINE metric returns distance 1.0000001192092896 > 1.0 for identical normalized vectors, violating the mathematical invariant that cosine distance ∈ [-1, 1]. Root cause: CosineI",
+  "files": [
+   "pkg/util/distance/calc_distance.go",
+   "internal/core/src/common/Utils.h",
+   "internal/core/src/common/Types.h",
+   "internal/core/src/index/Utils.cpp"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_49823",
+  "vendor": "milvus",
+  "num": 49823,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "REST v2 /entities/search endpoint accepts nprobe=0 in searchParams without validation. Source code analysis (handler_v2.go:generateSearchParams at utils.go:2192-2247) confirms NO validation is perform",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go (lines 1528-1601, 1697-1728)",
+   "internal/distributed/proxy/httpserver/utils.go (lines 2192-2247)",
+   "tests/python_client/testcases/indexes/idx_ivf_rabitq.py (line 209)"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_49843",
+  "vendor": "milvus",
+  "num": 49843,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "源码接地确认 validateCollectionTTL 在 alterCollectionTask.PreExecute 中被调用 (line 1446),执行范围检查 [val < -1 || val > 3155760000]。实测复现成功:ALTER 拒绝 -100 并返回错误 1100,但 CREATE 接受 -100 (HTTP 200)。虽然源码显示 CREATE 路径也调用 val",
+  "files": [
+   "internal/proxy/task.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/rootcoord/ddl_callbacks_alter_collection_properties.go",
+   "pkg/common/common.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_49844",
+  "vendor": "milvus",
+  "num": 49844,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Contract milvus_range_entities_insert_001 explicitly states 'len(data) <= 100' for REST v2 entities+insert endpoint. Live testing shows API accepts 101 entities (violating assertion) and returns HTTP ",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/proxy/impl.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_49889",
+  "vendor": "milvus",
+  "num": 49889,
+  "verdict": "CONFIRMED",
+  "conf": 0.85,
+  "root": null,
+  "rationale": "CONFIRMED parameter validation defect. REST v2 API accepts dbName=\"\" (empty string) and returns HTTP 200 code=0 (success) despite parameter description 'existing database name'. Empty string is semant",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "pkg/util/constant.go",
+   "internal/distributed/proxy/httpserver/handler_v1.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_49890",
+  "vendor": "milvus",
+  "num": 49890,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Milvus REST v2 entities/insert endpoint accepts invalid Request-Timeout header values (non-numeric strings like 'abc', floats like '3.5') without validation. Source code at timeout_middleware.go:183-1",
+  "files": [
+   "internal/distributed/proxy/httpserver/timeout_middleware.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_49928",
+  "vendor": "milvus",
+  "num": 49928,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "候选声称 milvus_49928 是缺陷（behavior 类型，High 严重性），但从 raw output 来看，这实际上是 API 正确工作的证据。原始日志显示：REQ 3 (dim=32768) → HTTP 200 成功；REQ 4 (dim=32769) → HTTP 200 但 code=65535（错误），消息明确说明 'invalid dimension: 32769 of ",
+  "files": [
+   "internal/proxy/util.go",
+   "internal/proxy/task.go",
+   "pkg/util/paramtable/component_param.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_49929",
+  "vendor": "milvus",
+  "num": 49929,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "Candidate claims API returning error code 1100 for missing dimension parameter is a defect. However: (1) Contract clarifies dimension is conditionally required in quick-setup mode; (2) Source code exp",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v2_test.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_49930",
+  "vendor": "milvus",
+  "num": 49930,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Step 1 clean repro: API successfully accepts ef=-1, ef=0, nprobe=0 with HTTP 200 and valid search results. Step 2 assumption audit: Conclusion assumes API should reject these values; raw requests conf",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go (line 1478-1600: search handler)",
+   "internal/distributed/proxy/httpserver/request_v2.go (line 338-358: SearchReqV2 struct)",
+   "internal/distributed/proxy/httpserver/utils.go (line 2192-2247: generateSearchParams function)",
+   "internal/proxy/task_search.go (line 105-200: search task execution)",
+   "internal/util/indexparamcheck/constraints.go (line 1-82: index parameter constraints)"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_50018",
+  "vendor": "milvus",
+  "num": 50018,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "The defect claim assumes empty collectionName should trigger validation error, but (1) API contract explicitly marks collectionName optional (required:false), (2) source code OptionalCollectionNameReq",
+  "files": [
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_50192",
+  "vendor": "milvus",
+  "num": 50192,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "通过干净环境独立复现（Step 1 成功）、契约对照（Step 3 确认违反预期）、源码接地（Step 3.5 发现 TOCTOU 竞态）、反向证伪（Step 4 确认状态混乱实际存在）以及平凡解释排除（Step 5 排除环境/参数问题），确认这是一个真实的并发状态逻辑缺陷。关键证据：Rename 和 Create 并发执行时，CheckIfCollectionRenamable 的 RLock ",
+  "files": [
+   "internal/rootcoord/ddl_callbacks_alter_collection_name.go",
+   "internal/rootcoord/meta_table.go",
+   "internal/rootcoord/ddl_callbacks.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50193",
+  "vendor": "milvus",
+  "num": 50193,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "真缺陷确认: (1) Step 1复现成功 - insert(3) -> load() -> get_stats().rowCount=0 违反 invariant rowCount >= 3; (2) Step 2前提审计通过 - 无假设违规; (3) Step 3契约对照成功 - milvus_invariant_insert_count_001明文规定 'insert(N entities)",
+  "files": [
+   "internal/datacoord/services.go (line 400-418)",
+   "internal/datacoord/meta.go (line 479-487)",
+   "internal/datacoord/meta.go (line 2053-2058)",
+   "internal/distributed/proxy/httpserver/handler_v2.go (line 680-692)"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50194",
+  "vendor": "milvus",
+  "num": 50194,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "REST v2 /v2/vectordb/entities/insert 端点在源码层面未对请求数组长度进行上限校验。contract formalizer 将 len(data) <= 100 提取为显式约束(milvus_range_entities_insert_001),但源码中 checkAndSetData() 函数(utils.go:363-703)仅负责数据类型转换,未验证数组长度",
+  "files": [
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request.go",
+   "internal/distributed/proxy/httpserver/wrap_request.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50319",
+  "vendor": "milvus",
+  "num": 50319,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "6步SOP全部通过: (1)干净复现成功 - create→insert→search(无load)返回HTTP 200+有效结果; (2)前提审计通过 - 所有前提满足,load确实是contract要求的前置条件; (3)契约对照通过 - collections+load明文要求'for searching and queries',但API不强制执行; (4)源码接地(PATH A本地clo",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/handler.go",
+   "internal/distributed/proxy/service.go",
+   "internal/proxy/impl.go",
+   "internal/proxy/util.go",
+   "internal/proxy/task.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50321",
+  "vendor": "milvus",
+  "num": 50321,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "候选声称重复创建集合应失败,但实测发现两个 CREATE 请求均返回 HTTP 200。源码接地(create_collection_task.go:530-537, root_coord.go:903-906)证实这是**幂等操作设计**:当且仅当集合已存在且参数完全相同时,Milvus 返回 errIgnoredCreateCollection 并转换为 HTTP 200 成功响应。这是分布式",
+  "files": [
+   "internal/rootcoord/create_collection_task.go",
+   "internal/rootcoord/root_coord.go",
+   "internal/rootcoord/meta_table.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50322",
+  "vendor": "milvus",
+  "num": 50322,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "The defect claim asserts that dropping a nonexistent collection should fail with an error. However, source code grounding reveals this is intentional idempotent-by-design behavior: (1) proxy/task.go P",
+  "files": [
+   "internal/proxy/task.go",
+   "internal/rootcoord/drop_collection_task.go",
+   "internal/rootcoord/meta_table.go",
+   "internal/rootcoord/root_coord.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50323",
+  "vendor": "milvus",
+  "num": 50323,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "REST v2 /entities/delete endpoint silently ignores the 'ids' parameter when both 'filter' and 'ids' are provided. Source code confirms CollectionFilterReq struct only defines 'Filter' field; any 'ids'",
+  "files": [
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/handler_v1.go",
+   "internal/proxy/task_delete.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_50324",
+  "vendor": "milvus",
+  "num": 50324,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "Source code grounding definitively proves: (1) MaxInsertSize defaults to -1 (no limit) with explicit comment '-1 means no limit', (2) validation checks byte size not entity count, (3) REST v2 handler ",
+  "files": [
+   "pkg/util/paramtable/quota_param.go",
+   "internal/proxy/task_insert.go",
+   "configs/milvus.yaml",
+   "internal/distributed/proxy/httpserver/handler_v2.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50325",
+  "vendor": "milvus",
+  "num": 50325,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.92,
+  "root": "contract_misread",
+  "rationale": "The candidate claims a param_validation defect for collections+list, but source code grounding reveals the implementation correctly matches the contract: dbName is optional (no 'binding:\"required\"' ta",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "internal/proxy/impl.go",
+   "internal/rootcoord/show_collection_task.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50351",
+  "vendor": "milvus",
+  "num": 50351,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "CONFIRMED: HTTP handler accepts invalid shardsNum values (0, -1, 65535) without validation, violating contract requirement 'shardsNum >= 1'. Source code at handler_v2.go:2000-2006 shows direct assignm",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "internal/distributed/proxy/httpserver/handler_v1.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50352_invalid_enum_silent_replace",
+  "vendor": "milvus",
+  "num": 50352,
+  "verdict": "CONFIRMED",
+  "conf": 0.98,
+  "root": null,
+  "rationale": "源码接地发现REST v2层(handler_v2.go)在处理空metricType和null consistencyLevel时,直接赋默认值(COSINE和Bounded)而绕过enum验证。契约明文规定metricType∈[L2,IP,COSINE]、consistencyLevel∈[Strong,Session,Bounded,Eventually]。实测证实空/null被静默替换而",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/proxy/task_index.go",
+   "internal/util/indexparamcheck/constraints.go",
+   "internal/util/indexparamcheck/vector_index_checker.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "milvus_50353",
+  "vendor": "milvus",
+  "num": 50353,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The candidate claims that 'limit=0' being rejected is a bug. However, source code analysis confirms this is intentional parameter validation: (1) validateLimit() in internal/proxy/util.go explicitly c",
+  "files": [
+   "internal/proxy/util.go",
+   "internal/proxy/search_util.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "pkg/util/paramtable/quota_param.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_50354",
+  "vendor": "milvus",
+  "num": 50354,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Contract-formalizer documented password range as 8-64 characters (constraint milvus_range_users_create_001), but source code implements MinPasswordLength=6 and MaxPasswordLength=72 (component_param.go",
+  "files": [
+   "pkg/util/paramtable/component_param.go",
+   "internal/proxy/util.go",
+   "internal/distributed/proxy/httpserver/constant.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_50355",
+  "vendor": "milvus",
+  "num": 50355,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "CONFIRMED: UPSERT fails on autoID=true collections with error 1804 'row 0 does not has field id' despite documentation implying autoID support. Source code reveals implementation inconsistency: INSERT",
+  "files": [
+   "internal/proxy/task_upsert.go",
+   "internal/proxy/util.go",
+   "internal/proxy/task_insert.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_51084",
+  "vendor": "milvus",
+  "num": 51084,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "原oracle断言正确:REST v2 API的collections/create端点未对consistencyLevel参数进行有效验证。源码接地发现虽然handler_v2.go:2046-2055准备了错误处理分支,但实际执行中enum查找失败未触发错误返回,而是静默使用默认值Bounded。这违反了契约约束(milvus_type_collections_create_003明文规定co",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go",
+   "client/entity/schema.go",
+   "internal/distributed/proxy/httpserver/utils_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_51085",
+  "vendor": "milvus",
+  "num": 51085,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "request_param_typo",
+  "rationale": "The defect report claimed that Milvus accepts invalid vectorFieldType 'InvalidVectorType'. However, investigation revealed: 1) vectorFieldType is NOT a valid parameter in the REST v2 API schema - it's",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/handler.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52307",
+  "vendor": "milvus",
+  "num": 52307,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Milvus v3.0.0 REST v2 API upsert endpoint accepts and stores invalid JSON (plain string) for JSON-typed field without validation.源码接地发现:internal/distributed/proxy/httpserver/utils.go第760-761行，JSON字段处理",
+  "files": [
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/distributed/proxy/httpserver/handler_v1.go",
+   "internal/distributed/proxy/httpserver/constant.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52308",
+  "vendor": "milvus",
+  "num": 52308,
+  "verdict": "CONFIRMED",
+  "conf": 0.92,
+  "root": "mundane_api_semantics",
+  "rationale": "初申将 REST v2 API 的字符串到 Int64 宽松类型转换机制误判为缺陷。经过 6 步审查:1)干净复现确认行为可重现;2)前提审计发现这是 API 设计特性而非断言缺陷;3)契约对照显示契约未规定此行为;4)源码接地发现 checkAndSetData() 中 json.Number(dataString).Int64() 的显式设计;5)反向证伪确认有效字符串可转换、无效字符串被明确",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_52309",
+  "vendor": "milvus",
+  "num": 52309,
+  "verdict": "CONFIRMED",
+  "conf": 0.92,
+  "root": null,
+  "rationale": "Source code grounding (Step 3.5) confirms REST v2 handler lacks groupSize range validation. handler_v2.go:1929 conditionally uses GroupSize > 0 but never rejects ≤0 values. Physical constraint (Step 6",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "internal/proxy/search_pipeline.go",
+   "internal/proxy/search_reduce_util.go",
+   "internal/util/queryutil/reduce_by_groups_op.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52310",
+  "vendor": "milvus",
+  "num": 52310,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "源码接地发现 decisive 证据: internal/distributed/proxy/httpserver/utils.go 显式使用 spf13/cast 库进行类型转换。第 616 行 BOOL 字段用 cast.ToBoolE(dataString) 从字符串转布尔,第 779 行 VARCHAR 字段直接接受 dataString(任意输入转字符串),第 3084 行测试注释明确说",
+  "files": [
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_52311",
+  "vendor": "milvus",
+  "num": 52311,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "DEFECT CONFIRMED: REST API POST /v2/vectordb/entities/search accepts groupByField='vector' (a vector field name) in groupParams, returning code=0 (HTTP 200). Source code analysis proves this is a vali",
+  "files": [
+   "internal/proxy/task_query.go",
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/distributed/proxy/httpserver/constant.go",
+   "internal/proxy/task_search.go",
+   "internal/proxy/task.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52312",
+  "vendor": "milvus",
+  "num": 52312,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "REST v2 API INTENTIONALLY uses json.Number for permissive type coercion (see utils.go:639-644). This is standard JSON API design practice for client flexibility, NOT a defect. The insert with string I",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/distributed/proxy/httpserver/handler.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_52313",
+  "vendor": "milvus",
+  "num": 52313,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "真缺陷确认:REST v2 /v2/vectordb/entities/upsert 接受 JSON 字段的 bare string 值(如 meta=\\\"plain_string\\\"),存储成功(HTTP 200, upsertCount=1);但 pymilvus gRPC MilvusClient.get() 读该数据时报错 \\\"Unexpected error: Expected obje",
+  "files": [
+   "internal/distributed/proxy/httpserver/utils.go",
+   "internal/storage/serde.go",
+   "internal/util/typeutil/schema.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52314",
+  "vendor": "milvus",
+  "num": 52314,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "REST v2 /entities/upsert 接受明显违反类型约束的数据并返回成功。实测:DOUBLE 字段接受字符串 'INVALID_DOUBLE'、BOOL 字段接受字符串 'not_a_bool' 和整数 123、INT16 字段接受字符串 'not_an_int'，全部返回 HTTP 200 并成功存储。源码接地发现 handler_v2.upsert() 调用 checkAndSe",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "B"
+ },
+ {
+  "did": "milvus_52315",
+  "vendor": "milvus",
+  "num": 52315,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Milvus REST v2 API的entities/insert端点接受FloatVector字段为JSON字符串格式（vector=\"[0.1,0.2,0.3,0.4]\"），而非严格要求JSON数组格式（vector=[0.1,0.2,0.3,0.4]）。源码接地显示checkAndSetData函数（utils.go:530-552）使用fieldValue.String()获取字段值后直",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/utils.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "milvus_52325",
+  "vendor": "milvus",
+  "num": 52325,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Reproduced issue: POST /v2/vectordb/entities/search with groupSize=2, strictGroupSize=true returned 15 results instead of respecting the strict group size constraint. Source code analysis (SearchGroup",
+  "files": [
+   "internal/distributed/proxy/httpserver/handler_v2.go",
+   "internal/distributed/proxy/httpserver/request_v2.go",
+   "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h",
+   "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9045",
+  "vendor": "qdrant",
+  "num": 9045,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Empty vector (dimension 0) violates collection's configured dimension constraint (size=4). Validation code exists (check_vector_against_config in lib/segment/src/common/mod.rs) and correctly detects t",
+  "files": [
+   "lib/segment/src/common/mod.rs",
+   "lib/segment/src/common/operation_error.rs",
+   "lib/segment/src/segment/entry.rs",
+   "lib/collection/src/operations/point_ops.rs",
+   "src/actix/api/update_api.rs",
+   "src/common/points.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9017",
+  "vendor": "qdrant",
+  "num": 9017,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The API accepts hnsw_ef=0 and returns successful search results (HTTP 200). Contract constraint qdrant_range_search_points_006 only states 'hnsw_ef applicable when exact=false' - it does NOT specify a",
+  "files": [
+   "lib/segment/src/types.rs",
+   "lib/collection/src/operations/verification/mod.rs",
+   "lib/collection/src/operations/verification/search.rs",
+   "lib/storage/src/content_manager/collection_verification.rs",
+   "src/actix/api/search_api.rs",
+   "tests/openapi/test_strictmode.py"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9027",
+  "vendor": "qdrant",
+  "num": 9027,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Source code ground-truth analysis confirms missing input validation: SearchRequestInternal.score_threshold field (lib/api/src/rest/schema.rs:1199) lacks #[validate(range(...))] attribute present on ot",
+  "files": [
+   "lib/api/src/rest/schema.rs",
+   "lib/segment/src/segment/read_view/formula_rescore.rs",
+   "tests/openapi/test_score_threshold.py"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9039",
+  "vendor": "qdrant",
+  "num": 9039,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "CONFIRMED: Qdrant PUT /collections/{c}/points exhibits validation inconsistency between sync(wait=true) and async(wait=false) modes. When inserting 3D vector into 4D collection: sync correctly returns",
+  "files": [
+   "lib/segment/src/common/operation_error.rs (line 22-26: WrongVectorDimension error definition)",
+   "src/common/update.rs (line 36-44: UpdateParams struct with wait field)",
+   "src/common/update.rs (line 1228-1229: wait parameter handling)"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9149",
+  "vendor": "qdrant",
+  "num": 9149,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "contract_misread",
+  "rationale": "双盲独立审查结论：\n\n1. **干净复现（Step 1）**：API 实际拒绝了 shard_number=0 的请求，返回 HTTP 422 验证错误，消息明确指出'shard_number: value 0 invalid, must be 1 or larger'。\n\n2. **前提审计（Step 2）**：无隐含前提被违反 —— 请求语义明确，API 响应明确拒绝非法值。\n\n3. **契约",
+  "files": [
+   "lib/storage/src/content_manager/toc/create_collection.rs",
+   "lib/collection/src/operations/cluster_ops.rs",
+   "lib/collection/src/operations/config_diff.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9255",
+  "vendor": "qdrant",
+  "num": 9255,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "original_oracle_logic_error",
+  "rationale": "复现成功（Step 1）显示 API 完全正确：filter color=red + with_payload=true 精确返回 4 个 color='red' 的点（ids: 2,4,8,10）。独立验证（Step 4）通过 scroll 和 direct retrieval 确认所有返回点的载荷确实都是 red。源码接地（Step 3.5）证实 Match::Value 对字符串载荷执行精确",
+  "files": [
+   "lib/segment/src/payload_storage/condition_checker.rs",
+   "lib/segment/src/index/struct_payload_index/read_view/condition_converter.rs",
+   "lib/edge/python/src/types/filter/match.rs",
+   "lib/collection/src/operations/conversions.rs",
+   "lib/api/src/rest/conversions.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9371",
+  "vendor": "qdrant",
+  "num": 9371,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The candidate behavior is CORRECT API design, not a bug. The POST /collections/{name}/points/batch endpoint explicitly validates vector dimensions before processing (see validate_vector_dimensions() i",
+  "files": [
+   "src/common/validate_vectors.rs",
+   "src/common/update.rs",
+   "src/actix/api/update_api.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9373",
+  "vendor": "qdrant",
+  "num": 9373,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "候选 qdrant_9373 断言 count API 的 exact:false 路径会返回不同于 exact:true 的错误计数（典型的基数估算 bug 模式 qdrant-cardinality-oracle-count-exact-false）。但实测复现显示：在本测试环境（50 点集合，25 点 cat_a / 25 点 cat_b，keyword 索引构建完成）中，exact:fal",
+  "files": [
+   "lib/shard/src/count.rs",
+   "src/actix/api/count_api.rs",
+   "src/common/query.rs",
+   "lib/collection/src/operations/types.rs",
+   "lib/collection/src/shards/local_shard/shard_ops.rs",
+   "lib/segment/src/index/query_estimator.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9416",
+  "vendor": "qdrant",
+  "num": 9416,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Raw reproduction confirms API accepts both vectors={} (empty object) and missing vectors field, returning HTTP 200 with result=true. Source code analysis reveals CreateCollection uses #[serde(default)",
+  "files": [
+   "lib/collection/src/operations/types.rs",
+   "lib/storage/src/content_manager/collection_meta_ops.rs",
+   "lib/storage/src/content_manager/toc/create_collection.rs",
+   "src/actix/api/collections_api.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9417",
+  "vendor": "qdrant",
+  "num": 9417,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The reported behavior is BY-DESIGN: Qdrant supports creating collections without vectors config (payload-only collections). Contract shows 'vectors' parameter is optional (required=false). Source code",
+  "files": [
+   "lib/segment/src/common/mod.rs",
+   "lib/segment/src/common/operation_error.rs",
+   "lib/collection/src/operations/types.rs",
+   "tests/openapi/test_optional_vectors.py",
+   "tests/openapi/test_query_full.py"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9418",
+  "vendor": "qdrant",
+  "num": 9418,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "源码接地证实Filter.should明确定义为Option<Vec<Condition>>,null(None)是Rust类型系统对该字段的合法值。API契约与实现一致:filter字段整体可选(Option<Filter>),should/must/must_not子字段也可选(Option<Vec<Condition>>)。null应理解为'不应用该条件',等同于省略filter。证伪实验显",
+  "files": [
+   "lib/segment/src/types.rs",
+   "lib/api/src/rest/schema.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9419",
+  "vendor": "qdrant",
+  "num": 9419,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Step 1 confirmed: API returns HTTP 200 to malformed filter {\"must_not\": {...}} (single object) instead of rejecting with 4xx. Source grounding (Step 3.5) revealed root cause: Filter struct uses serde(",
+  "files": [
+   "lib/segment/src/types.rs",
+   "lib/api/src/rest/schema.rs",
+   "lib/api/src/grpc/qdrant.rs",
+   "src/common/inference/query_requests_rest.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9420",
+  "vendor": "qdrant",
+  "num": 9420,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The candidate claims query:null should be rejected with 4xx error. However, source code (lib/api/src/rest/schema.rs:573-575) explicitly documents: 'Query to perform. If missing without prefetches, ret",
+  "files": [
+   "lib/api/src/rest/schema.rs",
+   "src/common/inference/query_requests_rest.rs",
+   "src/actix/api/query_api.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_9421",
+  "vendor": "qdrant",
+  "num": 9421,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.98,
+  "root": "mundane_api_semantics",
+  "rationale": "The /cluster/recover endpoint is explicitly designed for distributed (Raft consensus) mode only. Source code confirms (main.rs:559-571) that consensus_proposal_sender is only initialized when is_distr",
+  "files": [
+   "src/actix/api/cluster_api.rs",
+   "lib/storage/src/content_manager/toc/mod.rs",
+   "lib/storage/src/dispatcher.rs",
+   "src/main.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9520",
+  "vendor": "qdrant",
+  "num": 9520,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "VALIDATION GAP: Contract explicitly requires shard_number >= 1 (confidence=1.0). Source code at lib/storage/src/content_manager/toc/create_collection.rs:135-136 only validates shard_number != 0 via No",
+  "files": [
+   "lib/storage/src/content_manager/toc/create_collection.rs",
+   "lib/api/src/grpc/validate.rs",
+   "lib/api/src/rest/validate.rs",
+   "src/common/validate_vectors.rs",
+   "lib/collection/src/operations/config_diff.rs",
+   "lib/segment/src/data_types/collection_defaults.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9522",
+  "vendor": "qdrant",
+  "num": 9522,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Bug CONFIRMED via source code analysis. The validation code EXISTS at fetch_vectors.rs:264 but is CONDITIONAL on reference_vectors_ids being non-empty. Raw vector queries (like [0.3, 0.3, 0.3, 0.3]) h",
+  "files": [
+   "lib/collection/src/common/fetch_vectors.rs",
+   "lib/collection/src/operations/universal_query/collection_query.rs",
+   "lib/collection/src/collection/query.rs",
+   "lib/api/src/rest/schema.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "qdrant_9523",
+  "vendor": "qdrant",
+  "num": 9523,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "原候选声称 HNSW 分页存在重复点。经 dev-reviewer 源码接地与认知模型核对：\n\n1. 源码分析：lib/collection/src/collection/search.rs 显示 offset/limit 通过 iterator.skip/take 实现，未做跨页去重——这是 HNSW 近似搜索的预期行为。\n\n2. 开发者认知：developer_cognition.json 明",
+  "files": [
+   "lib/collection/src/collection/search.rs",
+   "lib/segment/src/index/hnsw_index/hnsw/search.rs",
+   "lib/segment/src/index/vector_index_search_common.rs",
+   "lib/collection/src/collection/query.rs"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "qdrant_10120",
+  "vendor": "qdrant",
+  "num": 10120,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Source code grounding confirms that the keyword payload index's cardinality estimator (estimate_cardinality_impl in lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs) does NOT impl",
+  "files": [
+   "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+   "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+   "lib/segment/src/segment/read_view/payload.rs",
+   "lib/segment/src/index/query_estimator.rs",
+   "lib/segment/src/types.rs",
+   "lib/collection/src/shards/local_shard/shard_ops.rs",
+   "lib/segment/src/index/field_index/map_index/read_ops.rs"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11399",
+  "vendor": "weaviate",
+  "num": 11399,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "API POST /schema accepts dynamicEfMin=500, dynamicEfMax=10 (inverted range) with HTTP 200, persisting invalid configuration. Source code (config.go:183-193) parses both parameters without validation, ",
+  "files": [
+   "entities/vectorindex/hnsw/config.go (lines 183-193: parameter parsing, lines 260-323: validate() function)",
+   "adapters/repos/db/vector/hnsw/search.go (lines 44-76: searchTimeEF, autoEfFromK implementation)",
+   "adapters/repos/db/vector/hnsw/dynamic_ef_test.go (lines 42-110: test cases showing correct usage DynamicEFMin=100, DynamicEFMax=500)"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11400",
+  "vendor": "weaviate",
+  "num": 11400,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "Confirmed defect: POST /schema accepts flatSearchCutoff=-100 (negative value) with HTTP 200. Source code grounding (config.go lines 201-205, 260-290) shows flatSearchCutoff is parsed from user input b",
+  "files": [
+   "entities/vectorindex/hnsw/config.go",
+   "adapters/repos/db/vector/hnsw/search.go",
+   "adapters/repos/db/vector/hnsw/index.go",
+   "adapters/repos/db/vector/hnsw/config_update.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11401",
+  "vendor": "weaviate",
+  "num": 11401,
+  "verdict": "CONFIRMED",
+  "conf": 0.98,
+  "root": null,
+  "rationale": "Step 1 复现成功: POST /schema 携带 replicationConfig.factor=-1 返回 HTTP 200,但响应中 factor 被静默改为 1。Step 3 契约对照: contract 明确规定 'replicationConfig.factor >= 1'。Step 3.5 源码接地: usecases/schema/class.go line 513-515",
+  "files": [
+   "usecases/schema/class.go",
+   "entities/replication/config.go",
+   "usecases/schema/class_test.go",
+   "test/acceptance/usage_limits/all_limits_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11436",
+  "vendor": "weaviate",
+  "num": 11436,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "原 oracle 声称 ef=-1 是参数验证缺陷，应被拒绝。但源码接地发现：(1) DefaultEF = -1 是定义的常量，注释明确说明 'let Weaviate pick'；(2) validate() 函数中没有对 ef 参数做任何范围校验；(3) 这是有意设计的默认值，用于启用动态 ef 选择机制。测试复现确认 API 接受 ef=-1 并返回 HTTP 200，且 ef=0/10/",
+  "files": [
+   "entities/vectorindex/hnsw/config.go",
+   "usecases/schema/parser.go",
+   "entities/vectorindex/hnsw/config_test.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "weaviate_11729",
+  "vendor": "weaviate",
+  "num": 11729,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "源码接地确认ParseConfig.validate()函数缺少对DesiredCount的范围校验(config.go 53-70行)。当desiredCount=-1时,ParseConfig接受负值并通过验证,但后续initPhysical的for循环(440行)因i < -1不执行而创建空Physical map,导致collection实际未创建(404验证)。当desiredCount",
+  "files": [
+   "usecases/sharding/config/config.go",
+   "usecases/sharding/state.go",
+   "cluster/schema/reader.go",
+   "cluster/schema/reader_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11730",
+  "vendor": "weaviate",
+  "num": 11730,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "BUG CONFIRMED: POST /v1/schema accepts negative values for shardingConfig.desiredCount (HTTP 200 for -5) while rejecting zero (HTTP 422). Source code analysis reveals validation gap in usecases/shardi",
+  "files": [
+   "usecases/sharding/config/config.go",
+   "usecases/schema/parser.go",
+   "usecases/sharding/config/config_test.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11732",
+  "vendor": "weaviate",
+  "num": 11732,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "源码接地证实真缺陷:OptionalStringFromMap(entities/vectorindex/common/config.go:95-110) 在处理 null 值时,类型断言 value.(string) 失败(line 103-105),但函数直接 return nil 而不报错。导致 null 被静默忽略,随后 SetDefaults() 将 Distance 设为 Defaul",
+  "files": [
+   "entities/vectorindex/hnsw/config.go",
+   "entities/vectorindex/common/config.go",
+   "usecases/schema/parser.go",
+   "entities/models/vector_config.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11741",
+  "vendor": "weaviate",
+  "num": 11741,
+  "verdict": "CONFIRMED",
+  "conf": 0.95,
+  "root": null,
+  "rationale": "通过源码接地和独立复现确认: POST /schema/{className}/tenants 接受 activityStatus:空字符串(H 张 200),但响应体省略该字段;通过 GET 独立验证发现租户实际以 HOT 状态创建成功。源码显示模型层 swag.IsZero 检查允许空字符串跳过枚举验证,业务层 allowEmpty=true 显式允许空字符串。但响应序列化层未处理空值情况,导",
+  "files": [
+   "entities/models/tenant.go",
+   "usecases/schema/tenant.go",
+   "adapters/repos/db/multitenancy/validator.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ },
+ {
+  "did": "weaviate_11981",
+  "vendor": "weaviate",
+  "num": 11981,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "The core claim of issue 11981 ('singular POST rejects empty vectors while batch accepts') is FALSE. Clean reproduction shows BOTH endpoints accept empty vectors with SUCCESS status. Contract analysis ",
+  "files": [
+   "usecases/objects/validation/vector_validation.go",
+   "usecases/objects/add.go",
+   "usecases/objects/batch_add.go",
+   "adapters/handlers/rest/handlers_objects.go",
+   "adapters/handlers/rest/handlers_batch_objects.go"
+  ],
+  "excerpt": true,
+  "gt": "FALSE_POSITIVE",
+  "group": "C"
+ },
+ {
+  "did": "weaviate_12041",
+  "vendor": "weaviate",
+  "num": 12041,
+  "verdict": "FALSE_POSITIVE",
+  "conf": 0.95,
+  "root": "mundane_api_semantics",
+  "rationale": "原候选声称 DELETE /batch/objects 在 match.where=null 或 match.class='' 时返回 500 是缺陷。源码接地 (usecases/objects/batch_delete.go:124-190) 揭示这是 **validateBatchDelete 函数的显式输入验证** (第 127-137 行):\\n1. match == nil → 'em",
+  "files": [
+   "usecases/objects/batch_delete.go",
+   "entities/models/batch_delete.go"
+  ],
+  "excerpt": true,
+  "gt": "CONFIRMED",
+  "group": "A"
+ }
+]

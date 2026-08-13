@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9045",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points?wait=false with empty vector: {\"points\": [{\"id\": 2, \"vector\": []}]}",
+          "observed": "HTTP 200 success with operation_id=1, status=acknowledged (empty vector accepted)",
+          "evidence_cmd": "curl -s -X PUT \"http://localhost:6333/collections/test/points\" -H \"Content-Type: application/json\" -d '{\"points\": [{\"id\": 11, \"vector\": []}]}' | jq ."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Collection expects vector dimension = 4 (config.vectors.size = 4)",
+            "Empty vector [] has dimension 0, which violates the dimension constraint",
+            "API should reject invalid dimension with HTTP 400, not accept with HTTP 200"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json endpoint PUT /collections/{collection_name}/points (vector validation required)",
+            "Vector dimension constraint: size must match collection config (4 dim)"
+          ],
+          "constraint_id": "qdrant_vector_dimension_validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "Vector dimension error",
+            "check_named_vectors",
+            "check_vector_against_config",
+            "upsert_point"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/segment/entry.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/points.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs:174-205\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n        // ... other cases\n    }\n}\n\n// lib/segment/src/segment/entry.rs:86-93\nfn upsert_point(\n    &mut self,\n    op_num: SeqNumberType,\n    point_id: PointIdType,\n    mut vectors: NamedVectors,\n) -> OperationResult<bool> {\n    debug_assert!(self.is_appendable());\n    check_named_vectors(&vectors, &self.segment_config)?;  // Validation called here\n    // ... rest of function\n}",
+          "call_chain_traced": "PUT request → update_api.rs:upsert_points → do_upsert_points → toc.update(wait) → segment.upsert_point → check_named_vectors → check_vector_against_config",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_conditionally_executed",
+          "note": "Validation function exists and correctly checks dimension (line 182-186 in mod.rs), BUT it's only executed when wait=true causes synchronous processing. When wait=false, operation is queued asynchronously (acknowledged) and validation happens later during background processing, allowing invalid vectors to be temporarily accepted."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare wait=true vs wait=false behavior with same invalid payload",
+          "observed": "wait=true: HTTP 400 'Wrong input: Vector dimension error: expected dim: 4, got 0' | wait=false: HTTP 200 'acknowledged'",
+          "evidence_cmd": "curl -s -X PUT \"http://localhost:6333/collections/test/points?wait=true\" -H \"Content-Type: application/json\" -d '{\"points\": [{\"id\": 10, \"vector\": []}]}' && curl -s -X PUT \"http://localhost:6333/collections/test/points\" -H \"Content-Type: application/json\" -d '{\"points\": [{\"id\": 11, \"vector\": []}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker OK)",
+            "Race condition (reproducible 100%)",
+            "Cache/optimizer delay",
+            "Request parameter typo",
+            "API semantic misunderstanding"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-resource-management-resource-limit",
+        "developer_quote": "Parameter validation on filter/condition APIs; Resource management issues where Resource Limit validation is missing",
+        "pattern_id": "resource_limit_validation_gap",
+        "note": "Matches bug shape qdrant-resource-management-resource-limit: validation exists but is bypassed by asynchronous execution path (wait=false)"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Vector dimension must match collection config (size: 4 per config.vectors.size)",
+          "source_implements_check": true,
+          "api_observed_value": "wait=true: rejects with 400 | wait=false: accepts with 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Mathematical: vector dimension ≥ 1 for any valid vector; configured dimension = 4",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (C cannot override confirmed violations)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "async_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Empty vector (dimension 0) violates collection's configured dimension constraint (size=4). Validation code exists (check_vector_against_config in lib/segment/src/common/mod.rs) and correctly detects the violation (proof: wait=true returns 400), but the validation is only executed synchronously when wait=true. When wait=false (default), the operation returns immediate 'acknowledged' status without performing validation, allowing invalid vectors to bypass dimension checks. This is a Type1_IllegalSuccess: API accepts invalid resource configuration (vector dimension) that violates explicit constraints. Source接地 confirms validation exists at segment level (entry.rs:93 calls check_named_vectors) but execution path depends on wait parameter timing."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "async_validation_bypass": 1
+    }
+  },
+  "metadata": {
+    "#9255_self_check": "PASSED",
+    "regression_check": "Correctly identifies the wait=true vs wait=false validation difference without being misled by oracle assertions",
+    "source_grounding_method": "local_clone_grep",
+    "verification_outcome": "validation_present_but_conditionally_executed"
+  }
+}

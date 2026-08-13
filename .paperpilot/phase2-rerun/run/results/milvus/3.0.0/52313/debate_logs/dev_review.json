@@ -1,0 +1,95 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52313",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "REST POST /v2/vectordb/entities/upsert with JSON field containing bare string (meta=\\\"plain_string\\\") followed by pymilvus MilvusClient.get() read attempt",
+          "observed": "REST upsert succeeded (HTTP 200, upsertCount=1, upsertIds=[999]), but pymilvus gRPC get failed with MilvusException: (code=1, message=Unexpected error, message=<Expected object or value>). REST API accepted bare string \\\"bare_string_test\\\" as valid JSON field value, but gRPC client cannot read it due to JSON parsing failure.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -d '{\"collectionName\": \"test_json\", \"data\": [{\"id\": 999, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"bare_string_test\"}]}' && python -c 'from pymilvus import MilvusClient; client = MilvusClient(\"http://localhost:19530\"); client.get(collection_name=\"test_json\", ids=[999], output_fields=[\"meta\"])'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "REST /v2/vectordb endpoints should accept the same data formats as gRPC APIs",
+            "JSON fields should contain valid JSON objects/arrays, not bare strings",
+            "Data written via REST should be readable via gRPC clients (cross-protocol compatibility)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 - dataType == JSON (JSON scalar data type)",
+            "constraint_id: milvus_behavioral_insert_then_get_001 - Insert entities should be retrievable via Get",
+            "constraint_id: milvus_contract_data_visibility_001 - Insert-then-Get visibility across protocols"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "DataType_JSON",
+            "checkAndSetData",
+            "case schemapb.DataType_JSON"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/storage/serde.go",
+            "internal/util/typeutil/schema.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 760-761\n\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\treallyData[fieldName] = []byte(dataString)",
+          "call_chain_traced": "REST /v2/vectordb/entities/upsert → checkAndSetData() → field.DataType_JSON case → []byte(dataString) → no JSON validation → stores invalid bare string → gRPC read fails with JSON parse error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 API 的 checkAndSetData 函数在处理 DataType_JSON 字段时(line 760-761),直接将 dataString(可能是 bare string 如 \\\"plain_string\\\")转换为 []byte 存储不做任何 JSON 格式验证。而其他数据类型(如 Array, Bool, Int64 等)都有相应的 json.Unmarshal 校验。这导致 REST 接受非法 JSON 值但 gRPC 客户端读取时 JSON parser 抛出 \\\"Expected object or value\\\" 错误。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Valid JSON object test: upsert with meta={\\\"valid\\\": \\\"json_object\\\"} then pymilvus get",
+          "observed": "Valid JSON object upsert succeeded AND pymilvus read succeeded (returned data correctly). This confirms the issue is specifically with bare strings being accepted when they shouldn't be, not a general gRPC read problem."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on live Milvus v3.0.0, DB operational)",
+            "Concurrency issue (single-threaded sequential test)",
+            "Request parameter error (requests properly formatted)",
+            "Data not committed (wait and verification performed)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; Data type serialization not validated",
+        "note": "Confirmed REST v2 blindspot: REST/gRPC data type serialization inconsistency where REST fails to validate JSON field format but gRPC expects valid JSON objects/arrays."
+      },
+      "root_cause_if_confirmed": "rest_grpc_json_validation_mismatch",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "真缺陷确认:REST v2 /v2/vectordb/entities/upsert 接受 JSON 字段的 bare string 值(如 meta=\\\"plain_string\\\"),存储成功(HTTP 200, upsertCount=1);但 pymilvus gRPC MilvusClient.get() 读该数据时报错 \\\"Unexpected error: Expected object or value\\\"。源码显示 checkAndSetData 函数对 DataType_JSON 字段直接 []byte(dataString) 不做 JSON 格式校验,而其他类型都有 json.Unmarshal 验证。这造成 REST 写入非法 JSON 但 gRPC 无法读取的跨协议不一致。符合 blindspot_indicators 中 \\\"REST v2 API data type serialization\\\"模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_grpc_json_validation_mismatch": 1
+    }
+  },
+  "metadata": {
+    "self_check": "PASSED",
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52313",
+    "target": "milvus",
+    "version": "v3.0.0",
+    "source_clone_verified": true,
+    "timestamp": "2026-08-14T04:53:00Z"
+  }
+}

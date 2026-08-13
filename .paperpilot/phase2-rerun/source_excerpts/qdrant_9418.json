@@ -1,0 +1,29 @@
+{
+ "defect_id": "qdrant_9418",
+ "vendor": "qdrant",
+ "version": "1.18.2",
+ "tag": "v1.18.2",
+ "terms": [
+  "should",
+  "filter",
+  "null",
+  "condition",
+  "ignored"
+ ],
+ "status": "found",
+ "n_hits": 1236,
+ "excerpts": [
+  {
+   "file": "lib/sparse/src/index/search_context.rs",
+   "line": 385,
+   "term_matched": "should",
+   "context": " 370|             match next_min_id_in_others {\n 371|                 Some(next_min_id) => {\n 372|                     match next_min_id.cmp(&element.record_id) {\n 373|                         Ordering::Equal => {\n 374|                             // if the next min id in the other posting lists is the same as the current one,\n 375|                             // we can't prune the current element as it needs to be scored properly across posting lists\n 376|                             return false;\n 377|                         }\n 378|                         Ordering::Less => {\n 379|                             // we can't prune as there the other posting lists contains smaller smaller ids that need to scored first\n 380|                             return false;\n 381|                         }\n 382|                         Ordering::Greater => {\n 383|                             // next_min_id is > element.record_id there is a chance to prune up to `next_min_id`\n 384|                             // check against the max possible score using the `max_next_weight`\n 385|                             // we can under prune as we should actually check the best score up to `next_min_id` - 1 only\n 386|                             // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1\n 387|                             let max_weight_from_list = element.weight.max(element.max_next_weight);\n 388|                             let max_score_contribution =\n 389|                                 max_weight_from_list * longest_posting_iterator.query_weight;\n 390|                             if max_score_contribution <= min_score {\n 391|                                 // prune to next_min_id\n 392|                                 let longest_posting_iterator =\n 393|                                     &mut self.postings_iterators[0].posting_list_iterator;\n 394|                                 let position_before_pruning =\n 395|                                     longest_posting_iterator.current_index();\n 396|                                 longest_posting_iterator.skip_to(next_min_id);\n 397|                                 let position_after_pruning =\n 398|                                     longest_posting_iterator.current_index();\n 399|                                 // check if pruning took place\n 400|                                 return position_before_pruning != position_after_pruning;"
+  },
+  {
+   "file": "src/common/auth/jwt_parser.rs",
+   "line": 125,
+   "term_matched": "should",
+   "context": " 110|                 access: CollectionAccessMode::ReadWrite,\n 111|                 #[expect(deprecated)]\n 112|                 payload: Some(json!({\n 113|                     \"field1\": \"value\",\n 114|                     \"field2\": 42,\n 115|                     \"field3\": true,\n 116|                 })),\n 117|             }])),\n 118|             value_exists: None,\n 119|             subject: None,\n 120|         };\n 121|         let token = create_token(&claims);\n 122| \n 123|         let secret = \"secret\";\n 124|         let parser = JwtParser::new(secret);\n 125|         assert!(parser.decode(&token).unwrap().is_err()); // Validation should fail due to PayloadConstraint\n 126|     }\n 127| \n 128|     #[test]\n 129|     fn test_exp_validation() {\n 130|         let exp = std::time::SystemTime::now()\n 131|             .duration_since(std::time::UNIX_EPOCH)\n 132|             .expect(\"Time went backwards\")\n 133|             .as_secs()\n 134|             - 31; // 31 seconds in the past, bigger than the 30 seconds leeway\n 135| \n 136|         let mut claims = Claims {\n 137|             sub: None,\n 138|             exp: Some(exp),\n 139|             access: Access::Global(GlobalAccessMode::Read),\n 140|             value_exists: None,"
+  }
+ ]
+}

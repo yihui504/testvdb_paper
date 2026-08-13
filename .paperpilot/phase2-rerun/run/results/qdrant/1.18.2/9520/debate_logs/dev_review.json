@@ -1,0 +1,134 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9520",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_max_review {vectors: {size: 4, distance: Cosine}, shard_number: 2147483647}",
+          "observed": "Container crashed (exited: true), no HTTP response. Independent probe with timeout 10s resulted in EXIT_CODE 124 and container exit.",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_shard_max_review -d '{\"vectors\":{\"size\":4,\"distance\":\"Cosine\"},\"shard_number\":2147483647}'; docker inspect testvdb-qdrant --format '{{.State.Status}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API validates shard_number >= 1 per contract qdrant_range_create_collection_001"
+          ],
+          "evidence": "shard_number=2147483647 accepted without validation, crashes container. replication_factor=0 (same test) returns proper 4xx validation error, showing inconsistent validation coverage."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            {
+              "constraint_id": "qdrant_range_create_collection_001",
+              "assertion": "shard_number >= 1",
+              "confidence": 1.0,
+              "evidence_tier": "explicit",
+              "source_verified": true
+            },
+            {
+              "constraint_id": "qdrant_range_create_collection_002",
+              "assertion": "replication_factor >= 1",
+              "confidence": 1.0,
+              "evidence_tier": "explicit",
+              "source_verified": true
+            }
+          ],
+          "analysis": "Both constraints explicitly documented with confidence=1.0. replication_factor validation IS implemented (returns 4xx), but shard_number validation is ABSENT (crashes instead)."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "shard_number",
+            "validate",
+            "NonZeroU32",
+            "replication_factor",
+            "bad_input"
+          ],
+          "files_examined": [
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "lib/api/src/grpc/validate.rs",
+            "lib/api/src/rest/validate.rs",
+            "src/common/validate_vectors.rs",
+            "lib/collection/src/operations/config_diff.rs",
+            "lib/segment/src/data_types/collection_defaults.rs"
+          ],
+          "source_excerpt": "File: lib/storage/src/content_manager/toc/create_collection.rs, Lines 135-141:\n\nlet collection_params = CollectionParams {\n    vectors,\n    sparse_vectors,\n    shard_number: NonZeroU32::new(shard_number)\n        .ok_or_else(|| StorageError::bad_input(\"`shard_number` cannot be 0\"))?,\n    sharding_method,\n    on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),\n    replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {\n        StorageError::bad_input(\"`replication_factor` cannot be 0\".to_string())\n    })?,\n    write_consistency_factor: NonZeroU32::new(write_consistency_factor).ok_or_else(\n        || StorageError::bad_input(\"`write_consistency_factor` cannot be 0\".to_string()),\n    )?,\n",
+          "call_chain_traced": "CreateCollection API → storage/src/content_manager/toc/create_collection.rs::create_collection() → NonZeroU32::new(shard_number) only validates != 0, no upper bound check. Same code path validates replication_factor with identical pattern, but that one returns 4xx properly.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "root_cause": "NonZeroU32::new() only checks value != 0, missing upper bound validation (e.g., shard_number <= some_reasonable_max). INT32_MAX passes NonZeroU32 check but causes downstream overflow/resource exhaustion leading to container crash."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent probe: timeout 10s curl PUT with shard_number=2147483647",
+          "observed": "Request timed out (EXIT_CODE 124), container status changed to 'exited: true'. No graceful 4xx/5xx response. Crash is reproducible and fatal.",
+          "control_probe": "Same test with replication_factor=0 returned proper 4xx: '{\"status\":{\"error\":\"Validation error in JSON body: [replication_factor: value 0 invalid, must be 1 or larger]\"}}'. Proves inconsistent validation coverage."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: reproducible in clean Docker container",
+            "Concurrency race: single sequential request",
+            "Parameter typo: 2147483647 is intentional INT32_MAX boundary test",
+            "API semantics misunderstanding: contract explicitly states shard_number >= 1"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shard_number >= 1 (constraint_id: qdrant_range_create_collection_001, confidence: 1.0, evidence_tier: explicit)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "rationale": "Contract has explicit assertion with confidence=1.0. API accepts shard_number=2147483647 and crashes (HTTP no response, container exits). This violates the assertion. Agent does NOT suspect contract wrong — this is a clear validation gap."
+        },
+        "physical": {
+          "objective_constraint": "NonZeroU32 type enforces shard_number != 0, but no upper bound. Physical resource limit implied: creating INT32_MAX shards exhausts memory/file descriptors.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "rationale": "Objective constraint exists: shard_number must be <= reasonable resource limit (physical memory, file descriptors, shard distribution algorithm complexity). API accepts 2147483647 which violates this physical constraint, causing OOM or resource exhaustion crash."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "rationale": "API does NOT handle invalid value gracefully. It crashes the entire container (exited: true). No by-design comments or fallback logic in source. replication_factor validation shows 4xx IS possible, so this is NOT by-design graceful degradation."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED. All three perspectives agree: this is a true bug.",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does NOT hit any by_design_patterns or rejection_patterns from developer_cognition.json. Not classified as 'accepted limitation'. Hits blindspot indicator 'Parameter validation on filter/condition APIs' — shard_number validation is missing, similar pattern to other parameter validation gaps."
+      },
+      "root_cause_if_tp": "parameter_validation",
+      "severity_after_review": "Critical",
+      "confidence": 0.95,
+      "rationale": "VALIDATION GAP: Contract explicitly requires shard_number >= 1 (confidence=1.0). Source code at lib/storage/src/content_manager/toc/create_collection.rs:135-136 only validates shard_number != 0 via NonZeroU32::new(), missing upper bound check. API accepts INT32_MAX and crashes container (exited: true). replication_factor=0 (same test) returns proper 4xx validation error, proving validation is inconsistently implemented. Independent probe reproduces fatal crash. No mundane explanation or by-design pattern applies. This is a true critical severity defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  },
+  "session_metadata": {
+    "reviewer_model": "claude-haiku-4-5",
+    "review_timestamp": "2026-08-14T12:00:00Z",
+    "source_clone_used": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+    "files_examined_count": 6,
+    "grep_queries_count": 6
+  }
+}

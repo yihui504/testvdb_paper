@@ -1,0 +1,29 @@
+{
+ "defect_id": "qdrant_9045",
+ "vendor": "qdrant",
+ "version": "1.12.1",
+ "tag": "v1.12.1",
+ "terms": [
+  "count",
+  "Empty",
+  "vector",
+  "wait",
+  "false"
+ ],
+ "status": "found",
+ "n_hits": 2616,
+ "excerpts": [
+  {
+   "file": "lib/segment/benches/sparse_index_search.rs",
+   "line": 119,
+   "term_matched": "count",
+   "context": " 104|     let sparse_index_config =\n 105|         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);\n 106|     let pb = progress(\"Indexing (2/2)\", vectors_len);\n 107|     let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =\n 108|         SparseVectorIndex::open(SparseVectorIndexOpenArgs {\n 109|             config: sparse_index_config,\n 110|             id_tracker: sparse_vector_index.id_tracker().clone(),\n 111|             vector_storage: sparse_vector_index.vector_storage().clone(),\n 112|             payload_index: sparse_vector_index.payload_index().clone(),\n 113|             path: mmap_index_dir.path(),\n 114|             stopped: &stopped,\n 115|             tick_progress: || pb.inc(1),\n 116|         })\n 117|         .unwrap();\n 118|     pb.finish_and_clear();\n 119|     assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), vectors_len);\n 120| \n 121|     // intent: bench `search` without filter on mmap inverted index\n 122|     group.bench_function(\"mmap-inverted-index-search\", |b| {\n 123|         b.iter_batched(\n 124|             || query_vector_it.next().unwrap().clone().into(),\n 125|             |vec| {\n 126|                 let results = sparse_vector_index_mmap\n 127|                     .search(&[&vec], None, TOP, None, &Default::default())\n 128|                     .unwrap();\n 129| \n 130|                 assert_eq!(results[0].len(), TOP);\n 131|             },\n 132|             BatchSize::SmallInput,\n 133|         )\n 134|     });"
+  },
+  {
+   "file": "lib/sparse/benches/search.rs",
+   "line": 222,
+   "term_matched": "count",
+   "context": " 207| \n 208|     let mut it = hottest_query_vectors.iter().cycle();\n 209|     group.bench_function(\"hottest\", |b| {\n 210|         b.iter_batched(\n 211|             || it.next().unwrap().clone(),\n 212|             |vec| SearchContext::new(vec, TOP, index, pool.get(), &stopped).search(&|_| true),\n 213|             criterion::BatchSize::SmallInput,\n 214|         )\n 215|     });\n 216| }\n 217| \n 218| fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> io::Result<InvertedIndexRam> {\n 219|     let csr = Csr::open(path.as_ref())?;\n 220|     let mut builder = InvertedIndexBuilder::new();\n 221|     assert!(ratio > 0.0 && ratio <= 1.0);\n 222|     let count = (csr.len() as f32 * ratio) as usize;\n 223|     let bar =\n 224|         ProgressBar::with_draw_target(Some(count as u64), ProgressDrawTarget::stderr_with_hz(12));\n 225|     for (row, vec) in bar.wrap_iter(csr.iter().take(count).enumerate()) {\n 226|         builder.add(\n 227|             row as u32,\n 228|             vec.map(|v| v.into_remapped())\n 229|                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,\n 230|         );\n 231|     }\n 232|     bar.finish_and_clear();\n 233|     Ok(builder.build())\n 234| }\n 235| \n 236| #[cfg(not(target_os = \"windows\"))]\n 237| criterion_group! {"
+  }
+ ]
+}

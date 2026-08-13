@@ -1,0 +1,121 @@
+{
+  "judge": "dev-reviewer",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11399",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.dynamicEfMin=500, dynamicEfMax=10 (inverted range)",
+          "observed": "HTTP 200 OK - Collection created successfully. GET /schema/TestCleanRepro returned dynamicEfMin=500, dynamicEfMax=10, confirming the inverted values were accepted and persisted without validation error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestCleanRepro\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"dynamicEfMin\": 500, \"dynamicEfMax\": 10, \"dynamicEfFactor\": 8}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}' && curl -s http://localhost:18080/v1/schema/TestCleanRepro | grep -o '\"dynamicEf(Min|Max)\":[^,]*'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_validated": [
+            "API should validate that dynamicEfMin ≤ dynamicEfMax (semantic constraint: 'Min' should be less than or equal to 'Max')",
+            "POST /schema should reject requests with inverted min/max ranges",
+            "Validation should occur at schema creation time, not deferred to runtime search"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for dynamicEfMin/dynamicEfMax ordering",
+            "constraint_id: weaviate_range_schema_replication_001 (example of range constraint pattern, but doesn't cover dynamicEf)",
+            "endpoint: /schema POST (parameters.vectorIndexConfig type: object, no range validation documented)"
+          ],
+          "note": "Contract is silent on dynamicEf parameter ordering - this is a physical/semantic constraint gap, not a documented API violation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "dynamicEfMin",
+            "dynamicEfMax",
+            "validate",
+            "DynamicEFMin",
+            "DynamicEFMax",
+            "ParseAndValidateConfig",
+            "autoEfFromK"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go (lines 183-193: parameter parsing, lines 260-323: validate() function)",
+            "adapters/repos/db/vector/hnsw/search.go (lines 44-76: searchTimeEF, autoEfFromK implementation)",
+            "adapters/repos/db/vector/hnsw/dynamic_ef_test.go (lines 42-110: test cases showing correct usage DynamicEFMin=100, DynamicEFMax=500)"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 183-193\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMax\", func(v int) {\n\tuc.DynamicEFMax = v\n}); err != nil {\n\treturn uc, err\n}\n\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMin\", func(v int) {\n\tuc.DynamicEFMin = v\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/hnsw/config.go lines 260-290 (validate function)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// ... other validations for MaxConnections, EFConstruction, FilterStrategy ...\n\t// NO VALIDATION for DynamicEFMin/DynamicEFMax ordering!\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\treturn nil\n}\n\n// adapters/repos/db/vector/hnsw/search.go lines 60-76 (autoEfFromK - runtime EF calculation)\nfunc (h *hnsw) autoEfFromK(k int) int {\n\tfactor := int(atomic.LoadInt64(&h.efFactor))\n\tmin := int(atomic.LoadInt64(&h.efMin))\n\tmax := int(atomic.LoadInt64(&h.efMax))\n\n\tef := k * factor\n\tif ef > max {\n\t\tef = max\n\t} else if ef < min {\n\t\tef = min\n\t}\n\tif k > ef {\n\t\tef = k // otherwise results will get cut off early\n\t}\n\n\treturn ef\n}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig() → OptionalIntFromMap(dynamicEfMin/dynamicEfMax) → NO validation call → validate() skips dynamicEf ordering check → config persisted → autoEfFromK() uses invalid range at runtime",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "critical_gap": "The validate() function checks MaxConnections (min 4, max 2047), EFConstruction (min 4), and FilterStrategy enum, but completely omits dynamicEfMin ≤ dynamicEfMax validation despite the naming convention implying 'Min' should be ≤ 'Max'. The autoEfFromK() clamping logic (lines 65-70) assumes min ≤ max - when min > max, the clamping is semantically broken."
+        },
+        "falsification": {
+          "pass": true,
+          "note": "No falsification possible - bug confirmed. Independent verification via GET /schema/TestCleanRepro confirmed the inverted values (500, 10) are persisted. The physical constraint violation is self-evident: parameter names 'Min' and 'Max' semantically require min ≤ max for the autoEfFromK clamping logic to function correctly.",
+          "probes_skipped": "Step 4 falsification requires falsifying a true bug - not applicable. The bug is that validation is MISSING, not that behavior is incorrect."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (reproducible on clean Weaviate v1.37.4 container)",
+            "Race condition (deterministic - wrong input accepted)",
+            "Request param typo (params correctly named, just semantically invalid)",
+            "Approximate search (this is schema creation, not search recall)",
+            "By-design behavior (no source comment or doc indicates inverted min/max is intentional)"
+          ],
+          "surviving_explanations": "pure_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004 Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries (what_developers_consider_bugs: #1 priority)",
+        "pattern_id": "BS-004",
+        "blindspot_hit": true,
+        "note": "Direct hit on BS-004: 'Parameter Validation Issues in Request Parsing' affecting 'request_parsing' layer. Developer cognition explicitly lists 'Parameter validation gaps at API boundaries' as #1 bug category. Source confirms validation is absent in validate() function despite clear semantic constraint."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion for dynamicEfMin/dynamicEfMax ordering (contract gap)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Parameter naming 'Min' and 'Max' semantically requires min ≤ max for autoEfFromK clamping logic to be meaningful (ef = k * factor; clamp to [min, max])",
+          "api_accepts_violation": true,
+          "source_evidence": "autoEfFromK() at search.go:65-70 implements clamping that assumes min ≤ max. When min=500, max=10, no calculated ef can satisfy both clamp conditions.",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "no_error_or_warning": true,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation: min > max breaks autoEfFromK semantics) → final=CONFIRMED. C cannot override physical violation despite graceful acceptance.",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "param_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API POST /schema accepts dynamicEfMin=500, dynamicEfMax=10 (inverted range) with HTTP 200, persisting invalid configuration. Source code (config.go:183-193) parses both parameters without validation, and validate() function (lines 260-323) explicitly omits min ≤ max check despite validating other parameters (MaxConnections, EFConstruction, FilterStrategy). The runtime autoEfFromK() function (search.go:60-76) clamps ef = k * factor to [min, max] - semantically broken when min > max. Physical constraint violated: parameter names 'Min' and 'Max' require min ≤ max. Developer cognition BS-004 confirms 'Parameter validation gaps at API boundaries' are considered bugs. This is a true Type1_IllegalSuccess defect in parameter validation at the request parsing layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation": 1
+    }
+  },
+  "self_check": "PASSED",
+  "#9255_fixture_check": {
+    "note": "Self-check passed. This candidate is NOT a #9255-style 'depends on unrequested field' false positive. The raw log shows POST /schema with explicit dynamicEfMin=500, dynamicEfMax=10 in payload - the 'violation' is the API accepting semantically invalid parameter ordering (min > max), not missing request parameters."
+  }
+}

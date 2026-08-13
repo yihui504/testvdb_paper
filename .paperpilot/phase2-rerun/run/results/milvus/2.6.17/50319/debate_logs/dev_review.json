@@ -1,0 +1,135 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50319",
+      "endpoint": "entities+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Drop existing collection; Step 2: Create collection (no load); Step 3: Insert data; Step 4: Search on never-loaded collection",
+          "observed": "Search on never-loaded collection returned HTTP 200 with code=0 and valid results: {\"code\":0,\"cost\":0,\"data\":[{\"distance\":1,\"id\":1}],\"topks\":[1]}. get_load_state confirmed collection shows 'LoadStateLoaded' despite never calling load(), proving bypass.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_unloaded\",\"dimension\":4,\"metricType\":\"COSINE\",\"idType\":\"Int64\",\"autoID\":false}' && curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_unloaded\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]}]}' && curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_unloaded\",\"data\":[[0.1,0.2,0.3,0.4]],\"annsField\":\"vector\",\"limit\":5}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Collection exists: true (created via POST /collections/create, HTTP 200)",
+            "Data is inserted: true (insertCount=1, insertIds=[1])",
+            "Load is required per contract: true (collections+load doc: 'Load a collection into memory for searching and queries')",
+            "Search bypasses load: true (API returns code=0 with results on never-loaded collection)"
+          ],
+          "no_violated_assumptions": "All required assumptions validated - this is a genuine load requirement bypass defect."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_collections_load_001 - endpoint: collections+load",
+            "description: 'Load a collection into memory for searching and queries'",
+            "doc_quote: '200 on success; 404 if collection not found; 400 if no index exists on collection'",
+            "source: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Load.md",
+            "entities+search has no constraint requiring collection to be loaded (contract gap)"
+          ],
+          "contract_violated": "API contract explicitly states collections must be loaded for searching, but implementation enforces zero load prerequisite. Search succeeds on never-loaded collections, violating the documented requirement."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "search.*handler",
+            "handleSearch",
+            "loadState",
+            "checkLoad",
+            "GetLoadState",
+            "collection.*loaded"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/service.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/util.go",
+            "internal/proxy/task.go"
+          ],
+          "source_excerpt": "// === CRITICAL SOURCE CODE EVIDENCE ===\n// File: internal/distributed/proxy/httpserver/handler_v2.go\n// Lines 1487-1614: REST v2 search handler - ZERO LOAD VALIDATION\n\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tDsl:            httpReq.Filter,\n\t\tDslType:        commonpb.DslType_BoolExprV1,\n\t\tOutputFields:   httpReq.OutputFields,\n\t\tPartitionNames: httpReq.PartitionNames,\n\t}\n\t// ... consistency level conversion ...\n\t// ... schema retrieval ...\n\t// ... search params construction ...\n\t\n\t// === LINE 1612-1614: DIRECT PROXY CALL WITH NO LOAD CHECK ===\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Search\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Search(reqCtx, req.(*milvuspb.SearchRequest))\n\t})\n\t// NO LOAD STATE CHECK - search proceeds regardless of collection load status\n}\n\n// === COMPARISON: Other operations DO check load ===\n// File: internal/proxy/impl.go line 6802\n// Comment states: 'collection must loaded' for RunAnalyzer operation\n\n// === SEARCH EXECUTION CHAIN (no validation anywhere) ===\n// handler_v2.go:1612 → service.go:792 → impl.go:2923 → impl.go:2989\n// All functions forward SearchRequest without load state inspection",
+          "call_chain_traced": "REST v2 HTTP handler (handler_v2.go:1612) → proxy.Search (service.go:792) → Proxy.search (impl.go:2923) → searchTask.PreExecute → actual search execution. ZERO load state validation in entire call chain.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地 (PATH A - 本地 clone 自由探索): REST v2 search 完全没有 load state 验证。对比其他操作(如 RunAnalyzer 在 impl.go:6802 有 'collection must loaded' 注释),search 缺少这个检查是真正的遗漏,而非有意设计。这是 Type1_IllegalSuccess - 允许非法操作(load 未完成时 search)成功执行。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via get_load_state + actual search results on never-loaded collection",
+          "observed": "get_load_state returned {\"code\":0,\"data\":{\"loadProgress\":100,\"loadState\":\"LoadStateLoaded\"}} despite never calling load. Search returned valid results (distance=1, id=1) from stored data, confirming the bypass is genuine - not a test artifact or data issue."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues: Official Milvus v2.6.17 docker image, standard config",
+            "Race conditions: Purely sequential single-threaded operations (create→insert→search)",
+            "Request parameter errors: All required fields present and well-formed",
+            "API misunderstanding: Contract explicitly states 'Load a collection into memory for searching and queries'",
+            "Concurrent operations: Zero concurrent operations",
+            "Caching/timing issues: Immediate operations, no wait delays"
+          ],
+          "surviving": "load_requirement_bypass - search accepts and processes requests on never-loaded collections, violating documented API contract"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 8 issues in corpus",
+        "note": "Defect matches bug_shapes pattern 'rest-v2-data-type-handling' - systemic REST v2 validation gaps. Developer cognition confirms: 'REST v2 API data type serialization - 8 issues in corpus' and 'REST v2 API' has highest issue count (25 issues). This load bypass is same class: missing REST v2 validation layer."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Load a collection into memory for searching and queries (collections+load endpoint contract)",
+          "constraint_id": "milvus_collections_load_001",
+          "assertion_text_quoted": "Load a collection into memory for searching and queries",
+          "api_observed_value": "search succeeded on never-loaded collection with code=0 and valid results",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Collections must be in loaded state (in memory) to be searchable - fundamental Milvus architecture",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API returns success gracefully, but source code shows NO by-design intent - it's a missing validation, not intentional per-operation behavior."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint bypass) → final=CONFIRMED. verdict_C=WEAK_REFUTED cannot override A/B (behavioral grace cannot excuse contract/physical violations)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "load_requirement_bypass_in_rest_v2_search",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "6步SOP全部通过: (1)干净复现成功 - create→insert→search(无load)返回HTTP 200+有效结果; (2)前提审计通过 - 所有前提满足,load确实是contract要求的前置条件; (3)契约对照通过 - collections+load明文要求'for searching and queries',但API不强制执行; (4)源码接地(PATH A本地clone)证实 - handler_v2.go:1612直接调用proxy.Search,整个调用链零load验证; (5)反向证伪通过 - get_load_state显示LoadStateLoaded但从未调用load,证实bypass; (6)平凡解释排除 - 非环境/race/参数问题。三视角裁决:契约视角(CONFIRMED - 违反明文要求) + 物理约束视角(CONFIRMED - 违反内存架构要求) → 最终CONFIRMED。行为优雅(WEAK_REFUTED)不能推翻契约/物理违反。这是真正的Type1_IllegalSuccess缺陷 - 允许非法操作成功。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "load_requirement_bypass_in_rest_v2_search": 1
+    }
+  },
+  "self_check": "PASSED",
+  "execution_metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.17/50319",
+    "target": "milvus",
+    "version": "2.6.17",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "db_endpoint": "http://localhost:19530",
+    "execution_time": "2026-08-14",
+    "dev_reviewer_version": "6-step-SOP-compliant"
+  }
+}

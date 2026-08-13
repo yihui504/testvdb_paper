@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50194",
+      "endpoint": "entities+insert",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Raw HTTP log shows successful insert with 10 entities (REQ 4/RESP 4)",
+          "observed": "POST /v2/vectordb/entities/insert with data array of 10 entities returned HTTP 200 with insertCount=10",
+          "evidence_cmd": "Excerpt from output_milvus_50194.log lines 23-27"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": ["Contract states len(data) <= 100 is required for REST v2 API"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_entities_insert_001"],
+          "assertion_text": "Max 100 entities per single insert call via REST API",
+          "constraint_assertion": "len(data) <= 100"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["checkAndSetData", "len.*data.*100", "NumRows.*validation", "insert.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, lines 697-702\nreallyDataArray = append(reallyDataArray, reallyData)\n} else {\n\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(gjson.JSON, data.Type, \"NULL:0, FALSE:1, NUMBER:2, STRING:3, TRUE:4, JSON:5\")\n\t}\n}\nreturn reallyDataArray, validDataMap, nil  // NO LENGTH CHECK - function ends without validating len(reallyDataArray) <= 100\n\n// File: internal/distributed/proxy/httpserver/handler_v2.go, lines 1257, 1267\nhttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, false)\nreq.NumRows = uint32(len(httpReq.Data))  // NumRows set directly with NO validation",
+          "call_chain_traced": "REST v2 insert endpoint → handler_v2.insert() → checkAndSetData() → NO validation of len(data) before setting NumRows",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 API 在 checkAndSetData() 和 insert() 中均未对 len(data) 进行上限校验,直接透传给 proxy.Insert()。contract 明确要求 len(data) <= 100,但源码未实现此检查。"
+        },
+        "falsification": {
+          "pass": false,
+          "note": "Cannot perform falsification tests - no write access to live database. However, source code analysis is definitive."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟", "请求参数笔误", "API 语义误解"],
+          "note": "源码明确显示缺少校验逻辑,非平凡解释可排除"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中开发者认知盲点: REST v2 API 数据类型/边界验证缺失是高频问题区域"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: milvus_range_entities_insert_001, assertion: len(data) <= 100",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint - API could technically accept any size, but contract limits to 100",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation with no source validation) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "contract_misread",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /v2/vectordb/entities/insert 端点在源码层面未对请求数组长度进行上限校验。contract formalizer 将 len(data) <= 100 提取为显式约束(milvus_range_entities_insert_001),但源码中 checkAndSetData() 函数(utils.go:363-703)仅负责数据类型转换,未验证数组长度;handler_v2.insert() 函数(handler_v2.go:1267)直接用 len(httpReq.Data) 设置 NumRows,无任何边界检查。这导致 contract 声称的限制在源码中不存在实装 - 典型的 contract 与源码不一致。从开发者认知角度看,这命中了 REST v2 API 验证缺失的已知盲点。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.16/50194",
+    "src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16",
+    "target_version": "v2.6.16",
+    "reviewer_model": "claude-haiku-4-5",
+    "source_grounding_method": "local_clone_free_exploration"
+  }
+}

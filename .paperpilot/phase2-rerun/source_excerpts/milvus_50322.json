@@ -1,0 +1,27 @@
+{
+ "defect_id": "milvus_50322",
+ "vendor": "milvus",
+ "version": "2.6.17",
+ "tag": "v2.6.17",
+ "terms": [
+  "non",
+  "existent",
+  "instead"
+ ],
+ "status": "found",
+ "n_hits": 614,
+ "excerpts": [
+  {
+   "file": "internal/proxy/search_pipeline.go",
+   "line": 224,
+   "term_matched": "non",
+   "context": " 209| \t\tprimaryFieldSchema: pkField,\n 210| \t\tcollectionID:       t.GetCollectionID(),\n 211| \t\tpartitionIDs:       t.GetPartitionIDs(),\n 212| \t\tqueryInfos:         t.queryInfos,\n 213| \t}, nil\n 214| }\n 215| \n 216| func (op *hybridSearchReduceOperator) run(ctx context.Context, span trace.Span, inputs ...any) ([]any, error) {\n 217| \t_, sp := otel.Tracer(typeutil.ProxyRole).Start(ctx, \"hybridSearchReduceOperator\")\n 218| \tdefer sp.End()\n 219| \ttoReduceResults := inputs[0].([]*internalpb.SearchResults)\n 220| \t// Collecting the results of a subsearch\n 221| \t// [[shard1, shard2, ...],[shard1, shard2, ...]]\n 222| \tmultipleInternalResults := make([][]*internalpb.SearchResults, len(op.subReqs))\n 223| \tfor _, searchResult := range toReduceResults {\n 224| \t\t// if get a non-advanced result, skip all\n 225| \t\tif !searchResult.GetIsAdvanced() {\n 226| \t\t\tcontinue\n 227| \t\t}\n 228| \t\tfor _, subResult := range searchResult.GetSubResults() {\n 229| \t\t\t// swallow copy\n 230| \t\t\tinternalResults := &internalpb.SearchResults{\n 231| \t\t\t\tMetricType:     subResult.GetMetricType(),\n 232| \t\t\t\tNumQueries:     subResult.GetNumQueries(),\n 233| \t\t\t\tTopK:           subResult.GetTopK(),\n 234| \t\t\t\tSlicedBlob:     subResult.GetSlicedBlob(),\n 235| \t\t\t\tSlicedNumCount: subResult.GetSlicedNumCount(),\n 236| \t\t\t\tSlicedOffset:   subResult.GetSlicedOffset(),\n 237| \t\t\t\tIsAdvanced:     false,\n 238| \t\t\t}\n 239| \t\t\treqIndex := subResult.GetReqIndex()"
+  },
+  {
+   "file": "internal/proxy/search_reduce_util.go",
+   "line": 104,
+   "term_matched": "non",
+   "context": "  89| \t\t\tNumQueries: nq,\n  90| \t\t\tTopK:       topK,\n  91| \t\t\tScores:     []float32{},\n  92| \t\t\tIds:        &schemapb.IDs{},\n  93| \t\t\tTopks:      []int64{},\n  94| \t\t},\n  95| \t}\n  96| \n  97| \tvar limit int64\n  98| \tif allSearchCount, hitNum, err := checkResultDatas(ctx, subSearchResultData, nq, topK); err != nil {\n  99| \t\tlog.Ctx(ctx).Warn(\"invalid search results\", zap.Error(err))\n 100| \t\treturn ret, err\n 101| \t} else {\n 102| \t\tret.GetResults().AllSearchCount = allSearchCount\n 103| \t\tlimit = int64(hitNum)\n 104| \t\t// Find the first non-empty FieldsData as template\n 105| \t\tfor _, result := range subSearchResultData {\n 106| \t\t\tif len(result.GetFieldsData()) > 0 {\n 107| \t\t\t\tret.GetResults().FieldsData = typeutil.PrepareResultFieldData(result.GetFieldsData(), limit)\n 108| \t\t\t\tbreak\n 109| \t\t\t}\n 110| \t\t}\n 111| \t}\n 112| \n 113| \tif err := setupIdListForSearchResult(ret, pkType, limit); err != nil {\n 114| \t\treturn ret, nil\n 115| \t}\n 116| \n 117| \tvar (\n 118| \t\tsubSearchNum = len(subSearchResultData)\n 119| \t\t// for results of each subSearchResultData, storing the start offset of each query of nq queries"
+  }
+ ]
+}

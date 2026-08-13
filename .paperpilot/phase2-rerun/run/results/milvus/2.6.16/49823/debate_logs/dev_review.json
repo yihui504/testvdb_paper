@@ -1,0 +1,124 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49823",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}",
+          "observed": "HTTP 200 returned successfully with results. API accepted nprobe=0 without validation error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_nprobe\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "checked_assumptions": [
+            "1. API should reject nprobe=0 as invalid (IVF search requires nprobe >= 1)",
+            "2. REST v2 handler performs parameter validation before proxy layer",
+            "3. searchParams are validated at API gateway layer"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus entities+search endpoint at path 'entities+search', method POST",
+            "searchParams parameter allows object type with key-value pairs",
+            "No explicit constraint_id found for nprobe validation in structured_contract.json"
+          ],
+          "contract_note": "While the structured_contract doesn't explicitly define nprobe range constraints, the API design expects search parameters to be validated. Test expectations from the codebase show nprobe should be validated: 'param nprobe (-1) should be in range [1, 65536]'"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "nprobe",
+            "generateSearchParams",
+            "validate.*search",
+            "searchParams.*validation"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go (lines 1528-1601, 1697-1728)",
+            "internal/distributed/proxy/httpserver/utils.go (lines 2192-2247)",
+            "tests/python_client/testcases/indexes/idx_ivf_rabitq.py (line 209)"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/utils.go, Lines 2192-2247\n\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... equality check logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// need to exposure ParamRoundDecimal in req?\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}\n\nCRITICAL FINDING: The generateSearchParams function performs NO validation on parameter values. It merely formats key-value pairs. Any value for 'nprobe' (including 0 or negative values) is accepted and passed through to the search layer.",
+          "call_chain_traced": "REST v2 Request -> handler_v2.go:generateSearchParams() -> formats to KeyValuePair -> passed to proxy.Search() -> No validation occurs",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: REST v2 API gateway layer does NOT validate nprobe range. Test file idx_ivf_rabitq.py line 209 shows expected validation: 'param nprobe (-1) should be in range [1, 65536]' but this validation is NOT implemented in the REST v2 handler."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with limit=0 to validate parameter validation behavior",
+          "observed": "HTTP 200 with error message: '{\"code\":65535,\"message\":\"topk [0] is invalid, it should be in range [1, 16384], but got 0\"}'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_nprobe\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0, \"searchParams\": {\"nprobe\": 1}, \"outputFields\": [\"id\"]}'",
+          "finding": "Milvus DOES validate limit parameter (rejects 0), but does NOT validate nprobe parameter. Inconsistent parameter validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - Docker environment is stable",
+            "Concurrent operations - single sequential request",
+            "API semantic misunderstanding - nprobe=0 is objectively invalid for IVF search",
+            "Request parameter typo - explicit value 0 provided"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_id": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches the developer-identified blindspot pattern for REST v2 API parameter handling. Developers have acknowledged repeated issues with REST v2 parameter validation."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint_id in structured_contract.json for nprobe range, but test expectations (idx_ivf_rabitq.py) and API semantics require nprobe >= 1 for IVF search",
+          "source_implements_check": false,
+          "api_observed_value": "searchParams nprobe=0 accepted with HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "IVF (Inverted File) index search mathematically requires nprobe >= 1 (must probe at least 1 partition list)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "No graceful handling or by-design comments found. API accepts invalid value without error or fallback.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final_verdict=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "missing_validation_in_rest_v2_gateway",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /entities/search endpoint accepts nprobe=0 in searchParams without validation. Source code analysis (handler_v2.go:generateSearchParams at utils.go:2192-2247) confirms NO validation is performed on search parameter values. Test expectations (idx_ivf_rabitq.py:209) show nprobe should be validated to range [1, 65536], but this validation is absent in REST v2 handler. Physical constraint: IVF search requires nprobe >= 1 to probe partition lists. Comparison test shows limit parameter IS validated (rejects 0), proving validation infrastructure exists but is inconsistently applied. Matches developer blindspot pattern 'REST_v2_data_type_handling'. This is a genuine Type1_IllegalSuccess defect: API accepts semantically invalid parameter and returns successful response without error."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_validation_in_rest_v2_gateway": 1
+    }
+  },
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.16/49823",
+    "target": "milvus",
+    "version": "2.6.16",
+    "timestamp": "2026-08-14T10:30:00Z",
+    "source_clone_available": true,
+    "local_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16"
+  }
+}

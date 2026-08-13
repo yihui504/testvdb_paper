@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_52310",
+ "vendor": "milvus",
+ "version": "3.0.0",
+ "tag": "v3.0.0",
+ "terms": [
+  "arChar",
+  "API",
+  "entities",
+  "coerces",
+  "scalar"
+ ],
+ "status": "found",
+ "n_hits": 562,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+   "line": 1805,
+   "term_matched": "arChar",
+   "context": "1790| \tif vectorField == nil {\n1791| \t\treturn nil, merr.WrapErrFieldNotFound(fieldName, \"cannot find a vector field\")\n1792| \t}\n1793| \tdim := int64(0)\n1794| \tif !typeutil.IsSparseFloatVectorType(vectorField.DataType) {\n1795| \t\tdim, _ = getDim(vectorField)\n1796| \t}\n1797| \n1798| \tdataType := vectorField.DataType\n1799| \n1800| \tif vectorField.GetIsFunctionOutput() {\n1801| \t\tfor _, function := range collSchema.Functions {\n1802| \t\t\tif function.Type == schemapb.FunctionType_BM25 || function.Type == schemapb.FunctionType_TextEmbedding || function.Type == schemapb.FunctionType_MinHash {\n1803| \t\t\t\t// TODO: currently only BM25, text & MinHash embedding function is supported, thus guarantees one input field to one output field\n1804| \t\t\t\tif function.OutputFieldNames[0] == vectorField.Name {\n1805| \t\t\t\t\tdataType = schemapb.DataType_VarChar\n1806| \t\t\t\t}\n1807| \t\t\t}\n1808| \t\t}\n1809| \t}\n1810| \n1811| \tvar phv *commonpb.PlaceholderValue\n1812| \tif vectorField.GetDataType() == schemapb.DataType_ArrayOfVector {\n1813| \t\tif isEmbeddingListData(body) {\n1814| \t\t\tphv, err = convertEmbListQueries2Placeholder(body, vectorField.GetElementType(), dim)\n1815| \t\t} else {\n1816| \t\t\tphv, err = convertQueries2Placeholder(body, vectorField.GetElementType(), dim)\n1817| \t\t}\n1818| \t} else {\n1819| \t\tphv, err = convertQueries2Placeholder(body, dataType, dim)\n1820| \t}"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/wrap_request.go",
+   "line": 139,
+   "term_matched": "arChar",
+   "context": " 124| \tcase schemapb.DataType_Bool:\n 125| \t\tdata := []bool{}\n 126| \t\terr := json.Unmarshal(raw, &data)\n 127| \t\tif err != nil {\n 128| \t\t\treturn nil, newFieldDataError(f.FieldName, err)\n 129| \t\t}\n 130| \t\tret.Field = &schemapb.FieldData_Scalars{\n 131| \t\t\tScalars: &schemapb.ScalarField{\n 132| \t\t\t\tData: &schemapb.ScalarField_BoolData{\n 133| \t\t\t\t\tBoolData: &schemapb.BoolArray{\n 134| \t\t\t\t\t\tData: data,\n 135| \t\t\t\t\t},\n 136| \t\t\t\t},\n 137| \t\t\t},\n 138| \t\t}\n 139| \tcase schemapb.DataType_VarChar:\n 140| \t\tdata := []string{}\n 141| \t\terr := json.Unmarshal(raw, &data)\n 142| \t\tif err != nil {\n 143| \t\t\treturn nil, newFieldDataError(f.FieldName, err)\n 144| \t\t}\n 145| \t\tret.Field = &schemapb.FieldData_Scalars{\n 146| \t\t\tScalars: &schemapb.ScalarField{\n 147| \t\t\t\tData: &schemapb.ScalarField_StringData{\n 148| \t\t\t\t\tStringData: &schemapb.StringArray{\n 149| \t\t\t\t\t\tData: data,\n 150| \t\t\t\t\t},\n 151| \t\t\t\t},\n 152| \t\t\t},\n 153| \t\t}\n 154| \tcase schemapb.DataType_Int8, schemapb.DataType_Int16, schemapb.DataType_Int32:"
+  }
+ ]
+}

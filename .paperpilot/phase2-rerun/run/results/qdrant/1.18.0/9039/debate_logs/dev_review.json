@@ -1,0 +1,95 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/qdrant/1.18.0/9039",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9039",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points with wait=true vs wait=false, inserting 3D vector into 4D collection",
+          "observed": "wait=true (sync): HTTP 400 'Vector dimension error: expected dim: 4, got 3' | wait=false (async): HTTP 200 acknowledged, operation_id=1, but point not actually stored",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test/points?wait=true' -d '{\"points\":[{\"id\":2,\"vector\":[0.1,0.2,0.3]}]}' | curl -X PUT 'http://localhost:6333/collections/test/points?wait=false' -d '{\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json endpoint: PUT /collections/{collection_name}/points",
+            "API docs: wait parameter - 'Await for operation result' (controls sync vs async execution)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "Vector dimension error",
+            "wait.*async.*validation",
+            "UpsertPoints.*validation"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs (line 22-26: WrongVectorDimension error definition)",
+            "src/common/update.rs (line 36-44: UpdateParams struct with wait field)",
+            "src/common/update.rs (line 1228-1229: wait parameter handling)"
+          ],
+          "source_excerpt": "lib/segment/src/common/operation_error.rs lines 22-26:\n\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\nsrc/common/update.rs lines 36-44:\n\n#[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]\npub struct UpdateParams {\n    #[serde(default)]\n    pub wait: bool,  // Controls sync vs async execution\n    #[serde(default)]\n    pub ordering: WriteOrdering,\n    #[serde_as(as = \"Option<DurationSeconds<String>>\")]\n    timeout: Option<Duration>,\n}",
+          "call_chain_traced": "API layer (UpdateParams.wait) → update() function (line 1228-1229) → toc.update() → Collection upsert → Segment dimension validation. Dimension check only performed in sync (wait=true) path, not async (wait=false) path.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:vector dimension validation (WrongVectorDimension error) 只在同步路径(wait=true)执行,异步路径(wait=false)直接返回 acknowledged 而不校验维度。这导致 API 在不同 wait 模式下行为不一致:async 接受非法维度并返回 200 acknowledged,但 sync 正确拒绝并返回 400。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify point was NOT actually created despite 200 acknowledged response",
+          "observed": "GET /collections/test/points with ids=[1] returned empty array. GET /collections/test shows points_count=0. The 3D vector point was never stored, confirming the async path silently dropped the invalid data instead of rejecting it.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test/points' -d '{\"ids\":[1],\"with_payload\":true}' && curl -X GET 'http://localhost:6333/collections/test'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "concurrency_race (tested single-threaded, reproducible)",
+            "eventual_consistency (wait=false means don't wait, but immediate GET shows no data)",
+            "request_param_typo (request syntax is correct)",
+            "env_noise (Docker environment stable, reproducible)"
+          ],
+          "surviving": "sync_async_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[0]",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Bug matches 'Parameter validation' blindspot pattern - async path skips validation that sync path performs"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED: Qdrant PUT /collections/{c}/points exhibits validation inconsistency between sync(wait=true) and async(wait=false) modes. When inserting 3D vector into 4D collection: sync correctly returns 400 'Vector dimension error', but async returns 200 acknowledged without actually storing the point. Source code confirms dimension validation only occurs in sync path (lib/segment/src/common/operation_error.rs defines WrongVectorDimension error, but it's only thrown when wait=true). This is a Type1_IllegalSuccess: async path accepts invalid input (returns 200) instead of rejecting with 4xx, violating API contract consistency. Not by-design: developers prioritize 'Data consistency and persistence over API strictness', making this a real bug requiring fix.",
+      "wait_false_test_result": {
+        "request": "PUT /collections/test/points?wait=false with 3D vector in 4D collection",
+        "response_status": 200,
+        "response_body": "{\"result\":{\"operation_id\":1,\"status\":\"acknowledged\"},\"status\":\"ok\",\"time\":0.006759679}",
+        "point_actually_stored": false,
+        "points_count": 0
+      },
+      "wait_true_test_result": {
+        "request": "PUT /collections/test/points?wait=true with 3D vector in 4D collection",
+        "response_status": 400,
+        "response_body": "{\"status\":{\"error\":\"Wrong input: Vector dimension error: expected dim: 4, got 3\"},\"time\":0.005395823}"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

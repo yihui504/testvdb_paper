@@ -1,0 +1,103 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9420",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /collections/test_qnull/points/query {\"query\": null, \"limit\": 5}",
+          "observed": "HTTP 200, returned 3 points with scores 1.0 (ids: 1, 5, 10). This is documented behavior per source code comment: 'Query to perform. If missing without prefetches, returns points ordered by their IDs.'",
+          "evidence_cmd": "REQ 4 & 8 in output_qdrant_9420.log show query:null returned all 3 points with score=1.0, HTTP 200 success"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes query:null should be rejected with 4xx error",
+            "Oracle relies on assumption that query field is required/validates against null, but source documentation explicitly states 'If missing without prefetches, returns points ordered by their IDs'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_query_field_optional",
+            "source: lib/api/src/rest/schema.rs:573-575: 'Query to perform. If missing without prefetches, returns points ordered by their IDs.'",
+            "Field definition: pub query: Option<QueryInterface> (Optional, not required)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "Query to perform.*If missing",
+            "QueryRequestInternal",
+            "query.*Option<QueryInterface>"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "src/common/inference/query_requests_rest.rs",
+            "src/actix/api/query_api.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs:573-575\n/// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n#[validate(nested)]\npub query: Option<QueryInterface>,\n\n// lib/api/src/rest/schema.rs:566-609\npub struct QueryRequestInternal {\n    /// ... (prefetch, query, using, filter, params, score_threshold, limit, offset, with_vector, with_payload, lookup_from)\n}\n\n// src/common/inference/query_requests_rest.rs:129-131\nlet query = query\n    .map(|q| convert_query_with_inferred(q, &inferred))\n    .transpose()?;  // query: Option<Query> can be None, handled gracefully\n\n// src/actix/api/query_api.rs:40-43\nlet QueryRequest {\n    internal: query_request,  // accepts QueryRequestInternal with optional query\n    shard_key,\n} = request.into_inner();",
+          "call_chain_traced": "POST /collections/{c}/points/query → query_api.rs:query_points() → QueryRequest (with internal: QueryRequestInternal) → query: Option<QueryInterface> → convert_query_request_from_rest() handles None gracefully → dispatcher.query_batch() processes with query=None",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms query field is Option<QueryInterface> (optional). Documentation explicitly states null/missing query returns points ordered by ID. This is by-design API semantics, not a bug."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /collections/test_qnull/points/query {\"query\": {\"nearest\": [0.1, 0.2, 0.3, 0.4]}, \"limit\": 5}",
+          "observed": "Not executed - DB container not available at localhost:6333. However, raw evidence in output_qdrant_9420.log proves the behavior: query:null successfully returned points ordered by ID (1, 5, 10) with score=1.0. Falsification would only confirm this is intentional behavior."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - from blindspot_indicators in developer_cognition.json",
+        "note": "Hits blindspot: parameter validation gaps. However, this case is NOT a validation gap - query=null is explicitly documented and handled as by-design behavior (returns points ordered by ID), not a missing validation."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_query_field_optional: query is Option<QueryInterface>, not required. Source comment: 'Query to perform. If missing without prefetches, returns points ordered by their IDs.'",
+          "source_implements_check": false,
+          "api_observed_value": "query:null accepted, returned 3 points (ids 1,5,10) ordered by ID with score=1.0, HTTP 200",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "None - query field is optional by schema definition (Option<>)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (query=null is documented by-design behavior)",
+        "final_verdict": "REFUTED"
+      },
+      "rationale": "The candidate claims query:null should be rejected with 4xx error. However, source code (lib/api/src/rest/schema.rs:573-575) explicitly documents: 'Query to perform. If missing without prefetches, returns points ordered by their IDs.' The query field is defined as Option<QueryInterface> (optional), not required. Raw evidence shows query:null successfully returns points ordered by ID (score=1.0) with HTTP 200. This is intentional by-design API behavior for fetching points without vector search, not a param validation bug. Oracle misinterpreted optional field semantics as missing validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

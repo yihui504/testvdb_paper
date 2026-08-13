@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_47763",
+ "vendor": "milvus",
+ "version": "2.6.10",
+ "tag": "v2.6.10",
+ "terms": [
+  "name",
+  "invalid",
+  "names",
+  "causing",
+  "inaccessibility"
+ ],
+ "status": "found",
+ "n_hits": 17432,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler.go",
+   "line": 127,
+   "term_matched": "name",
+   "context": " 112| \treturn h.proxy.Dummy(c, &req)\n 113| }\n 114| \n 115| func (h *Handlers) handleCreateCollection(c *gin.Context) (interface{}, error) {\n 116| \twrappedReq := WrappedCreateCollectionRequest{}\n 117| \terr := shouldBind(c, &wrappedReq)\n 118| \tif err != nil {\n 119| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 120| \t}\n 121| \tschemaProto, err := proto.Marshal(&wrappedReq.Schema)\n 122| \tif err != nil {\n 123| \t\treturn nil, fmt.Errorf(\"%w: marshal schema failed: %v\", errBadRequest, err)\n 124| \t}\n 125| \treq := &milvuspb.CreateCollectionRequest{\n 126| \t\tBase:             wrappedReq.Base,\n 127| \t\tDbName:           wrappedReq.DbName,\n 128| \t\tCollectionName:   wrappedReq.CollectionName,\n 129| \t\tSchema:           schemaProto,\n 130| \t\tShardsNum:        wrappedReq.ShardsNum,\n 131| \t\tConsistencyLevel: wrappedReq.ConsistencyLevel,\n 132| \t\tProperties:       wrappedReq.Properties,\n 133| \t}\n 134| \treturn h.proxy.CreateCollection(c, req)\n 135| }\n 136| \n 137| func (h *Handlers) handleDropCollection(c *gin.Context) (interface{}, error) {\n 138| \treq := milvuspb.DropCollectionRequest{}\n 139| \terr := shouldBind(c, &req)\n 140| \tif err != nil {\n 141| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 142| \t}"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 49,
+   "term_matched": "name",
+   "context": "  34| \t\"github.com/milvus-io/milvus-proto/go-api/v2/schemapb\"\n  35| \t\"github.com/milvus-io/milvus/internal/json\"\n  36| \t\"github.com/milvus-io/milvus/internal/proxy\"\n  37| \t\"github.com/milvus-io/milvus/internal/types\"\n  38| \t\"github.com/milvus-io/milvus/pkg/v2/common\"\n  39| \t\"github.com/milvus-io/milvus/pkg/v2/log\"\n  40| \t\"github.com/milvus-io/milvus/pkg/v2/util/merr\"\n  41| \t\"github.com/milvus-io/milvus/pkg/v2/util/metric\"\n  42| \t\"github.com/milvus-io/milvus/pkg/v2/util/requestutil\"\n  43| \t\"github.com/milvus-io/milvus/pkg/v2/util/typeutil\"\n  44| )\n  45| \n  46| var RestRequestInterceptorErr = errors.New(\"interceptor error placeholder\")\n  47| \n  48| func checkAuthorization(ctx context.Context, c *gin.Context, req interface{}) error {\n  49| \tusername, ok := c.Get(ContextUsername)\n  50| \tif !ok || username.(string) == \"\" {\n  51| \t\tHTTPReturn(c, http.StatusUnauthorized, gin.H{HTTPReturnCode: merr.Code(merr.ErrNeedAuthenticate), HTTPReturnMessage: merr.ErrNeedAuthenticate.Error()})\n  52| \t\treturn RestRequestInterceptorErr\n  53| \t}\n  54| \t_, authErr := proxy.PrivilegeInterceptor(ctx, req)\n  55| \tif authErr != nil {\n  56| \t\tHTTPReturn(c, http.StatusForbidden, gin.H{HTTPReturnCode: merr.Code(authErr), HTTPReturnMessage: authErr.Error()})\n  57| \t\treturn RestRequestInterceptorErr\n  58| \t}\n  59| \n  60| \treturn nil\n  61| }\n  62| \n  63| type RestRequestInterceptor func(ctx context.Context, ginCtx *gin.Context, req any, handler func(reqCtx context.Context, req any) (any, error)) (any, error)\n  64| "
+  }
+ ]
+}

@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9373",
+      "endpoint": "collections+{collection_name}+points+count",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /collections/test_idx2/points/count {filter: {must: [{key: category_id, match: {value: cat_a}}]}, exact: false}",
+          "observed": "count(exact:false) = 25, count(exact:true) = 25, scroll ground truth = 25. No divergence detected.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_idx2/points/count -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"exact\": false}' returns {\"result\":{\"count\":25},\"status\":\"ok\"}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Bug shape qdrant-cardinality-oracle-count-exact-false assumes count(exact:false) uses index-based cardinality estimation which can diverge from exact count",
+            "Divergence is expected when estimator math is imprecise OR when index has insufficient data and falls back to coarse heuristics",
+            "Precondition: payload index must be built and optimizer_config.indexing_threshold must force estimation path",
+            "In this test: both exact:true and exact:false returned 25, matching ground truth. No estimator bug observed."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_api_points_count_001 - endpoint: POST /collections/{collection_name}/points/count",
+            "parameter 'exact' (bool): 'If true, count exact number of points. If false, count approximate number of points faster. Approximate count might be unreliable during the indexing process. Default: true'",
+            "source: structured_contract.json endpoint registry for qdrant v1.18.2"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "count.*exact",
+            "CountRequestInternal",
+            "estimate_cardinality",
+            "exact.*bool"
+          ],
+          "files_examined": [
+            "lib/shard/src/count.rs",
+            "src/actix/api/count_api.rs",
+            "src/common/query.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/collection/src/shards/local_shard/shard_ops.rs",
+            "lib/segment/src/index/query_estimator.rs"
+          ],
+          "source_excerpt": "// lib/shard/src/count.rs line 11-25\npub struct CountRequestInternal {\n    pub filter: Option<Filter>,\n    /// If true, count exact number of points. If false, count approximate number of points faster.\n    /// Approximate count might be unreliable during the indexing process. Default: true\n    #[serde(default = \"CountRequestInternal::default_exact\")]\n    pub exact: bool,\n}\n\nimpl CountRequestInternal {\n    pub const fn default_exact() -> bool { true }\n}\n\n// src/actix/api/count_api.rs line 16-70 (count API handler)\n#[post(\"/collections/{collection_name}/points/count\")]\nasync fn count_points(...) -> impl Responder {\n    let CountRequest { count_request, shard_key } = request.into_inner();\n    let result = do_count_points(\n        dispatcher.toc(&auth, &pass),\n        &collection.collection_name,\n        count_request,  // CountRequestInternal with exact field\n        params.consistency,\n        params.timeout(),\n        shard_selector,\n        auth,\n        request_hw_counter.get_counter(),\n    ).await;\n    helpers::process_response(result, timing, ...)\n}",
+          "call_chain_traced": "HTTP POST /points/count → count_api.rs:count_points() → do_count_points() → shard_ops.rs → exact parameter flows through CountRequestInternal → segment level estimation vs scan logic",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:CountRequestInternal.exact 字段存在且正确传递 (default=true)。API contract 与源码一致。exact:false 路由到近似估算逻辑，exact:true 路由到精确扫描。本测试中两者返回相同值 (25)，说明在此数据集/索引状态下估算结果与精确结果一致——这不是 bug，是估算器在数据规模较小时的正常表现。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Control group test: (1) Same filter via scroll would return 25 points; (2) count(exact:true) already returns 25; (3) Variation test with different collection sizes to detect fallback heuristics.",
+          "observed": "count(exact:false) = 25 matches count(exact:true) = 25, matching expected ground truth. No divergence → no bug consequences to observe."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment/platform issues",
+            "Concurrency race",
+            "Request parameter typos"
+          ],
+          "surviving": "approximate_by_design - The candidate appears to assume that exact:false MUST diverge from exact:true, but this is a misunderstanding. Approximate cardinality estimation can and should return exact results when data is small, index is fresh, or estimator is confident. Divergence is not a contract requirement; it's an inherent property of approximation algorithms when they encounter uncertainty or insufficient index statistics."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns",
+        "developer_quote": "HNSW approximation duplicates in pagination - Accepted limitation of approximate search (applicable to approximate count estimation as well)",
+        "note": "The candidate misunderstands the 'exact:false' contract. It is designed for approximate/faster results, not required to be wrong. When estimation is reliable, it returns accurate results. This is by-design, not a bug."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选 qdrant_9373 断言 count API 的 exact:false 路径会返回不同于 exact:true 的错误计数（典型的基数估算 bug 模式 qdrant-cardinality-oracle-count-exact-false）。但实测复现显示：在本测试环境（50 点集合，25 点 cat_a / 25 点 cat_b，keyword 索引构建完成）中，exact:false 和 exact:true 均返回 25，与 scroll ground truth 一致。源码接地确认 CountRequestInternal.exact 字段正确传递，API contract 明确说明 exact:false 为'近似计数，可能不可靠，默认 true'。关键在于：**近似估算返回精确结果并非 bug**——这是当数据规模小、索引统计充足时估算器的正常表现。bug_shapes.json 的 attack_strategy_hints 明确要求用大小变化控制组排除 fallback heuristics，但本候选未做该控制，也无法复现任何偏离。判定为 FALSE_POSITIVE，根因是对'approximate' API 语义的误解：approximate 算法可以在置信时返回精确值，并非必须出错。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

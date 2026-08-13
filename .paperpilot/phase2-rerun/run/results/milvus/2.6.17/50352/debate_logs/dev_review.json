@@ -1,0 +1,95 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50352_invalid_enum_silent_replace",
+      "endpoint": "collections+create",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_repro_invalid_enum\", \"dimension\": 4, \"metricType\": \"\", \"consistencyLevel\": null}",
+          "observed": "HTTP 200 with empty body. Describe revealed metricType silently replaced with COSINE, consistencyLevel silently replaced with Bounded. Explicit 'Invalid' string gets rejected with code 1100, but empty/null values are accepted without error.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_repro_invalid_enum\", \"dimension\": 4, \"metricType\": \"\", \"consistencyLevel\": null}' && curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_repro_invalid_enum\"}' | grep -E 'metricType|consistencyLevel'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_checked": [
+            "结论依赖'API应拒绝无效枚举值' - 前提满足：raw请求显式传递metricType=\"\"和consistencyLevel=null",
+            "结论依赖'response包含实际使用的参数值' - 前提满足：describe接口返回了consistencyLevel和metricType的实际值"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - assertion: 'metricType in [L2, IP, COSINE]'",
+            "constraint_id: milvus_type_collections_create_003 - assertion: 'consistencyLevel in [Strong, Session, Bounded, Eventually]'"
+          ],
+          "contract_source": "structured_contract.json lines 2428-2446"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "metricType",
+            "consistencyLevel",
+            "convertConsistencyLevel",
+            "FloatVectorMetrics",
+            "DefaultMetricType",
+            "len.*metricType.*0"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/task_index.go",
+            "internal/util/indexparamcheck/constraints.go",
+            "internal/util/indexparamcheck/vector_index_checker.go"
+          ],
+          "source_excerpt": "// ===== FLAW 1: Empty metricType silent replacement (handler_v2.go:2058-2059) =====\nif len(httpReq.MetricType) == 0 {\n    httpReq.MetricType = DefaultMetricType  // Auto-assigns COSINE, no validation\n}\n\n// ===== FLAW 2: Null consistencyLevel silent replacement (handler_v2.go:1999-2014) =====\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded  // Default to Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        // ONLY rejects non-empty invalid strings, null/empty never reaches here\n        err := merr.WrapErrParameterInvalid(...)\n        HTTPAbortReturn(c, http.StatusOK, gin.H{...})\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel  // Silent Bounced assignment for null\n\n// ===== DOWNSTREAM VALIDATION EXISTS (task_index.go:510-517) =====\nmetricType, metricTypeExist := indexParamsMap[common.MetricTypeKey]\nif !metricTypeExist {\n    return merr.WrapErrParameterInvalid(\"valid index params\", \"invalid index params\", \"metric type not set for vector index\")\n}\nif typeutil.IsDenseFloatVectorType(cit.fieldSchema.DataType) {\n    if !funcutil.SliceContain(indexparamcheck.FloatVectorMetrics, metricType) {\n        return merr.WrapErrParameterInvalid(\"valid index params\", \"invalid index params\", \"float vector index does not support metric type: \"+metricType)\n    }\n}\n\n// ===== VALID CONSTANTS (constraints.go:56) =====\nFloatVectorMetrics = []string{metric.L2, metric.IP, metric.COSINE}",
+          "call_chain_traced": "REST API handler_v2.go:2058 (empty check) → auto-assign DefaultMetricType → CreateIndex passes to proxy layer → task_index.go:510 (validates metricType exists) → task_index.go:515 (validates against FloatVectorMetrics) BUT: empty string becomes COSINE before reaching validation, null consistencyLevel never checked",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2层在handler_v2.go:2058处对空metricType直接赋默认值COSINE,在1999行对null consistencyLevel直接赋默认值Bounded。两者都绕过了下游的enum验证逻辑(task_index.go:510-517和utils.go:1739-1748)。显式传递'Invalid'字符串会被拒绝,但空/null被静默替换,导致Type1_IllegalSuccess。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with explicit invalid string vs empty/null",
+          "observed": "metricType='Invalid' → HTTP 200 code 1100 rejected; metricType='' → HTTP 200 accepted, silently becomes COSINE. consistencyLevel='Invalid' → rejected; consistencyLevel=null → accepted, silently becomes Bounded. Confirms the bug is specifically about empty/null handling, not generic validation absence."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 同一容器,显式'Invalid'被拒说明验证逻辑存在",
+            "并发/race - 单线程同步请求,无并发操作",
+            "缓存/延迟 - create→describe是同步链,无缓存影响",
+            "请求参数笔误 - payload完全符合接口规范,参数名正确",
+            "API语义误解 - 契约明文规定metricType和consistencyLevel必须为特定枚举值"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format",
+        "note": "命中blindspot_indicators中的'REST v2 API data type serialization - 8 issues in corpus'。本缺陷属于该模式:空/null值未被正确验证,而是被静默替换成默认值,与历史REST v2数据类型处理问题一致。"
+      },
+      "root_cause_if_confirmed": "rest_v2_enum_validation_missing",
+      "severity_after_review": "Critical",
+      "confidence": 0.98,
+      "rationale": "源码接地发现REST v2层(handler_v2.go)在处理空metricType和null consistencyLevel时,直接赋默认值(COSINE和Bounded)而绕过enum验证。契约明文规定metricType∈[L2,IP,COSINE]、consistencyLevel∈[Strong,Session,Bounded,Eventually]。实测证实空/null被静默替换而非拒绝。显式'Invalid'字符串被拒说明验证逻辑存在,但空/null检查缺失导致Type1非法成功。属于REST v2数据类型处理盲点模式,与历史issue一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_enum_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

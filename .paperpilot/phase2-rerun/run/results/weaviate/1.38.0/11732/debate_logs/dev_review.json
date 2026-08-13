@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11732",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.distance=null",
+          "observed": "API accepts null and responds with distance='cosine' (default coercion)",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}' | python -c 'import sys,json;d=json.load(sys.stdin);print(d.get(\"vectorIndexConfig\",{}).get(\"distance\"))'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API should reject null values for enum parameters like 'distance'",
+            "Type coercion should not happen silently without validation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for distance validation",
+            "Bug shape BS-004: Parameter Validation Issues in Request Parsing - matches historical pattern"
+          ],
+          "note": "Contract lacks explicit assertion, but physical constraint applies (enum must be non-null string)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "distance",
+            "OptionalStringFromMap",
+            "DefaultDistanceMetric",
+            "ParseAndValidateConfig"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/common/config.go",
+            "usecases/schema/parser.go",
+            "entities/models/vector_config.go"
+          ],
+          "source_excerpt": "entities/vectorindex/common/config.go:95-110\nfunc OptionalStringFromMap(in map[string]interface{}, name string, setFn func(v string)) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // <-- BUG: silently ignores null instead of erroring\n\t}\n\tsetFn(asString)\n\treturn nil\n}\n\nentities/vectorindex/hnsw/config.go:213-217\nif err := vectorIndexCommon.OptionalStringFromMap(asMap, \"distance\", func(v string) {\n\tuc.Distance = v\n}); err != nil {\n\treturn uc, err\n}\n\nentities/vectorindex/hnsw/config.go:96 (SetDefaults)\nu.Distance = vectorIndexCommon.DefaultDistanceMetric  // \"cosine\"",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig → OptionalStringFromMap(distance) → type assertion fails for null → silently ignored → SetDefaults() sets Distance='cosine'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:OptionalStringFromMap 在 line 105 当 value.(string) 断言失败时(包括 null 值)直接 return nil,不报错也不设置值。导致 null 被忽略，随后 SetDefaults() 将 Distance 设为 DefaultDistanceMetric(即 'cosine')。这是真缺陷 - 源码确实缺失 null 检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /schema with distance=null, then GET /schema/TestClass",
+          "observed": "Created collection shows distance='cosine' in response, confirming silent coercion occurred",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestClass | python -c 'import sys,json;d=json.load(sys.stdin);print(d.get(\"vectorIndexConfig\",{}).get(\"distance\"))'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (not platform/filesystem related)",
+            "Concurrency race (single sequential request)",
+            "Request parameter typo (explicitly sent null)",
+            "API semantics misunderstanding (null is not a valid enum value)"
+          ],
+          "surviving": "none",
+          "note": "No by_design_patterns in developer_cognition.json (0 patterns). This is not mundane - it's a validation gap."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_id": "BS-004",
+        "note": "Matches bug shape BS-004 'Parameter Validation Issues in Request Parsing' - systematic defects affecting request_parsing functionality. Historical instances: #11981 (empty vector), #11729 (negative desiredCount), #11592 (property_value boost with missing values)"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap_at_api_boundary",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion for distance validation in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract lacks explicit assertion, but BS-004 bug shape establishes this as systematic parameter validation gap"
+        },
+        "physical": {
+          "objective_constraint": "distance is enum parameter with objective physical constraint - must be non-null string from defined set (cosine/dot/l2-squared/manhattan/hamming)",
+          "api_accepts_violation": true,
+          "api_observed_value": "null accepted and coerced to 'cosine' (default)",
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint violated - enum parameter must reject null values"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "source_behavior": "OptionalStringFromMap silently ignores null (no error), then SetDefaults() applies default value",
+          "verdict_C": "CONFIRMED",
+          "note": "No by-design comment or validation - this is silent data loss, not graceful degradation"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) + verdict_C=CONFIRMED (no by-design evidence) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "源码接地证实真缺陷:OptionalStringFromMap(entities/vectorindex/common/config.go:95-110) 在处理 null 值时,类型断言 value.(string) 失败(line 103-105),但函数直接 return nil 而不报错。导致 null 被静默忽略,随后 SetDefaults() 将 Distance 设为 DefaultDistanceMetric('cosine')。这是 Type1_IllegalSuccess - API 应该拒绝 null 值(422 error),但却接受并执行类型强制。匹配 bug shape BS-004 (参数校验缺失),与历史 issue #11729 (shardingConfig.desiredCount 接受负值) 同类。置信度高 - 源码明确显示缺失 null 检查,无 by-design 注释,实测复现成功。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap_at_api_boundary": 1
+    },
+    "source_grounding_stats": {
+      "local_clone_available": true,
+      "clone_path": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0",
+      "files_examined_count": 4,
+      "grep_queries_count": 4,
+      "source_excerpt_lines": 35
+    }
+  },
+  "self_check": "PASSED"
+}

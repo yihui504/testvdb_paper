@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.3",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_10120",
+      "endpoint": "points+count",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Reproduced count(exact=true, is_empty) vs count(exact=false, is_empty) divergence on keyword field",
+          "observed": "exact=true returned 40, exact=false returned 24. Both queries on same collection with keyword-indexed field 'kw'",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/c/points/count' -H 'Content-Type: application/json' -d '{\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Collection has 200 total points",
+            "Keyword index exists on field 'kw' (indexed 160 points with values, 40 without)",
+            "exact=true path performs full scan - returns correct count of 40 points with empty kw field",
+            "exact=false path should use index-based cardinality estimation but falls back to heuristic"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_cardinality_oracle_count-exact-false (from bug_shapes.json)",
+            "API contract: POST /collections/{collection_name}/points/count with exact parameter (api_templates.md line 108)",
+            "Contract specifies: exact=true = accurate scan count; exact=false = approximate indexed cardinality estimate (faster)"
+          ],
+          "source_url": "https://qdrant.tech/documentation/rest-api/count-points/"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.3 @ v1.18.3",
+          "grep_queries": [
+            "estimate_cardinality_impl",
+            "is_empty",
+            "FieldCondition::new_is_empty",
+            "MapIndexRead"
+          ],
+          "files_examined": [
+            "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+            "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+            "lib/segment/src/segment/read_view/payload.rs",
+            "lib/segment/src/index/query_estimator.rs",
+            "lib/segment/src/types.rs",
+            "lib/collection/src/shards/local_shard/shard_ops.rs",
+            "lib/segment/src/index/field_index/map_index/read_ops.rs"
+          ],
+          "source_excerpt": "/// lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs:170-222\nfn estimate_cardinality_impl<T: MapIndexRead<str>>(\n    index: &T,\n    condition: &FieldCondition,\n    hw_counter: &HardwareCounterCell,\n) -> Option<CardinalityEstimation> {\n    match &condition.r#match {\n        Some(Match::Value(MatchValue { value })) => match value {\n            ValueVariants::String(keyword) => {\n                let mut estimation = index.match_cardinality(keyword.as_str(), hw_counter);\n                estimation.primary_clauses.push(PrimaryCondition::Condition(Box::new(condition.clone())));\n                Some(estimation)\n            }\n            ValueVariants::Integer(_) => None,\n            ValueVariants::Bool(_) => None,\n        },\n        Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {\n            AnyVariants::Strings(keywords) => {\n                let estimations = keywords.iter().map(|keyword| index.match_cardinality(keyword.as_str(), hw_counter)).collect::<Vec<_>>();\n                let estimation = if estimations.is_empty() {\n                    CardinalityEstimation::exact(0)\n                } else {\n                    combine_should_estimations(&estimations, index.get_indexed_points())\n                };\n                Some(estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))))\n            }\n            AnyVariants::Integers(integers) => {\n                if integers.is_empty() {\n                    Some(CardinalityEstimation::exact(0).with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))))\n                } else {\n                    None\n                }\n            }\n        },\n        Some(Match::Except(MatchExcept { except })) => match except {\n            AnyVariants::Strings(keywords) => Some(index.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))\n            AnyVariants::Integers(_) => None,\n        },\n        _ => None,  // <-- BUG: is_empty condition falls through to this None return\n    }\n}\n\n/// lib/segment/src/index/struct_payload_index/read_view/filtering.rs:104-109\nCondition::IsEmpty(IsEmptyCondition { is_empty: field }) => {\n    let available_points = self.available_point_count();\n    let condition = FieldCondition::new_is_empty(field.key.clone(), true);\n    self.estimate_field_condition(&condition, nested_path, hw_counter)?\n        .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))  // <-- Falls back to total/2 heuristic\n}",
+          "call_chain_traced": "POST /count (exact=false) → shard_ops.count() → estimate_cardinality() → payload_index.estimate_cardinality() → condition_cardinality(Condition::IsEmpty) → FieldCondition::new_is_empty() → estimate_field_condition() → keyword_index.estimate_cardinality() → estimate_cardinality_impl() → returns None (doesn't handle is_empty field) → fallback to CardinalityEstimation::unknown(available_points) → returns heuristic (total/2) instead of index-based estimation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms that keyword index's estimate_cardinality_impl does NOT implement cardinality estimation for is_empty conditions. It only handles Match::Value, Match::Any, and Match::Except. The is_empty field of FieldCondition is destructured but ignored (line 261: 'is_empty: _'). This is a true bug in the cardinality estimator for keyword payload indexes."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Scroll ground truth verification for is_empty filter",
+          "observed": "Scroll with same is_empty filter returned exactly 40 points (all with empty payload {}), confirming exact=true count of 40 is correct. The exact=false count of 24 is definitively wrong.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/c/points/scroll' -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"limit\": 200}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Windows/Docker) - both exact=true and exact=false run in same environment",
+            "Concurrency/race - single-threaded sequential test execution",
+            "Request parameter typo - verified raw HTTP request is correct",
+            "By-design behavior - contract specifies exact=false should use indexed estimation, not a total/2 heuristic fallback"
+          ],
+          "surviving": "none - all mundane explanations excluded"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-cardinality-oracle-count-exact-false",
+        "developer_quote": "bug_shapes.json shape_id: qdrant-cardinality-oracle-count-exact-false - 'count API's approximate cardinality path (exact:false, uses index histograms / estimators) diverges from the exact path (exact:true, scan) and from scroll/search ground truth, for certain filter condition classes'",
+        "note": "This candidate directly matches the cardinality_oracle bug shape pattern. The is_empty condition class on keyword-indexed fields has a broken estimator that falls back to a heuristic instead of using actual index statistics."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "POST /collections/{collection_name}/points/count with exact=false should return approximate count using indexed cardinality estimation (contract from api_templates.md line 108 and structured_contract.json endpoint description)",
+          "source_implements_check": false,
+          "source_evidence": "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs estimate_cardinality_impl does not handle is_empty field - returns None",
+          "api_observed_value": "exact=false returned 24, which is a fallback heuristic (total/2 adjusted for deferred points) rather than index-based estimation",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Cardinality estimation for indexed fields should use actual index statistics, not generic heuristics",
+          "api_accepts_violation": true,
+          "source_evidence": "Keyword index has statistics available (indexed 160 points with values) but is_empty estimator ignores them",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "source_evidence": "No by-design comment or fallback handler found. The None return in estimate_cardinality_impl appears to be an incomplete implementation rather than an intentional fallback.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override A)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Source code grounding confirms that the keyword payload index's cardinality estimator (estimate_cardinality_impl in lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs) does NOT implement estimation for is_empty conditions. The function destructures FieldCondition but ignores the is_empty field (line 261: 'is_empty: _'), causing all non-match conditions including is_empty to fall through to the catch-all '_ => None' return (line 220). This triggers fallback to CardinalityEstimation::unknown(available_points) in filtering.rs (line 109), which uses a total/2 heuristic instead of actual index-based estimation. The exact count (40) verified by scroll ground truth proves the estimation (24) is incorrect. This matches the cardinality_oracle bug shape pattern: exact:true scan (40) ≠ exact:false estimation (24) ≠ scroll ground truth (40)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

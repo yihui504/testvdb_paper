@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52312",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert {\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.1, 0.2, 0.3, 0.4]}]}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":{\"insertCount\":1,\"insertIds\":[100]}} - String ID \"100\" successfully coerced to int64, API returned success",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim assumes 'REST v2 API must enforce strict type validation and reject mismatched types'",
+            "Assumes type coercion is a bug rather than intentional API design choice"
+          ],
+          "note": "The violation premise is invalid - REST v2 APIs commonly use permissive type handling for JSON compatibility"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint in structured_contract.json requiring strict type validation for insert endpoint",
+            "Contract only defines available data types (milvus_type_int64_001: dataType == Int64), not runtime validation behavior"
+          ],
+          "contract_misread": false,
+          "note": "Contract is silent on runtime type coercion behavior - it defines schema types, not input validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "DataType_Int64",
+            "json.Number",
+            "anyToColumns"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 639-644\n case schemapb.DataType_Int64:\n     result, err := json.Number(dataString).Int64()\n     if err != nil {\n         return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n     }\n     reallyData[fieldName] = result\n\n// Lines 1589-1590 in handler_v2.go\n req.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)",
+          "call_chain_traced": "REST v2 Insert → handler_v2.go:insert() → checkAndSetData() → json.Number(dataString).Int64() → stores as int64",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code INTENTIONALLY uses json.Number().Int64() which accepts both numeric strings and integers - this is standard JSON API design for type flexibility, NOT a bug"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query {\"collectionName\": \"test_type_coercion\", \"filter\": \"id==100\", \"outputFields\": [\"id\", \"vector\"]}",
+          "observed": "Query returned {\"id\":100,\"vector\":[0.1,0.2,0.3,0.4]} - Data correctly stored as int64 value 100, no corruption occurred from type coercion",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/query\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_type_coercion\", \"filter\": \"id==100\", \"outputFields\": [\"id\", \"vector\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (none)",
+            "Concurrency (none)",
+            "Request parameter typos (none)"
+          ],
+          "surviving": "by_design_in_source - REST v2 API uses intentional permissive type coercion via json.Number for JSON client compatibility",
+          "note": "This matches developer cognition pattern BDP-002 - intentional design choice for API flexibility"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002",
+        "developer_quote": "Rollback from 3.0 to 2.6 not supported (similar pattern: intentional design choice, not bug)",
+        "note": "Matches by_design_patterns: developers intentionally chose flexible type handling for REST v2 API, similar to how they chose not to support rollback by design"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - contract only defines data types, not runtime validation behavior",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - Int64 can accept string representations via json.Number without physical violation",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "source_evidence": "utils.go:639-644 shows intentional use of json.Number(dataString).Int64() for flexible type handling",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final=REFUTED (graceful type coercion is by-design in source code)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "REST v2 API INTENTIONALLY uses json.Number for permissive type coercion (see utils.go:639-644). This is standard JSON API design practice for client flexibility, NOT a defect. The insert with string ID '100' succeeded and correctly stored as int64 value 100, as verified by query. Contract is silent on runtime type validation, only defining schema types. This matches developer cognition BDP-002 pattern (by-design behavior)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52312",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0",
+    "target": "milvus",
+    "version": "3.0.0",
+    "review_timestamp": "2026-08-14T03:09:00Z"
+  }
+}

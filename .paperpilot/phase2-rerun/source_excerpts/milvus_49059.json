@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_49059",
+ "vendor": "milvus",
+ "version": "2.6.12",
+ "tag": "v2.6.12",
+ "terms": [
+  "COSINE",
+  "Metric",
+  "Distance",
+  "Identical",
+  "Vectors"
+ ],
+ "status": "found",
+ "n_hits": 43,
+ "excerpts": [
+  {
+   "file": "internal/proxy/task_index.go",
+   "line": 61,
+   "term_matched": "COSINE",
+   "context": "  46| \tCreateIndexTaskName           = \"CreateIndexTask\"\n  47| \tAlterIndexTaskName            = \"AlterIndexTask\"\n  48| \tDescribeIndexTaskName         = \"DescribeIndexTask\"\n  49| \tDropIndexTaskName             = \"DropIndexTask\"\n  50| \tGetIndexStateTaskName         = \"GetIndexStateTask\"\n  51| \tGetIndexBuildProgressTaskName = \"GetIndexBuildProgressTask\"\n  52| \n  53| \tAutoIndexName = common.AutoIndexName\n  54| \tDimKey        = common.DimKey\n  55| \tIsSparseKey   = common.IsSparseKey\n  56| \n  57| \tRefineTypeKey = \"refine_type\"\n  58| )\n  59| \n  60| // mapVectorMetricToEmbListMetric maps element-level vector metrics to EmbList-level metrics for ArrayOfVector.\n  61| // Autoindex configs use element-level metrics (e.g., IP, L2, COSINE), but ArrayOfVector fields\n  62| // require EmbList metrics (e.g., MaxSimIP, MaxSimL2, MaxSimCosine).\n  63| func mapVectorMetricToEmbListMetric(metricType string) string {\n  64| \tswitch strings.ToUpper(metricType) {\n  65| \tcase strings.ToUpper(metric.COSINE):\n  66| \t\treturn metric.MaxSimCosine\n  67| \tcase strings.ToUpper(metric.L2):\n  68| \t\treturn metric.MaxSimL2\n  69| \tcase strings.ToUpper(metric.IP):\n  70| \t\treturn metric.MaxSimIP\n  71| \tcase strings.ToUpper(metric.HAMMING):\n  72| \t\treturn metric.MaxSimHamming\n  73| \tcase strings.ToUpper(metric.JACCARD):\n  74| \t\treturn metric.MaxSimJaccard\n  75| \tdefault:\n  76| \t\treturn metricType"
+  },
+  {
+   "file": "internal/proxy/util.go",
+   "line": 802,
+   "term_matched": "COSINE",
+   "context": " 787| \t\tschemapb.DataType_Int16, schemapb.DataType_Int32,\n 788| \t\tschemapb.DataType_Int64,\n 789| \t\tschemapb.DataType_Float, schemapb.DataType_Double:\n 790| \t\treturn false, nil\n 791| \n 792| \tcase schemapb.DataType_FloatVector, schemapb.DataType_BinaryVector, schemapb.DataType_Float16Vector, schemapb.DataType_BFloat16Vector, schemapb.DataType_SparseFloatVector:\n 793| \t\treturn true, nil\n 794| \t}\n 795| \n 796| \treturn false, fmt.Errorf(\"invalid data type: %d\", dataType)\n 797| }\n 798| \n 799| func validateMetricType(dataType schemapb.DataType, metricTypeStrRaw string) error {\n 800| \tmetricTypeStr := strings.ToUpper(metricTypeStrRaw)\n 801| \tswitch metricTypeStr {\n 802| \tcase metric.L2, metric.IP, metric.COSINE:\n 803| \t\tif typeutil.IsFloatVectorType(dataType) {\n 804| \t\t\treturn nil\n 805| \t\t}\n 806| \tcase metric.JACCARD, metric.HAMMING, metric.SUBSTRUCTURE, metric.SUPERSTRUCTURE, metric.MHJACCARD:\n 807| \t\tif dataType == schemapb.DataType_BinaryVector {\n 808| \t\t\treturn nil\n 809| \t\t}\n 810| \t}\n 811| \treturn fmt.Errorf(\"data_type %s mismatch with metric_type %s\", dataType.String(), metricTypeStrRaw)\n 812| }\n 813| \n 814| func validateFunction(coll *schemapb.CollectionSchema, needValidateFunctionName string, disableRuntimeCheck bool) error {\n 815| \tnameMap := lo.SliceToMap(coll.GetFields(), func(field *schemapb.FieldSchema) (string, *schemapb.FieldSchema) {\n 816| \t\treturn field.GetName(), field\n 817| \t})"
+  }
+ ]
+}

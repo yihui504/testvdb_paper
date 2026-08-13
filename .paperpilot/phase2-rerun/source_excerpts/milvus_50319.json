@@ -1,0 +1,25 @@
+{
+ "defect_id": "milvus_50319",
+ "vendor": "milvus",
+ "version": "2.6.17",
+ "tag": "v2.6.17",
+ "terms": [
+  "unloaded"
+ ],
+ "status": "found",
+ "n_hits": 23,
+ "excerpts": [
+  {
+   "file": "internal/proxy/task_import.go",
+   "line": 142,
+   "term_matched": "unloaded",
+   "context": " 127| \t\t\treturn err\n 128| \t\t}\n 129| \t\tpartitionIDs = []UniqueID{partitionID}\n 130| \t} else if isL0Import {\n 131| \t\tif req.GetPartitionName() == \"\" {\n 132| \t\t\tpartitionIDs = []UniqueID{common.AllPartitionsID}\n 133| \t\t} else {\n 134| \t\t\tpartitionID, err := globalMetaCache.GetPartitionID(ctx, req.GetDbName(), req.GetCollectionName(), req.PartitionName)\n 135| \t\t\tif err != nil {\n 136| \t\t\t\treturn err\n 137| \t\t\t}\n 138| \t\t\tpartitionIDs = []UniqueID{partitionID}\n 139| \t\t}\n 140| \t\t// Currently, querynodes first load L0 segments and then load L1 segments.\n 141| \t\t// Therefore, to ensure the deletes from L0 import take effect,\n 142| \t\t// the collection needs to be in an unloaded state,\n 143| \t\t// and then all L0 and L1 segments should be loaded at once.\n 144| \t\t// We will remove this restriction after querynode supported to load L0 segments dynamically.\n 145| \t\tloaded, err := isCollectionLoaded(ctx, node.mixCoord, collectionID)\n 146| \t\tif err != nil {\n 147| \t\t\treturn err\n 148| \t\t}\n 149| \t\tif loaded {\n 150| \t\t\treturn merr.WrapErrImportFailed(\"for l0 import, collection cannot be loaded, please release it first\")\n 151| \t\t}\n 152| \t} else {\n 153| \t\tif hasPartitionKey {\n 154| \t\t\tif req.GetPartitionName() != \"\" {\n 155| \t\t\t\treturn merr.WrapErrImportFailed(\"not allow to set partition name for collection with partition key\")\n 156| \t\t\t}\n 157| \t\t\tpartitions, err := globalMetaCache.GetPartitions(ctx, req.GetDbName(), req.GetCollectionName())"
+  },
+  {
+   "file": "internal/proxy/task_statistic.go",
+   "line": 45,
+   "term_matched": "unloaded",
+   "context": "  30| const (\n  31| \tGetCollectionStatisticsTaskName = \"GetCollectionStatisticsTask\"\n  32| \tGetPartitionStatisticsTaskName  = \"GetPartitionStatisticsTask\"\n  33| )\n  34| \n  35| type getStatisticsTask struct {\n  36| \trequest *milvuspb.GetStatisticsRequest\n  37| \tresult  *milvuspb.GetStatisticsResponse\n  38| \tbaseTask\n  39| \tCondition\n  40| \tcollectionName string\n  41| \tpartitionNames []string\n  42| \t// partition ids that are loaded into query node, require get statistics from QueryNode\n  43| \tloadedPartitionIDs []UniqueID\n  44| \t// partition ids that are not loaded into query node, require get statistics from DataCoord\n  45| \tunloadedPartitionIDs []UniqueID\n  46| \n  47| \tctx  context.Context\n  48| \tmixc types.MixCoordClient\n  49| \ttr   *timerecord.TimeRecorder\n  50| \n  51| \tfromDataCoord bool\n  52| \tfromQueryNode bool\n  53| \n  54| \t// if query from shard\n  55| \t*internalpb.GetStatisticsRequest\n  56| \tresultBuf *typeutil.ConcurrentSet[*internalpb.GetStatisticsResponse]\n  57| \n  58| \tshardclientMgr shardclient.ShardClientMgr\n  59| \tlb             shardclient.LBPolicy\n  60| }"
+  }
+ ]
+}

@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_51085",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with vectorFieldType=InvalidVectorType, then POST /v2/vectordb/collections/describe to verify actual field type",
+          "observed": "Collection created successfully with HTTP 200. Describe response shows vector field type is FloatVector (the default), not InvalidVectorType. The API silently ignores the unrecognized vectorFieldType parameter.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\": \"audit5\", \"dbName\": \"default\", \"dimension\": 4, \"metricType\": \"L2\", \"vectorFieldType\": \"InvalidVectorType\"}' && curl -s -X POST http://localhost:19530/v2/vectordb/collections/describe -H 'Content-Type: application/json' -d '{\"collectionName\": \"audit5\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect conclusion assumed vectorFieldType is a validated parameter that should reject invalid values. However, vectorFieldType is NOT a parameter in the CollectionReq schema definition - it's an ignored unknown field. The actual vector field type is determined by Schema.Fields[].DataType, which IS validated."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_001 - The API specification shows vectorFieldType is NOT a standard parameter for collections+create. The valid parameters are: collectionName, dbName, dimension, metricType, idType, autoID, enableDynamicField, consistencyLevel, schema."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": ["vectorFieldType", "DataType.*invalid", "fieldDataType", "schemapb.DataType_value"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1959-1966:\n\nfieldDataType, ok := schemapb.DataType_value[field.DataType]\nif !ok {\n    log.Ctx(ctx).Warn(\"field's data type is invalid(case sensitive).\", zap.Any(\"fieldDataType\", field.DataType), zap.Any(\"field\", field))\n    HTTPAbortReturn(c, http.StatusOK, gin.H{\n        HTTPReturnCode:    merr.Code(merr.ErrParameterInvalid),\n        HTTPReturnMessage: merr.ErrParameterInvalid.Error() + \", data type \" + field.DataType + \" is invalid(case sensitive).\",\n    })\n    return nil, merr.ErrParameterInvalid\n}\n\nrequest_v2.go line 617-626 shows FieldSchema struct:\n\ntype FieldSchema struct {\n    FieldName         string                 `json:\"fieldName\" binding:\"required\"`\n    DataType          string                 `json:\"dataType\" binding:\"required\"`\n    ElementDataType   string                 `json:\"elementDataType\"`\n    IsPrimary         bool                   `json:\"isPrimary\"`\n    IsPartitionKey    bool                   `json:\"isPartitionKey\"`\n    IsClusteringKey   bool                   `json:\"isClusteringKey\"`\n    ElementTypeParams map[string]interface{} `json:\"elementTypeParams\"`\n    Nullable          bool                   `json:\"nullable\"`\n    DefaultValue      interface{}            `json:\"defaultValue\"`\n}",
+          "call_chain_traced": "CreateCollection handler parses Schema.Fields[].DataType string → looks up in schemapb.DataType_value enum map → if not found, returns error. Unknown top-level parameters like 'vectorFieldType' are silently ignored by Gin's JSON binding (not part of CollectionReq struct)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_for_datatype_but_vectorFieldType_is_ignored_parameter",
+          "note": "Source code confirms: 1) Schema.Fields[].DataType IS validated against enum values, 2) Unknown top-level JSON fields like vectorFieldType are silently ignored by Go JSON unmarshaling since they don't map to struct fields, 3) When no schema is provided, the API generates a default schema with FloatVector type regardless of vectorFieldType value"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that Schema.Fields[].DataType validation actually works by testing with truly invalid DataType value in the proper location",
+          "observed": "The defect report tested vectorFieldType (wrong parameter). When testing with invalid value in the correct parameter location (Schema.Fields[0].DataType = 'InvalidVectorType'), the API DOES return error: 'data type InvalidVectorType is invalid(case sensitive)'. This confirms validation exists and works correctly for the proper parameter."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - behavior is consistent",
+            "Concurrent race - single-threaded test",
+            "API semantic misunderstanding - this is by design"
+          ],
+          "surviving": "parameter_name_confusion - tester used 'vectorFieldType' instead of 'Schema.Fields[].DataType', leading to false defect report. The unknown parameter was silently ignored, and default schema generation created FloatVector field"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match known by_design patterns. This appears to be a test oracle error - the wrong parameter name was used."
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The defect report claimed that Milvus accepts invalid vectorFieldType 'InvalidVectorType'. However, investigation revealed: 1) vectorFieldType is NOT a valid parameter in the REST v2 API schema - it's an unknown field that gets silently ignored by JSON unmarshaling, 2) The actual parameter for specifying vector field type is Schema.Fields[].DataType, which IS properly validated, 3) When an invalid DataType is provided in the correct location, the API correctly rejects it with error message 'data type X is invalid(case sensitive)', 4) The test collection was created with default FloatVector type because no explicit schema was provided (quick-setup mode). The root cause is a test oracle error: the attack script used the wrong parameter name (vectorFieldType instead of dataType in schema fields)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_param_typo": 1
+    }
+  },
+  "source_code_evidence_summary": {
+    "local_clone_available": true,
+    "local_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19",
+    "grep_queries_used": [
+      "vectorFieldType",
+      "DataType.*invalid",
+      "fieldDataType",
+      "schemapb.DataType_value"
+    ],
+    "key_files_examined": [
+      "internal/distributed/proxy/httpserver/handler_v2.go (validation logic at lines 1959-1966)",
+      "internal/distributed/proxy/httpserver/request_v2.go (request struct definitions)",
+      "internal/distributed/proxy/httpserver/handler.go (routing)"
+    ],
+    "verification_outcome": "Confirmed that Schema.Fields[].DataType validation exists and works correctly. The vectorFieldType parameter is simply an unknown field that gets ignored."
+  }
+}

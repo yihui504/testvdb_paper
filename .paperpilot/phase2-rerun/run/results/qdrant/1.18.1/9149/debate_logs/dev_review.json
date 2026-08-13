@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "v1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9149",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero with shard_number=0",
+          "observed": "HTTP 422 with 'Validation error in JSON body: [shard_number: value 0 invalid, must be 1 or larger]'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_zero' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No violated assumptions - the validation explicitly rejected shard_number=0"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001",
+            "assertion: shard_number >= 1",
+            "evidence_tier: explicit",
+            "confidence: 1.0"
+          ],
+          "contract_supports_claim": true
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["shard_number", "validate", "CreateCollection"],
+          "files_examined": [
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "lib/collection/src/operations/cluster_ops.rs",
+            "lib/collection/src/operations/config_diff.rs"
+          ],
+          "source_excerpt": "File: lib/storage/src/content_manager/toc/create_collection.rs, Lines 135-136\n\nlet shard_number: NonZeroU32 = NonZeroU32::new(shard_number)\n    .ok_or_else(|| StorageError::bad_input(\"`shard_number` cannot be 0\"))?;\n\nThis code explicitly validates that shard_number cannot be 0 by using NonZeroU32::new(), which returns None if the value is 0, triggering a bad_input error.",
+          "call_chain_traced": "CreateCollection operation → shard_number parameter → NonZeroU32::new() validation → StorageError::bad_input if zero",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: shard_number 参数在 lib/storage/src/content_manager/toc/create_collection.rs:135-136 处通过 NonZeroU32::new() 显式验证，如果值为 0 则返回 StorageError::bad_input(\"`shard_number` cannot be 0\")。源码中存在有效验证逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/test_shard_zero to verify collection was not created",
+          "observed": "HTTP 404 Not found: Collection `test_shard_zero` doesn't exist!",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:6333/collections/test_shard_zero'",
+          "note": "证伪失败：原'缺陷'声称的违规（接受 shard_number=0）实际已被正确拒绝，集合未创建。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "contract_misread",
+          "note": "该候选源于对契约的误读：契约明文规定 shard_number >= 1，源码也正确实现了该验证（通过 NonZeroU32），API 也正确拒绝非法值。这是'看起来像缺陷'实为'正确行为'的典型案例。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "pattern_name": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "shape_id": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "该模式属于参数验证边界值检查问题，但本案中验证是正确的（NonZeroU32 确保值 >= 1），不存在缺失。",
+        "is_blindspot": false,
+        "is_by_design": false,
+        "note": "命中 bug_shapes 中 qdrant-parameter-validation-numeric-boundary 模式，但本案是误报：源码正确实现了验证（NonZeroU32::new），API 也正确拒绝非法值，不存在真正的验证缺失。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "双盲独立审查结论：\n\n1. **干净复现（Step 1）**：API 实际拒绝了 shard_number=0 的请求，返回 HTTP 422 验证错误，消息明确指出'shard_number: value 0 invalid, must be 1 or larger'。\n\n2. **前提审计（Step 2）**：无隐含前提被违反 —— 请求语义明确，API 响应明确拒绝非法值。\n\n3. **契约对照（Step 3）**：structured_contract.json 中约束 qdrant_range_create_collection_001 明文规定 'shard_number >= 1'（assertion, confidence=1.0, evidence_tier=explicit），契约明确支持验证要求。\n\n4. **源码接地（Step 3.5）**：本地源码 create_collection.rs:135-136 显示，shard_number 通过 NonZeroU32::new() 显式验证，若值为 0 则触发 StorageError::bad_input(\"`shard_number` cannot be 0\")。验证逻辑确实存在且正确。\n\n5. **反向证伪（Step 4）**：集合确实未被创建（GET /collections/test_shard_zero 返回 404），证伪了'API 接受非法值'的声称。\n\n6. **平凡解释排除（Step 5）**：无环境问题、并发竞态或缓存问题。该'异常'的唯一解释是对契约的误读 —— 契约和源码都正确实现了 shard_number >= 1 的验证。\n\n7. **三视角裁决（Step 6）**：\n   - 视角 A（契约）：verdict_A = REFUTED（契约有 assertion，API 不违反，正确拒绝）\n   - 视角 B（物理）：verdict_B = CONFIRMED（存在客观约束 shard_number ≥ 1，但 API 正确执行约束）\n   - 视角 C（行为优雅）：verdict_C = REFUTED（行为优雅：明确错误消息，正确拒绝）\n   - 聚合：verdict_A=REFUTED + verdict_B=CONFIRMED 但正确实现 + verdict_C=REFUTED → 最终 REFUTED\n\n**根本原因**：contract_misread —— 原声称依赖对 API 行为的错误观察，实际 API 正确实现了契约要求。\n\n**置信度**：0.95 —— 证据完整：实测行为、契约明文、源码实现三者在 'shard_number >= 1' 要求上完全一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "self_check": "PASSED",
+  "reviewer_agent": "dev-reviewer (Opus)",
+  "execution_mode": "双盲双源验证",
+  "source_grounding_method": "本地 Grep + 调用链追踪",
+  "verification_channels": ["实测 API 行为", "structured_contract.json", "本地源码 create_collection.rs:135-136"]
+}

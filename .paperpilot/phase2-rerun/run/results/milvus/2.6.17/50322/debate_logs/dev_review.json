@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50322",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop with nonexistent collection",
+          "observed": "HTTP 200 with code:0 (success) for nonexistent collection",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/drop' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes 'drop must fail for nonexistent resources' - This is an REST/HTTP expectation, not a Milvus API contract requirement",
+            "Conclusion assumes 'HTTP 200 + code:0 indicates successful operation' - True, but idempotent drop-on-nonexistent is by-design"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "invariant_id: milvus_invariant_drop_nonexistent_001 - Asserts post-drop state (collection must not exist), not pre-drop validation",
+            "behavioral_contract: milvus_behavioral_drop_query_invisibility_001 - Defines post-drop visibility behavior, not drop preconditions"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "dropCollectionTask PreExecute",
+            "errIgnoredDropCollection",
+            "DropCollection errIgnoredDropCollection",
+            "idempotent drop collection"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/rootcoord/drop_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go line 710-715\nfunc (t *dropCollectionTask) PreExecute(ctx context.Context) error {\n\t// No need to check collection name\n\t// Validation shall be preformed in `CreateCollection`\n\t// also permit drop collection one with bad collection name\n\treturn nil\n}\n\n// internal/rootcoord/drop_collection_task.go line 53-56\nif err != nil {\n    if errors.Is(err, merr.ErrCollectionNotFound) || errors.Is(err, merr.ErrDatabaseNotFound) {\n        return errIgnoredDropCollection\n    }\n    return err\n}\n\n// internal/rootcoord/meta_table.go line 58\nerrIgnoredDropCollection = errors.New(\"ignored drop collection\") // drop collection or database not found, so it can be ignored.\n\n// internal/rootcoord/root_coord.go line 959-962\nif errors.Is(err, errIgnoredDropCollection) {\n    logger.Info(\"drop collection that not found, ignore it\")\n    metrics.RootCoordDDLReqCounter.WithLabelValues(\"DropCollection\", metrics.SuccessLabel).Inc()\n    return merr.Success(), nil\n}",
+          "call_chain_traced": "HTTP REST dropCollection -> proxy.DropCollection -> dropCollectionTask.PreExecute (no validation) -> mixCoord.DropCollection -> rootCoord.dropCollectionTask.validate -> meta.GetCollectionByName -> returns errIgnoredDropCollection if not found -> rootCoord.DropCollection catches errIgnoredDropCollection and returns Success()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code reveals intentional idempotent design: dropping nonexistent collection returns success via errIgnoredDropCollection mechanism. This is a documented design choice, not a defect."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Test idempotency: create collection -> drop -> drop again",
+          "observed": "Both drops return HTTP 200 with code:0. Second drop (on already-dropped collection) succeeds, proving idempotent-by-design behavior."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - Reproducible consistently",
+            "Concurrency/race - Single-threaded test",
+            "Request parameter typo - Used standard API syntax",
+            "Cache/optimizer delay - Immediate response",
+            "API misunderstanding - This IS the correct understanding"
+          ],
+          "surviving": "idempotent_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-001",
+        "developer_quote": "uncommitted V3 growing segments intentionally excluded; errIgnoredDropCollection used for idempotent drop of nonexistent collections",
+        "pattern_id": "RP-001",
+        "note": "Hits rejection pattern RP-001 (expected behavior as by-design). Milvus intentionally makes drop collection idempotent - dropping a nonexistent or already-dropped collection returns success. This is documented in source comments and matches 'expected behavior' rejection pattern from developer cognition."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "The defect claim asserts that dropping a nonexistent collection should fail with an error. However, source code grounding reveals this is intentional idempotent-by-design behavior: (1) proxy/task.go PreExecute explicitly comments 'permit drop collection one with bad collection name', (2) rootcoord returns errIgnoredDropCollection when collection not found, (3) root_coord.go catches this error and returns merr.Success() intentionally. The REST API contract invariant (milvus_invariant_drop_nonexistent_001) specifies post-drop state behavior, not pre-drop validation. Idempotent drop operations are a standard database pattern for distributed systems reliability. This is mundane API semantics, not a defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_invariant_drop_nonexistent_001: 'After a collection is dropped, it must not exist and describe must return 404'",
+          "assertion_text_quoted": "drop(collection) -> describe(collection) must return 404 AND has(collection) must return false",
+          "source_implements_check": false,
+          "api_observed_value": "drop(nonexistent_collection) succeeded with HTTP 200 code:0",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract invariant describes POST-drop state, not pre-drop validation. No assertion requires drop to fail for nonexistent collections."
+        },
+        "physical": {
+          "objective_constraint": "None - No physical or semantic constraint prohibits dropping nonexistent resources",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code explicitly documents and implements idempotent drop behavior. Comments in proxy/task.go say 'permit drop collection one with bad collection name'. root_coord.go intentionally returns success when collection not found via errIgnoredDropCollection mechanism."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED -> final=REFUTED",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    },
+    "self_check": "PASSED"
+  },
+  "metadata": {
+    "source_clone_available": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "test_db_live": true,
+    "test_db_endpoint": "http://localhost:19530",
+    "review_methodology": "6-step SOP with source grounding via local clone Grep + free exploration",
+    "dev_reviewer_model": "opus"
+  }
+}

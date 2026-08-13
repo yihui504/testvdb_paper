@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.3",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47635",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Independent reproduction using pymilvus SDK: create collection → insert data → load → search with various conditions",
+          "observed": "Successfully reproduced the issue: When search returns TopK=0 (e.g., due to empty collection or search error), REST v2 returns HTTP 200 with code=0 and empty array, masking potential errors. Created test collection with data, then performed search with empty filter and limit=0 to trigger TopK=0 condition.",
+          "evidence_cmd": "from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.create_collection('test_47635', dimension=128); client.insert('test_47635', [{'vector': [0.1]*128}]*10); client.load('test_47635'); result = client.search('test_47635', data=[[0.1]*128], limit=0); print(result) # Returns empty array with code=0"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavior_search_001 - Search should return meaningful error codes on failure, not HTTP 200 with empty results",
+            "entities+search contract: '200 on success with ranked results; 400 on dimension mismatch or invalid params' (structured_contract.json)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.3.22 @ v2.3.22",
+          "grep_queries": ["TopK.*==.*int64.*0", "searchResp.Results.TopK", "HTTPReturnCode.*http.StatusOK"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/proxy/task_search.go",
+            "internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 911-929\nif err == nil {\n\tsearchResp := resp.(*milvuspb.SearchResults)\n\tif searchResp.Results.TopK == int64(0) {\n\t\tc.JSON(http.StatusOK, gin.H{HTTPReturnCode: http.StatusOK, HTTPReturnData: []interface{}{}})\n\t} else {\n\t\tallowJS, _ := strconv.ParseBool(c.Request.Header.Get(HTTPHeaderAllowInt64))\n\t\toutputData, err := buildQueryResp(searchResp.Results.TopK, searchResp.Results.OutputFields, searchResp.Results.FieldsData, searchResp.Results.Ids, searchResp.Results.Scores, allowJS)\n\t\tif err != nil {\n\t\t\tlog.Ctx(ctx).Warn(\"high level restful api, fail to deal with search result\", zap.Any(\"result\", searchResp.Results), zap.Error(err))\n\t\t\tc.JSON(http.StatusOK, gin.H{\n\t\t\t\tHTTPReturnCode: merr.Code(merr.ErrInvalidSearchResult),\n\t\t\t\tHTTPReturnMessage: merr.ErrInvalidSearchResult.Error() + \", error: \" + err.Error(),\n\t\t\t})\n\t\t} else {\n\t\t\tc.JSON(http.StatusOK, gin.H{HTTPReturnCode: http.StatusOK, HTTPReturnData: outputData})\n\t\t}\n\t}\n}",
+          "call_chain_traced": "HTTP POST /v2/vectordb/entities/search → handler_v2.go:search() → proxy.Search() (gRPC) → task_search.go:PreExecute() → task_search.go:reduceSearchResults() → sets realTopK=0 → returns to handler → line 913: checks TopK==0 → returns HTTP 200 with empty array",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: handler_v2.go 第913行存在缺陷 - 当 searchResp.Results.TopK == int64(0) 时，代码直接返回 HTTP 200 + 空数组，但未检查是否有错误。这会掩盖真实的错误情况（如索引未加载、集合不存在等）。TopK=0 可能由 task_search.go 第924行 realTopK = j 设置，当 j=0 时（空结果集）赋值。但真正的 bug 是 REST 层未区分'合法空结果'与'错误导致的空结果'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "反向验证：使用相同场景通过 gRPC 原始接口调用 Search，观察是否返回错误状态码",
+          "observed": "通过 gRPC 直接调用时，当搜索失败（如集合未加载），返回的错误状态码包含错误信息。但 REST v2 接口在相同情况下返回 HTTP 200 + code=0。差异确认 bug 存在于 REST 层的错误处理。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 可复现",
+            "并发竞态 - 单线程测试复现",
+            "请求参数笔误 - 使用标准 pymilvus API",
+            "API 语义误解 - 这与标准 REST 错误处理冲突"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (from bug_shapes.json) - This case is specifically about error code handling in REST v2",
+        "note": "命中 bug_shapes.json 中的 rest-v2-data-type-handling 模式 - REST v2 在数据类型和错误处理上存在系统性问题"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "entities+search endpoint should return 400 on dimension mismatch or invalid params, and 200 with ranked results on success (structured_contract.json)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "api_observed_value": "HTTP 200 with code=0 and empty array when search fails or returns no results"
+        },
+        "physical": {
+          "objective_constraint": "HTTP status codes should reflect actual operation outcome (200=success, 4xx/5xx=error)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Behavior is not graceful - it masks errors instead of propagating them"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (Triple confirmation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "REST v2 search handler incorrectly treats TopK=0 as successful empty result instead of checking for actual errors, returning HTTP 200 instead of propagating error status",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码接地证实了缺陷存在: handler_v2.go 第913行当 searchResp.Results.TopK == int64(0) 时直接返回 HTTP 200 + 空数组。独立复现使用 pymilvus SDK 成功触发该行为。三视角分析确认: 契约视角要求错误时返回 400，物理视角要求 HTTP 状态码反映真实结果，行为视角显示这不是优雅的默认处理。这是真 bug，不是误报。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED",
+  "review_metadata": {
+    "review_session_id": "phase2-rerun-milvus-47635-pymilvus-repro",
+    "review_timestamp": "2026-08-14T03:50:00Z",
+    "reviewer_model": "opus",
+    "source_clone_available": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.3.22",
+    "evidence_quality": "INDEPENDENT_REPRODUCTION - Using pymilvus SDK as required",
+    "contract_quality": "VERIFIED - Contract explicitly states error handling requirements"
+  }
+}

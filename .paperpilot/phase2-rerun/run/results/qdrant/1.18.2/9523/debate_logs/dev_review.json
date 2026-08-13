@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9523",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/search with vector=[0.5,0.5,0.5,0.5], limit=10, offset varying (0, 10, 20), with_payload=false",
+          "observed": "Page 1 (offset=0): returns IDs [0-9], Page 2 (offset=10): returns IDs [10-19], Page 3 (offset=20): returns IDs [20-24]. Pagination successfully returns distinct point sets per page.",
+          "evidence_cmd": "Raw HTTP logs in output_qdrant_9523.log REQ 4-6 show proper pagination behavior with distinct IDs per offset."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API endpoint: POST /collections/{collection_name}/points/search (collections+{collection_name}+points+search in structured_contract.json)",
+            "Parameter: offset (type: integer, description: 'Pagination offset')",
+            "Parameter: limit (type: integer, required: true, description: 'Max results to return')"
+          ],
+          "contract_assertions": "No explicit constraint in structured_contract.json requiring exact deduplication across pagination pages for approximate search."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "offset",
+            "pagination",
+            "duplicate",
+            "hnsw",
+            "search.*top"
+          ],
+          "files_examined": [
+            "lib/collection/src/collection/search.rs",
+            "lib/segment/src/index/hnsw_index/hnsw/search.rs",
+            "lib/segment/src/index/vector_index_search_common.rs",
+            "lib/collection/src/collection/query.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/collection/search.rs line 308-317\n// Skip `offset` only for client requests\n// to avoid applying `offset` twice in distributed mode.\nlet top_res = if is_client_request && request.offset > 0 {\n    merged_iter\n        .skip(request.offset)\n        .take(request.limit)\n        .collect()\n} else {\n    merged_iter.take(request.offset + request.limit).collect()\n};",
+          "call_chain_traced": "Collection::core_search_batch → merged_iter.skip(offset).take(limit) → iterator applies offset/limit to merged results from shards; no deduplication logic present",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "no_deduplication_in_source",
+          "note": "源码接地发现：offset/limit 在 collection 层通过 iterator.skip/take 实现，未对跨页重复点做去重处理。这是 HNSW 近似搜索的固有特性，不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - pagination behavior is visible in raw responses showing distinct point sets per page",
+          "observed": "Three consecutive search requests with offsets 0, 10, 20 return disjoint point sets: [0-9], [10-19], [20-24]. No visible duplicates across these specific pages in this run. However, the issue claims HNSW approximation CAN cause duplicates across pages - which is true by-design but not guaranteed in every query.",
+          "evidence_cmd": "REQ 4-6 in output_qdrant_9523.log confirm pagination returns expected ranges."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "缓存延迟"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns[0]",
+        "developer_quote": "Accepted limitation of approximate search",
+        "pattern_id": "HNSW approximation duplicates in pagination",
+        "note": "candidate 命中 developer_cognition.json 明确的 by_design_pattern：HNSW 近似搜索的分页重复是已知限制，开发者立场为'Accepted limitation of approximate search'，且 should_report=false"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract assertion explicitly forbids duplicates in HNSW approximate search pagination. structured_contract.json defines offset/limit parameters but does not require exact deduplication.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical/semantic constraint prohibiting duplicate point IDs across different offset pages in approximate search. HNSW graph search can return same point via different graph traversal paths in subsequent queries.",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (developer explicitly marked as by_design)",
+        "final_verdict": "REFUTED"
+      },
+      "rationale": "原候选声称 HNSW 分页存在重复点。经 dev-reviewer 源码接地与认知模型核对：\n\n1. 源码分析：lib/collection/src/collection/search.rs 显示 offset/limit 通过 iterator.skip/take 实现，未做跨页去重——这是 HNSW 近似搜索的预期行为。\n\n2. 开发者认知：developer_cognition.json 明确将'HNSW approximation duplicates in pagination'列为 by_design_pattern，开发者立场为'Accepted limitation of approximate search'，且 should_report=false。\n\n3. 契约核对：structured_contract.json 无契约条款明确禁止近似搜索分页中的重复点。\n\n4. 实测证据：raw HTTP logs 显示当前查询返回了正确的分页（点集不相交），但候选的普遍化主张（'HNSW 分页必然出现重复'）本身即是误解——重复可能发生，但这是 by-design 的近似特性，非缺陷。\n\n判定：FALSE_POSITIVE（mundane_api_semantics）。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "metadata": {
+    "reviewed_at": "2026-08-14T00:00:00Z",
+    "reviewer_version": "dev-reviewer SOP 6-step + dual-blind",
+    "source_clone_used": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2"
+  }
+}

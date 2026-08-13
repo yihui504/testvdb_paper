@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9522",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query {\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}",
+          "observed": "HTTP 200 OK with results returned, despite lookup_from pointing to non-existent collection",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_lookup_source/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}' | jq '.status'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API accepts lookup_from parameter with collection field",
+            "Expected behavior: lookup_from.collection must refer to an existing collection (semantic contract)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json endpoint: collections+{collection_name}+points+query",
+            "parameter: lookup_from (type: object, description: 'Cross-collection lookup location')"
+          ],
+          "contract_gap": "Contract does not explicitly state that lookup_from.collection must exist, but semantic meaning implies this requirement"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "lookup_from",
+            "resolve_referenced_vectors_batch",
+            "CollectionError::not_found",
+            "fetch_vectors"
+          ],
+          "files_examined": [
+            "lib/collection/src/common/fetch_vectors.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/collection/src/collection/query.rs",
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "lib/collection/src/common/fetch_vectors.rs:226-268\n\nfor (collection_name, reference_vectors_ids) in self.ids_per_collection {\n    // do not fetch vectors if there are no reference vectors\n    if reference_vectors_ids.is_empty() {\n        continue;  // <-- BUG: validation skipped for raw vector queries\n    }\n    match collection_name {\n        None => vector_retrieves.push(...),\n        Some(name) => {\n            let other_collection = collection_by_name(name.clone()).await;\n            match other_collection {\n                Some(other_collection) => { ... },\n                None => {\n                    return Err(CollectionError::not_found(format!(\"Collection {name}\")));\n                }\n            }\n        }\n    }\n}",
+          "call_chain_traced": "POST /query → Collection::query_batch → resolve_referenced_vectors_batch → ReferencedPoints::fetch_vectors → collection_by_name(name) → validation only if reference_vectors_ids non-empty",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_conditional_bug",
+          "note": "Source code validation EXISTS (line 264) but is CONDITIONAL - only runs when query references point IDs. Raw vector queries bypass validation entirely. The bug is that lookup_from.collection existence should be validated UNCONDITIONALLY at request parsing time, not conditionally during vector resolution."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Same query with valid lookup_from collection returns identical results",
+          "observed": "Both non-existent and valid lookup_from collections return HTTP 200 OK with same results, proving the lookup_from field is effectively ignored for raw vector queries"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, Windows)",
+            "Race condition",
+            "API semantic misunderstanding",
+            "Request parameter typo"
+          ],
+          "surviving": "None - this is a genuine validation gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Hits blindspot indicator for parameter validation gaps. The lookup_from parameter lacks existence validation despite being a cross-collection reference."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Bug CONFIRMED via source code analysis. The validation code EXISTS at fetch_vectors.rs:264 but is CONDITIONAL on reference_vectors_ids being non-empty. Raw vector queries (like [0.3, 0.3, 0.3, 0.3]) have empty reference_vectors_ids for the lookup collection, so the validation is skipped with 'continue' at line 228-230. This allows queries with lookup_from pointing to non-existent collections to succeed with HTTP 200 OK. The API should validate lookup_from.collection existence unconditionally at request parsing time, not conditionally during vector resolution."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "conditional_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED"
+}

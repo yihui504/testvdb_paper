@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_49844",
+ "vendor": "milvus",
+ "version": "2.6.16",
+ "tag": "v2.6.16",
+ "terms": [
+  "filter",
+  "API",
+  "null",
+  "all",
+  "entities"
+ ],
+ "status": "found",
+ "n_hits": 1974,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 510,
+   "term_matched": "filter",
+   "context": " 495| \n 496| func (h *HandlersV1) query(c *gin.Context) {\n 497| \thttpReq := QueryReq{\n 498| \t\tDbName:       DefaultDbName,\n 499| \t\tLimit:        100,\n 500| \t\tOutputFields: []string{DefaultOutputFields},\n 501| \t}\n 502| \tif err := c.ShouldBindWith(&httpReq, binding.JSON); err != nil {\n 503| \t\tlog.Warn(\"high level restful api, the parameter of query is incorrect\", zap.Any(\"request\", httpReq), zap.Error(err))\n 504| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 505| \t\t\tHTTPReturnCode:    merr.Code(merr.ErrIncorrectParameterFormat),\n 506| \t\t\tHTTPReturnMessage: merr.ErrIncorrectParameterFormat.Error() + \", error: \" + err.Error(),\n 507| \t\t})\n 508| \t\treturn\n 509| \t}\n 510| \tif httpReq.CollectionName == \"\" || httpReq.Filter == \"\" {\n 511| \t\tlog.Warn(\"high level restful api, query require parameter: [collectionName, filter], but miss\")\n 512| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 513| \t\t\tHTTPReturnCode:    merr.Code(merr.ErrMissingRequiredParameters),\n 514| \t\t\tHTTPReturnMessage: merr.ErrMissingRequiredParameters.Error() + \", required parameters: [collectionName, filter]\",\n 515| \t\t})\n 516| \t\treturn\n 517| \t}\n 518| \treq := &milvuspb.QueryRequest{\n 519| \t\tDbName:             httpReq.DbName,\n 520| \t\tCollectionName:     httpReq.CollectionName,\n 521| \t\tExpr:               httpReq.Filter,\n 522| \t\tOutputFields:       httpReq.OutputFields,\n 523| \t\tGuaranteeTimestamp: BoundedTimestamp,\n 524| \t\tQueryParams:        []*commonpb.KeyValuePair{},\n 525| \t}"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+   "line": 226,
+   "term_matched": "filter",
+   "context": " 211| \t// Query\n 212| \trouter.POST(EntityCategory+QueryAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 213| \t\treturn &QueryReqV2{\n 214| \t\t\tLimit:        100,\n 215| \t\t\tOutputFields: []string{DefaultOutputFields},\n 216| \t\t}\n 217| \t}, wrapperTraceLog(h.query))), true))\n 218| \t// Get\n 219| \trouter.POST(EntityCategory+GetAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 220| \t\treturn &CollectionIDReq{\n 221| \t\t\tOutputFields: []string{DefaultOutputFields},\n 222| \t\t}\n 223| \t}, wrapperTraceLog(h.get))), true))\n 224| \t// Delete\n 225| \trouter.POST(EntityCategory+DeleteAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 226| \t\treturn &CollectionFilterReq{}\n 227| \t}, wrapperTraceLog(h.delete))), false))\n 228| \t// Insert\n 229| \trouter.POST(EntityCategory+InsertAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 230| \t\treturn &CollectionDataReq{}\n 231| \t}, wrapperTraceLog(h.insert))), false))\n 232| \t// Upsert\n 233| \trouter.POST(EntityCategory+UpsertAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 234| \t\treturn &CollectionDataReq{}\n 235| \t}, wrapperTraceLog(h.upsert))), false))\n 236| \t// Search\n 237| \trouter.POST(EntityCategory+SearchAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n 238| \t\treturn &SearchReqV2{\n 239| \t\t\tLimit: 100,\n 240| \t\t}\n 241| \t}, wrapperTraceLog(h.search))), true))"
+  }
+ ]
+}

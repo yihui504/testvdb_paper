@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_51084",
+ "vendor": "milvus",
+ "version": "2.6.19",
+ "tag": "v2.6.19",
+ "terms": [
+  "consistencyLevel",
+  "API",
+  "substitutes",
+  "invalid",
+  "enum"
+ ],
+ "status": "found",
+ "n_hits": 247,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler.go",
+   "line": 129,
+   "term_matched": "consistencyLevel",
+   "context": " 114| \twrappedReq := WrappedCreateCollectionRequest{}\n 115| \terr := shouldBind(c, &wrappedReq)\n 116| \tif err != nil {\n 117| \t\treturn nil, badRequestf(err, \"parse body failed\")\n 118| \t}\n 119| \tschemaProto, err := proto.Marshal(&wrappedReq.Schema)\n 120| \tif err != nil {\n 121| \t\treturn nil, badRequestf(err, \"marshal schema failed\")\n 122| \t}\n 123| \treq := &milvuspb.CreateCollectionRequest{\n 124| \t\tBase:             wrappedReq.Base,\n 125| \t\tDbName:           wrappedReq.DbName,\n 126| \t\tCollectionName:   wrappedReq.CollectionName,\n 127| \t\tSchema:           schemaProto,\n 128| \t\tShardsNum:        wrappedReq.ShardsNum,\n 129| \t\tConsistencyLevel: wrappedReq.ConsistencyLevel,\n 130| \t\tProperties:       wrappedReq.Properties,\n 131| \t}\n 132| \treturn h.proxy.CreateCollection(c, req)\n 133| }\n 134| \n 135| func (h *Handlers) handleDropCollection(c *gin.Context) (interface{}, error) {\n 136| \treq := milvuspb.DropCollectionRequest{}\n 137| \terr := shouldBind(c, &req)\n 138| \tif err != nil {\n 139| \t\treturn nil, badRequestf(err, \"parse body failed\")\n 140| \t}\n 141| \treturn h.proxy.DropCollection(c, &req)\n 142| }\n 143| \n 144| func (h *Handlers) handleHasCollection(c *gin.Context) (interface{}, error) {"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 267,
+   "term_matched": "consistencyLevel",
+   "context": " 252| \t\t})\n 253| \t\treturn\n 254| \t}\n 255| \tif httpReq.CollectionName == \"\" || httpReq.Dimension == 0 {\n 256| \t\tlog.Warn(\"high level restful api, create collection require parameters: [collectionName, dimension], but miss\", zap.Any(\"request\", httpReq))\n 257| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 258| \t\t\tHTTPReturnCode:    merr.Code(merr.ErrMissingRequiredParameters),\n 259| \t\t\tHTTPReturnMessage: merr.ErrMissingRequiredParameters.Error() + \", required parameters: [collectionName, dimension]\",\n 260| \t\t})\n 261| \t\treturn\n 262| \t}\n 263| \treq := &milvuspb.CreateCollectionRequest{\n 264| \t\tDbName:           httpReq.DbName,\n 265| \t\tCollectionName:   httpReq.CollectionName,\n 266| \t\tShardsNum:        ShardNumDefault,\n 267| \t\tConsistencyLevel: commonpb.ConsistencyLevel_Bounded,\n 268| \t}\n 269| \tc.Set(ContextRequest, req)\n 270| \n 271| \tschema, err := proto.Marshal(&schemapb.CollectionSchema{\n 272| \t\tName:        httpReq.CollectionName,\n 273| \t\tDescription: httpReq.Description,\n 274| \t\tAutoID:      EnableAutoID,\n 275| \t\tFields: []*schemapb.FieldSchema{\n 276| \t\t\t{\n 277| \t\t\t\tFieldID:      common.StartOfUserFieldID,\n 278| \t\t\t\tName:         httpReq.PrimaryField,\n 279| \t\t\t\tIsPrimaryKey: true,\n 280| \t\t\t\tDataType:     schemapb.DataType_Int64,\n 281| \t\t\t\tAutoID:       EnableAutoID,\n 282| \t\t\t}, {"
+  }
+ ]
+}

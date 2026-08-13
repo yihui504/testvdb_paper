@@ -1,0 +1,101 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50325",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with various dbName parameter configurations",
+          "observed": "All requests succeed: 1) No dbName parameter → 200 with collection list, 2) Empty dbName '' → 200 with collection list, 3) Valid dbName 'default' → 200 with collection list, 4) Invalid dbName 'nonexistent_db' → 800 error 'database not found'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{}' | jq ."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "The API requires POST /v2/vectordb/collections/list endpoint",
+            "Responses include collection names as JSON array",
+            "Invalid database names return error code 800"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+list",
+            "parameter: dbName (type: string, required: false, default_value: '_default')",
+            "invariant: milvus_invariant_create_queryable_001 - create(collection) -> describe(collection) returns 200 AND list() contains collectionName"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "listCollections",
+            "DatabaseReq struct",
+            "ShowCollectionsRequest",
+            "wrapperPost",
+            "binding.*required"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/proxy/impl.go",
+            "internal/rootcoord/show_collection_task.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go lines 37-41:\ntype DatabaseReq struct {\n\tDbName string `json:\"dbName\"`\n}\n\nfunc (req *DatabaseReq) GetDbName() string { return req.DbName }\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 568-581:\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := &milvuspb.ShowCollectionsRequest{\n\t\tDbName: dbName,\n\t}\n\tc.Set(ContextRequest, req)\n\t// handle at rootcoord side\n\tresp, err := wrapperProxy(ctx, c, req, false, false, \"/milvus.proto.milvus.MilvusService/ShowCollections\", func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.ShowCollections(reqCtx, req.(*milvuspb.ShowCollectionsRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnList(resp.(*milvuspb.ShowCollectionsResponse).CollectionNames))\n\t}\n\treturn resp, err\n}",
+          "call_chain_traced": "HTTP POST /collections/list → wrapperPost() with DatabaseReq{} → listCollections() → ShowCollectionsRequest{DbName: dbName} → proxy.ShowCollections() → rootcoord.ShowCollections()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals that DatabaseReq.DbName has NO 'binding:\"required\"' tag (line 38 in request_v2.go), making it truly optional as per contract. The handler directly passes dbName to ShowCollectionsRequest without validation. The default '_default' behavior must be implemented deeper in the call chain (rootcoord or proxy layer). No param validation bug exists at the API gateway layer."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test the invariant: create collection → list collections → verify collection appears",
+          "observed": "Step 1: Create 'dev_review_test' → HTTP 200 success. Step 2: List collections → HTTP 200 with collection list containing 'dev_review_test'. Step 3: Describe 'dev_review_test' → HTTP 200 with full schema. Invariant holds: create → describe returns 200 AND list contains collectionName.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"invariant_test\", \"dimension\": 128, \"metricType\": \"COSINE\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{}' | grep invariant_test"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, platform)",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "Network/connectivity issues"
+          ],
+          "surviving": "contract_semantic_correctness"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Candidate does not match any rejection patterns (RP-001, RP-002) or by-design patterns (BDP-001, BDP-002) from developer_cognition.json. The API behavior is consistent with contract specification: dbName is optional with default '_default'."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "The candidate claims a param_validation defect for collections+list, but source code grounding reveals the implementation correctly matches the contract: dbName is optional (no 'binding:\"required\"' tag in DatabaseReq struct). The API gracefully handles missing/empty dbName by defaulting to '_default' behavior deeper in the stack. The invariant milvus_invariant_create_queryable_001 holds: after creating a collection, describe() returns 200 AND list() contains the collection name. All test cases pass with expected behavior. No violation exists."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "source_analysis_metadata": {
+    "local_clone_available": true,
+    "clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "clone_version": "v2.6.17",
+    "source_verification_method": "local_grep_cross_tree_search",
+    "total_files_examined": 5,
+    "call_chain_depth": 4
+  }
+}

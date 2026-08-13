@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_50193",
+ "vendor": "milvus",
+ "version": "2.6.16",
+ "tag": "v2.6.16",
+ "terms": [
+  "rowCount",
+  "get_stats",
+  "after",
+  "successful",
+  "load"
+ ],
+ "status": "found",
+ "n_hits": 431,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+   "line": 689,
+   "term_matched": "rowCount",
+   "context": " 674| \t}, HTTPReturnMessage: errMessage})\n 675| \treturn resp, nil\n 676| }\n 677| \n 678| func (h *HandlersV2) getCollectionStats(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n 679| \tcollectionGetter, _ := anyReq.(requestutil.CollectionNameGetter)\n 680| \treq := &milvuspb.GetCollectionStatisticsRequest{\n 681| \t\tDbName:         dbName,\n 682| \t\tCollectionName: collectionGetter.GetCollectionName(),\n 683| \t}\n 684| \tc.Set(ContextRequest, req)\n 685| \tresp, err := wrapperProxy(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/GetCollectionStatistics\", func(reqCtx context.Context, req any) (any, error) {\n 686| \t\treturn h.proxy.GetCollectionStatistics(reqCtx, req.(*milvuspb.GetCollectionStatisticsRequest))\n 687| \t})\n 688| \tif err == nil {\n 689| \t\tHTTPReturn(c, http.StatusOK, wrapperReturnRowCount(resp.(*milvuspb.GetCollectionStatisticsResponse).Stats))\n 690| \t}\n 691| \treturn resp, err\n 692| }\n 693| \n 694| func (h *HandlersV2) getCollectionLoadState(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n 695| \tcollectionGetter, _ := anyReq.(requestutil.CollectionNameGetter)\n 696| \treq := &milvuspb.GetLoadStateRequest{\n 697| \t\tDbName:         dbName,\n 698| \t\tCollectionName: collectionGetter.GetCollectionName(),\n 699| \t}\n 700| \tc.Set(ContextRequest, req)\n 701| \tresp, err := wrapperProxy(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/GetLoadState\", func(reqCtx context.Context, req any) (any, error) {\n 702| \t\treturn h.proxy.GetLoadState(reqCtx, req.(*milvuspb.GetLoadStateRequest))\n 703| \t})\n 704| \tif err != nil {"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/request_v2.go",
+   "line": 699,
+   "term_matched": "rowCount",
+   "context": " 684| func (req *AliasCollectionReq) GetAliasName() string {\n 685| \treturn req.AliasName\n 686| }\n 687| \n 688| func wrapperReturnHas(has bool) gin.H {\n 689| \treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: gin.H{HTTPReturnHas: has}}\n 690| }\n 691| \n 692| func wrapperReturnList(names []string) gin.H {\n 693| \tif names == nil {\n 694| \t\treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: []string{}}\n 695| \t}\n 696| \treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: names}\n 697| }\n 698| \n 699| func wrapperReturnRowCount(pairs []*commonpb.KeyValuePair) gin.H {\n 700| \trowCountValue := \"0\"\n 701| \tfor _, keyValue := range pairs {\n 702| \t\tif keyValue.Key == \"row_count\" {\n 703| \t\t\trowCountValue = keyValue.GetValue()\n 704| \t\t}\n 705| \t}\n 706| \trowCount, err := strconv.ParseInt(rowCountValue, 10, 64)\n 707| \tif err != nil {\n 708| \t\treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: gin.H{HTTPReturnRowCount: rowCountValue}}\n 709| \t}\n 710| \treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: gin.H{HTTPReturnRowCount: rowCount}}\n 711| }\n 712| \n 713| func wrapperReturnDefault() gin.H {\n 714| \treturn gin.H{HTTPReturnCode: merr.Code(nil), HTTPReturnData: gin.H{}}"
+  }
+ ]
+}

@@ -1,0 +1,134 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50323",
+      "endpoint": "entities+delete",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/delete with filter='id in [1,2,5]' AND ids=[2,3]",
+          "observed": "API returns deleteCount=3 (deleted ids matching filter: 1,2,5), completely ignoring ids=[2,3] parameter. Remaining entities: [3,4]",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/delete -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_del\", \"dbName\": \"default\", \"filter\": \"id in [1,2,5]\", \"ids\": [2,3]}'",
+          "raw_response": "{\"code\":0,\"data\":{\"deleteCount\":3}}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API would honor BOTH 'filter' and 'ids' parameters when provided together",
+            "API would reject conflicting/ambiguous parameters with error instead of silent ignore",
+            "Request parameters would be validated for mutual consistency"
+          ],
+          "root_cause": "API silently accepts but does not process 'ids' field in CollectionFilterReq struct"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - 'filter is a valid boolean expression' (no mention of ids parameter handling)",
+            "REST v2 API schema: CollectionFilterReq only defines Filter field (no ids field in struct)"
+          ],
+          "note": "No contract assertion explicitly addresses behavior when both filter AND ids are provided - API documentation gap"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "CollectionFilterReq struct",
+            "func.*delete.*context.*gin",
+            "DeleteRequest.*Expr",
+            "ids.*json.*filter"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/proxy/task_delete.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1202-1213\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,  // <-- ONLY uses Filter, ignores any 'ids' field in HTTP body\n\t}\n\treq.ExprTemplateValues = generateExpressionTemplate(httpReq.ExprParams)\n\t...",
+          "call_chain_traced": "HTTP DELETE request → CollectionFilterReq (struct has NO 'ids' field!) → handler_v2.go:delete() → DeleteRequest.Expr (only set from Filter field) → proxy.Delete()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "smoking_gun": "CollectionFilterReq struct at request_v2.go:317-323 defines ONLY 'Filter' field (no 'ids'). Any 'ids' in HTTP JSON body is silently discarded during JSON unmarshaling into CollectionFilterReq struct. Source confirms BUG: API parameter schema doesn't match expected usage pattern - 'ids' parameter is undocumented and unhandled."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested filter-only, ids-only (errors with missing filter), and combined requests. Combined consistently ignores ids.",
+          "observed": "1) filter-only: deletes exactly filter matches. 2) ids-only: returns error 'missing required parameters: Filter'. 3) filter+ids: deletes filter matches only, ids ignored. Behavior is deterministic and reproducible.",
+          "conclusion": "Not a transient/concurrency issue - this is deterministic parameter handling logic"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment_issue - tested on fresh collection",
+            "concurrency_race - behavior is deterministic",
+            "eventual_consistency - used Strong consistency level",
+            "request_param_typo - verified exact parameter names"
+          ],
+          "surviving_explanation": "mundane_api_semantics - API silently ignores undocumented 'ids' parameter instead of rejecting it with error"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types / parameters",
+        "bug_shape_alignment": "Matches 'rest-v2-data-type-handling' shape (26 historical instances) - API gateway layer fails to handle parameter combinations correctly",
+        "note": "This defect pattern is a known blindspot area per developer_cognition.json - 'REST v2 API data type serialization - 8 issues in corpus'"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_delete_001: 'filter is a valid boolean expression'",
+          "source_implements_check": true,
+          "api_observed_value": "Accepts request with both filter AND ids parameters, but only processes filter (ids ignored)",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract doesn't explicitly forbid both parameters, but API design principle of explicitness is violated"
+        },
+        "physical": {
+          "objective_constraint": "API request schema should explicitly define all accepted parameters",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "constraint": "HTTP API parameter schema undefined - CollectionFilterReq struct lacks 'ids' field but API silently accepts it in JSON body (gets ignored during unmarshaling)"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "reasoning": "API silently ignores parameter without error or warning - this is poor API design, not graceful degradation. Source shows no 'by-design' comment or intentional handling."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violation + poor behavioral handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_ignored_silently",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /entities/delete endpoint silently ignores the 'ids' parameter when both 'filter' and 'ids' are provided. Source code confirms CollectionFilterReq struct only defines 'Filter' field; any 'ids' in HTTP JSON body is discarded during unmarshaling. This violates API design principles of explicitness and fails fast on invalid input. Expected behavior: either (a) reject with error if both parameters present (ambiguous), or (b) honor intersection of both conditions. Current behavior: silently ignore 'ids', process only 'filter' - misleading to users who expect both parameters to be respected. Matches known 'rest-v2-data-type-handling' bug shape (26 instances) and 'REST v2 API data type serialization' blindspot area per developer_cognition.json."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_ignored_silently": 1
+    },
+    "source_grounding_summary": {
+      "local_clone_used": true,
+      "grep_searches_performed": 4,
+      "files_examined": 4,
+      "source_excerpt_lines": 12,
+      "smoking_gun_found": true
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewed_at": "2026-08-14T02:55:00Z",
+    "reviewer_version": "dev-reviewer-v1",
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "source_clone_version": "v2.6.17",
+    "db_endpoint": "http://localhost:19530",
+    "db_status": "live",
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.17/50323"
+  }
+}

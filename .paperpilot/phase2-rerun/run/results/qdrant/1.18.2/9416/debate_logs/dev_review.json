@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9416",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Collection creation with empty vectors config\nTest A: PUT /collections/test_vectors_empty with {\"vectors\": {}}\nTest B: PUT /collections/test_no_vectors with no vectors field\nTest C: Attempt point insertion to verify failure",
+          "observed": "Test A: Collection created successfully (HTTP 200, result=true)\nTest B: Collection created successfully (HTTP 200, result=true)\nTest C: Both collections reject point insertion with 'Not existing vector name error' (HTTP 400)",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_vectors_empty' -H 'Content-Type: application/json' -d '{\"vectors\": {}}'\n=> {\"result\":true,\"status\":\"ok\",\"time\":0.300074368}\n\ncurl -s -X PUT 'http://localhost:6333/collections/test_no_vectors' -H 'Content-Type: application/json' -d '{}'\n=> {\"result\":true,\"status\":\"ok\",\"time\":0.25582448}\n\ncurl -s -X PUT 'http://localhost:6333/collections/test_vectors_empty/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'\n=> {\"status\":{\"error\":\"Wrong input: Not existing vector name error: \"},\"time\":0.011905423}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Collection creation API should validate that vectors config contains at least one vector definition",
+            "VectorsConfig with empty object {} or missing field should be rejected at collection creation time",
+            "Error should be 400 Bad Request with clear message about missing vector configuration"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API Contract: PUT /collections/{collection_name} vectors parameter defines vector config for collection operation",
+            "VectorsConfig enum has Single(VectorParams) and Multi(BTreeMap) variants - both require non-empty vector definitions to be functional"
+          ],
+          "note": "While no explicit contract constraint states 'vectors must be non-empty', it's a reasonable implicit expectation that a vector database collection requires vector configuration. The contract shows vectors controls collection operation, making empty config a logical violation."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "pub enum VectorsConfig",
+            "pub struct CreateCollection",
+            "vectors.*empty",
+            "validate.*vectors"
+          ],
+          "files_examined": [
+            "lib/collection/src/operations/types.rs",
+            "lib/storage/src/content_manager/collection_meta_ops.rs",
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "src/actix/api/collections_api.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/operations/types.rs lines 1496-1507\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Hash, Eq)]\n#[serde(rename_all = \"snake_case\", untagged)]\npub enum VectorsConfig {\n    Single(VectorParams),\n    Multi(BTreeMap<VectorNameBuf, VectorParams>),\n}\n\nimpl Default for VectorsConfig {\n    fn default() -> Self {\n        VectorsConfig::Multi(Default::default())  // Returns empty BTreeMap!\n    }\n}\n\n// lib/storage/src/content_manager/collection_meta_ops.rs lines 109-114\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]\n#[serde(rename_all = \"snake_case\")]\npub struct CreateCollection {\n    /// Vector data config.\n    #[serde(default)]  // Allows missing field, defaults to VectorsConfig::default()\n    #[validate(nested)]\n    pub vectors: VectorsConfig,\n    // ... other fields\n}",
+          "call_chain_traced": "REST API (collections_api.rs line 112) → CreateCollection struct with #[serde(default)] → VectorsConfig::default() returns Multi(Default::default()) = empty BTreeMap → create_collection() in toc/create_collection.rs (line 20) accepts empty config without validation → Collection created successfully with no vector configuration",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:CreateCollection 结构体对 vectors 字段使用 #[serde(default)] 和 #[validate(nested)],但没有自定义验证检查 VectorsConfig 是否为空。VectorsConfig::default() 返回 Multi(Default::default()) 即空的 BTreeMap。整个创建流程(collections_api.rs → create_collection.rs)没有检查 vectors_num() == 0 的情况。真缺陷:源码允许创建没有任何向量配置的 collection，导致后续点插入失败。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to use collection for vector operations after creation with empty vectors config",
+          "observed": "Collections created with empty/missing vectors config exist in GET /collections list with status='green' but reject all point insertion operations with 'Not existing vector name error'. Collections are unusable for their primary purpose (vector operations) yet API returns success on creation.",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:6333/collections/test_vectors_empty' | grep -q '\"status\":\"green\"' && echo 'Collection exists and is green' || echo 'Collection not found'\n=> Collection exists and is green (healthy)\n\ncurl -s -X POST 'http://localhost:6333/collections/test_vectors_empty/points' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2]}]}'\n=> {\"status\":{\"error\":\"Wrong input: Not existing vector name error: \"}}"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - verified on clean Qdrant 1.18.2 Docker instance",
+            "Concurrent race - single-threaded sequential tests",
+            "Request parameter typo - tested with valid JSON structures",
+            "API semantic misunderstanding - vector DB collections require vector config by design"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "Fits the parameter validation bug shape pattern - missing validation on vectors config boundary condition (empty vs non-empty). Developers prioritize data consistency over API strictness per developer_cognition.json, but this is a clear Type1 IllegalSuccess where API accepts invalid input without 4xx error."
+      },
+      "root_cause_if_confirmed": "missing_validation_vectors_config_empty",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found requiring vectors to be non-empty, but implicit requirement that vector database collection requires vector configuration for operation",
+          "source_implements_check": false,
+          "verdict_A": "WEAK_CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector database collections require at least one vector definition to perform vector operations (insert, search, etc.)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation: API accepts collection creation without required vector config) + verdict_C=CONFIRMED (not graceful: creates unusable collection) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Raw reproduction confirms API accepts both vectors={} (empty object) and missing vectors field, returning HTTP 200 with result=true. Source code analysis reveals CreateCollection uses #[serde(default)] allowing VectorsConfig::default() which returns empty Multi(BTreeMap). No validation checks vectors_num() == 0 before creating collection. Collections are created successfully but are unusable (reject all point operations with 'Not existing vector name'). This is a genuine Type1 IllegalSuccess bug: API accepts invalid configuration without 4xx error, creating unusable collections. The fix should add validation in CreateCollection or create_collection() to reject empty vectors configs with 400 Bad Request. Previous review without source access misclassified this as Type2_PoorDiagnostics - with source grounding, it's clearly Type1_IllegalSuccess (missing validation at collection creation time)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_validation_vectors_config_empty": 1
+    },
+    "correction_note": "This dev-review corrects the previous analysis which lacked source code access. With source grounding via local clone (C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2), the defect is confirmed as Type1_IllegalSuccess (missing validation) rather than Type2_PoorDiagnostics. The source code clearly shows no validation for empty VectorsConfig at collection creation time."
+  },
+  "session_info": {
+    "target": "qdrant",
+    "version": "1.18.2",
+    "test_env": "http://localhost:6333",
+    "source_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+    "review_timestamp": "2026-08-14T02:50:00Z",
+    "source_grounding_performed": true
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50355",
+      "endpoint": "entities+upsert",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Create autoID=true collection, then upsert without primary key field",
+          "observed": "UPSERT on autoID=true collection WITHOUT primary key field FAILED with error code 1804: 'row 0 does not has field id'. INSERT on same autoID=true collection WITHOUT primary key field SUCCEEDED, returning auto-generated ID 468360849145988423.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\":\"test_autoid_verify\",\"dimension\":4,\"metricType\":\"L2\",\"autoID\":true}' && curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -d '{\"collectionName\":\"test_autoid_verify\",\"data\":[{\"vector\":[1.0,2.0,3.0,4.0]}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_autoid_verify\",\"data\":[{\"vector\":[1.0,2.0,3.0,4.0]}]}'",
+          "raw_evidence": {
+            "upsert_response": "{\"code\":1804,\"message\":\"fail to deal the insert data, error: row 0 does not has field id\"}",
+            "insert_response": "{\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[468360849145988423]}}"
+          }
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "UPSERT endpoint is reachable and responding",
+            "Collection with autoID=true can be created successfully",
+            "INSERT operation on autoID=true collection succeeds without primary key field",
+            "UPSERT operation on autoID=true collection fails without primary key field",
+            "Error code 1804 indicates 'row does not has field id' - a parameter validation error"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+upsert (POST /v2/vectordb/entities/upsert)",
+            "parameter: data - 'Entity data; primary key field required' per structured_contract.json",
+            "endpoint: entities+insert (POST /v2/vectordb/entities/insert)",
+            "parameter: autoID (collections+create) - 'Auto-increment primary key' per structured_contract.json"
+          ],
+          "doc_analysis": "The contract states upsert requires 'Entity data; primary key field required' but does NOT specify that this requirement is waived when autoID=true. In contrast, insert on autoID=true collections explicitly allows omitting the primary key field."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "checkUpsertPrimaryFieldData",
+            "must assign pk when upsert",
+            "autoID",
+            "autoGenPrimaryFieldData"
+          ],
+          "files_examined": [
+            "internal/proxy/task_upsert.go",
+            "internal/proxy/util.go",
+            "internal/proxy/task_insert.go"
+          ],
+          "source_excerpt": "internal/proxy/util.go:2159-2162\n// must assign primary field data when upsert\nif primaryFieldData == nil {\n    return nil, nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"must assign pk when upsert, primary field: %v\", primaryFieldName))\n}\n\ninternal/proxy/util.go:2145-2155\nif primaryFieldSchema.AutoID {\n    // use the passed pk as new pk when autoID == false\n    // automatic generate pk as new pk wehen autoID == true\n    newPrimaryFieldData, err = autoGenPrimaryFieldData(primaryFieldSchema, insertMsg.GetRowIDs())\n    if err != nil {\n        log.Info(\"generate new primary field data failed when upsert\", zap.Error(err))\n        return nil, nil, err\n    }\n    insertMsg.FieldsData = append(insertMsg.GetFieldsData()[:i], insertMsg.GetFieldsData()[i+1:]...)\n    insertMsg.FieldsData = append(insertMsg.FieldsData, newPrimaryFieldData)\n}",
+          "call_chain_traced": "UpsertTask.PreExecute → checkUpsertPrimaryFieldData → checks if primaryFieldData == nil → returns error 'must assign pk when upsert' → FAILS. Contrast: InsertTask → checkPrimaryFieldData → if autoID=true and primaryFieldData missing → calls autoGenPrimaryFieldData → SUCCEEDS.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_inconsistent",
+          "note": "CRITICAL: Source code reveals implementation inconsistency. UPSERT has hard check requiring primary field data EVEN WHEN autoID=true (line 2159-2162). INSERT has auto-generation logic when primary field missing (lines 2014-2025). This is a doc-impl mismatch: documentation claims upsert supports autoID, but implementation rejects it."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4: Verify INSERT vs UPSERT behavior inconsistency on autoID collection",
+          "observed": "INSERT without primary key field on autoID=true collection: SUCCESS (returns auto-generated ID). UPSERT without primary key field on autoID=true collection: FAIL (error 1804 'row 0 does not has field id'). This confirms the implementation inconsistency - INSERT supports autoID by auto-generating PK, but UPSERT requires PK even when autoID=true.",
+          "evidence_cmd": "Independent verification via curl commands executed in Step 1, comparing INSERT vs UPSERT on identical autoID=true collection."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on clean collection",
+            "Concurrency/race - single-threaded sequential test",
+            "Cache/latency - immediate failure response",
+            "Request parameter typo - verified correct JSON format",
+            "API semantics misunderstanding - behavior contradicts autoID design intent"
+          ],
+          "surviving": "doc_impl_mismatch",
+          "note": "This is NOT 'by design' - the source code comments and insert logic show autoID is meant to work. The upsert check at line 2159 is an implementation oversight that contradicts the autoID feature design."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (symptom: 'AutoId not working for Int64 PK' listed in bug shape)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "This defect matches the known REST v2 data type handling pattern where autoID functionality is broken for upsert operations. The bug shape explicitly mentions 'AutoId not working for Int64 PK' as a historical symptom."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED: UPSERT fails on autoID=true collections with error 1804 'row 0 does not has field id' despite documentation implying autoID support. Source code reveals implementation inconsistency: INSERT auto-generates PK when missing (correct autoID behavior), but UPSERT has hard check requiring PK even when autoID=true (incorrect). This is a Type1_IllegalSuccess - API accepts autoID setting but fails at runtime with cryptic error. The bug is in checkUpsertPrimaryFieldData() which should auto-generate PK like insert does, but instead returns 'must assign pk when upsert' error. Matches known bug shape 'rest-v2-data-type-handling' which explicitly lists 'AutoId not working for Int64 PK' as symptom."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "doc_impl_mismatch": 1
+    }
+  },
+  "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.17/50355",
+  "files_examined": [
+    "output_milvus_50355.log (raw HTTP request/response pairs)",
+    "raw_milvus_50355.log (JSON-formatted HTTP log)",
+    "internal/proxy/task_upsert.go (upsert task implementation)",
+    "internal/proxy/util.go (primary field data validation)",
+    "internal/proxy/task_insert.go (insert task for comparison)"
+  ],
+  "test_execution_summary": {
+    "target_db": "milvus v2.6.17",
+    "live_endpoint": "http://localhost:19530",
+    "operations_executed": [
+      "collections/drop - cleanup",
+      "collections/create with autoID=true",
+      "entities/upsert WITHOUT primary key field - FAILED (code 1804)",
+      "entities/insert WITHOUT primary key field - SUCCEEDED (auto-generated ID)"
+    ],
+    "key_evidence": "UPSERT requires primary key field even when autoID=true, INSERT does not. Source code confirms: checkUpsertPrimaryFieldData() line 2159 has hard check 'must assign pk when upsert' without autoID exemption."
+  }
+}

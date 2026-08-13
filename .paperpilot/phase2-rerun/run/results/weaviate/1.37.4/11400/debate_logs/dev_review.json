@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11400",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with flatSearchCutoff=-100",
+          "observed": "API accepts flatSearchCutoff=-100 with HTTP 200 and creates collection with negative flatSearchCutoff stored in config",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestFC\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"flatSearchCutoff\": -100}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_checked": [
+            "API validates numeric parameter ranges at schema creation boundary",
+            "flatSearchCutoff represents a count threshold and should be non-negative",
+            "Negative values for a count/threshold parameter have no valid semantic meaning"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract constraint found for flatSearchCutoff in structured_contract.json",
+            "Related range constraints exist for other numeric params (e.g., weaviate_range_objects_list_001 for offset+limit <= 10000)",
+            "Contract inference: flatSearchCutoff is a threshold parameter representing object count, should logically be >= 0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "flatSearchCutoff",
+            "validate",
+            "ParseAndValidateConfig"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "adapters/repos/db/vector/hnsw/search.go",
+            "adapters/repos/db/vector/hnsw/index.go",
+            "adapters/repos/db/vector/hnsw/config_update.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 201-205\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/hnsw/config.go lines 260-290 (validate function)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// NO VALIDATION FOR FLATSEARCHCUTOFF - function returns nil without checking flatSearchCutoff range\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "ParseAndValidateConfig → OptionalIntFromMap(flatSearchCutoff) → uc.validate() [NO RANGE CHECK] → atomic.StoreInt64(&h.flatSearchCutoff, int64(parsed.FlatSearchCutoff))",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:flatSearchCutoff 在 config.go 第201-205行被解析并直接赋值,但 validate() 函数(第260-290行)只检查 MaxConnections、EFConstruction、FilterStrategy 等参数,完全没有检查 flatSearchCutoff 的范围。默认值 DefaultFlatSearchCutoff=40000 (config.go 第34行),但用户可传入任意整数值包括负数,且无校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified collection creation succeeded and flatSearchCutoff=-100 is now stored in the active index config",
+          "observed": "GET /schema/TestFC returns flatSearchCutoff: -100 in the vectorIndexConfig, confirming the negative value was persisted and is now active in the running index",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestFC | grep -i flatSearchCutoff"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/filesystem) - tested on clean container",
+            "Request parameter typo - JSON format is valid",
+            "Approximate by-design - flatSearchCutoff is a precise threshold parameter",
+            "Concurrent race condition - single-threaded schema creation"
+          ],
+          "surviving_explanations": "Parameter validation gap at API boundary - matches bug_shape BS-004 (Parameter Validation Issues in Request Parsing)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "Frees developer_cognition what_developers_consider_bugs: 'Parameter validation gaps at API boundaries'. Matches blindspot_indicators: 'Input validation is often incomplete at API boundaries' and 'Configuration validation is inconsistent across parameters'."
+      },
+      "root_cause_if_confirmed": "missing_validation_range_check",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint exists for flatSearchCutoff in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "flatSearchCutoff represents a count/threshold for determining when to use flat search vs HNSW search (see comment at adapters/repos/db/vector/hnsw/index.go line 100-101: 'on filtered searches with less than n elements, perform flat search')",
+          "api_accepts_violation": true,
+          "physical_reasoning": "A negative threshold value has no semantic meaning in this context - you cannot have '< -100 elements' to trigger flat search. This violates the physical constraint that count thresholds must be >= 0.",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "behavioral_analysis": "API accepts negative value and persists it without error. No graceful degradation or fallback. Source code shows default value DefaultFlatSearchCutoff=40000 but no protection against negative user input. This is not by-design - it's a missing validation check.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) AND verdict_C=CONFIRMED (not graceful, not by-design) → final=CONFIRMED. Even though contract (verdict_A) is NEUTRAL (no explicit constraint), the physical constraint that a count threshold cannot be negative is objective and violated by the API accepting -100.",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Confirmed defect: POST /schema accepts flatSearchCutoff=-100 (negative value) with HTTP 200. Source code grounding (config.go lines 201-205, 260-290) shows flatSearchCutoff is parsed from user input but completely omitted from validation function - no range check exists. Physical constraint violation: flatSearchCutoff represents a count threshold ('on filtered searches with less than n elements, perform flat search' per index.go comment), and negative values have no valid semantic meaning. Matches developer_cognition blindspot 'Input validation is often incomplete at API boundaries' and bug_shape BS-004 'Parameter Validation Issues in Request Parsing'. This is a true parameter validation gap at the API boundary."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_validation_range_check": 1
+    }
+  }
+}

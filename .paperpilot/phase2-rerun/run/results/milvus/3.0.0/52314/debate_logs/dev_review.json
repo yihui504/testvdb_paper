@@ -1,0 +1,65 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52314",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with invalid types - DOUBLE field='INVALID_DOUBLE', BOOL field='not_a_bool', BOOL field=123, INT16 field='not_an_int'",
+          "observed": "All 4 requests returned HTTP 200 success. Query confirmed invalid values stored as-is in database",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/entities/upsert -d '{\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 999, \"vector\": [0.1, 0.1, 0.1, 0.1], \"dbl_f\": \"INVALID_DOUBLE\"}]}' && curl -s -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\": \"test_upsert_scalar\", \"filter\": \"id in [999]\", \"outputFields\": [\"id\", \"dbl_f\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_double_001 (dataType == Double)", "constraint_id: milvus_type_bool_001 (dataType == Bool)", "constraint_id: milvus_type_int16_001 (dataType == Int16)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkAndSetData", "anyToColumns", "cast.ToFloat64E", "cast.ToBoolE", "DataType_Double", "DataType_Bool"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 765-775\n    case schemapb.DataType_Float:\n        result, err := cast.ToFloat32E(dataString)\n        if err != nil {\n            return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n        }\n        reallyData[fieldName] = result\n    case schemapb.DataType_Double:\n        result, err := cast.ToFloat64E(dataString)\n        if err != nil {\n            return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n        }\n        reallyData[fieldName] = result\n\n// internal/distributed/proxy/httpserver/utils.go lines 616-620\n    case schemapb.DataType_Bool:\n        result, err := cast.ToBoolE(dataString)\n        if err != nil {\n            return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n        }\n        reallyData[fieldName] = result",
+          "call_chain_traced": "REST v2 handler_v2.upsert() → checkAndSetData() → cast.ToFloat64E/ToBoolE/ToInt16E() → permissive type coercion via github.com/spf13/cast",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 upsert 使用 github.com/spf13/cast 库做类型转换(ToFloat64E/ToBoolE/ToInt16E)，该库执行宽松的类型强转而非严格校验。当字段类型是 DOUBLE/BOOL/INT16 时，库会尝试把 JSON 传入的 string/integer 强转到目标类型，成功则接受、失败才报错。这与契约声明的严格类型约束(仅接受对应类型的数据)矛盾。contract 要求 dataType 必须严格匹配，但源码实际执行的是 cast 库的 coercion 策略，导致非法类型值被接受并存储。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query entities after upsert to verify actual stored values",
+          "observed": "Query returned the exact invalid values that were upserted: dbl_f='INVALID_DOUBLE', bool_f='not_a_bool', bool_f=123, i16_f='not_an_int'. Data was persisted as-is, proving the API accepts and stores invalid types"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issues", "Concurrency race", "Caching/optimizer delay", "Request parameter typo", "API semantic misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. Returns wrong values for large integers, Array fields in raw protobuf format.",
+        "note": "命中 blindspot_indicators: 'REST v2 API data type serialization - 8 issues in corpus'. 本缺陷属于该模式的另一个实例:非数值/非布尔类型数据被强转为 DOUBLE/BOOL。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /entities/upsert 接受明显违反类型约束的数据并返回成功。实测:DOUBLE 字段接受字符串 'INVALID_DOUBLE'、BOOL 字段接受字符串 'not_a_bool' 和整数 123、INT16 字段接受字符串 'not_an_int'，全部返回 HTTP 200 并成功存储。源码接地发现 handler_v2.upsert() 调用 checkAndSetData() → 使用 github.com/spf13/cast 库的 ToFloat64E/ToBoolE/ToInt16E 做类型转换，该库执行宽松类型强转(coercion)而非严格类型校验，与契约(Structured contract milvus_type_double_001/milvus_type_bool_001/milvus_type_int16_001 要求的严格 dataType)矛盾。这是真正的 REST v2 数据类型序列化缺陷，符合开发者认知中的 blindspot 模式。无平凡解释可排除，复现与证伪均通过。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

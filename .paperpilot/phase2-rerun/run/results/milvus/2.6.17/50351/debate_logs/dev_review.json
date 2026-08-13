@@ -1,0 +1,105 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50351",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=0, shardsNum=-1, shardsNum=65535",
+          "observed": "All three requests returned HTTP 200 with code:0 (success). API accepts invalid shard count values without validation.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumptions violated - raw HTTP responses show API explicitly accepts shardsNum=0 and shardsNum=-1 without error"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_002",
+            "assertion: shardsNum >= 1",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "ShardsNum", "ShardNumDefault"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2000-2006\nshardsNum := int32(ShardNumDefault)\nif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n    if shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n        shardsNum = int32(shards)  // NO VALIDATION - directly assigns parsed value\n    }\n}\nreq.ShardsNum = shardsNum  // Pass-through without range check\n\n// internal/distributed/proxy/httpserver/constant.go line 106\nShardNumDefault = 1  // Default value only, not used for validation",
+          "call_chain_traced": "HTTP request → handler_v2.go:2000 ParseInt() → int32(shards) → req.ShardsNum → NO VALIDATION",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: shardsNum is parsed from request and directly assigned to req.ShardsNum with ZERO validation (no check for >= 1, no upper bound check). The ShardNumDefault=1 is only a default, not a validator."
+        },
+        "falsification": {
+          "pass": true,
+          "note": "Falsification not needed - Step 1 clean reproduction already confirms the bug: API accepts invalid values (0, -1) when contract requires >= 1. Collection creation succeeds with impossible shard counts.",
+          "probe": "N/A - reproduction directly proves the violation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Windows/Docker)",
+            "Concurrency/race condition",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "none",
+          "note": "Not a mundane issue - this is a clear parameter validation gap in the HTTP handler layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "shape-parameter_validation-api_gateway",
+        "developer_quote": null,
+        "note": "Matches bug shape 'Parameter Validation in Api Gateway' - Input accepted without proper validation. No developer quote indicates this is by-design."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shardsNum >= 1 (constraint_id: milvus_range_collections_create_002)",
+          "assertion_text_quoted": "shardsNum >= 1",
+          "api_observed_value": "API accepts shardsNum=0, shardsNum=-1, shardsNum=65535 (all return HTTP 200, code:0)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "shardsNum >= 1 (physical constraint: cannot have 0 or negative shard partitions)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation confirmed by source code)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED: HTTP handler accepts invalid shardsNum values (0, -1, 65535) without validation, violating contract requirement 'shardsNum >= 1'. Source code at handler_v2.go:2000-2006 shows direct assignment after ParseInt() with no range check. Contract constraint milvus_range_collections_create_002 explicitly states 'shardsNum >= 1'. API behavior contradicts both contract and physical constraints (cannot have 0/negative shard partitions)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

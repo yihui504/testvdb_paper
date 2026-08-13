@@ -1,0 +1,107 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9419",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points/query with malformed filter: {\"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}} (must_not as object instead of array)",
+          "observed": "HTTP 200 OK with result {\"points\":[{\"id\":2,\"version\":1,\"score\":1.0}]} - API accepts malformed filter structure without 4xx error",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/dev_review_test/points/query' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}' | head"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion 'API accepts invalid filter structure' depends on the premise that must_not should be validated as an array of Condition objects, not a single object"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_filter_001 (implicit from API schema - Filter struct definition)"
+          ],
+          "note": "Contract-formalizer did not explicitly extract a constraint for filter structure validation, but the Filter type definition in lib/segment/src/types.rs clearly defines must_not as Option<Vec<Condition>>, not a single Condition object"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "struct Filter",
+            "must_not",
+            "Vec<Condition>",
+            "QueryRequestInternal"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs",
+            "lib/api/src/grpc/qdrant.rs",
+            "src/common/inference/query_requests_rest.rs"
+          ],
+          "source_excerpt": "lib/segment/src/types.rs lines 3834-3866:\n\n#[derive(\n    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash,\n)]\n#[serde(deny_unknown_fields, rename_all = \"snake_case\")]\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,\n    /// At least minimum amount of given conditions should match\n    #[validate(nested)]\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub min_should: Option<MinShould>,\n    /// All conditions must match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must: Option<Vec<Condition>>,\n    /// All conditions must NOT match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must_not: Option<Vec<Condition>>,  // ← MUST be Vec<Condition>, not single Condition\n}",
+          "call_chain_traced": "REST QueryRequestInternal.filter (lib/api/src/rest/schema.rs:582) → Filter type (lib/segment/src/types.rs:3834) → must_not: Option<Vec<Condition>> (line 3865) → serde deserialization with MaybeOneOrMany wrapper accepts BOTH single object AND array → BUG: MaybeOneOrMany allows single object when API contract requires array",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Root cause: The Filter struct uses `serde(with = \"MaybeOneOrMany\")` for must_not/must/should fields. This serde wrapper is designed to accept both single items and arrays for convenience, BUT for filter conditions, the API specification requires an array (Vec<Condition>). The MaybeOneOrMany wrapper silently accepts a single Condition object and auto-wraps it into a Vec, bypassing validation that should reject non-array input. This is a true Type1_IllegalSuccess - the API accepts semantically malformed requests (single object instead of array) that violate the explicit type contract Vec<Condition>."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "N/A - Step 1 already confirmed the bug via direct request observation",
+          "observed": "Bug directly observable: HTTP 200 response to malformed request proves API accepts invalid structure"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/container)",
+            "Concurrent race conditions",
+            "Request parameter typo",
+            "Approximate search by-design behavior"
+          ],
+          "surviving": "contract_misread_excluded - Source code clearly defines must_not as Vec<Condition>; API accepting single object is a validation gap, not by-design behavior"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "blindspot_indicators from developer_cognition.json: 'Parameter validation on filter/condition APIs (min_should, value_count)'",
+        "note": "Candidate directly matches a known developer blindspot: filter condition parameter validation gaps. This increases confidence that it's a genuine bug, not an artifact."
+      },
+      "root_cause_if_tp": "serde_MaybeOneOrMany_wrapper_bypasses_array_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Filter.must_not type is Vec<Condition> (array of Condition objects), not a single Condition object (lib/segment/src/types.rs:3865)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "must_not must be an array (Vec) to represent multiple exclusion conditions; single Condition object violates the array type constraint",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "The MaybeOneOrMany serde wrapper is a convenience helper, not a by-design allowance of single-object filter conditions. The wrapper is used for flexibility elsewhere in the API, but for Filter conditions, the explicit type is Vec<Condition>, not Condition. The wrapper silently converts single objects to arrays, hiding a contract violation.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree: true defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Step 1 confirmed: API returns HTTP 200 to malformed filter {\"must_not\": {...}} (single object) instead of rejecting with 4xx. Source grounding (Step 3.5) revealed root cause: Filter struct uses serde(with = \"MaybeOneOrMany\") which auto-converts single objects to arrays, bypassing validation that should enforce Vec<Condition> type contract. This is a genuine parameter validation gap (Type1_IllegalSuccess) matching developer blindspot pattern for filter condition APIs. The API specification (Filter struct definition) clearly requires must_not to be an array of Condition objects, but the serde layer accepts single objects silently. Confidence 95% - all three perspectives (contract/physical/behavioral) confirm this is a bug, not by-design behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "serde_MaybeOneOrMany_wrapper_bypasses_array_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

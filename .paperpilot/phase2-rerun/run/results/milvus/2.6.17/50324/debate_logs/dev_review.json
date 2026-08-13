@@ -1,0 +1,158 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50324",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (id 0-100, same vector [0.1, 0.2, 0.3, 0.4])",
+          "observed": "HTTP 200, insertCount=101, insertIds=[0,1,2,...,100] - API successfully accepted and processed 101 entities",
+          "evidence_cmd": "Evidence from output_milvus_50324.log: insert 101 entities returned success with insertCount=101",
+          "note": "Raw HTTP response shows successful insertion without any size limit error"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumed a fixed batch size limit would reject 101 entities, but no documented limit exists for entity count in REST v2 insert API",
+            "Conclusion 'size limit violated' assumes insert size should be limited by entity count rather than byte size"
+          ],
+          "assumptions_checked": [
+            {
+              "assumption": "Response carrying insertCount field",
+              "validation": "PASS - Response explicitly contains insertCount=101, showing all entities were processed",
+              "evidence": "Raw response body: {\"code\":0,\"data\":{\"insertCount\":101,\"insertIds\":[0,1,2,...,100]}}"
+            },
+            {
+              "assumption": "Milvus enforces entity count limit for inserts",
+              "validation": "FAIL - Source code shows MaxInsertSize=-1 (disabled) by default, measured in bytes not count",
+              "evidence": "quota_param.go line 1503-1510: MaxInsertSize default=-1 means no limit"
+            }
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            {
+              "constraint_id": "milvus_insert_max_size_001",
+              "assertion": "MaxInsertSize parameter exists with default -1 (no limit), measured in bytes not entity count",
+              "source": "pkg/util/paramtable/quota_param.go lines 1503-1510"
+            },
+            {
+              "constraint_id": "milvus_insert_validation_001",
+              "assertion": "Validation code checks request size in bytes, not entity count",
+              "source": "internal/proxy/task_insert.go lines 120-125"
+            }
+          ],
+          "contract_supports_candidate": false,
+          "note": "Contract shows size limit is disabled by default and measured in bytes, not entity count - no basis for param_validation defect"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "MaxInsertSize",
+            "maxInsertSize.*request.*size",
+            "insert.*limit",
+            "task_insert.go.*maxInsertSize"
+          ],
+          "files_examined": [
+            "pkg/util/paramtable/quota_param.go",
+            "internal/proxy/task_insert.go",
+            "configs/milvus.yaml",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// pkg/util/paramtable/quota_param.go lines 1503-1510\np.MaxInsertSize = ParamItem{\n\tKey:          \"quotaAndLimits.limits.maxInsertSize\",\n\tVersion:      \"2.4.1\",\n\tDefaultValue: \"-1\", // -1 means no limit, the unit is byte\n\tDoc:          `maximum size of a single insert request, in bytes, -1 means no limit`,\n\tExport:       true,\n}\n\n// internal/proxy/task_insert.go lines 120-125\nmaxInsertSize := Params.QuotaConfig.MaxInsertSize.GetAsInt()\nif maxInsertSize != -1 && it.insertMsg.Size() > maxInsertSize {\n\tlog.Ctx(ctx).Warn(\"insert request size exceeds maxInsertSize\",\n\t\tzap.Int(\"request size\", it.insertMsg.Size()), zap.Int(\"maxInsertSize\", maxInsertSize))\n\treturn merr.WrapErrAsInputError(merr.WrapErrParameterTooLarge(\"insert request size exceeds maxInsertSize\"))\n}",
+          "call_chain_traced": "InsertRequest → PreExecute → task_insert.go:120 maxInsertSize check → disabled when MaxInsertSize=-1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_disabled_by_design",
+          "key_findings": [
+            "MaxInsertSize defaults to -1 (no limit) as explicitly stated in source code comment",
+            "Validation measures request size in bytes, not entity count",
+            "No validation code checks for entity count limits in insert path",
+            "REST v2 handler passes data array directly to internal proxy without entity count validation"
+          ]
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Analyze insert response structure and source code validation logic",
+          "observed": "Response contains insertCount=101 and complete insertIds array, proving all 101 entities were successfully processed without validation failure",
+          "evidence": "Raw HTTP response: {\"code\":0,\"data\":{\"insertCount\":101,\"insertIds\":[0,1,2,...,100]}} shows successful processing",
+          "independent_verification": "Source code trace confirms no entity count validation exists; MaxInsertSize check disabled (value=-1)",
+          "falsifies_claim": "The claim that 'param_validation defect exists' is falsified - API behaves as designed by accepting request with 101 entities"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            {
+              "explanation": "Environment issue (Docker/resource limit)",
+              "evidence": "Response shows HTTP 200 success, no resource exhaustion indicators"
+            },
+            {
+              "explanation": "Concurrent race condition",
+              "evidence": "Single sequential insert operation with isolated collection"
+            },
+            {
+              "explanation": "Request parameter typo",
+              "evidence": "Request format matches expected REST v2 schema, syntax valid"
+            }
+          ],
+          "surviving_explanation": "mundane_api_semantics - Oracle misunderstood that MaxInsertSize is byte-based and disabled by default, not an entity count limit",
+          "oracle_misunderstanding": "The param_validation oracle incorrectly assumed Milvus enforces entity count limits, but source code confirms only byte size limits exist and are disabled by default"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No by_design_pattern or rejection_pattern directly matches. However, falls under general 'expected behavior' - no limit means no limit. The MaxInsertSize=-1 default is intentional design choice to allow large batches."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Source code grounding definitively proves: (1) MaxInsertSize defaults to -1 (no limit) with explicit comment '-1 means no limit', (2) validation checks byte size not entity count, (3) REST v2 handler performs no entity count validation, (4) raw HTTP response confirms successful processing of 101 entities. The param_validation defect claim is based on misunderstanding of API design - Milvus intentionally has no entity count limit for inserts, only optional byte size limit which is disabled by default."
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "No contract assertion found requiring entity count limit for inserts",
+      "source_implements_check": false,
+      "verdict_A": "NEUTRAL",
+      "note": "Contract shows MaxInsertSize parameter exists but defaults to -1 (disabled). No entity count limit assertion exists in contract."
+    },
+    "physical": {
+      "objective_constraint": "No objective physical constraint on entity count for REST v2 insert API",
+      "api_accepts_violation": true,
+      "verdict_B": "NEUTRAL",
+      "note": "API accepts 101 entities successfully. No mathematical/physical lower/upper bound on entity count from source code."
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": true,
+      "verdict_C": "REFUTED",
+      "note": "API gracefully processes 101 entities returning insertCount=101. Source code explicitly shows MaxInsertSize=-1 is intentional ('-1 means no limit')."
+    },
+    "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final=REFUTED (no violation evidence found, by-design in source)",
+    "final_verdict": "FALSE_POSITIVE"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    },
+    "key_source_evidence": [
+      "pkg/util/paramtable/quota_param.go:1503-1510 - MaxInsertSize defaults to -1 (no limit)",
+      "internal/proxy/task_insert.go:120-125 - Byte-size validation disabled when MaxInsertSize=-1",
+      "internal/distributed/proxy/httpserver/handler_v2.go:1267 - req.NumRows = uint32(len(httpReq.Data)) (no validation)",
+      "Raw HTTP response - insertCount=101 proves successful processing"
+    ],
+    "dev_reviewer_confidence": 0.95,
+    "source_grounding_quality": "high - local clone with multi-file tracing, direct source code excerpts",
+    "verdict_reliability": "high - comprehensive source code evidence + raw HTTP response verification"
+  }
+}

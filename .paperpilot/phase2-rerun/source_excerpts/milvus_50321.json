@@ -1,0 +1,27 @@
+{
+ "defect_id": "milvus_50321",
+ "vendor": "milvus",
+ "version": "2.6.17",
+ "tag": "v2.6.17",
+ "terms": [
+  "Duplicate",
+  "creation",
+  "instead"
+ ],
+ "status": "found",
+ "n_hits": 175,
+ "excerpts": [
+  {
+   "file": "internal/parser/planparserv2/rewriter/util.go",
+   "line": 102,
+   "term_matched": "Duplicate",
+   "context": "  87| \n  88| func isNumericType(dt schemapb.DataType) bool {\n  89| \tif typeutil.IsBoolType(dt) || typeutil.IsStringType(dt) || typeutil.IsJSONType(dt) {\n  90| \t\treturn false\n  91| \t}\n  92| \treturn typeutil.IsArithmetic(dt)\n  93| }\n  94| \n  95| func sortTermValues(term *planpb.TermExpr) {\n  96| \tif term == nil || len(term.GetValues()) <= 1 {\n  97| \t\treturn\n  98| \t}\n  99| \tterm.Values = sortGenericValues(term.Values)\n 100| }\n 101| \n 102| // sort and deduplicate a list of generic values.\n 103| func sortGenericValues(values []*planpb.GenericValue) []*planpb.GenericValue {\n 104| \tif len(values) <= 1 {\n 105| \t\treturn values\n 106| \t}\n 107| \tvar kind string\n 108| \tfor _, v := range values {\n 109| \t\tif v == nil || v.GetVal() == nil {\n 110| \t\t\tcontinue\n 111| \t\t}\n 112| \t\tkind = valueCase(v)\n 113| \t\tif kind != \"\" && kind != \"other\" && kind != \"array\" {\n 114| \t\t\tbreak\n 115| \t\t}\n 116| \t}\n 117| \tswitch kind {"
+  },
+  {
+   "file": "internal/proxy/channels_mgr.go",
+   "line": 55,
+   "term_matched": "Duplicate",
+   "context": "  40| \tgetChannels(collectionID UniqueID) ([]pChan, error)\n  41| \tgetVChannels(collectionID UniqueID) ([]vChan, error)\n  42| \tremoveDMLStream(collectionID UniqueID)\n  43| }\n  44| \n  45| type channelInfos struct {\n  46| \t// It seems that there is no need to maintain relationships between vchans & pchans.\n  47| \tvchans []vChan\n  48| \tpchans []pChan\n  49| }\n  50| \n  51| type streamInfos struct {\n  52| \tchannelInfos channelInfos\n  53| }\n  54| \n  55| func removeDuplicate(ss []string) []string {\n  56| \tm := make(map[string]struct{})\n  57| \tfiltered := make([]string, 0, len(ss))\n  58| \tfor _, s := range ss {\n  59| \t\tif _, ok := m[s]; !ok {\n  60| \t\t\tfiltered = append(filtered, s)\n  61| \t\t\tm[s] = struct{}{}\n  62| \t\t}\n  63| \t}\n  64| \treturn filtered\n  65| }\n  66| \n  67| func newChannels(vchans []vChan, pchans []pChan) (channelInfos, error) {\n  68| \tif len(vchans) != len(pchans) {\n  69| \t\tlog.Error(\"physical channels mismatch virtual channels\", zap.Int(\"len(VirtualChannelNames)\", len(vchans)), zap.Int(\"len(PhysicalChannelNames)\", len(pchans)))\n  70| \t\treturn channelInfos{}, fmt.Errorf(\"physical channels mismatch virtual channels, len(VirtualChannelNames): %v, len(PhysicalChannelNames): %v\", len(vchans), len(pchans))"
+  }
+ ]
+}

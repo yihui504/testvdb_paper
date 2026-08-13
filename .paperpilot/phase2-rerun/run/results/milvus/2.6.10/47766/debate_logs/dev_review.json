@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47766",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with text_field=12345 (integer in VarChar field)",
+          "observed": "Insert succeeded (HTTP 200), query returned text_field=12345 as integer, not string",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_47766_verify\", \"data\": [{\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"text_field\": 12345}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/query -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_47766_verify\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"text_field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Collection exists and is loaded",
+            "text_field is defined as VarChar in schema",
+            "Insert API should validate data types against schema"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001",
+            "assertion: 'data field types match collection schema'",
+            "description: 'data must contain field values matching collection schema data types'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "VarChar",
+            "checkAndSetData",
+            "anyToColumns",
+            "DataType_VarChar"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 581-582\n\t\tcase schemapb.DataType_VarChar:\n\t\t\treallyData[fieldName] = dataString",
+          "call_chain_traced": "Insert() -> checkAndSetData() -> [DataType_VarChar case] -> direct assignment without validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: VarChar 字段类型处理直接赋值 dataString (line 582)，未进行类型校验。与其他类型(如 Bool/Int8/Int32)使用 cast.ToInt8E/ToInt32E 等显式类型转换函数不同，VarChar 路径完全没有验证。允许整数/布尔值等非字符串类型通过 JSON 解析后直接存储。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query verified text_field stores integer 12345 instead of string '12345'",
+          "observed": "Query returned {\"id\":2,\"text_field\":12345} - integer type preserved in storage, proving no type coercion or validation occurred",
+          "evidence_cmd": "Query result from Step 5: data[1].text_field === 12345 (number), not '12345' (string)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker REST v2 API consistent)",
+            "Request parameter typo (payload syntax correct)",
+            "Concurrent race (sequential operations)",
+            "API semantic misunderstanding (VarChar clearly should accept strings)"
+          ],
+          "surviving": "REST v2 API data type validation gap (matches historical bug shape: rest-v2-data-type-handling)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - historical instances: issues #52232, #52230, #52229, #52212 all involving REST v2 type handling",
+        "pattern_id": "rest-v2-data-type-handling",
+        "blindspot_confirmed": true,
+        "note": "Hits developer cognition blindspot: 'REST v2 API data type serialization - 8 issues in corpus'. This is exactly the pattern: REST v2 endpoint accepting invalid type without validation."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "data field types match collection schema (constraint_id: milvus_type_entities_insert_001)",
+          "assertion_text_quoted": "data field types match collection schema",
+          "api_observed_value": "POST with text_field=12345 (integer) succeeded with HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "VarChar fields must store string data, not integers/booleans",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API silently accepts wrong type and stores it as-is (integer 12345), no error, no coercion to string. This is NOT graceful degradation - it's data corruption."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation), verdict_B=CONFIRMED (physical violation), verdict_C=CONFIRMED (behavioral confirms bug) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_data_type_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Clean reproduction confirms REST v2 /entities/insert accepts integer value for VarChar field without validation. Contract explicitly requires 'data field types match collection schema' (milvus_type_entities_insert_001). Source code analysis reveals DataType_VarChar case (utils.go:581-582) directly assigns dataString without type checking, unlike other scalar types which use cast.To*E() functions. This matches known blindspot pattern 'rest-v2-data-type-handling' (8 historical issues). Query confirms data stored as integer, not string - no type coercion occurs. Bug impacts data integrity: schema declares VarChar but storage contains wrong type. Not by-design, not environment issue, not user error - clear validation gap in REST v2 layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_data_type_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED"
+}

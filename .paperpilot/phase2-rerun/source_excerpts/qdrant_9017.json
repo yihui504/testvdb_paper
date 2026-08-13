@@ -1,0 +1,26 @@
+{
+ "defect_id": "qdrant_9017",
+ "vendor": "qdrant",
+ "version": "1.18.0",
+ "tag": "v1.18.0",
+ "terms": [
+  "hnsw_ef",
+  "min"
+ ],
+ "status": "found",
+ "n_hits": 40,
+ "excerpts": [
+  {
+   "file": "lib/collection/src/collection_manager/segments_searcher.rs",
+   "line": 714,
+   "term_matched": "hnsw_ef",
+   "context": " 699|     use_sampling: bool,\n 700|     segment_query_context: &SegmentQueryContext,\n 701|     timeout: Duration,\n 702| ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {\n 703|     let locked_segment = segment.get();\n 704|     let Some(read_segment) = locked_segment.try_read_for(timeout) else {\n 705|         return Err(CollectionError::timeout(timeout, \"batch search\"));\n 706|     };\n 707| \n 708|     let segment_points = read_segment.available_point_count_without_deferred();\n 709|     let segment_config = read_segment.config();\n 710| \n 711|     let top = if use_sampling {\n 712|         let ef_limit = search_params\n 713|             .params\n 714|             .and_then(|p| p.hnsw_ef)\n 715|             .or_else(|| get_hnsw_ef_construct(segment_config, search_params.vector_name));\n 716|         sampling_limit(\n 717|             search_params.top,\n 718|             ef_limit,\n 719|             segment_points,\n 720|             segment_query_context.available_point_count(),\n 721|         )\n 722|     } else {\n 723|         search_params.top\n 724|     };\n 725| \n 726|     let vectors_batch = &vectors_batch.iter().collect_vec();\n 727|     let res = read_segment.search_batch(\n 728|         search_params.vector_name,\n 729|         vectors_batch,"
+  },
+  {
+   "file": "lib/edge/python/src/search.rs",
+   "line": 122,
+   "term_matched": "hnsw_ef",
+   "context": " 107|             with_payload: _,\n 108|             score_threshold: _,\n 109|         } = self.0;\n 110|     }\n 111| }\n 112| \n 113| #[pyclass(name = \"SearchParams\", from_py_object)]\n 114| #[derive(Copy, Clone, Debug, Into)]\n 115| pub struct PySearchParams(pub SearchParams);\n 116| \n 117| #[pyclass_repr]\n 118| #[pymethods]\n 119| impl PySearchParams {\n 120|     #[new]\n 121|     #[pyo3(signature = (\n 122|         hnsw_ef = None,\n 123|         exact = false,\n 124|         quantization = None,\n 125|         indexed_only = false,\n 126|         acorn = None,\n 127|     ))]\n 128|     pub fn new(\n 129|         hnsw_ef: Option<usize>,\n 130|         exact: bool,\n 131|         quantization: Option<PyQuantizationSearchParams>,\n 132|         indexed_only: bool,\n 133|         acorn: Option<PyAcornSearchParams>,\n 134|     ) -> Self {\n 135|         Self(SearchParams {\n 136|             hnsw_ef,\n 137|             exact,"
+  }
+ ]
+}

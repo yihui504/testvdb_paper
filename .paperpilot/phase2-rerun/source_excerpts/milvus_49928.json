@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_49928",
+ "vendor": "milvus",
+ "version": "2.6.16",
+ "tag": "v2.6.16",
+ "terms": [
+  "dim",
+  "maxDimension",
+  "Default",
+  "proxy",
+  "too"
+ ],
+ "status": "found",
+ "n_hits": 1963,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 255,
+   "term_matched": "dim",
+   "context": " 240| \thttpReq := CreateCollectionReq{\n 241| \t\tDbName:             DefaultDbName,\n 242| \t\tMetricType:         metric.L2,\n 243| \t\tPrimaryField:       DefaultPrimaryFieldName,\n 244| \t\tVectorField:        DefaultVectorFieldName,\n 245| \t\tEnableDynamicField: EnableDynamic,\n 246| \t}\n 247| \tif err := c.ShouldBindWith(&httpReq, binding.JSON); err != nil {\n 248| \t\tlog.Warn(\"high level restful api, the parameter of create collection is incorrect\", zap.Any(\"request\", httpReq), zap.Error(err))\n 249| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 250| \t\t\tHTTPReturnCode:    merr.Code(merr.ErrIncorrectParameterFormat),\n 251| \t\t\tHTTPReturnMessage: merr.ErrIncorrectParameterFormat.Error() + \", error: \" + err.Error(),\n 252| \t\t})\n 253| \t\treturn\n 254| \t}\n 255| \tif httpReq.CollectionName == \"\" || httpReq.Dimension == 0 {\n 256| \t\tlog.Warn(\"high level restful api, create collection require parameters: [collectionName, dimension], but miss\", zap.Any(\"request\", httpReq))\n 257| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 258| \t\t\tHTTPReturnCode:    merr.Code(merr.ErrMissingRequiredParameters),\n 259| \t\t\tHTTPReturnMessage: merr.ErrMissingRequiredParameters.Error() + \", required parameters: [collectionName, dimension]\",\n 260| \t\t})\n 261| \t\treturn\n 262| \t}\n 263| \treq := &milvuspb.CreateCollectionRequest{\n 264| \t\tDbName:           httpReq.DbName,\n 265| \t\tCollectionName:   httpReq.CollectionName,\n 266| \t\tShardsNum:        ShardNumDefault,\n 267| \t\tConsistencyLevel: commonpb.ConsistencyLevel_Bounded,\n 268| \t}\n 269| \tc.Set(ContextRequest, req)\n 270| "
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+   "line": 1449,
+   "term_matched": "dim",
+   "context": "1434| \t\t\t\t\treturn nil, errors.New(\"search without annsField, but already found multiple vector fields: [\" + fieldName + \", \" + field.Name + \",,,]\")\n1435| \t\t\t\t}\n1436| \t\t\t}\n1437| \t\t}\n1438| \t} else {\n1439| \t\tfor _, field := range collSchema.Fields {\n1440| \t\t\tif field.Name == fieldName && typeutil.IsVectorType(field.DataType) {\n1441| \t\t\t\tvectorField = field\n1442| \t\t\t\tbreak\n1443| \t\t\t}\n1444| \t\t}\n1445| \t}\n1446| \tif vectorField == nil {\n1447| \t\treturn nil, errors.New(\"cannot find a vector field named: \" + fieldName)\n1448| \t}\n1449| \tdim := int64(0)\n1450| \tif !typeutil.IsSparseFloatVectorType(vectorField.DataType) {\n1451| \t\tdim, _ = getDim(vectorField)\n1452| \t}\n1453| \n1454| \tdataType := vectorField.DataType\n1455| \n1456| \tif vectorField.GetIsFunctionOutput() {\n1457| \t\tfor _, function := range collSchema.Functions {\n1458| \t\t\tif function.Type == schemapb.FunctionType_BM25 || function.Type == schemapb.FunctionType_TextEmbedding {\n1459| \t\t\t\t// TODO: currently only BM25 & text embedding function is supported, thus guarantees one input field to one output field\n1460| \t\t\t\tif function.OutputFieldNames[0] == vectorField.Name {\n1461| \t\t\t\t\tdataType = schemapb.DataType_VarChar\n1462| \t\t\t\t}\n1463| \t\t\t}\n1464| \t\t}"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_50018",
+ "vendor": "milvus",
+ "version": "2.6.16",
+ "tag": "v2.6.16",
+ "terms": [
+  "collectionName",
+  "API",
+  "aliases",
+  "list",
+  "empty"
+ ],
+ "status": "found",
+ "n_hits": 1606,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler.go",
+   "line": 128,
+   "term_matched": "collectionName",
+   "context": " 113| }\n 114| \n 115| func (h *Handlers) handleCreateCollection(c *gin.Context) (interface{}, error) {\n 116| \twrappedReq := WrappedCreateCollectionRequest{}\n 117| \terr := shouldBind(c, &wrappedReq)\n 118| \tif err != nil {\n 119| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 120| \t}\n 121| \tschemaProto, err := proto.Marshal(&wrappedReq.Schema)\n 122| \tif err != nil {\n 123| \t\treturn nil, fmt.Errorf(\"%w: marshal schema failed: %v\", errBadRequest, err)\n 124| \t}\n 125| \treq := &milvuspb.CreateCollectionRequest{\n 126| \t\tBase:             wrappedReq.Base,\n 127| \t\tDbName:           wrappedReq.DbName,\n 128| \t\tCollectionName:   wrappedReq.CollectionName,\n 129| \t\tSchema:           schemaProto,\n 130| \t\tShardsNum:        wrappedReq.ShardsNum,\n 131| \t\tConsistencyLevel: wrappedReq.ConsistencyLevel,\n 132| \t\tProperties:       wrappedReq.Properties,\n 133| \t}\n 134| \treturn h.proxy.CreateCollection(c, req)\n 135| }\n 136| \n 137| func (h *Handlers) handleDropCollection(c *gin.Context) (interface{}, error) {\n 138| \treq := milvuspb.DropCollectionRequest{}\n 139| \terr := shouldBind(c, &req)\n 140| \tif err != nil {\n 141| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 142| \t}\n 143| \treturn h.proxy.DropCollection(c, &req)"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 138,
+   "term_matched": "collectionName",
+   "context": " 123| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n 124| \t\treturn RestRequestInterceptorErr\n 125| \t}\n 126| \tfor _, db := range response.DbNames {\n 127| \t\tif db == dbName {\n 128| \t\t\treturn nil\n 129| \t\t}\n 130| \t}\n 131| \tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 132| \t\tHTTPReturnCode:    merr.Code(merr.ErrDatabaseNotFound),\n 133| \t\tHTTPReturnMessage: merr.ErrDatabaseNotFound.Error() + \", database: \" + dbName,\n 134| \t})\n 135| \treturn RestRequestInterceptorErr\n 136| }\n 137| \n 138| func (h *HandlersV1) describeCollection(ctx context.Context, c *gin.Context, dbName string, collectionName string) (*schemapb.CollectionSchema, error) {\n 139| \tcollSchema, err := proxy.GetCachedCollectionSchema(ctx, dbName, collectionName)\n 140| \tif err == nil {\n 141| \t\treturn collSchema.CollectionSchema, nil\n 142| \t}\n 143| \treq := milvuspb.DescribeCollectionRequest{\n 144| \t\tDbName:         dbName,\n 145| \t\tCollectionName: collectionName,\n 146| \t}\n 147| \tresponse, err := h.proxy.DescribeCollection(ctx, &req)\n 148| \tif err == nil {\n 149| \t\terr = merr.Error(response.GetStatus())\n 150| \t}\n 151| \tif err != nil {\n 152| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n 153| \t\treturn nil, err"
+  }
+ ]
+}

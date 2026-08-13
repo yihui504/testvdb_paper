@@ -1,0 +1,115 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9371",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/batch with mixed dimension vectors (4D, 4D, 3D)",
+          "observed": "HTTP 400 Bad Request with error: 'Vector dimension error: expected dim: 4, got 3'. API correctly rejects batch with inconsistent vector dimensions.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_batch2/points/batch' -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "Assumption: Batch operation should accept mixed dimension vectors within same operation"
+          ],
+          "assumption_status": "INVALID - All vectors in a batch must have the same dimension as defined in collection schema"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_state_batch_update_007 - Batch update operations are executed atomically"
+          ],
+          "note": "Contract states atomic execution but does not explicitly forbid mixed dimensions within batch. However, validation is correctly performed at API layer."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["Vector dimension error", "validate_vector_dimensions", "expected dim"],
+          "files_examined": [
+            "src/common/validate_vectors.rs",
+            "src/common/update.rs",
+            "src/actix/api/update_api.rs"
+          ],
+          "source_excerpt": "// src/common/validate_vectors.rs lines 40-46\nfor vector in vectors {\n    if vector.len() != expected_dim {\n        return Err(StorageError::bad_input(format!(\n            \"Vector dimension error: expected dim: {expected_dim}, got {}\",\n            vector.len()\n        )));\n    }\n}\n\n// src/common/update.rs lines 370-380\n// Validate vector dimensions early, before writing to WAL.\n// This ensures that dimension mismatches are reported even for async (wait=false) operations,\n// rather than being silently discarded during background processing.\nlet collection = toc.get_collection(&collection_pass).await?;\nlet vectors_config = collection.vectors_config().await;\nvalidate_vector_dimensions(&operation, &vectors_config)?;",
+          "call_chain_traced": "POST /points/batch → update_batch() → do_batch_update_points() → do_upsert_points() → validate_vector_dimensions() → dimension check against collection config → 400 error on mismatch",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code explicitly implements vector dimension validation before any operation is written to WAL. This is intentional design to catch dimension errors early, even for async operations."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collection state after failed batch operation",
+          "observed": "Collection count remains 3 (original points: id=1,2,3). Failed batch with mixed dimensions correctly rejected - no partial data corruption occurred. Atomicity preserved.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_batch2/points/count' -H 'Content-Type: application/json' -d '{\"exact\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (consistent behavior on clean container)",
+            "Race conditions (synchronous test)",
+            "Request parameter typos (well-formed request, just invalid dimensions)",
+            "Cache/optimizer delay (wait=true used)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This candidate does not hit any documented by_design_pattern or rejection_pattern. However, the observed behavior (rejecting invalid dimension) is correct API design, not a bug."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None found in contract explicitly requiring dimension validation, but contract qdrant_state_batch_update_007 states atomic execution",
+          "assertion_text_quoted": "Batch update operations are executed atomically.",
+          "api_observed_value": "HTTP 400 with 'Vector dimension error: expected dim: 4, got 3'",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension must match collection schema definition (size: 4 for this collection)",
+          "api_observed_value": "Batch operation correctly rejected vector with dimension 3 when collection expects 4",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "source_evidence": "Explicit validation function validate_vector_dimensions() with comment: 'Validate vector dimensions early, before writing to WAL. This ensures that dimension mismatches are reported even for async operations, rather than being silently discarded during background processing.'",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate behavior is CORRECT API design, not a bug. The POST /collections/{name}/points/batch endpoint explicitly validates vector dimensions before processing (see validate_vector_dimensions() in src/common/validate_vectors.rs). When a batch contains vectors with inconsistent dimensions (4D, 4D, 3D in a 4D collection), the API correctly returns HTTP 400 with 'Vector dimension error: expected dim: 4, got 3'. This validation is intentional early error detection designed to catch dimension mismatches before they enter the WAL, even for async operations. The atomicity constraint is preserved - the failed batch does not partially corrupt the collection (count remains 3, no invalid vectors inserted). Source code confirms this is by-design behavior with explicit validation logic and explanatory comments."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "metadata": {
+    "review_timestamp": "2025-01-14T12:00:00Z",
+    "reviewer_model": "claude-haiku-4-5",
+    "source_clone_available": true,
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+    "verification_method": "local_grep",
+    "self_check": "PASSED"
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52315",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as JSON string instead of array",
+          "observed": "API accepts both formats: vector=\"[0.1,0.2,0.3,0.4]\" (string) and vector=[0.1,0.2,0.3,0.4] (array), both return HTTP 200 with insertCount=1",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' --max-time 30 -d '{\"collectionName\": \"testvec\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}' | jq",
+          "raw_request": "{\"collectionName\": \"testvec\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}",
+          "raw_response": "{\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[0]}}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'向量字段必须是数组类型'的前提，但API实际通过json.Unmarshal接受字符串形式的数组",
+            "REST v2 API应该对数据类型有严格验证，而不是自动类型强制转换"
+          ],
+          "note": "原始断言假设FloatVector字段必须接受JSON array格式，但源码显示fieldValue.String()会将传入的字符串值（包括数组的字符串表示）传递给json.Unmarshal，导致类型强制转换"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_insert_collection_001 - 'Insert requires existing collection'",
+            "assertion_id: milvus_assert_insert_success_001 - 'Inserting valid data succeeds'",
+            "assertion_id: milvus_behavioral_insert_then_get_001 - 'Inserted entities should be retrievable'",
+            "bug_shape_id: rest-v2-data-type-handling - 'REST v2 API fails to properly serialize/deserialize complex data types'"
+          ],
+          "contract_deficit": "契约未明文规定FloatVector字段必须拒绝JSON string格式的数组表示，但根据bug_shape历史模式，这属于已知的REST v2数据类型处理问题类别"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "fieldValue.String()",
+            "json.Unmarshal.*dataString",
+            "DataType_FloatVector",
+            "entities.*insert"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 530-552\n\ndataString := fieldValue.String()\n// if has pass pk than just to try to set it\nif field.IsPrimaryKey && field.AutoID && len(dataString) == 0 {\n    continue\n}\n...\nswitch fieldType {\ncase schemapb.DataType_FloatVector:\n    if dataString == \"\" {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n    }\n    var vectorArray []float32\n    err := json.Unmarshal([]byte(dataString), &vectorArray)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = vectorArray\n...",
+          "call_chain_traced": "Insert handler (handler_v2.go:1563) → checkAndSetData (utils.go:466) → fieldValue.String() (line 530) → json.Unmarshal (line 548) → NO TYPE CHECK ON fieldValue",
+          "root_cause_in_source": "fieldValue.String()在第530行将gjson值转换为字符串，但未检查fieldValue.Type是否为gjson.String。当vector字段传入字符串\"[0.1,0.2,0.3,0.4]\"时，fieldValue.String()返回带引号的字符串，json.Unmarshal成功解析，导致类型强制转换生效。源码缺失对fieldValue原始类型的显式检查。",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：checkAndSetData函数对FloatVector字段只检查dataString是否为空，然后直接json.Unmarshal。没有检查fieldValue.Type是否应该为gjson.Array（期望的数组类型）而不是gjson.String（错误的字符串类型）。这导致REST v2 API接受类型错误的数据，违反了严格类型验证原则。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证两种格式实际存储的向量值是否一致",
+          "observed": "插入vector=\"[0.1,0.2,0.3,0.4]\"（字符串格式）后，通过查询接口返回的向量数据表明该向量确实被成功存储和检索，证明了类型强制转换生效并导致了本应被拒绝的错误输入被接受",
+          "evidence_cmd": "POST /entities/search查询返回distance=1, id=0，证明数据被正确解析和存储",
+          "conclusion": "证伪失败——bug确实存在，API接受类型不匹配的输入并成功处理"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题（Docker网络正常，API响应正常）",
+            "并发问题（单次顺序请求，无race条件）",
+            "缓存问题（直接插入验证，无延迟）"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "这可能被解释为'REST v2 API的宽松类型处理'，但根据developer_cognition.json，这类数据类型序列化问题属于已知的REST v2 API缺陷模式（rest-v2-data-type-handling），历史上已有26个相关问题，维护者明确将其识别为bug而非by-design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. Symptoms: 'Returns wrong values for large integers', 'Array fields in raw protobuf format', 'AutoId not working for Int64 PK'. Historical instances: 26 issues, confidence: 0.95",
+        "note": "该候选直接命中开发者认知模型中的盲点指标：REST v2 API数据类型序列化问题。这已被明确识别为bug模式，而非预期行为。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "无显式契约条文规定FloatVector字段必须拒绝JSON string格式，但bug_shape库中的rest-v2-data-type-handling模式表明这是已知的API缺陷类别",
+          "constraint_id": "milvus_bug_shape_rest_v2_data_type_handling",
+          "assertion_text_quoted": "REST v2 API fails to properly serialize/deserialize complex data types",
+          "api_observed_value": "POST /entities/insert with vector=\"[0.1,0.2,0.3,0.4]\" (string) returns HTTP 200 with insertCount=1",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "note": "虽然没有明确的constraint条文，但bug_shape模式提供了等效的显式要求：REST v2应该正确处理数据类型。API违反了这个通过历史bug模式明确的期望。"
+        },
+        "physical": {
+          "objective_constraint": "向量字段在数学和物理上必须是数值数组，而非字符串",
+          "constraint_explanation": "FloatVector类型在底层存储和计算时要求连续的float32数组，JSON string表示需要额外的解析步骤和类型转换，这在物理上是不必要的类型层级",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "从物理约束视角，向量字段必须是数值数组类型。接受字符串格式的数组表示违反了这一客观约束。"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "graceful_behavior": "API通过json.Unmarshal自动将字符串\"[0.1,0.2,0.3,0.4]\"解析为float32数组，用户无感知",
+          "by_design_in_source": false,
+          "source_evidence": "源码中无任何注释或逻辑表明这是by-design的宽松类型处理。相反，Float16Vector和BFloat16Vector的处理逻辑（lines 579-604）明确区分了数组格式和字符串格式，表明开发者知道需要区分类型，但FloatVector路径缺少这种检查。",
+          "verdict_C": "CONFIRMED",
+          "note": "行为优雅但源码无by-design证据。更严重的是，Float16Vector路径显示开发者本应知道需要区分数组类型和字符串类型（line 583: if vectorJSON.IsArray()），但FloatVector路径缺失这个检查，这是不一致的疏忽，而非有意的设计。"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (bug_shape模式作为显式要求) + verdict_B=CONFIRMED (物理约束违反) + verdict_C=CONFIRMED (无by-design证据，行为优雅但属疏忽) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 API的entities/insert端点接受FloatVector字段为JSON字符串格式（vector=\"[0.1,0.2,0.3,0.4]\"），而非严格要求JSON数组格式（vector=[0.1,0.2,0.3,0.4]）。源码接地显示checkAndSetData函数（utils.go:530-552）使用fieldValue.String()获取字段值后直接json.Unmarshal，未检查fieldValue.Type是否为gjson.Array。这导致API接受类型不匹配的输入并通过自动类型强制转换成功处理。虽然API优雅地处理了错误输入，但该行为直接命中开发者认知模型中的盲点指标（REST v2数据类型序列化问题，历史26个案例，置信度0.95），且源码中Float16Vector路径显示开发者本应知道需要区分数组类型（line 583的vectorJSON.IsArray()检查），表明这是不一致的疏漏而非by-design。从物理约束视角，向量字段在数学上必须是数值数组，接受字符串格式违反了类型系统的客观约束。尽管契约文件中无显式constraint条文禁止此行为，但bug_shape库中的rest-v2-data-type-handling模式提供了等效的显式要求。因此判定为真缺陷，严重级别High（符合Type1_IllegalSuccess类型：API接受非法输入并返回成功）。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {},
+    "evidence_quality": "source_grounding_with_deep_exploration",
+    "blindspot_hit": "rest-v2-data-type-handling",
+    "confidence_avg": 0.95
+  },
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52315",
+    "target": "milvus",
+    "version": "v3.0.0",
+    "db_endpoint": "http://localhost:19530",
+    "source_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+    "review_timestamp": "2026-08-14T03:11:00Z",
+    "review_model": "opus",
+    "methodology": "6_step_sop_with_source_grounding"
+  }
+}

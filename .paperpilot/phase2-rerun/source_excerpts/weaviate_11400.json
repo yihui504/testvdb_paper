@@ -1,0 +1,26 @@
+{
+ "defect_id": "weaviate_11400",
+ "vendor": "weaviate",
+ "version": "1.37.4",
+ "tag": "v1.37.4",
+ "terms": [
+  "flatSearchCutoff",
+  "negative"
+ ],
+ "status": "found",
+ "n_hits": 14,
+ "excerpts": [
+  {
+   "file": "adapters/repos/db/vector/hfresh/search.go",
+   "line": 28,
+   "term_matched": "flatSearchCutoff",
+   "context": "  13| \n  14| import (\n  15| \t\"context\"\n  16| \t\"iter\"\n  17| \t\"sync/atomic\"\n  18| \n  19| \t\"github.com/pkg/errors\"\n  20| \t\"github.com/weaviate/weaviate/adapters/repos/db/helpers\"\n  21| \t\"github.com/weaviate/weaviate/adapters/repos/db/vector/common\"\n  22| \t\"github.com/weaviate/weaviate/usecases/floatcomp\"\n  23| )\n  24| \n  25| const (\n  26| \t// minimum max distance to use when pruning\n  27| \tpruningMinMaxDistance = 0.1\n  28| \tflatSearchCutoff      = 5_000\n  29| )\n  30| \n  31| func (h *HFresh) SearchByVector(ctx context.Context, vector []float32, k int, allowList helpers.AllowList) ([]uint64, []float32, error) {\n  32| \tvector = h.normalizeVec(vector)\n  33| \n  34| \tif allowList != nil && allowList.Len() < flatSearchCutoff {\n  35| \t\treturn h.flatSearch(ctx, vector, k, allowList)\n  36| \t}\n  37| \n  38| \trescoreLimit := int(h.rescoreLimit)\n  39| \tif h.quantizer == nil {\n  40| \t\tif atomic.LoadUint32(&h.dims) == 0 {\n  41| \t\t\treturn nil, nil, nil\n  42| \t\t}\n  43| \t\treturn nil, nil, errors.New(\"quantizer not initialized\")"
+  },
+  {
+   "file": "adapters/repos/db/vector/hnsw/search.go",
+   "line": 85,
+   "term_matched": "flatSearchCutoff",
+   "context": "  70| \t}\n  71| \tif k > ef {\n  72| \t\tef = k // otherwise results will get cut off early\n  73| \t}\n  74| \n  75| \treturn ef\n  76| }\n  77| \n  78| func (h *hnsw) SearchByVector(ctx context.Context, vector []float32,\n  79| \tk int, allowList helpers.AllowList,\n  80| ) ([]uint64, []float32, error) {\n  81| \th.compressActionLock.RLock()\n  82| \tdefer h.compressActionLock.RUnlock()\n  83| \n  84| \tvector = h.normalizeVec(vector)\n  85| \tflatSearchCutoff := int(atomic.LoadInt64(&h.flatSearchCutoff))\n  86| \tif allowList != nil && !h.forbidFlat && allowList.Len() < flatSearchCutoff {\n  87| \t\thelpers.AnnotateSlowQueryLog(ctx, \"hnsw_flat_search\", true)\n  88| \t\treturn h.flatSearch(ctx, vector, k, h.searchTimeEF(k), allowList)\n  89| \t}\n  90| \thelpers.AnnotateSlowQueryLog(ctx, \"hnsw_flat_search\", false)\n  91| \treturn h.knnSearchByVector(ctx, vector, k, h.searchTimeEF(k), allowList)\n  92| }\n  93| \n  94| func (h *hnsw) SearchByMultiVector(ctx context.Context, vectors [][]float32, k int, allowList helpers.AllowList) ([]uint64, []float32, error) {\n  95| \tif !h.multivector.Load() {\n  96| \t\treturn nil, nil, errors.New(\"multivector search is not enabled\")\n  97| \t}\n  98| \n  99| \tif h.muvera.Load() {\n 100| \t\t// this happens only if hnsw is empty so we need to initialize muvera encoder"
+  }
+ ]
+}

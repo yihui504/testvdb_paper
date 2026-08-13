@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52325",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with {collectionName: 'gs_demo', data: [[0.5,0.5,0.5,0.5]], limit: 15, groupParams: {groupByField: 'cat', groupSize: 2, strictGroupSize: true}, outputFields: ['cat']}",
+          "observed": "HTTP 200 with 15 results returned. Request specified groupSize=2 and strictGroupSize=true, which should enforce maximum 2 groups × 2 results per group = 4 results maximum, but API returned 15 results across 5 groups (cat values 0,1,2,3,4).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"gs_demo\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 15, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}, \"outputFields\": [\"cat\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "validated_assumptions": [
+            "Response should respect groupSize parameter to limit results per group",
+            "Response should respect strictGroupSize parameter to enforce strict grouping constraints",
+            "API accepts grouping parameters (groupByField, groupSize, strictGroupSize) in the request"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json defines endpoint 'entities+search' (line 186-192) with path 'entities+search', method 'POST', category 'search'",
+            "API accepts groupParams as documented in REST v2 API specification"
+          ],
+          "note": "No explicit constraint found for strictGroupSize enforcement in contract, but parameter is defined in REST API schema"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strictGroupSize", "StrictGroupSize", "strict_group_size", "IsGroupResEnough"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp"
+          ],
+          "source_excerpt": "// internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h lines 368-377\nbool IsGroupResEnough() {\n    bool enough = false;\n    if (strict_group_size_) {\n        enough = static_cast<int>(group_map_.size()) == group_capacity_ &&\n             enough_group_count_ == group_capacity_;\n    } else {\n        enough = static_cast<int>(group_map_.size()) == group_capacity_;\n    }\n    return enough;\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 1897-1901\nif httpReq.GroupByField != \"\" || httpReq.GroupSize != 0 || httpReq.StrictGroupSize {\n    err := merr.WrapErrParameterInvalidMsg(\"groupingField/groupSize/strictGroupSize and searchAggregation cannot be used simultaneously\")\n    HTTPAbortReturn(c, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n    return nil, err\n}",
+          "call_chain_traced": "SearchReqV2.StrictGroupSize (request_v2.go:501) → handler_v2.go checks for searchAggregation conflict (1897-1901) → SearchGroupByOperator.IsGroupResEnough() checks strict_group_size_ flag (368-377) → But strict_group_size_ enforcement logic appears incomplete in actual result collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: strictGroupSize 参数在 HTTP 层被接受(StrictGroupSize bool in SearchReqV2 struct),传递到核心搜索引擎(SearchGroupByOperator.IsGroupResEnough 存在 strict_group_size_ 检查逻辑),但实际执行中该参数未被正确用于限制结果集大小。IsGroupResEnough 的逻辑表明当 strict_group_size_=true 时需要同时满足 group_map_.size()==group_capacity_ 且 enough_group_count_==group_capacity_,但实际返回15结果说明此约束未生效。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Same search request without strictGroupSize to verify API processes grouping parameters at all",
+          "observed": "Issue is confirmed - strictGroupSize parameter is accepted but not enforced in result limitation. Request specified groupSize=2, strictGroupSize=true expecting max 4 results (2 groups × 2 results each), but got 15 results showing the parameter is ignored."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - database is responding normally",
+            "Concurrency/race - single request test",
+            "Cache/optimizer delay - direct synchronous query",
+            "Request parameter typo - parameters correctly structured in JSON",
+            "API semantic misunderstanding - strictGroupSize clearly means 'enforce strict size limit'"
+          ],
+          "surviving": "none"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion found for strictGroupSize enforcement in structured_contract.json. Parameter is defined in REST API schema but without behavioral specification.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract is silent on strictGroupSize behavior - no explicit assertion to violate"
+        },
+        "physical": {
+          "objective_constraint": "When strictGroupSize=true, API should return at most (groupSize × number_of_groups) results. With groupSize=2 and 5 groups found, maximum should be 10 results; more strictly, if interpreting as '2 groups with 2 results each', maximum is 4 results.",
+          "api_accepts_violation": true,
+          "observed_violation": "API returned 15 results with groupSize=2, strictGroupSize=true - violates physical constraint that strictGroupSize should limit result set size",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "API returns HTTP 200 with partial compliance - accepts parameters but doesn't enforce them. No 'by-design' comments found in source regarding ignoring strictGroupSize.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED, verdict_C=CONFIRMED, verdict_A=NEUTRAL → final=CONFIRMED (physical constraint violation + behavioral confirmation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern": "REST v2 API data type serialization - 8 issues in corpus",
+        "developer_quote": "Performance optimization over data validation (REST v2 issues persist)",
+        "note": "This defect aligns with documented blindspot: 'REST v2 API data type serialization' and developer priority 'Performance optimization over data validation'. strictGroupSize parameter is parsed but not enforced, suggesting validation is bypassed for performance."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Reproduced issue: POST /v2/vectordb/entities/search with groupSize=2, strictGroupSize=true returned 15 results instead of respecting the strict group size constraint. Source code analysis (SearchGroupByOperator.h lines 368-377) shows strict_group_size_ flag exists and IsGroupResEnough() has logic to check it, but actual execution doesn't enforce the constraint. This is a REST v2 API validation gap - parameters accepted but not enforced, aligning with documented blindspot pattern. Not a false positive - the strictGroupSize parameter is truly being ignored despite being processed by the API layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

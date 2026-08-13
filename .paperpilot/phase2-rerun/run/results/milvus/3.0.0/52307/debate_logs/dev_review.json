@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52307",
+      "endpoint": "entities+upsert",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert {\"collectionName\": \"test_json_dev_review\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"meta\": \"invalid_json\"}]}",
+          "observed": "HTTP 200 upsertCount:1 upsertIds:[0] - Invalid JSON string accepted for JSON-typed field",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/upsert -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_json_dev_review\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"meta\": \"invalid_json\"}]}' && echo ''"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes JSON field validates that input is valid JSON object/array",
+            "Oracle assumes schema enforcement prevents storing non-JSON values in JSON fields",
+            "Oracle assumes upsert validates field types match schema definition"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 - dataType == JSON (scalar field type definition)",
+            "constraint_id: milvus_type_json_041 - Supported data type: JSON (collection schema)"
+          ],
+          "note": "Contract defines JSON as a valid data type but doesn't explicitly mandate validation of JSON structure"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "checkAndSetData", "case schemapb.DataType_JSON"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 760-761\ncase schemapb.DataType_JSON:\n    reallyData[fieldName] = []byte(dataString)\n\n// internal/distributed/proxy/httpserver/handler_v1.go lines 877-883\nhttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, httpReq.PartialUpdate)\nif err != nil {\n    mlog.Warn(ctx, \"high level restful api, fail to deal with upsert data\", mlog.Any(\"body\", body), mlog.Err(err))\n    HTTPAbortReturn(c, http.StatusOK, gin.H{\n        HTTPReturnCode:    merr.Code(merr.ErrInvalidInsertData),\n        HTTPReturnMessage: merr.ErrInvalidInsertData.Error() + \", error: \" + err.Error(),\n    })\n    return nil, RestRequestInterceptorErr\n}",
+          "call_chain_traced": "UpsertRequest → checkAndSetData() → case DataType_JSON → []byte(dataString) (no validation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:JSON字段处理直接将输入字符串转为[]byte，未进行JSON格式校验。checkAndSetData函数对所有字段类型都有验证逻辑(JSON语法错误会报错)，但JSON类型字段跳过了结构验证，导致非JSON值被接受。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/get {\"collectionName\": \"test_json_dev_review\", \"id\": 0, \"outputFields\": [\"meta\"]}",
+          "observed": "返回 {\"id\":0,\"meta\":\"invalid_json\"} - 存储的是字符串字面值，不是JSON对象",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/get -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_json_dev_review\", \"id\": 0, \"outputFields\": [\"meta\"]}' && echo ''"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(在标准Docker环境复现)",
+            "并发竞争(单线程操作)",
+            "缓存延迟(立即查询验证)",
+            "请求参数错误(参数格式正确)",
+            "API语义误解(JSON字段应该接受JSON值)"
+          ],
+          "surviving": "type_validation_missing"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "JSON is a valid scalar data type (constraint_id: milvus_type_json_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract defines JSON as a valid type. Source code shows no validation that input is actually valid JSON. API accepts string literal. Contract + Source = CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "JSON field must contain valid JSON (object or array)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: JSON data type should only accept parseable JSON. API accepts invalid JSON string."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful degradation or explicit by-design handling. Code silently passes through invalid data."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (Contract and Physical violations confirmed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": null,
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "候选命中历史bug模式:REST v2 API fails to properly serialize/deserialize complex data types。这是rest-v2-data-type-handling模式的实例 - JSON字段缺少类型验证。"
+      },
+      "root_cause_if_confirmed": "type_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus v3.0.0 REST v2 API upsert endpoint accepts and stores invalid JSON (plain string) for JSON-typed field without validation.源码接地发现:internal/distributed/proxy/httpserver/utils.go第760-761行，JSON字段处理直接将输入字符串转为[]byte，未进行JSON格式校验。复现成功(HTTP 200，upsertCount:1)，证伪成功(GET返回存储的字符串字面值\"invalid_json\"而非JSON对象)。契约定义JSON为有效数据类型但未显式要求验证。物理约束违反(JSON字段应只接受可解析的JSON)。行为不优雅(无优雅降级或显式by-design处理)。命中历史bug模式rest-v2-data-type-handling(REST v2数据类型序列化问题)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "type_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

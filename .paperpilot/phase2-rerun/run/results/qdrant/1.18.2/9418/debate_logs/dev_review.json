@@ -1,0 +1,114 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "v1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9418",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_filter_null_dev_review/points/query {\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}",
+          "observed": "HTTP 200 OK, returned points [id=1, id=2] successfully - API accepts should:null without error",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_filter_null_dev_review/points/query\" -H \"Content-Type: application/json\" -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumed null should field is invalid and should return 4xx error",
+            "Oracle did not account for Option<T> type semantics where null (None) is explicitly allowed by Rust type system",
+            "Oracle confused 'optional field' (can be null) with 'invalid value' (should be rejected)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_query_points_001-008 (query endpoint parameters)",
+            "QueryRequestInternal.filter: Option<Filter> - explicitly nullable",
+            "Filter.should: Option<Vec<Condition>> - explicitly nullable"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "struct Filter",
+            "pub should",
+            "QueryRequestInternal",
+            "pub filter",
+            "Option<Vec<Condition>>"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "/// lib/segment/src/types.rs line 3834-3866\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash)]\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    pub should: Option<Vec<Condition>>,  // <-- Option means null is VALID\n    /// All conditions must match\n    #[validate(nested)]\n    pub must: Option<Vec<Condition>>,\n    /// All conditions must NOT match\n    #[validate(nested)]\n    pub must_not: Option<Vec<Condition>>,\n}\n\n/// lib/api/src/rest/schema.rs line 582\n#[validate(nested)]\npub filter: Option<Filter>,  // <-- Filter itself is optional",
+          "call_chain_traced": "QueryRequest → QueryRequestInternal.filter: Option<Filter> → Filter.should: Option<Vec<Condition>>. Both Option<> wrappers explicitly permit None (null JSON value). The #[validate(nested)] only validates inner Condition items if Some(vec), but does not reject None because Option<T> is the type-level definition of nullable. Rust type system permits None for Option<T> by design.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:Filter.should字段明确定义为Option<Vec<Condition>>,Rust类型系统规定None(null)是该字段的合法值。这不是缺失验证,而是Option<T>类型的显式设计语义——null表示'不应用should条件',等同于省略整个filter字段。API契约与源码实现一致,无违规。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "对比测试: (1) 不带filter的query vs (2) filter.should=null的query",
+          "observed": "两种请求返回完全相同结果: 都返回[id=1, id=2]且HTTP 200。证明filter.should=null的行为等同于'不应用filter',这是Option<T>类型的预期语义,而非bug。",
+          "evidence_cmd": "curl -s POST /points/query {\"query\": [...], \"limit\": 5} → 返回 [1,2]; curl -s POST /points/query {\"query\": [...], \"limit\": 5, \"filter\": {\"should\": null}} → 返回 [1,2] (完全相同)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(Windows/Docker)",
+            "并发race",
+            "请求参数笔误",
+            "缓存/优化器延迟"
+          ],
+          "surviving": "mundane_api_semantics - null is the expected value for Option<T> fields when the filter is not intended to constrain results"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns,但属'Rust Option<T>类型语义'的基础理解范畴。维护者视null为Option字段的正常值,拒绝接受'null应返回4xx'的断言。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "源码接地证实Filter.should明确定义为Option<Vec<Condition>>,null(None)是Rust类型系统对该字段的合法值。API契约与实现一致:filter字段整体可选(Option<Filter>),should/must/must_not子字段也可选(Option<Vec<Condition>>)。null应理解为'不应用该条件',等同于省略filter。证伪实验显示filter.should=null与不带filter的query返回相同结果,符合Option<T>的语义设计。原oracle断言依赖'null应返回4xx错误'的假设,这与REST API对可选null值的常规处理相矛盾。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED",
+  "meta": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/qdrant/1.18.2/9418",
+    "target": "qdrant",
+    "version": "1.18.2",
+    "dev_reviewer_sop_compliance": {
+      "step1_clean_repro": "PASSED - 实际Bash请求复现成功",
+      "step2_assumption_audit": "PASSED - 识别出oracle对Option<T>语义的误解",
+      "step3_contract_grounding": "PASSED - 引用structured_contract.json中query endpoint参数定义",
+      "step3_5_source_grounding": "PASSED - Grep本地clone找到Filter与QueryRequestInternal源码,确认Option<T>类型定义",
+      "step4_falsification": "PASSED - 对比实验证明should:null行为等同于无filter",
+      "step5_mundane_explanation": "PASSED - 排除环境/并发等平凡因素,确认属API语义范畴",
+      "step6_three_perspective_analysis": "PASSED - 契约视角(Option<T>允许null) + 物理视角(无违反约束) + 行为视角(优雅处理null) → FALSE_POSITIVE"
+    },
+    "source_files_examined": [
+      "lib/segment/src/types.rs (Filter struct line 3834-3866)",
+      "lib/api/src/rest/schema.rs (QueryRequestInternal line 582)"
+    ],
+    "grep_queries_used": [
+      "struct Filter",
+      "pub should",
+      "QueryRequestInternal",
+      "Option<Vec<Condition>>"
+    ]
+  }
+}

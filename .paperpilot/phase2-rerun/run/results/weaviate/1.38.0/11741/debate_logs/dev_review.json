@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11741",
+      "endpoint": "/schema/{className}/tenants",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema/TestTenant/tenants with [{\"name\": \"tenant_with_empty_status\", \"activityStatus\": \"\"}]",
+          "observed": "HTTP 200, response body: [{\"name\":\"tenant_with_empty_status\"}] (activityStatus field MISSING from response)",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema/TestTenant/tenants -H 'Content-Type: application/json' -d '[{\"name\":\"tenant_with_empty_status\",\"activityStatus\":\"\"}]'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API accepts empty activityStatus string without validation error",
+            "POST response omits activityStatus field when input is empty string",
+            "Tenant is actually created with default status (verified via GET)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json line 346-363: POST /schema/{className}/tenants description 'Create tenants; 429 → tenant usage limit exceeded'",
+            "structured_contract.json line 359: 'activityStatus: ACTIVE|INACTIVE on create; allowed values: ACTIVE and INACTIVE'",
+            "api_templates.md line 75-77: 'Create tenants; Array of Tenant objects (activityStatus: ACTIVE|INACTIVE on create)'"
+          ],
+          "contract_text": "The contract specifies activityStatus should be ACTIVE or INACTIVE on create, but does not explicitly forbid empty string. However, the behavior is inconsistent: empty string is accepted but the POST response omits the field while the tenant is actually created with HOT status."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "activityStatus",
+            "validateActivityStatus",
+            "allowEmpty",
+            "AddTenants"
+          ],
+          "files_examined": [
+            "entities/models/tenant.go",
+            "usecases/schema/tenant.go",
+            "adapters/repos/db/multitenancy/validator.go"
+          ],
+          "source_excerpt": "// entities/models/tenant.go lines 109-120\nfunc (m *Tenant) validateActivityStatus(formats strfmt.Registry) error {\n    if swag.IsZero(m.ActivityStatus) { // not required\n        return nil  // <-- EMPTY STRING PASSES VALIDATION\n    }\n    if err := m.validateActivityStatusEnum(\"activityStatus\", \"body\", m.ActivityStatus); err != nil {\n        return err\n    }\n    return nil\n}\n\n// usecases/schema/tenant.go lines 130-169 (validateActivityStatuses)\nfunc (h *Handler) validateActivityStatuses(ctx context.Context, tenants []*models.Tenant,\n    allowEmpty, allowFrozen bool,\n) error {\n    for _, tenant := range tenants {\n        tenant.ActivityStatus = convertNewTenantNames(tenant.ActivityStatus)\n        switch status := tenant.ActivityStatus; status {\n        case models.TenantActivityStatusHOT, models.TenantActivityStatusCOLD:\n            continue\n        case models.TenantActivityStatusFROZEN:\n            // ... handling ...\n        default:\n            if status == \"\" && allowEmpty {  // <-- EXPLICIT ALLOW OF EMPTY STRING\n                continue\n            }\n        }\n        msgs = append(msgs, fmt.Sprintf(\n            \"invalid activity status '%s' for tenant %q\", tenant.ActivityStatus, tenant.Name))\n    }\n    // ...\n}\n\n// usecases/schema/tenant.go line 63 (AddTenants calls validateActivityStatuses)\nif err = h.validateActivityStatuses(ctx, validated, true, false); err != nil {\n    return 0, err\n}\n//                                 ^^^^ allowEmpty=true",
+          "call_chain_traced": "POST /schema/{className}/tenants → AddTenants (tenant.go:40) → validateActivityStatuses (tenant.go:63, allowEmpty=true) → tenant model validateActivityStatus (tenant.go:110) → swag.IsZero check passes for empty string → no enum validation → tenant created with default status",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: activityStatus 字段在模型层通过 swag.IsZero 检查允许空字符串跳过枚举验证;在业务层 validateActivityStatuses 当 allowEmpty=true (AddTenants 场景)时显式允许空字符串。但响应层未正确序列化该字段,导致 POST 响应与实际存储状态不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestTenant/tenants/tenant_with_empty_status",
+          "observed": "Response: {\"activityStatus\":\"HOT\",\"name\":\"tenant_with_empty_status\"} - tenant EXISTS with HOT status, contradicting POST response which omitted the field",
+          "evidence_cmd": "curl -s -X GET http://localhost:18080/v1/schema/TestTenant/tenants/tenant_with_empty_status"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container)",
+            "Concurrency/race condition",
+            "Request parameter typo",
+            "API semantics misunderstanding (by-design behavior)"
+          ],
+          "surviving": "response_serialization_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation issues in request parsing - Systematic parameter_validation defects affecting request_parsing functionality",
+        "note": "匹配 bug_shapes BS-004 (Parameter Validation Issues): activityStatus 字段验证不完整,允许空字符串通过但响应序列化不一致,属于请求解析阶段的参数验证缺陷"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "通过源码接地和独立复现确认: POST /schema/{className}/tenants 接受 activityStatus:空字符串(H 张 200),但响应体省略该字段;通过 GET 独立验证发现租户实际以 HOT 状态创建成功。源码显示模型层 swag.IsZero 检查允许空字符串跳过枚举验证,业务层 allowEmpty=true 显式允许空字符串。但响应序列化层未处理空值情况,导致 POST 响应与实际存储状态不一致。这是真正的参数验证+响应序列化组合缺陷,非平凡 API 语义。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "response_serialization_inconsistency": 1
+    }
+  },
+  "source_grounding_summary": {
+    "clone_path": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0",
+    "version_tag": "1.38.0",
+    "grep_keywords_used": [
+      "activityStatus",
+      "validateActivityStatus",
+      "allowEmpty",
+      "AddTenants"
+    ],
+    "key_files_examined": [
+      "entities/models/tenant.go",
+      "usecases/schema/tenant.go",
+      "adapters/repos/db/multitenancy/validator.go"
+    ],
+    "validation_logic_found": "swag.IsZero(m.ActivityStatus) allows empty string to skip enum validation; allowEmpty=true in validateActivityStatuses explicitly permits empty string on create",
+    "serialization_gap": "POST response omits activityStatus field when input is empty, but GET shows tenant actually created with HOT status"
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "judge": "dev-reviewer",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9027",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_reviewer/points/search with score_threshold=2.0 and score_threshold=-0.5",
+          "observed": "score_threshold: 2.0 → HTTP 200, empty results (should be 4xx for invalid threshold); score_threshold: -0.5 → HTTP 200, returns results (should be 4xx for negative threshold)",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_score_threshold_reviewer/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Conclusion 'API accepts invalid values' does NOT depend on unrequested fields - raw requests prove API accepts score_threshold=2.0 and score_threshold=-0.5 with HTTP 200 responses."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json: score_threshold defined as 'Minimum score threshold', type: number, required: false - NO range constraint specified",
+            "No constraint_id exists for score_threshold range validation"
+          ],
+          "note": "Contract has NO explicit assertion about valid score_threshold range (e.g., [0,1] for cosine similarity). Parameter is documented only as 'Minimum score threshold' with type 'number'."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "score_threshold",
+            "validate.*range",
+            "SearchRequestInternal"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "lib/segment/src/segment/read_view/formula_rescore.rs",
+            "tests/openapi/test_score_threshold.py"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 1195-1199\n/// Define a minimal score threshold for the result.\n/// If defined, less similar results will not be returned.\n/// Score of the returned result might be higher or smaller than the threshold depending on the\n/// Distance function used. E.g. for cosine similarity only higher scores will be returned.\npub score_threshold: Option<ScoreType>,\n\n// Compare to line 1184 (limit parameter):\n#[validate(range(min = 1))]\npub limit: usize,\n\n// lib/segment/src/segment/read_view/formula_rescore.rs line 86-91\nlet rescored = match score_threshold {\n    Some(threshold) => {\n        Either::Left(rescored_iter.filter(move |point| point.score >= threshold))\n    }\n    None => Either::Right(rescored_iter),\n}",
+          "call_chain_traced": "SearchRequestInternal.score_threshold (no validation) → segment read view formula_rescore.rs (direct filter application: point.score >= threshold) → no range check anywhere in call chain",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: score_threshold field has NO #[validate(range(...))] attribute (compare to limit parameter which has #[validate(range(min = 1))] at line 1184). The value is passed directly to filtering logic at formula_rescore.rs:88 which applies 'score >= threshold' without any prior validation. For cosine similarity (valid range [-1,1]), values like 2.0 or -0.5 are mathematically invalid but accepted by API."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent channel verification via POST /points (direct lookup) and POST /points/scroll (ground truth scan)",
+          "observed": "Direct point lookup: id=1 exists, id=2 exists. Scroll ground truth: Both points exist. Search without threshold: id=1 score=1.0, id=2 score=0.9938079. With score_threshold=2.0: Returns empty (1.0 < 2.0, valid behavior but invalid input accepted). With score_threshold=-0.5: Returns both (1.0 >= -0.5, 0.99 >= -0.5, valid behavior but invalid input accepted). Bug confirmed: API accepts out-of-range score_threshold values without 4xx error.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_score_threshold_reviewer/points -H 'Content-Type: application/json' -d '{\"ids\": [1, 2], \"with_payload\": true}' && curl -X POST http://localhost:6333/collections/test_score_threshold_reviewer/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (running on localhost Docker, standard environment)",
+            "Concurrency/race (single-threaded test, no concurrent operations)",
+            "Request parameter typos (parameters correctly specified in raw HTTP requests)",
+            "API semantics misunderstanding (bug is about missing input validation, not semantic interpretation)",
+            "By-design pattern (developer_cognition.json lists no by_design pattern for missing parameter validation; 'parameter_validation' is listed as a blindspot_indicator)"
+          ],
+          "surviving": "none",
+          "note": "This is a genuine parameter validation gap, not a mundane explanation. Developer cognition explicitly lists 'Parameter validation on filter/condition APIs' as a blindspot_indicator."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicator: Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Bug shape qdrant-parameter-validation-numeric-boundary matches issue 9027 in known_instances. Developer cognition indicates parameter validation is a blindspot area."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - contract has no assertion about score_threshold valid range",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "For cosine similarity, score ∈ [-1, 1]. Score threshold 2.0 exceeds maximum possible score (1.0). Score threshold -0.5 is below minimum (-1). These are physically invalid values.",
+          "api_accepts_violation": true,
+          "observed_violation": "API accepts score_threshold=2.0 (mathematically impossible for cosine, max score is 1.0) and score_threshold=-0.5 (below valid range [-1,1]) without returning 4xx error",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_behavior": "API applies score_threshold filter directly: returns empty results when threshold > all scores, returns all results when threshold < all scores. No crashes, no data corruption.",
+          "source_evidence": "formula_rescore.rs line 88: direct filter application 'point.score >= threshold' with no validation",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) → final=CONFIRMED (C cannot override physical/contract violations per SOP aggregation rule)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Source code ground-truth analysis confirms missing input validation: SearchRequestInternal.score_threshold field (lib/api/src/rest/schema.rs:1199) lacks #[validate(range(...))] attribute present on other parameters (e.g., limit has #[validate(range(min = 1))] at line 1184). The value passes directly to filtering logic (formula_rescore.rs:88) without range checking. API testing confirms acceptance of physically invalid values: score_threshold=2.0 (exceeds cosine maximum 1.0) and score_threshold=-0.5 (below cosine minimum -1.0) both return HTTP 200. This matches bug shape 'qdrant-parameter-validation-numeric-boundary' (known_instances includes issue 9027). Developer cognition lists 'Parameter validation on filter/condition APIs' as a blindspot_indicator. Falsification via independent channel (point lookup + scroll + search without threshold) confirms API behavior is consistent but input validation is missing. This is a genuine Type1_IllegalSuccess defect: API accepts invalid numeric parameter values without returning 4xx error."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED",
+  "session_metadata": {
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0",
+    "db_version": "1.18.0",
+    "db_endpoint": "http://localhost:6333",
+    "local_clone_available": true,
+    "source_verification_method": "local_clone_grep",
+    "files_examined_count": 3,
+    "grep_queries_count": 3
+  }
+}

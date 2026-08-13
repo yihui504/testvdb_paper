@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49844",
+      "endpoint": "entities+insert",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (data array length = 101, violates contract assertion len(data) <= 100)",
+          "observed": "HTTP 200 OK, response body: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":101,\"insertIds\":[0,...,100]}}",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName': 'test_coll', 'data': [{'id': i, 'vector': [0.1, 0.2, 0.3, 0.4]} for i in range(101)]}).json()\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Response should carry payload (insertCount/insertIds fields) - verified in raw response",
+            "API should validate len(data) against documented limit - premise of defect claim"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_insert_001",
+            "assertion_text_quoted: \"len(data) <= 100\"",
+            "description: \"Max 100 entities per single insert call via REST API\"",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "insertHandler",
+            "checkAndSetData",
+            "Insert.*func",
+            "NumRows",
+            "len(data).*100"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go\n// Lines 1241-1267: insert handler implementation\n\nfunc (h *HandlersV2) insert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionDataReq)\n\treq := &milvuspb.InsertRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t}\n\tc.Set(ContextRequest, req)\n\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tbody, _ := c.Get(gin.BodyBytesKey)\n\tvar validDataMap map[string][]bool\n\thttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, false)\n\tif err != nil {\n\t\t// ... error handling ...\n\t}\n\n\t// *** NO VALIDATION: len(httpReq.Data) is NOT checked against 100 ***\n\treq.NumRows = uint32(len(httpReq.Data))  // Line 1267: Direct assignment without range check\n\treq.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)\n\t// ... rest of handler ...\n}\n\n// File: internal/distributed/proxy/httpserver/utils.go\n// Lines 363-380: checkAndSetData processes data array but has NO size limit check\n\nfunc checkAndSetData(body []byte, collSchema *schemapb.CollectionSchema, partialUpdate bool) ([]map[string]interface{}, map[string][]bool, error) {\n\tvar reallyDataArray []map[string]interface{}\n\tvalidDataMap := make(map[string][]bool)\n\tdataResult := gjson.GetBytes(body, HTTPRequestData)\n\tdataResultArray := dataResult.Array()\n\tif len(dataResultArray) == 0 {\n\t\treturn reallyDataArray, validDataMap, merr.ErrMissingRequiredParameters\n\t}\n\n\t// *** NO CHECK: if len(dataResultArray) > 100 { return error } ***\n\tfor _, data := range dataResultArray {\n\t\t// Process each row without limit check\n\t}\n\t// ...\n}\n\n// File: internal/proxy/impl.go\n// Lines 2533-2576: Proxy.Insert implementation\n\nfunc (node *Proxy) Insert(ctx context.Context, request *milvuspb.InsertRequest) (*milvuspb.MutationResult, error) {\n\t// Logs NumRows but does NOT validate maximum limit\n\tlog := log.Ctx(ctx).With(\n\t\tzap.Uint32(\"NumRows\", request.NumRows),  // Line 2550: Logged but not validated\n\t)\n\n\tit := &insertTask{\n\t\tinsertMsg: &msgstream.InsertMsg{\n\t\t\tInsertRequest: &msgpb.InsertRequest{\n\t\t\t\tNumRows: uint64(request.NumRows),  // Line 2576: Passed through without check\n\t\t\t},\n\t\t},\n\t}\n\t// ... enqueue task without validation ...\n}",
+          "call_chain_traced": "REST v2 insert handler (handler_v2.go:1241) → checkAndSetData (utils.go:363) → Proxy.Insert (impl.go:2533) → insertTask → message queue. None of these layers validate len(data) <= 100.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 entities+insert endpoint在handler_v2.go:1267直接将len(httpReq.Data)赋值给req.NumRows,无任何最大值校验;checkAndSetData函数(utils.go:363)遍历dataResultArray但不限制其长度;Proxy.Insert(impl.go:2533)记录NumRows但仅用于日志,不执行范围检查。三个层均未实现contract要求的len(data) <= 100验证。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: POST entities/query with filter to count inserted entities",
+          "observed": "Query returns 101 entities with ids [0-100], confirming all 101 were successfully inserted despite contract violation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（Docker运行正常）",
+            "并发/race（单线程insert）",
+            "缓存/延迟（同步插入+立即query验证）",
+            "请求参数笔误（符合API规范）"
+          ],
+          "surviving": "contract_violation_with_successful_execution"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 8 issues in corpus. This defect aligns with blindspot_indicators showing REST v2 lacks input validation.",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "命中开发者认知盲点:REST v2层数据验证缺失。developer_cognition.json显示REST v2有25个已知问题,模式为'Data type serialization not validated'。当前缺陷符合该模式——缺少对data数组长度的验证。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "len(data) <= 100 (constraint_id: milvus_range_entities_insert_001)",
+          "assertion_text_quoted": "Max 100 entities per single insert call via REST API",
+          "source_implements_check": false,
+          "api_observed_value": "Insert with 101 entities succeeded (HTTP 200, insertCount=101)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "REST API payload size limit (documented as 100 entities to prevent oversized requests)",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED. API gracefully processes 101 entities without error, but contract explicitly states len(data) <= 100. Source code confirms NO validation exists. Contract perspective (verdict_A) dominates.",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Contract milvus_range_entities_insert_001 explicitly states 'len(data) <= 100' for REST v2 entities+insert endpoint. Live testing shows API accepts 101 entities (violating assertion) and returns HTTP 200 with insertCount=101. Source code analysis (handler_v2.go:1267, utils.go:363, impl.go:2533) confirms NO validation of data array length exists across REST handler, data parser, or proxy layers. This is a true Type1_IllegalSuccess defect: API violates its documented contract without error. Matches developer cognition blindspot 'REST v2 data type handling' (25 known issues)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

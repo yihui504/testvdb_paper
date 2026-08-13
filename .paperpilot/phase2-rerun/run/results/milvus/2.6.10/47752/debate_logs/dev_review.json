@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47752",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search collectionName=test_hnsw_ef data=[[0.1,0.2,0.3]] annsField=vector limit=10 searchParams={\"ef\": 0}",
+          "observed": "HTTP 200 with search results: [{\"distance\":0,\"id\":1},{\"distance\":0.27,\"id\":2},{\"distance\":1.08,\"id\":3}]",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_hnsw_ef\", \"data\": [[0.1, 0.2, 0.3]], \"annsField\": \"vector\", \"limit\": 10, \"searchParams\": {\"ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Raw request explicitly provides search parameter ef=0",
+            "HNSW index type requires ef ≥ 1 for correct search operation",
+            "API returns successful response despite invalid parameter value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_hnsw_ef_validation - HNSW ef parameter must be ≥ 1 (established by HNSW algorithm semantics, see constraints.go: HNSWMinEfConstruction = 1)"
+          ],
+          "note": "While structured_contract.json does not explicitly enumerate ef search-time constraints, index parameter validation logic in internal/util/indexparamcheck/constraints.go defines HNSWMinEfConstruction = 1, establishing the minimum valid ef range for HNSW operations"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "ef.*parameter",
+            "CheckSearch",
+            "searchParams.*validation",
+            "IndexChecker.*interface"
+          ],
+          "files_examined": [
+            "internal/proxy/task_search.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task_validator.go",
+            "internal/util/indexparamcheck/index_checker.go",
+            "internal/util/indexparamcheck/constraints.go",
+            "internal/util/indexparamcheck/hnsw_checker_test.go"
+          ],
+          "source_excerpt": "// internal/util/indexparamcheck/index_checker.go (lines 23-28)\ntype IndexChecker interface {\n\tCheckTrain(schemapb.DataType, schemapb.DataType, map[string]string) error\n\tCheckValidDataType(indexType IndexType, field *schemapb.FieldSchema) error\n\tSetDefaultMetricTypeIfNotExist(schemapb.DataType, map[string]string)\n\tStaticCheck(schemapb.DataType, schemapb.DataType, map[string]string) error\n}\n\n// internal/util/indexparamcheck/constraints.go (lines 18-19)\nHNSWMinEfConstruction = 1\nHNSWMaxEfConstruction = 2147483647\n\n// internal/proxy/task_validator.go (lines 20-68)\nfunc (v *searchTaskValidator) validate(search *searchTask) error {\n\t// Only validates MaxResultEntries count, no search parameter validation\n\tmaxResultEntries := paramtable.Get().ProxyCfg.MaxResultEntries.GetAsInt64()\n\tif maxResultEntries <= 0 {\n\t\treturn nil\n\t}\n\tnEntries := search.GetNq() * search.GetTopk()\n\tif search.GetGroupSize() > 0 {\n\t\tnEntries *= search.GroupSize\n\t}\n\tif nEntries > maxResultEntries {\n\t\treturn fmt.Errorf(\"number of result entries is too large\")\n\t}\n\treturn nil\n}\n\n// internal/proxy/search_util.go (lines 163-336)\nfunc parseSearchInfo(searchParamsPair []*commonpb.KeyValuePair, schema *schemapb.CollectionSchema, rankParams *rankParams) (*SearchInfo, error) {\n\t// Parses topK, offset, roundDecimal, groupBy, etc. but NO ef parameter validation\n\tsearchParamStr, err := funcutil.GetAttrByKeyFromRepeatedKV(ParamsKey, searchParamsPair)\n\tif err != nil {\n\t\tsearchParamStr = \"\"\n\t}\n\t// searchParamStr is passed through without validation (line 321)\n\tplanInfo.SearchParams = searchParamStr\n}",
+          "call_chain_traced": "SearchRequest → task_validator.validate() → only checks MaxResultEntries | parseSearchInfo() → extracts searchParams but never validates ef range | No CheckSearch() interface exists for search-time parameter validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:IndexChecker 接口只有 CheckTrain (建索引时校验 efConstruction)/CheckValidDataType/StaticCheck,完全没有 CheckSearch() 方法来校验搜索时参数。Proxy 层的 parseSearchInfo() 只是提取 searchParamStr 透传,不做任何 ef 参数范围检查。这是真缺陷 —— API 应该拒绝 ef=0/ef=-1 但实际上接受了这些非法值并返回 HTTP 200。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: curl with ef=0, ef=-1, ef=100 all return HTTP 200 with valid search results",
+          "observed": "All three requests succeed despite ef=0 and ef=-1 being mathematically invalid for HNSW algorithm (ef must be ≥ 1 for candidate list size). API behavior violates HNSW parameter contract.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -d '{\"collectionName\": \"test_hnsw_ef\", \"data\": [[0.1,0.2,0.3]], \"annsField\": \"vector\", \"searchParams\": {\"ef\": 0}}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -d '{\"collectionName\": \"test_hnsw_ef\", \"data\": [[0.1,0.2,0.3]], \"annsField\": \"vector\", \"searchParams\": {\"ef\": -1}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on clean Milvus v2.6.10 instance)",
+            "Concurrent operations (single-threaded sequential test)",
+            "Request parameter typo (verified exact JSON syntax)",
+            "Approximate search by-design (HNSW is approximate but still requires ef ≥ 1)"
+          ],
+          "surviving": "param_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (26 instances in corpus, confidence 0.95)",
+        "note": "This defect extends the REST v2 parameter validation gap to HNSW search-time parameters. While bug_shape records focus on data type serialization, the same root cause (missing parameter validation in REST v2 layer) applies to numeric parameter ranges like ef."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地 + 双盲复现均确认缺陷:IndexChecker 接口只提供 CheckTrain() (建索引时校验 efConstruction ∈ [1, 2147483647]),完全没有 CheckSearch() 方法校验搜索时 ef 参数。Proxy 层 parseSearchInfo() 提取 searchParamStr 后直接透传,不做范围检查。实测证实:POST /entities/search 带 searchParams={\"ef\": 0} 或 {\"ef\": -1} 均返回 HTTP 200 + 正常搜索结果,违反 HNSW 算法要求 ef ≥ 1。这是真缺陷 —— API 应该拒绝非法 ef 值但实际未校验,允许危险参数通过并可能触发 Knowhere 库未定义行为或无效搜索结果。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

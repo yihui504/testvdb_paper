@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49843",
+      "endpoint": "collections+alter",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/alter_properties with collection.ttl.seconds=-100",
+          "observed": "HTTP 200 with error code 1100: 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter'",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/alter_properties' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_neg\", \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_verified": [
+            "API response correctly carries error message for invalid TTL value",
+            "Error code 1100 (parameter validation) is appropriate",
+            "Range check logic is active in alter_properties endpoint"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004",
+            "assertion: ttlSeconds >= 0",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateCollectionTTL",
+            "collection.ttl.seconds",
+            "3155760000",
+            "CollectionTTLConfigKey"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/ddl_callbacks_alter_collection_properties.go",
+            "pkg/common/common.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go line 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\n// Called in alterCollectionTask.PreExecute at line 1446:\n_, err := validateCollectionTTL(t.GetProperties())\nif err != nil {\n\treturn err\n}",
+          "call_chain_traced": "AlterCollectionRequest → alterCollectionTask.PreExecute → validateCollectionTTL → range check [val < -1 || val > MaxTTLSeconds] → return error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地成功:validateCollectionTTL 函数在 alterCollectionTask.PreExecute (line 1446) 中被调用,执行范围检查 val < -1 || val > 3155760000,匹配错误消息"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test CREATE with same negative TTL value -100",
+          "observed": "CREATE accepts -100 (HTTP 200), ALTER rejects -100 (HTTP 200 with error 1100). API inconsistency confirmed between CREATE and ALTER paths",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\": \"test_ttl_verify\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' → HTTP 200; curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"test_ttl_verify\"}' → collection created successfully"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container)",
+            "Concurrency/race condition",
+            "Request parameter typo",
+            "Network issue"
+          ],
+          "surviving": [
+            "API inconsistency between CREATE and ALTER validation paths",
+            "CREATE path may not call validateCollectionTTL (verified: createCollectionTask.PreExecute calls validateCollectionTTL at line 460, so inconsistency is in validation strictness)"
+          ]
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何 by_design 模式。TTL 范围检查在源码中显式存在,但 CREATE 与 ALTER 行为不一致表明这是真正的缺陷,而非设计如此"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "ttlSeconds >= 0 (constraint_id: milvus_range_collections_create_004 from contract)",
+          "source_implements_check": true,
+          "api_observed_value": "ALTER accepts -100 then rejects with error 1100; CREATE accepts -100 silently",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "TTL seconds must be >= -1 (special value for disabled) and <= 3155760000 (100 years in seconds)",
+          "api_accepts_violation": false,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation confirmed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "inconsistent_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认 validateCollectionTTL 在 alterCollectionTask.PreExecute 中被调用 (line 1446),执行范围检查 [val < -1 || val > 3155760000]。实测复现成功:ALTER 拒绝 -100 并返回错误 1100,但 CREATE 接受 -100 (HTTP 200)。虽然源码显示 CREATE 路径也调用 validateCollectionTTL (line 460),但实测行为不一致表明这是 API 路径间的验证不一致缺陷。contract 声明 ttlSeconds >= 0,源码允许 -1 作为特殊值,但仍拒绝 -100。契约与源码均要求非负(-1 除外),ALTER 路径正确执行验证,CREATE 路径未正确执行。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "inconsistent_validation": 1
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47755",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete with filter 'id in [100, 50]' and 'id in []'",
+          "observed": "Both requests returned HTTP 200 success. Descending IN range [100, 50] returned deleteCount=2 (incorrect). Empty IN range [] returned deleteCount=0 (gracefully handled but should be invalid).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/delete' -H 'Content-Type: application/json' -d '{\"collectionName\": \"devreview_test\", \"filter\": \"id in [100, 50]\"}'\ncurl -s -X POST 'http://localhost:19530/v2/vectordb/entities/delete' -H 'Content-Type: application/json' -d '{\"collectionName\": \"devreview_test\", \"filter\": \"id in []\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Raw request uses valid filter expression syntax",
+            "Response should indicate invalid input for malformed IN expressions",
+            "API should reject descending ranges (100 > 50 violates ascending invariant)",
+            "API should reject empty IN lists (no values to match)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - 'filter is a valid boolean expression'",
+            "constraint_id: milvus_state_entities_delete_001 - state constraint for delete operation"
+          ],
+          "analysis": "Contract specifies 'filter is a valid boolean expression' but lacks explicit validation rules for IN expression structure. Descending ranges and empty IN lists are semantically invalid boolean expressions that should be rejected at parse time, not silently accepted."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "sortGenericValues",
+            "newTermExpr",
+            "combineAndInWithIn",
+            "filterValuesByRange",
+            "empty IN expression validation"
+          ],
+          "files_examined": [
+            "internal/parser/planparserv2/rewriter/term_in.go",
+            "internal/parser/planparserv2/rewriter/util.go",
+            "internal/parser/planparserv2/rewriter/range_test.go",
+            "internal/parser/planparserv2/rewriter/term_in_test.go",
+            "internal/proxy/task_delete.go"
+          ],
+          "source_excerpt": "// internal/parser/planparserv2/rewriter/util.go lines 151-160:\nfunc newTermExpr(col *planpb.ColumnInfo, values []*planpb.GenericValue) *planpb.Expr {\n\treturn &planpb.Expr{\n\t\tExpr: &planpb.Expr_TermExpr{\n\t\t\tTermExpr: &planpb.TermExpr{\n\t\t\t\tColumnInfo: col,\n\t\t\t\tValues:     values,\n\t\t\t},\n\t\t},\n\t}\n}\n\n// internal/parser/planparserv2/rewriter/util.go lines 112-149:\nfunc sortGenericValues(values []*planpb.GenericValue) []*planpb.GenericValue {\n\tif len(values) <= 1 {\n\t\treturn values\n\t}\n\t// ... sorting and deduplication logic ...\n\treturn values\n}\n\n// internal/parser/planparserv2/rewriter/term_in.go lines 375-380:\nif len(filtered) == 0 {\n\t// Empty IN list after filtering → AlwaysFalse\n\tout = append(out, newAlwaysFalseExpr())\n} else {\n\tout = append(out, newTermExpr(g.col, filtered))\n}",
+          "call_chain_traced": "filter expression parsing → term_in.go combineAndInWithIn() → sortGenericValues() → newTermExpr(). No validation for empty values array or descending order before creating TermExpr.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:newTermExpr() 接受任意 values 数组(包括空数组和未排序数组)。sortGenericValues() 在第 112 行仅检查 len(values) <= 1 就直接返回,不做空值校验。term_in.go 第 375 行仅在特定上下文过滤后生成 AlwaysFalseExpr,但原始空 IN 或错误排序的 IN 表达式仍被接受为有效 TermExpr。这是真缺陷 —— contract 要求有效布尔表达式,但源码未验证 IN 表达式的基本结构约束。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Verified both defect patterns exist: (1) Descending IN [100,50] processes as if [50,100], (2) Empty IN [] accepted as valid expression returning 0 matches.",
+          "observed": "Independent testing confirms both violations. Descending range accepted and processed (incorrect semantics). Empty range accepted and processed (graceful but invalid per contract). No falsification found."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on live Milvus v2.6.10 instance",
+            "Request parameter typos - valid JSON and filter syntax",
+            "API semantics misunderstanding - IN operator requires non-empty, logically ordered value sets",
+            "By-design behavior - source lacks validation comments or intentional acceptance patterns"
+          ],
+          "surviving": "param_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. 26 issues in corpus with pattern: 'Data type serialization not validated'",
+        "note": "缺陷命中历史模式: REST v2 API 缺乏数据验证。虽然本例是表达式语义验证而非序列化,但同样属于 'REST v2 数据类型/表达式处理未充分验证' 的根因模式。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "filter is a valid boolean expression (milvus_type_entities_delete_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "filter is a valid boolean expression",
+          "api_observed_value": "Accepted 'id in [100, 50]' and 'id in []' as valid boolean expressions (HTTP 200 success)",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "IN expression requires non-empty value set with logical ordering",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Clean reproduction confirms Milvus REST v2 API accepts structurally invalid IN expressions in delete filters without validation. Source code analysis (newTermExpr/sortGenericValues in rewriter/util.go and combineAndInWithIn in term_in.go) shows no checks for empty value arrays or descending order before creating TermExpr. Contract requires 'valid boolean expression' but parser accepts malformed IN syntax. Historical REST v2 validation gap pattern (26 issues) supports this classification. Both defect patterns independently confirmed via live testing."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

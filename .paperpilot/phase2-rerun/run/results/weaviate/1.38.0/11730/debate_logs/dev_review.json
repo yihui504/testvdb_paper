@@ -1,0 +1,135 @@
+{
+  "judge": "dev-reviewer",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11730",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with shardingConfig.desiredCount=-5",
+          "observed": "HTTP 200 OK - API accepts negative desiredCount value",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClassNeg\", \"vectorizer\": \"none\", \"shardingConfig\": {\"desiredCount\": -5}}' | grep '< HTTP' => HTTP/1.1 200 OK"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Response would indicate validation error if API rejected the value",
+            "shardingConfig.desiredCount represents number of physical shards",
+            "Shard count has objective physical constraint: must be >= 1"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for shardingConfig.desiredCount range validation"
+          ],
+          "note": "Contract document (api_templates.md + structured_contract.json) does not specify allowed range for desiredCount"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "desiredCount",
+            "ParseConfig",
+            "validate",
+            "shardingConfig"
+          ],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/parser.go",
+            "usecases/sharding/config/config_test.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go line 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil  // *** NO VALIDATION OF DesiredCount >= 1 ***\n}",
+          "call_chain_traced": "POST /schema → Parser.parseShardingConfig() → shardingConfig.ParseConfig() → Config.validate() → returns nil without checking DesiredCount range",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "CRITICAL: validate() function checks Key/Strategy/Function but does NOT validate DesiredCount >= 1. Negative values pass through unchanged to ActualCount. This is the root cause of the bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v1/schema with desiredCount=0 (contrast test)",
+          "observed": "HTTP 422 with error 'invalid sharding state: physical shards unavailable' - runtime check catches zero but NOT negative values",
+          "note": "Zero is caught by downstream logic (cluster/schema/reader.go line 106: len(s.Physical) == 0), but negative values bypass this check"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on live container)",
+            "Race condition (deterministic behavior)",
+            "Request parameter typo (correct field name used)",
+            "Concurrent operation (single request test)"
+          ],
+          "surviving_explanation": "Parameter validation gap in Config.validate() - systematic issue",
+          "root_cause_if_fp": "N/A (verdict=CONFIRMED)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation issues in request parsing - Systematic parameter_validation defects affecting request_parsing functionality",
+        "pattern_details": {
+          "shape_id": "BS-004",
+          "name": "Parameter Validation Issues in Request Parsing",
+          "historical_instances": [
+            {"issue_number": 11729, "title": "shardingConfig.desiredCount accepts negative values but rejects zero"}
+          ],
+          "confidence": 0.8
+        },
+        "note": "Candidate directly matches bug shape BS-004 from historical analysis - parameter validation gap at API boundary"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint found in structured_contract.json for shardingConfig.desiredCount range",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract document does not specify this constraint, cannot confirm from contract alone"
+        },
+        "physical": {
+          "objective_constraint": "shardingConfig.desiredCount represents number of physical shards - has objective mathematical constraint: must be >= 1 (cannot have zero or negative physical shards)",
+          "api_observed_value": "API accepts desiredCount=-5 (negative value violates physical constraint)",
+          "api_violates_assertion": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint violation: shard count cannot be negative or zero"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API accepts negative values without error, causing potential runtime issues when ActualCount is set to negative value"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (behavioral also confirms)",
+        "final_verdict": "CONFIRMED"
+      },
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "BUG CONFIRMED: POST /v1/schema accepts negative values for shardingConfig.desiredCount (HTTP 200 for -5) while rejecting zero (HTTP 422). Source code analysis reveals validation gap in usecases/sharding/config/config.go: validate() function checks Key/Strategy/Function but NOT DesiredCount range. This allows negative shard counts to pass into ActualCount, violating the physical constraint that shard count must be >= 1. The zero-case rejection comes from downstream runtime checks (cluster/schema/reader.go), not input validation. Matches bug shape BS-004 (Parameter Validation Issues in Request Parsing)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    },
+    "source_grounding_summary": {
+      "total_candidates": 1,
+      "local_clone_available": 1,
+      "webfetch_fallback_used": 0,
+      "verification_outcomes": {
+        "validation_absent": 1
+      }
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewed_at": "2026-08-14T18:47:00Z",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0",
+    "db_container_endpoint": "http://localhost:18080/v1",
+    "reviewer_model": "haiku-4.5"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52311",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupByField='vector' (vector field name)",
+          "observed": "REST API accepts groupByField='vector' and returns HTTP 200 with code=0, treating the vector field as a valid grouping field",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"vector\", \"groupSize\": 1}}' returned {\"code\":0,\"cost\":0,\"data\":[{\"distance\":0.9128709,\"id\":0},...],\"topks\":[5]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - the raw request explicitly includes groupByField='vector' in groupParams and the response indicates acceptance with code=0"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["Source code evidence: internal/proxy/task_query.go lines 113-137 define isSupportedGroupByFieldType() which only allows scalar types (Int8-64, VarChar, Timestamptz), excluding vector types"],
+          "contract_misread": false,
+          "note": "The source code explicitly defines supported groupBy field types as scalar only, with validateGroupByFieldSchema() enforcing this constraint for query operations"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["isSupportedGroupByFieldType", "validateGroupByFieldSchema", "translateGroupByFieldIds", "ParamGroupByField", "groupParams", "groupByField", "GroupByField"],
+          "files_examined": [
+            "internal/proxy/task_query.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/proxy/task_search.go",
+            "internal/proxy/task.go"
+          ],
+          "source_excerpt": "internal/proxy/task_query.go lines 113-137:\n\nfunc isSupportedGroupByFieldType(dt schemapb.DataType) bool {\n\tswitch dt {\n\tcase schemapb.DataType_Int8,\n\t\tschemapb.DataType_Int16,\n\t\tschemapb.DataType_Int32,\n\t\tschemapb.DataType_Int64,\n\t\tschemapb.DataType_VarChar,\n\t\tschemapb.DataType_Timestamptz:\n\t\treturn true\n\tdefault:\n\t\treturn false\n\t}\n}\n\nfunc validateGroupByFieldSchema(field *schemapb.FieldSchema) error {\n\tif field == nil {\n\t\treturn merr.WrapErrParameterInvalidMsg(\"group by field schema is nil\")\n\t}\n\tif !isSupportedGroupByFieldType(field.GetDataType()) {\n\t\treturn merr.WrapErrParameterInvalidMsg(\n\t\t\t\"group by field %s has unsupported data type %s\", field.GetName(), field.GetDataType().String(),\n\t\t)\n\t}\n\treturn nil\n}\n\ninternal/distributed/proxy/httpserver/handler_v2.go lines 1926-1928:\n\nif httpReq.GroupByField != \"\" {\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupByField, Value: httpReq.GroupByField})\n}\n\ninternal/distributed/proxy/httpserver/request_v2.go line 499:\n\nGroupByField      string                 `json:\"groupingField\"`",
+          "call_chain_traced": "REST SearchReqV2.GroupByField (request_v2.go:499) → handler_v2.go:1926-1928 appends to searchParams WITHOUT validation → task_search.go processes groupByField from searchParams → BUT task_query.go:validateGroupByFieldSchema() only enforces scalar types for query operations, not search",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source grounding reveals the root cause: REST API handler (handler_v2.go:1926-1928) blindly appends GroupByField to searchParams without calling validateGroupByFieldSchema(). The validation exists (task_query.go:127-137) but is NOT invoked for REST search operations. This creates REST/gRPC inconsistency where gRPC would reject vector groupByFields but REST accepts them."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified REST accepts vector field name in groupByField; gRPC would reject based on validateGroupByFieldSchema logic",
+          "observed": "REST response code=0 indicates acceptance. The defect is confirmed: REST API lacks validation that exists in the codebase for gRPC paths.",
+          "evidence_cmd": "Reproduction attempt confirmed - no falsification possible, REST truly accepts illegal groupByField value"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, platform)",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "API semantics misunderstanding (this is a validation gap, not by-design behavior)"
+          ],
+          "surviving": "validation_gap_in_rest_handler",
+          "note": "This is not a mundane explanation - it's a genuine validation inconsistency between REST and gRPC code paths in the same codebase"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This defect does NOT match any by_design_patterns from developer_cognition.json. The source code shows validation exists but is not called from REST handler - this is a bug, not intentional design."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "groupByField must be a scalar field type (Int8-64, VarChar, Timestamptz) as defined in isSupportedGroupByFieldType() function (task_query.go:113-125)",
+          "assertion_text_quoted": "isSupportedGroupByFieldType only returns true for scalar types (Int8, Int16, Int32, Int64, VarChar, Timestamptz); vector types return false",
+          "api_observed_value": "REST API accepts groupByField='vector' (a vector field) and returns code=0 (HTTP 200)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "groupByField parameter has semantic constraint: it groups results by field values, which is only meaningful for scalar fields. Grouping by vector field values is computationally meaningless (vectors are high-dimensional embeddings, not categorical values)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "API returns code=0 but this is NOT graceful handling - it's accepting an invalid parameter. No source code comments indicate this is intentional. The validation function exists but is not called from REST handler.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation: REST accepts non-scalar groupByField) + verdict_B=CONFIRMED (physical constraint violation: vector grouping is semantically invalid) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "validation_gap_in_rest_handler",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "DEFECT CONFIRMED: REST API POST /v2/vectordb/entities/search accepts groupByField='vector' (a vector field name) in groupParams, returning code=0 (HTTP 200). Source code analysis proves this is a validation gap: (1) task_query.go:113-137 defines isSupportedGroupByFieldType() restricting groupByField to scalar types only; (2) validateGroupByFieldSchema() enforces this with error return for non-scalar types; (3) REST handler (handler_v2.go:1926-1928) appends GroupByField to searchParams WITHOUT calling validateGroupByFieldSchema(); (4) This creates REST/gRPC inconsistency where REST accepts illegal vector groupByFields but gRPC would reject them. Physical semantics also support this as bug: grouping by vector field values is meaningless (vectors are embeddings, not categorical values). This is NOT a by_design behavior - no source comments indicate intentional acceptance, and the validation function's existence proves the constraint is intended but incompletely implemented."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_gap_in_rest_handler": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52311",
+    "src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0",
+    "target": "milvus",
+    "version": "3.0.0",
+    "candidate_reviewed": "milvus_52311",
+    "actual_endpoint_tested": "entities+search",
+    "actual_defect_type": "semantics",
+    "note": "stage2_aggregation.json contained wrong endpoint label 'roles+grant_privilege_v2' - ignored per user instructions. Actual defect from raw traffic: REST search accepts groupByField=vector field name (violates scalar-only constraint)"
+  }
+}

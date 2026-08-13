@@ -1,0 +1,29 @@
+{
+ "defect_id": "qdrant_9417",
+ "vendor": "qdrant",
+ "version": "1.18.2",
+ "tag": "v1.18.2",
+ "terms": [
+  "required",
+  "vectors",
+  "during",
+  "creation",
+  "produces"
+ ],
+ "status": "found",
+ "n_hits": 295,
+ "excerpts": [
+  {
+   "file": "lib/segment/src/index/sparse_index/sparse_vector_index/search.rs",
+   "line": 119,
+   "term_matched": "required",
+   "context": " 104|         let vector_storage = self.vector_storage.borrow();\n 105|         let id_tracker = self.id_tracker.borrow();\n 106| \n 107|         let is_stopped = vector_query_context.is_stopped();\n 108| \n 109|         let deleted_point_bitslice = vector_query_context\n 110|             .deleted_points()\n 111|             .unwrap_or(id_tracker.deleted_point_bitslice());\n 112|         let deleted_vectors = vector_storage.deleted_vector_bitslice();\n 113| \n 114|         let hw_counter = vector_query_context.hardware_counter();\n 115| \n 116|         let ids = match prefiltered_points {\n 117|             // Deferred points get filtered in the `None` case and are added to `prefiltered_points`.\n 118|             // In the `Some` case, we iterate over this set of points,\n 119|             // so no additional filtering is required in that case.\n 120|             Some(filtered_points) => filtered_points.iter(),\n 121|             None => {\n 122|                 let filtered_points = self\n 123|                     .payload_index\n 124|                     .borrow()\n 125|                     .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;\n 126|                 *prefiltered_points = Some(filtered_points);\n 127|                 prefiltered_points.as_ref().unwrap().iter()\n 128|             }\n 129|         }\n 130|         .copied()\n 131|         .filter(|&idx| check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice))\n 132|         .collect_vec();\n 133| \n 134|         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());"
+  },
+  {
+   "file": "src/common/auth/jwt_parser.rs",
+   "line": 28,
+   "term_matched": "required",
+   "context": "  13| \n  14| impl JwtParser {\n  15|     const ALGORITHM: Algorithm = Algorithm::HS256;\n  16| \n  17|     pub fn new(secret: &str) -> Self {\n  18|         let key = DecodingKey::from_secret(secret.as_bytes());\n  19|         let mut validation = Validation::new(Self::ALGORITHM);\n  20| \n  21|         // Qdrant server is the only audience\n  22|         validation.validate_aud = false;\n  23| \n  24|         // Expiration time leeway to account for clock skew\n  25|         validation.leeway = 30;\n  26| \n  27|         // All claims are optional\n  28|         validation.required_spec_claims = Default::default();\n  29| \n  30|         JwtParser { key, validation }\n  31|     }\n  32| \n  33|     /// Decode the token and return the claims, this already validates the `exp` claim with some leeway.\n  34|     /// Returns None when the token doesn't look like a JWT.\n  35|     pub fn decode(&self, token: &str) -> Option<Result<Claims, AuthError>> {\n  36|         let claims = match decode::<Claims>(token, &self.key, &self.validation) {\n  37|             Ok(token_data) => token_data.claims,\n  38|             Err(e) => {\n  39|                 #[expect(clippy::wildcard_enum_match_arm, reason = \"error handling\")]\n  40|                 return match e.kind() {\n  41|                     ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {\n  42|                         Some(Err(AuthError::Forbidden(e.to_string())))\n  43|                     }"
+  }
+ ]
+}

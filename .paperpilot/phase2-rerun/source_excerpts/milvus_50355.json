@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_50355",
+ "vendor": "milvus",
+ "version": "2.6.17",
+ "tag": "v2.6.17",
+ "terms": [
+  "autoID",
+  "true",
+  "despite",
+  "documentation",
+  "claiming"
+ ],
+ "status": "found",
+ "n_hits": 198,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 156,
+   "term_matched": "autoID",
+   "context": " 141| \t\treturn collSchema.CollectionSchema, nil\n 142| \t}\n 143| \treq := milvuspb.DescribeCollectionRequest{\n 144| \t\tDbName:         dbName,\n 145| \t\tCollectionName: collectionName,\n 146| \t}\n 147| \tresponse, err := h.proxy.DescribeCollection(ctx, &req)\n 148| \tif err == nil {\n 149| \t\terr = merr.Error(response.GetStatus())\n 150| \t}\n 151| \tif err != nil {\n 152| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n 153| \t\treturn nil, err\n 154| \t}\n 155| \tprimaryField, ok := getPrimaryField(response.Schema)\n 156| \tif ok && primaryField.AutoID && !primaryField.AutoID {\n 157| \t\tlog.Warn(\"primary filed autoID VS schema autoID\", zap.String(\"collectionName\", collectionName), zap.Bool(\"primary Field\", primaryField.AutoID), zap.Bool(\"schema\", primaryField.AutoID))\n 158| \t\tresponse.Schema.AutoID = EnableAutoID\n 159| \t}\n 160| \treturn response.Schema, nil\n 161| }\n 162| \n 163| func (h *HandlersV1) hasCollection(ctx context.Context, c *gin.Context, dbName string, collectionName string) (bool, error) {\n 164| \treq := milvuspb.HasCollectionRequest{\n 165| \t\tDbName:         dbName,\n 166| \t\tCollectionName: collectionName,\n 167| \t}\n 168| \tresponse, err := h.proxy.HasCollection(ctx, &req)\n 169| \tif err == nil {\n 170| \t\terr = merr.Error(response.GetStatus())\n 171| \t}"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+   "line": 183,
+   "term_matched": "autoID",
+   "context": " 168| \t\"/v2/vectordb/resource_groups/transfer_replica\": \"TransferMaster\",\n 169| \n 170| \t\"/v2/vectordb/segments/describe\":    \"GetSegmentsInfo\",\n 171| \t\"/v2/vectordb/quotacenter/describe\": \"GetQuotaMetrics\",\n 172| \n 173| \t\"/v2/vectordb/common/run_analyzer\": \"RunAnalyzer\",\n 174| }\n 175| \n 176| func (h *HandlersV2) RegisterRoutesToV2(router gin.IRouter) {\n 177| \trouter.POST(CollectionCategory+ListAction, timeoutMiddleware(wrapperPost(func() any { return &DatabaseReq{} }, wrapperTraceLog(h.listCollections))))\n 178| \trouter.POST(CollectionCategory+HasAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.hasCollection))))\n 179| \t// todo review the return data\n 180| \trouter.POST(CollectionCategory+DescribeAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.getCollectionDetails))))\n 181| \trouter.POST(CollectionCategory+StatsAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.getCollectionStats))))\n 182| \trouter.POST(CollectionCategory+LoadStateAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.getCollectionLoadState))))\n 183| \trouter.POST(CollectionCategory+CreateAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionReq{AutoID: DisableAutoID} }, wrapperTraceLog(h.createCollection))))\n 184| \trouter.POST(CollectionCategory+DropAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.dropCollection))))\n 185| \trouter.POST(CollectionCategory+TruncateAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.truncateCollection))))\n 186| \trouter.POST(CollectionCategory+RenameAction, timeoutMiddleware(wrapperPost(func() any { return &RenameCollectionReq{} }, wrapperTraceLog(h.renameCollection))))\n 187| \trouter.POST(CollectionCategory+LoadAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.loadCollection))))\n 188| \trouter.POST(CollectionCategory+RefreshLoadAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.refreshLoadCollection))))\n 189| \trouter.POST(CollectionCategory+ReleaseAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.releaseCollection))))\n 190| \trouter.POST(CollectionCategory+AlterPropertiesAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionReqWithProperties{} }, wrapperTraceLog(h.alterCollectionProperties))))\n 191| \trouter.POST(CollectionCategory+AddFunctionAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionAddFunction{} }, wrapperTraceLog(h.addCollectionFunction))))\n 192| \trouter.POST(CollectionCategory+AlterFunctionAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionAlterFunction{} }, wrapperTraceLog(h.alterCollectionFunction))))\n 193| \trouter.POST(CollectionCategory+DropFunctionAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionDropFunction{} }, wrapperTraceLog(h.dropCollectionFunction))))\n 194| \trouter.POST(CollectionCategory+DropPropertiesAction, timeoutMiddleware(wrapperPost(func() any { return &DropCollectionPropertiesReq{} }, wrapperTraceLog(h.dropCollectionProperties))))\n 195| \trouter.POST(CollectionCategory+CompactAction, timeoutMiddleware(wrapperPost(func() any { return &CompactReq{} }, wrapperTraceLog(h.compact))))\n 196| \trouter.POST(CollectionCategory+CompactionStateAction, timeoutMiddleware(wrapperPost(func() any { return &GetCompactionStateReq{} }, wrapperTraceLog(h.getcompactionState))))\n 197| \trouter.POST(CollectionCategory+FlushAction, timeoutMiddleware(wrapperPost(func() any { return &FlushReq{} }, wrapperTraceLog(h.flush))))\n 198| "
+  }
+ ]
+}

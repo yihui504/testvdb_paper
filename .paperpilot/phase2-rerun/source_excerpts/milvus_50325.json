@@ -1,0 +1,29 @@
+{
+ "defect_id": "milvus_50325",
+ "vendor": "milvus",
+ "version": "2.6.17",
+ "tag": "v2.6.17",
+ "terms": [
+  "names",
+  "leading",
+  "underscore",
+  "despite",
+  "naming"
+ ],
+ "status": "found",
+ "n_hits": 1387,
+ "excerpts": [
+  {
+   "file": "internal/distributed/proxy/httpserver/handler.go",
+   "line": 367,
+   "term_matched": "names",
+   "context": " 352| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 353| \t}\n 354| \treturn h.proxy.Delete(c, &req)\n 355| }\n 356| \n 357| func (h *Handlers) handleSearch(c *gin.Context) (interface{}, error) {\n 358| \twrappedReq := SearchRequest{}\n 359| \terr := shouldBind(c, &wrappedReq)\n 360| \tif err != nil {\n 361| \t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n 362| \t}\n 363| \treq := milvuspb.SearchRequest{\n 364| \t\tBase:               wrappedReq.Base,\n 365| \t\tDbName:             wrappedReq.DbName,\n 366| \t\tCollectionName:     wrappedReq.CollectionName,\n 367| \t\tPartitionNames:     wrappedReq.PartitionNames,\n 368| \t\tDsl:                wrappedReq.Dsl,\n 369| \t\tDslType:            wrappedReq.DslType,\n 370| \t\tOutputFields:       wrappedReq.OutputFields,\n 371| \t\tSearchParams:       wrappedReq.SearchParams,\n 372| \t\tTravelTimestamp:    wrappedReq.TravelTimestamp,\n 373| \t\tGuaranteeTimestamp: wrappedReq.GuaranteeTimestamp,\n 374| \t\tNq:                 wrappedReq.Nq,\n 375| \t}\n 376| \tif len(wrappedReq.BinaryVectors) > 0 {\n 377| \t\treq.SearchInput = &milvuspb.SearchRequest_PlaceholderGroup{\n 378| \t\t\tPlaceholderGroup: binaryVector2Bytes(wrappedReq.BinaryVectors),\n 379| \t\t}\n 380| \t} else {\n 381| \t\treq.SearchInput = &milvuspb.SearchRequest_PlaceholderGroup{\n 382| \t\t\tPlaceholderGroup: vector2Bytes(wrappedReq.Vectors),"
+  },
+  {
+   "file": "internal/distributed/proxy/httpserver/handler_v1.go",
+   "line": 126,
+   "term_matched": "names",
+   "context": " 111| func (h *HandlersV1) checkDatabase(ctx context.Context, c *gin.Context, dbName string) error {\n 112| \tif dbName == DefaultDbName {\n 113| \t\treturn nil\n 114| \t}\n 115| \tif proxy.CheckDatabase(ctx, dbName) {\n 116| \t\treturn nil\n 117| \t}\n 118| \tresponse, err := h.proxy.ListDatabases(ctx, &milvuspb.ListDatabasesRequest{})\n 119| \tif err == nil {\n 120| \t\terr = merr.Error(response.GetStatus())\n 121| \t}\n 122| \tif err != nil {\n 123| \t\tHTTPAbortReturn(c, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n 124| \t\treturn RestRequestInterceptorErr\n 125| \t}\n 126| \tfor _, db := range response.DbNames {\n 127| \t\tif db == dbName {\n 128| \t\t\treturn nil\n 129| \t\t}\n 130| \t}\n 131| \tHTTPAbortReturn(c, http.StatusOK, gin.H{\n 132| \t\tHTTPReturnCode:    merr.Code(merr.ErrDatabaseNotFound),\n 133| \t\tHTTPReturnMessage: merr.ErrDatabaseNotFound.Error() + \", database: \" + dbName,\n 134| \t})\n 135| \treturn RestRequestInterceptorErr\n 136| }\n 137| \n 138| func (h *HandlersV1) describeCollection(ctx context.Context, c *gin.Context, dbName string, collectionName string) (*schemapb.CollectionSchema, error) {\n 139| \tcollSchema, err := proxy.GetCachedCollectionSchema(ctx, dbName, collectionName)\n 140| \tif err == nil {\n 141| \t\treturn collSchema.CollectionSchema, nil"
+  }
+ ]
+}

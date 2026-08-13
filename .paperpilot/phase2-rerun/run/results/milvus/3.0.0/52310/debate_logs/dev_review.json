@@ -1,0 +1,125 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52310",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with type mismatches",
+          "observed": "API accepts string-to-bool coercion (bool_f: 'true' → HTTP 200), accepts number-to-varchar coercion (varchar_f: 123 → HTTP 200), but rejects string-to-int64 coercion (int64_f: 'string_value' → HTTP 1804 error)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_coerce\", \"data\": [{\"id\": 12, \"vector\": [0.1, 0.2, 0.3, 0.4], \"bool_f\": \"true\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes type coercion is universally enforced, but actual behavior is selective: BOOL/VARCHAR accept coercions, INT64 rejects invalid strings",
+            "Defect assumes all type mismatches are violations, but source code shows type coercion is by-design using spf13/cast library"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 (dataType == Int64)",
+            "constraint_id: milvus_type_bool_001 (dataType == Bool)",
+            "constraint_id: milvus_type_varchar_001 (dataType == VARCHAR)",
+            "constraint_id: milvus_state_insert_collection_001 (collection MUST exist before insert)"
+          ],
+          "note": "Contract defines data types but does NOT specify strict type checking requirements for REST v2 API"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "cast.ToBoolE",
+            "cast.ToInt64E",
+            "checkAndSetData",
+            "DataType_Int64",
+            "DataType_VarChar",
+            "DataType_Bool"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 615-644, 778-779\n\ncase schemapb.DataType_Bool:\n    result, err := cast.ToBoolE(dataString)  // Line 616: type coercion from string\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\n\ncase schemapb.DataType_Int64:\n    result, err := json.Number(dataString).Int64()  // Line 640: type conversion from JSON number\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\n\ncase schemapb.DataType_VarChar:\n    reallyData[fieldName] = dataString  // Line 779: accepts any input as string\n\n// Line 3084 in utils_test.go explicitly states design intent:\n// \"all passed number is float64 type, so all the number type has convert to float64\"",
+          "call_chain_traced": "REST v2 Insert Request → handler_v2.go:insert() → checkAndSetData() → type-specific coercion using spf13/cast library",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code PROVES type coercion is intentional: (1) BOOL fields use cast.ToBoolE() for string-to-bool coercion, (2) VARCHAR accepts any input as string, (3) Test comment explicitly states 'all number type has convert', (4) Import statement shows spf13/cast library dependency for type coercion utilities"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via insert success/failure patterns",
+          "observed": "BOOL: 'true' string → success (coercion works). VARCHAR: 123 number → success (coercion works). INT64: 'invalid_string' → failure (1804 error, coercion rejected). Behavior is INCONSISTENT across types, not uniformly broken",
+          "evidence_cmd": "Three separate curl tests proving selective type coercion: bool accepts strings, varchar accepts numbers, int64 rejects invalid strings"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker, platform)",
+            "Concurrency race",
+            "Network issues"
+          ],
+          "surviving": "mundane_api_semantics - Type coercion is a common REST API pattern for usability (like JSON.stringify automatic conversions)",
+          "note": "This is by-design API behavior, not a bug. Many REST APIs perform type coercion for developer convenience."
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Contract defines data types (Int64, Bool, Varchar) but does NOT explicitly require strict type checking for REST v2 endpoint",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint violated. Type coercion is a design choice, not a physical law violation.",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "evidence": "Source code explicitly uses spf13/cast library for type coercion. Test comment confirms this is intentional: 'all passed number is float64 type, so all the number type has convert'"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final=REFUTED (by-design in source with explicit source evidence)",
+        "final_verdict": "REFUTED"
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "This candidate matches the HISTORICAL BUG SHAPE 'rest-v2-data-type-handling' (bug_shapes.json), but the specific TYPE COERCION behavior is actually INTENTIONAL per source code evidence, not a serialization failure bug. The bug shape refers to other issues (wrong values, raw protobuf, AutoId), not type coercion design."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "rationale": "源码接地发现 decisive 证据: internal/distributed/proxy/httpserver/utils.go 显式使用 spf13/cast 库进行类型转换。第 616 行 BOOL 字段用 cast.ToBoolE(dataString) 从字符串转布尔,第 779 行 VARCHAR 字段直接接受 dataString(任意输入转字符串),第 3084 行测试注释明确说 'all passed number is float64 type, so all the number type has convert'。这是 BY-DESIGN 的 API 易用性设计,不是缺陷。初审误判为 bug 的原因是误解了 REST API 的类型处理模式——许多现代 REST API 为了开发者便利都支持合理的类型自动转换。实验中观察到的不一致性(BOOL 接受字符串,VARCHAR 接受数字,INT64 拒绝无效字符串)进一步证明这是有选择性的设计,而非全面失效。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52310",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0",
+    "db_endpoint": "http://localhost:19530",
+    "target": "milvus v3.0.0",
+    "review_timestamp": "2026-08-14T03:09:00Z",
+    "grounding_method": "local_clone_grep",
+    "source_verification": "true",
+    "double_blind_compliance": "true",
+    "attack_script_access": "none",
+    "judge_rationale_access": "none"
+  }
+}

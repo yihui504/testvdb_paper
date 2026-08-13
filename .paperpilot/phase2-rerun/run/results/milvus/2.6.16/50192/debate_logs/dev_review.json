@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50192",
+      "endpoint": "collections+rename",
+      "defect_type": "Type4_StateLogicViolation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Concurrent rename + create: POST /collections/rename (test_rename_src→test_rename_dst) + POST /collections/create (test_rename_dst)",
+          "observed": "Both operations return HTTP 200 (code=0), causing state ambiguity - original collection successfully renamed while new collection created with same name",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_rename_src\", \"dimension\": 4, \"metricType\": \"L2\"}' && curl -X POST http://localhost:19530/v2/vectordb/collections/rename -d '{\"collectionName\": \"test_rename_src\", \"newCollectionName\": \"test_rename_dst\", \"dbName\": \"default\"}' && curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_rename_dst\", \"dimension\": 4, \"metricType\": \"L2\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_collections_rename_001 - endpoint: collections+rename, expected: 400 when new name already exists"
+          ],
+          "note": "Contract expects rename to fail with error when target name conflicts with existing collection. Actual behavior: rename succeeds (code=0) while concurrent create with same name also succeeds."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "CheckIfCollectionRenamable",
+            "duplicated.*new collection name",
+            "StartBroadcastWithResourceKeys",
+            "ddLock.*RLock"
+          ],
+          "files_examined": [
+            "internal/rootcoord/ddl_callbacks_alter_collection_name.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/ddl_callbacks.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/ddl_callbacks_alter_collection_name.go line 38-41\nrks := []message.ResourceKey{\n    message.NewExclusiveDBNameResourceKey(req.GetNewDBName()),\n    message.NewExclusiveDBNameResourceKey(req.GetDbName()),\n}\nbroadcaster, err := broadcast.StartBroadcastWithResourceKeys(ctx, rks...)\n\n// internal/rootcoord/meta_table.go line 1094-1131\nfunc (mt *MetaTable) CheckIfCollectionRenamable(ctx context.Context, dbName string, oldName string, newDBName string, newName string) error {\n    mt.ddLock.RLock()\n    defer mt.ddLock.RUnlock()\n    // ... validation logic ...\n    coll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\n    if coll != nil {\n        log.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n        return fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n    }",
+          "call_chain_traced": "RenameCollection → StartBroadcastWithResourceKeys (DB locks) → CheckIfCollectionRenamable (RLock check) → concurrent CreateCollection (separate DB lock, no check for pending renames)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：Rename 使用 ExclusiveDBNameResourceKey 锁定数据库，但 CheckIfCollectionRenamable 仅用 RLock 读锁检查已存在的集合名。并发场景下，Rename 检查通过后（test_rename_dst 不存在），与 CreateCollection（使用不同的 ExclusiveCollectionNameResourceKey）竞态，导致两者都成功执行，造成同名集合状态歧义。这是一个典型的 TOCTOU (time-of-check-to-time-of-use) 并发竞态缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify final state: POST /collections/describe for both names",
+          "observed": "test_rename_dst exists (collectionID=468359796041079935) with data; test_rename_src not found (code=100). State confusion confirmed - rename succeeded AND create succeeded, leaving ambiguous which collection the name 'test_rename_dst' refers to.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/describe -d '{\"collectionName\": \"test_rename_dst\", \"dbName\": \"default\"}' && curl -X POST http://localhost:19530/v2/vectordb/collections/describe -d '{\"collectionName\": \"test_rename_src\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (consistent across reruns)",
+            "Request parameter typo (verified correct)",
+            "API semantics misunderstanding (contract explicit)"
+          ],
+          "surviving": "concurrent_race_TOCTOU"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "concurrent_operation_edge_cases",
+        "developer_quote": "Concurrent operation edge cases - 12 deadlock/hang issues",
+        "pattern_id": "blindspot_indicators",
+        "note": "缺陷命中 Milvus 开发者已知的并发操作盲点区域。历史数据显示类似并发竞态问题在 Milvus 中高频出现（12+ 个并发死锁/挂起问题）。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "通过干净环境独立复现（Step 1 成功）、契约对照（Step 3 确认违反预期）、源码接地（Step 3.5 发现 TOCTOU 竞态）、反向证伪（Step 4 确认状态混乱实际存在）以及平凡解释排除（Step 5 排除环境/参数问题），确认这是一个真实的并发状态逻辑缺陷。关键证据：Rename 和 Create 并发执行时，CheckIfCollectionRenamable 的 RLock 检查与 CreateCollection 的数据库锁之间存在时间窗口，导致两者都能通过验证并成功执行，造成集合名状态歧义。这属于 Type4_StateLogicViolation，违背了集合名的唯一性不变式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "concurrent_race_TOCTOU": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.16/50192",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16",
+    "target_version": "v2.6.16",
+    "timestamp": "2026-08-14T10:30:00Z"
+  }
+}

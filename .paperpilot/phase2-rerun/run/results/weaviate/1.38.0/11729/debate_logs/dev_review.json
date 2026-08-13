@@ -1,0 +1,121 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11729",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with shardingConfig.desiredCount=-1 (neg) vs desiredCount=0 (zero)",
+          "observed": "desiredCount=-1 → HTTP 200 (but 404 on GET, collection not created); desiredCount=0 → HTTP 422 'invalid sharding state: physical shards unavailable'",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -d '{\"class\":\"TestNeg\",\"shardingConfig\":{\"desiredCount\":-1}}' → 200; curl -X GET http://localhost:18080/v1/schema/TestNeg → 404"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API validates desiredCount ≥ 0 (VIOLATED: negative passes validation)",
+            "API rejects impossible physical configurations (VIOLATED: negative shards accepted, zero rejected)",
+            "HTTP 200 indicates successful resource creation (VIOLATED: 200 returned but collection doesn't exist)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema endpoint exists in structured_contract.json (api_templates.md line 23-25)",
+            "shardingConfig parameter listed as optional field in schema (structured_contract.json line 3281-3284)",
+            "No explicit constraint found for desiredCount range validation (gap in contract)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["desiredCount", "shardingConfig", "validate\\(\\)", "invalid sharding state"],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/sharding/state.go",
+            "cluster/schema/reader.go",
+            "cluster/schema/reader_test.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go lines 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\treturn nil  // NO VALIDATION of DesiredCount field\n}\n\n// usecases/sharding/state.go lines 440-442\nfor i := 0; i < s.Config.DesiredCount; i++ {  // Loop never executes when DesiredCount <= 0\n\tname := generateShardName()\n\tshard := Physical{Name: name}\n\t...\n}\n\n// cluster/schema/reader.go lines 105-107\nif len(s.Physical) == 0 {\n\treturn fmt.Errorf(\"invalid sharding state: physical shards unavailable\")\n}",
+          "call_chain_traced": "ParseConfig (config.go:85) → validate (config.go:53-70) NO CHECK for DesiredCount → initPhysical (state.go:427) with DesiredCount <= 0 creates empty Physical map → checkShardingState (reader.go:105) fails with 'physical shards unavailable'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:Config.validate() 函数(第53-70行)只验证Key/Strategy/Function字段,完全没有对DesiredCount做范围检查。当DesiredCount=0时,initPhysical的for循环(440行)不执行,Physical为空map,导致checkShardingState(105行)失败。当DesiredCount=-1时,同样的for循环也不执行(-1 < 0),但ParseConfig接受负值并通过验证,最终返回200但实际未创建有效collection。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestDevReviewNeg (verify collection existence)",
+          "observed": "HTTP 404 Not Found - collection created with desiredCount=-1 does not actually exist despite POST returning 200 OK",
+          "conclusion": "Type1_IllegalSuccess confirmed: API reports success (200) but operation failed (no collection created)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (clean Docker container)",
+            "Platform-specific behavior (Windows, not relevant to validation)",
+            "Concurrency race (single-threaded repro)",
+            "API semantic misunderstanding (no docs suggest negative shards are valid)",
+            "By-design behavior (source code shows missing validation, not intentional)"
+          ],
+          "surviving": "true_bug_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004_Parameter_Validation_Issues_in_Request_Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries (developer_cognition.json line 24)",
+        "pattern_confidence": 0.8,
+        "historical_instances": 5,
+        "note": "缺陷命中开发者认知的盲点:输入验证在API边界处不完整。源码显示ParseConfig.validate()漏掉了对DesiredCount的校验,符合BS-004 bug shape的根因模式。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "POST /schema accepts shardingConfig object with optional desiredCount field (structured_contract.json lines 3281-3284)",
+          "source_implements_check": false,
+          "contract_gaps": "No constraint specifies desiredCount must be >= 0 or >= 1",
+          "verdict_A": "NEUTRAL",
+          "note": "契约无显式要求,但源码接地显示验证缺失"
+        },
+        "physical": {
+          "objective_constraint": "desiredCount must be >= 1 (physical shard count cannot be zero or negative; zero shards = unusable collection, negative = mathematically impossible)",
+          "api_observed_behavior": "API accepts desiredCount=-1 (200) but creates invalid collection; rejects desiredCount=0 (422)",
+          "physical_violation": "desiredCount=-1 violates physical constraint (cannot have negative shard count)",
+          "verdict_B": "CONFIRMED",
+          "note": "物理约束违反:负数shard count在物理上不可能,但API通过验证"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "returns_200_but_fails": true,
+          "error_message_quality": "Misleading - 200 OK but collection not created (silent failure)",
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "行为异常:返回成功码但操作实际失败,且无明确错误信息"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violation + behavioral failure)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_range_validation_in_ParseConfig",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认ParseConfig.validate()函数缺少对DesiredCount的范围校验(config.go 53-70行)。当desiredCount=-1时,ParseConfig接受负值并通过验证,但后续initPhysical的for循环(440行)因i < -1不执行而创建空Physical map,导致collection实际未创建(404验证)。当desiredCount=0时,同样导致空Physical map,但被checkShardingState(reader.go 105-107行)正确拦截返回422。这是不一致的参数验证:负数和零都应被ParseConfig拒绝,但目前只有零被下游拦截,负数通过了验证层并返回200但不创建有效资源。符合BS-004 bug shape(参数验证缺陷)和开发者认知盲点(API边界输入验证不完整)。三视角裁决:物理约束违反(负数shard不可能)+行为异常(200但失败)→CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_range_validation_in_ParseConfig": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewed_at": "2026-08-14T01:30:00Z",
+    "source_clone_version": "v1.38.0",
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0",
+    "test_container_endpoint": "http://localhost:18080/v1"
+  }
+}

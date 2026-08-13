@@ -1,0 +1,28 @@
+{
+ "defect_id": "weaviate_11399",
+ "vendor": "weaviate",
+ "version": "1.37.4",
+ "tag": "v1.37.4",
+ "terms": [
+  "dynamicEfMin",
+  "dynamicEfMax",
+  "during",
+  "creation"
+ ],
+ "status": "found",
+ "n_hits": 7,
+ "excerpts": [
+  {
+   "file": "adapters/repos/db/vector/hnsw/index.go",
+   "line": 366,
+   "term_matched": "dynamicEfMin",
+   "context": " 351| \t\tid:                    cfg.ID,\n 352| \t\trootPath:              cfg.RootPath,\n 353| \t\ttombstones:            map[uint64]struct{}{},\n 354| \t\tlogger:                cfg.Logger,\n 355| \t\tdistancerProvider:     cfg.DistanceProvider,\n 356| \t\tdeleteLock:            &sync.Mutex{},\n 357| \t\ttombstoneLock:         &sync.RWMutex{},\n 358| \t\tresetLock:             &sync.RWMutex{},\n 359| \t\tresetCtx:              resetCtx,\n 360| \t\tresetCtxCancel:        resetCtxCancel,\n 361| \t\tshutdownCtx:           shutdownCtx,\n 362| \t\tshutdownCtxCancel:     shutdownCtxCancel,\n 363| \t\tinitialInsertOnce:     &sync.Once{},\n 364| \n 365| \t\tef:       int64(uc.EF),\n 366| \t\tefMin:    int64(uc.DynamicEFMin),\n 367| \t\tefMax:    int64(uc.DynamicEFMax),\n 368| \t\tefFactor: int64(uc.DynamicEFFactor),\n 369| \n 370| \t\tmetrics:   newMetrics(cfg.PrometheusMetrics, cfg.ClassName, cfg.ShardName, cfg.HFreshMode),\n 371| \t\tshardName: cfg.ShardName,\n 372| \n 373| \t\trandFunc:                          rand.Float64,\n 374| \t\tcompressActionLock:                &sync.RWMutex{},\n 375| \t\tclassName:                         cfg.ClassName,\n 376| \t\tVectorForIDThunk:                  cfg.VectorForIDThunk,\n 377| \t\tMultiVectorForIDThunk:             cfg.MultiVectorForIDThunk,\n 378| \t\tTempMultiVectorForIDThunk:         cfg.TempMultiVectorForIDThunk,\n 379| \t\tGetViewThunk:                      cfg.GetViewThunk,\n 380| \t\tTempVectorForIDWithViewThunk:      cfg.TempVectorForIDWithViewThunk,\n 381| \t\tTempMultiVectorForIDWithViewThunk: cfg.TempMultiVectorForIDWithViewThunk,"
+  },
+  {
+   "file": "adapters/repos/db/vector/hnsw/config_update.go",
+   "line": 104,
+   "term_matched": "dynamicEfMin",
+   "context": "  89| \t}\n  90| \n  91| \treturn nil\n  92| }\n  93| \n  94| func (h *hnsw) UpdateUserConfig(updated config.VectorIndexConfig, callback func()) error {\n  95| \tparsed, ok := updated.(ent.UserConfig)\n  96| \tif !ok {\n  97| \t\tcallback()\n  98| \t\treturn errors.Errorf(\"config is not UserConfig, but %T\", updated)\n  99| \t}\n 100| \n 101| \t// Store automatically as a lock here would be very expensive, this value is\n 102| \t// read on every single user-facing search, which can be highly concurrent\n 103| \tatomic.StoreInt64(&h.ef, int64(parsed.EF))\n 104| \tatomic.StoreInt64(&h.efMin, int64(parsed.DynamicEFMin))\n 105| \tatomic.StoreInt64(&h.efMax, int64(parsed.DynamicEFMax))\n 106| \tatomic.StoreInt64(&h.efFactor, int64(parsed.DynamicEFFactor))\n 107| \tatomic.StoreInt64(&h.flatSearchCutoff, int64(parsed.FlatSearchCutoff))\n 108| \n 109| \th.acornSearch.Store(parsed.FilterStrategy == ent.FilterStrategyAcorn)\n 110| \n 111| \tif !parsed.PQ.Enabled && !parsed.BQ.Enabled && !parsed.SQ.Enabled && !parsed.RQ.Enabled {\n 112| \t\tcallback()\n 113| \t\treturn nil\n 114| \t}\n 115| \n 116| \t// check if rq bits is immutable\n 117| \tif h.rqConfig.Enabled && parsed.RQ.Enabled {\n 118| \t\tif parsed.RQ.Bits != h.rqConfig.Bits {\n 119| \t\t\tcallback()"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "defect_id": "weaviate_11732",
+ "vendor": "weaviate",
+ "version": "1.38.0",
+ "tag": "v1.38.0",
+ "terms": [
+  "distance",
+  "vectorIndexConfig",
+  "null",
+  "defaults",
+  "cosine"
+ ],
+ "status": "found",
+ "n_hits": 1505,
+ "excerpts": [
+  {
+   "file": "adapters/handlers/grpc/v1/parse_search_request.go",
+   "line": 134,
+   "term_matched": "distance",
+   "context": " 119| \t\t\t\tout.KeywordRanking.MinimumOrTokensMatch = int(*bm25.SearchOperator.MinimumOrTokensMatch)\n 120| \t\t\t}\n 121| \t\t\tout.KeywordRanking.SearchOperator = bm25.SearchOperator.Operator.String()\n 122| \t\t}\n 123| \t}\n 124| \n 125| \tif nv := req.NearVector; nv != nil {\n 126| \t\tout.NearVector, out.TargetVectorCombination, err = parseNearVec(nv, targetVectors, class, out.TargetVectorCombination)\n 127| \t\tif err != nil {\n 128| \t\t\treturn dto.GetParams{}, err\n 129| \t\t}\n 130| \n 131| \t\t// The following business logic should not sit in the API. However, it is\n 132| \t\t// also part of the GraphQL API, so we need to duplicate it in order to get\n 133| \t\t// the same behavior\n 134| \t\tif nv.Distance != nil && nv.Certainty != nil {\n 135| \t\t\treturn out, fmt.Errorf(\"near_vector: cannot provide distance and certainty\")\n 136| \t\t}\n 137| \n 138| \t\tif nv.Certainty != nil {\n 139| \t\t\tout.NearVector.Certainty = *nv.Certainty\n 140| \t\t}\n 141| \n 142| \t\tif nv.Distance != nil {\n 143| \t\t\tout.NearVector.Distance = *nv.Distance\n 144| \t\t\tout.NearVector.WithDistance = true\n 145| \t\t}\n 146| \n 147| \t\tout.Selection = parseSelection(nv.Selection)\n 148| \t}\n 149| "
+  },
+  {
+   "file": "adapters/handlers/grpc/v1/parse_aggregate_request.go",
+   "line": 115,
+   "term_matched": "distance",
+   "context": " 100| \tif len(targetVectors) > 1 {\n 101| \t\treturn nil, fmt.Errorf(\"found more than one target vector for aggregation\")\n 102| \t}\n 103| \n 104| \tswitch search := req.GetSearch().(type) {\n 105| \tcase *pb.AggregateRequest_NearVector:\n 106| \t\tif nv := search.NearVector; nv != nil {\n 107| \t\t\tparams.NearVector, _, err = parseNearVec(nv, targetVectors, class, nil)\n 108| \t\t\tif err != nil {\n 109| \t\t\t\treturn nil, fmt.Errorf(\"parse near vector: %w\", err)\n 110| \t\t\t}\n 111| \n 112| \t\t\t// The following business logic should not sit in the API. However, it is\n 113| \t\t\t// also part of the GraphQL API, so we need to duplicate it in order to get\n 114| \t\t\t// the same behavior\n 115| \t\t\tif nv.Distance != nil && nv.Certainty != nil {\n 116| \t\t\t\treturn nil, fmt.Errorf(\"near_vector: cannot provide distance and certainty\")\n 117| \t\t\t}\n 118| \n 119| \t\t\tif nv.Certainty != nil {\n 120| \t\t\t\tparams.NearVector.Certainty = *nv.Certainty\n 121| \t\t\t}\n 122| \n 123| \t\t\tif nv.Distance != nil {\n 124| \t\t\t\tparams.NearVector.Distance = *nv.Distance\n 125| \t\t\t\tparams.NearVector.WithDistance = true\n 126| \t\t\t}\n 127| \t\t}\n 128| \tcase *pb.AggregateRequest_NearObject:\n 129| \t\tif no := search.NearObject; no != nil {\n 130| \t\t\tif no.Id == \"\" {"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "defect_id": "weaviate_11981",
+ "vendor": "weaviate",
+ "version": "1.38.2",
+ "tag": "v1.38.2",
+ "terms": [
+  "min_length",
+  "POST",
+  "batch",
+  "objects",
+  "empty"
+ ],
+ "status": "found",
+ "n_hits": 1587,
+ "excerpts": [
+  {
+   "file": "adapters/handlers/rest/operations/objects/objects_validate.go",
+   "line": 46,
+   "term_matched": "POST",
+   "context": "  31| func (fn ObjectsValidateHandlerFunc) Handle(params ObjectsValidateParams, principal *models.Principal) middleware.Responder {\n  32| \treturn fn(params, principal)\n  33| }\n  34| \n  35| // ObjectsValidateHandler interface for that can handle valid objects validate params\n  36| type ObjectsValidateHandler interface {\n  37| \tHandle(ObjectsValidateParams, *models.Principal) middleware.Responder\n  38| }\n  39| \n  40| // NewObjectsValidate creates a new http.Handler for the objects validate operation\n  41| func NewObjectsValidate(ctx *middleware.Context, handler ObjectsValidateHandler) *ObjectsValidate {\n  42| \treturn &ObjectsValidate{Context: ctx, Handler: handler}\n  43| }\n  44| \n  45| /*\n  46| \tObjectsValidate swagger:route POST /objects/validate objects objectsValidate\n  47| \n  48| # Validate an object\n  49| \n  50| Checks if a data object's structure conforms to the specified collection schema and metadata rules without actually storing the object.<br/><br/>A successful validation returns a 200 OK status code with no body. If validation fails, an error response with details is returned.\n  51| */\n  52| type ObjectsValidate struct {\n  53| \tContext *middleware.Context\n  54| \tHandler ObjectsValidateHandler\n  55| }\n  56| \n  57| func (o *ObjectsValidate) ServeHTTP(rw http.ResponseWriter, r *http.Request) {\n  58| \troute, rCtx, _ := o.Context.RouteInfo(r)\n  59| \tif rCtx != nil {\n  60| \t\t*r = *rCtx\n  61| \t}"
+  },
+  {
+   "file": "modules/text-spellcheck/clients/spellcheck.go",
+   "line": 65,
+   "term_matched": "POST",
+   "context": "  50| \treturn &spellCheck{\n  51| \t\torigin:     origin,\n  52| \t\thttpClient: modulecomponents.NewBaseHttpClient(timeout),\n  53| \t\tlogger:     logger,\n  54| \t}\n  55| }\n  56| \n  57| func (s *spellCheck) Check(ctx context.Context, text []string) (*ent.SpellCheckResult, error) {\n  58| \tbody, err := json.Marshal(spellCheckInput{\n  59| \t\tText: text,\n  60| \t})\n  61| \tif err != nil {\n  62| \t\treturn nil, errors.Wrapf(err, \"marshal body\")\n  63| \t}\n  64| \n  65| \treq, err := http.NewRequestWithContext(ctx, \"POST\", s.url(\"/spellcheck/\"),\n  66| \t\tbytes.NewReader(body))\n  67| \tif err != nil {\n  68| \t\treturn nil, errors.Wrap(err, \"create POST request\")\n  69| \t}\n  70| \n  71| \tres, err := s.httpClient.Do(req)\n  72| \tif err != nil {\n  73| \t\treturn nil, errors.Wrap(err, \"send POST request\")\n  74| \t}\n  75| \tdefer res.Body.Close()\n  76| \n  77| \tbodyBytes, err := io.ReadAll(res.Body)\n  78| \tif err != nil {\n  79| \t\treturn nil, errors.Wrap(err, \"read response body\")\n  80| \t}"
+  }
+ ]
+}

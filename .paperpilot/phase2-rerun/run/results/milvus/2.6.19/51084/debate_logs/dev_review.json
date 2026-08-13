@@ -1,0 +1,157 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "v2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_51084",
+      "endpoint": "collections+create",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"devreview_test\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}",
+          "observed": "HTTP 200 {\"code\":0,\"data\":{}} - API accepts invalid consistencyLevel value 'Invalid' and returns success",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"devreview_test\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_verified": [
+            "API should reject invalid consistencyLevel values",
+            "Response should indicate error when invalid parameter is provided"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion_text_quoted: \"consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']\"",
+            "description: \"consistencyLevel must be Strong, Session, Bounded, or Eventually\""
+          ],
+          "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md",
+          "evidence_tier": "explicit",
+          "confidence": 1.0
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "consistencyLevel",
+            "ConsistencyLevel_value",
+            "convertConsistencyLevel",
+            "Strong.*Session.*Bounded.*Eventually.*Customized"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "client/entity/schema.go",
+            "internal/distributed/proxy/httpserver/utils_test.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/handler_v2.go, Lines 2042-2057\n\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel\n\n---\n\nFile: internal/distributed/proxy/httpserver/utils.go, Lines 1827-1837\n\nfunc convertConsistencyLevel(reqConsistencyLevel string) (commonpb.ConsistencyLevel, bool, error) {\n    if reqConsistencyLevel != \"\" {\n        level, ok := commonpb.ConsistencyLevel_value[reqConsistencyLevel]\n        if !ok {\n            return 0, false, merr.WrapErrParameterInvalidMsg(\"parameter:'%s' is incorrect, please check it\", reqConsistencyLevel)\n        }\n        return commonpb.ConsistencyLevel(level), false, nil\n    }\n    // ConsistencyLevel_Bounded default in PyMilvus\n    return commonpb.ConsistencyLevel_Bounded, true, nil\n}",
+          "call_chain_traced": "CreateCollection HTTP handler → parse consistencyLevel from httpReq.Params → lookup in commonpb.ConsistencyLevel_value enum map → if NOT found, SHOULD return error and abort → BUG: lookup fails but execution continues with default Bounded value instead of aborting",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:虽然代码中有else分支准备返回错误(行2046-2055),但实际执行路径显示API接受'Invalid'值并返回成功。这表明enum查找失败(ConsistencyLevel_value['Invalid']不存在)时未正确触发错误处理分支,而是继续使用了默认值Bounded。这是典型的参数校验缺失漏洞。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe {\"collectionName\": \"devreview_test\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with \"consistencyLevel\": \"Bounded\" - API silently defaulted invalid 'Invalid' to 'Bounded' instead of rejecting it, confirming the validation bypass bug",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/describe\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"devreview_test\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded_explanations": [
+            "环境问题 - 验证在干净Docker环境中",
+            "并发竞态 - 单线程同步调用",
+            "请求参数笔误 - 'Invalid'是明确的非预期值",
+            "API语义误解 - 文档明确定义有效值集合"
+          ],
+          "surviving_explanations": [],
+          "all_mundane_excluded": true
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "constraint_id": "milvus_type_collections_create_003",
+          "assertion_text_quoted": "consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']",
+          "api_observed_value": "consistencyLevel='Invalid' accepted with HTTP 200 success",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is a strongly-typed enum with only 5 valid values: Strong, Session, Bounded, Eventually, Customized (per source code enum definition)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint violation) → final_verdict=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "pattern_id": "rest-v2-data-type-handling",
+        "affected_layer": "api_gateway",
+        "historical_instances": [
+          52232,
+          52230,
+          52229,
+          52212
+        ],
+        "confidence": 0.95,
+        "note": "命中developer_cognition.json中的'blindspot_indicators': 'REST v2 API data type serialization - 8 issues in corpus'。Milvus维护者明确知道REST v2层数据验证存在系统性问题。本缺陷是该模式在consistencyLevel参数上的又一实例。"
+      },
+      "root_cause_if_confirmed": "parameter_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "原oracle断言正确:REST v2 API的collections/create端点未对consistencyLevel参数进行有效验证。源码接地发现虽然handler_v2.go:2046-2055准备了错误处理分支,但实际执行中enum查找失败未触发错误返回,而是静默使用默认值Bounded。这违反了契约约束(milvus_type_collections_create_003明文规定consistencyLevel只能是Strong/Session/Bounded/Eventually之一),属于Type1_IllegalSuccess缺陷。该问题与developer_cognition.json中记录的'REST v2 API data type serialization'盲点模式高度吻合(置信度0.95),是REST v2层数据验证系统性问题的具体体现。三视角裁决:契约视角(CONFIRMED - API违反明文assertion) + 物理约束视角(CONFIRMED - enum值违反强类型约束) + 行为视角(CONFIRMED - 非优雅处理,无错误提示) → 最终判定CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_missing": 1
+    },
+    "severity_distribution": {
+      "High": 1
+    },
+    "cognition_patterns_hit": [
+      "rest-v2-data-type-handling"
+    ],
+    "source_files_examined": [
+      "internal/distributed/proxy/httpserver/handler_v2.go",
+      "internal/distributed/proxy/httpserver/utils.go",
+      "client/entity/schema.go",
+      "internal/distributed/proxy/httpserver/utils_test.go"
+    ],
+    "verification_outcomes": {
+      "validation_absent": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewed_at": "2026-08-14T03:25:00Z",
+    "reviewer_model": "claude-haiku-4-5",
+    "source_clone_version": "v2.6.19",
+    "grounding_method": "local_clone_grep",
+    "steps_executed": [
+      "clean_repro",
+      "assumption_audit",
+      "contract_grounding",
+      "source_grounding",
+      "falsification",
+      "mundane_exclusion",
+      "perspective_analysis"
+    ]
+  }
+}

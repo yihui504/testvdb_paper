@@ -1,0 +1,130 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9255",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_payload_filter/points/search with vector=[0.1,0.2,0.3,0.4], filter=color=red, with_payload=true, limit=10",
+          "observed": "Returns 4 points (ids: 8,4,10,2), all with valid payload color='red'. All points satisfy the filter condition correctly.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}' | jq '.result | length' → returns 4",
+          "note": "Step 1 REPRODUCED SUCCESSFULLY - API behaves exactly as expected with with_payload=true"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect assertion claims '违规点' (violating points) exist, but Step 1 shows ALL returned points have valid color='red' payload",
+            "The original defect likely depended on the assumption that filter+match should reject points without the color field, but points 3 and 6 in the test set legitimately have no color payload and are correctly excluded from results",
+            "No assumption violation exists in the actual API behavior - this is a defect in the original oracle's logic"
+          ],
+          "note": "Assumption audit reveals the original oracle made incorrect assertions about what constitutes a 'violation'. The API correctly filters and returns matching points."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+search (line 970-1052 in structured_contract.json)",
+            "parameter: with_payload (description: 'Payload inclusion. Default false', line 1032-1036)",
+            "parameter: filter (description: 'Filter conditions', line 1008-1011)"
+          ],
+          "contract_assertions_found": [
+            "No explicit contract assertion is violated by the observed behavior",
+            "The contract states with_payload defaults to false, but the request explicitly sets with_payload=true",
+            "Filter behavior is as documented: only points matching color=red are returned"
+          ],
+          "note": "Contract supports the observed API behavior - no violation found"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["with_payload", "filter.*color.*match", "Match.*Value", "condition_checker"],
+          "files_examined": [
+            "lib/segment/src/payload_storage/condition_checker.rs",
+            "lib/segment/src/index/struct_payload_index/read_view/condition_converter.rs",
+            "lib/edge/python/src/types/filter/match.rs",
+            "lib/collection/src/operations/conversions.rs",
+            "lib/api/src/rest/conversions.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/payload_storage/condition_checker.rs line 156-166\nimpl ValueChecker for Match {\n    fn check_match(&self, payload: &Value) -> bool {\n        match self {\n            Match::Value(MatchValue { value }) => match (payload, value) {\n                (Value::String(stored), ValueVariants::String(val)) => stored == val,\n                _ => false,\n            },\n            // ... other match variants\n        }\n    }\n}\n\n// Source confirms: Match::Value performs exact string comparison for payload fields.\n// Points without 'color' field are not matched (return false).",
+          "call_chain_traced": "SearchRequest → filter condition → Match::Value → condition_checker.check_match → exact string equality for color='red'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地证实：Match::Value 对字符串载荷执行精确相等匹配。源码逻辑与观察到的 API 行为一致——仅返回 color='red' 的点。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via scroll API and direct point retrieval",
+          "observed": "POST /points/scroll returned 4 points (ids: 2,4,8,10) all with color='red'. POST /points with ids [2,4,8,10] confirmed each point individually has color='red'. No violations found.",
+          "evidence_cmds": [
+            "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 10, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}' → 4 red points",
+            "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points' -H 'Content-Type: application/json' -d '{\"ids\": [2, 4, 8, 10], \"with_payload\": true}' → all confirmed color='red'"
+          ],
+          "note": "证伪成立：所有独立通道验证均显示 API 返回正确结果。原始 oracle 声称的'违规'不存在。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（非 POSIX 文件系统 / Windows volume mount / Docker 已知限制） - 不适用",
+            "并发 / race（delete+upsert、index drop+search） - 不适用",
+            "缓存 / 优化器延迟（wait=false 后立即查） - 使用了 wait=true",
+            "请求参数笔误（漏带关键参数，如本次 with_payload） - 请求正确包含 with_payload=true",
+            "对 API 语义的误解（把 by-design 当 bug） - 这是原始 oracle 的误解"
+          ],
+          "surviving": "original_oracle_logic_error",
+          "note": "平凡解释排除后，唯一剩余的解释是原始 oracle 存在逻辑错误：它可能错误地认为 filter 条件应该以某种方式'违规'，但实际 API 行为完全正确。"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract assertion explicitly violated. Search API with filter and with_payload=true behaves as documented.",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - this is a semantic filter issue, not a physical/numerical constraint violation",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "源码显示 Match::Value 执行精确字符串匹配是设计行为，非 bug"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final_verdict=REFUTED (API behaves as designed and documented)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何模式。这不是已知的 by-design 模式或盲点指示器，而是原始 oracle 的逻辑错误。"
+      },
+      "root_cause_if_fp": "original_oracle_logic_error",
+      "rationale": "复现成功（Step 1）显示 API 完全正确：filter color=red + with_payload=true 精确返回 4 个 color='red' 的点（ids: 2,4,8,10）。独立验证（Step 4）通过 scroll 和 direct retrieval 确认所有返回点的载荷确实都是 red。源码接地（Step 3.5）证实 Match::Value 对字符串载荷执行精确相等匹配是预期设计行为。原始缺陷声称为'违规'（semantics 类型），但实际观察到的 API 行为符合契约和文档，无任何违规。根因是原始 oracle 的逻辑错误：它可能错误地假设 filter 条件应该以某种方式失效，或误解了什么是'语义违规'。这是一个 98% 置信度的 FALSE_POSITIVE —— API 工作正常，缺陷报告基于错误前提。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "original_oracle_logic_error": 1
+    },
+    "key_findings": [
+      "qdrant_9255 是 FALSE_POSITIVE：API 完全正确地实现 filter + with_payload 行为",
+      "与 #9255 fixture（经典的 with_payload 缺失导致 FP）不同，本案例中 with_payload=true 存在且工作正常",
+      "源码确认 Match::Value 精确字符串匹配是 by-design 行为，非 bug",
+      "原始 oracle 的'语义违规'指控缺乏事实依据 - 所有独立验证均显示 API 行为正确",
+      "这是一个罕见的案例：原始 oracle 因逻辑错误而非参数遗漏产生 FP"
+    ],
+    "grounding_confidence": "high",
+    "dev_review_recommendation": "REJECT - 建议拒绝此候选。基于实测、源码分析和独立验证，API 行为完全符合预期。原始缺陷报告可能基于对 API 语义的误解。"
+  }
+}

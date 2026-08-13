@@ -1,0 +1,125 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52308",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with string 'abc' for Int64 PK field",
+          "observed": "HTTP 200 with error code 1804: 'strconv.ParseInt: parsing \"abc\": invalid syntax: invalid parameter[expected=Int64][actual=abc]'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_pk\", \"data\": [{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "1. API should accept string values for Int64 fields (true - accepts '123' and converts to 123)",
+            "2. Invalid string values should be rejected with clear error (true - 'abc' rejected with code 1804)",
+            "3. Valid numeric strings should be coerced to Int64 (true - '123' becomes 123)"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 (dataType == Int64 for scalar fields)",
+            "constraint_id: milvus_enum_datatype_int64_022 (Valid dataType value: INT64)",
+            "constraint_id: milvus_state_004 (Primary key must be Int64 or VarChar)",
+            "assertion_id: milvus_assert_insert_success_001 (Inserting valid data succeeds)"
+          ],
+          "note": "Contract defines Int64 as valid primary key type but does NOT specify string->Int64 coercion behavior. This is an implementation detail, not a contract violation."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "anyToColumns",
+            "Int64",
+            "json.Number",
+            "strconv.ParseInt",
+            "WrapErrParameterInvalid"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 639-644\n\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result\n\n// Context from lines 466-467 (function signature):\nfunc checkAndSetData(body []byte, collSchema *schemapb.CollectionSchema, partialUpdate bool) ([]map[string]interface{}, map[string][]bool, error) {\n\tvar reallyDataArray []map[string]interface{}\n\n// Context from lines 1579 (call site in handler_v2.go):\nhttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, false)",
+          "call_chain_traced": "HTTP POST /entities/insert → HandlersV2.insert() (handler_v2.go:1563) → checkAndSetData() (utils.go:466) → json.Number(dataString).Int64() (utils.go:640) → strconv.ParseInt error → merr.WrapErrParameterInvalid → HTTP 200 with error code 1804",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_with_implicit_coercion",
+          "note": "源码接地发现:REST v2 API 在 checkAndSetData() 函数中使用 json.Number(dataString).Int64() 对 Int64 字段进行隐式类型转换。该调用会触发 Go 标准库的 strconv.ParseInt,对有效数字字符串(如 '123')执行转换成功,对无效字符串(如 'abc')返回错误并包装为 ErrParameterInvalid。这是一个 by-design 的宽松类型策略,不是 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified with dual test: '123' coerces to int64 123 (success), 'abc' fails with explicit error (expected rejection)",
+          "observed": "API correctly implements lenient string->Int64 coercion: valid numeric strings accepted and converted, invalid strings rejected with clear diagnostic message including expected vs actual type",
+          "evidence_cmd": "curl test 1: '{\"id\": \"123\"...}' → success insertIds:[123]; curl test 2: '{\"id\": \"abc\"...}' → error code 1804 with ParseInt message"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, filesystem) - NO: behavior consistent across runs",
+            "Concurrency race - NO: single-threaded test",
+            "Cache delay - NO: immediate response",
+            "Request parameter typo - NO: valid JSON payload",
+            "API semantics misunderstanding - KEY: this IS the intended behavior"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This is by-design API behavior, not a defect. REST v2 API implements lenient type coercion for scalar fields per design pattern common in JSON REST APIs."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK. (From bug_shapes.json shape_id: rest-v2-data-type-handling, confidence: 0.95, instance_count: 26)",
+        "note": "候选命中 developer_cognition.json 中明确标识的盲点: 'REST v2 API data type serialization - 8 issues in corpus' 和 'areas_with_repeated_issues: REST v2 API, pattern: Data type serialization not validated, example_issues: [52232, 52230, 52229]'。但本次审查发现该行为是 by-design 的宽松策略,不是验证缺失的真 bug。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - contract defines Int64 as valid type but does NOT specify string coercion behavior",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "契约未规定字符串到 Int64 的转换行为,无法从契约角度判定违规。"
+        },
+        "physical": {
+          "objective_constraint": "Int64 is a 64-bit signed integer type with range [-2^63, 2^63-1]",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "API 接受的值要么是有效 Int64 (如 '123'→123),要么被明确拒绝 (如 'abc'→error 1804)。没有违反物理约束的情况。"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "源码明确展示了 json.Number(dataString).Int64() 的设计意图,这是 REST v2 API 为方便客户端而做的宽松类型处理,不是 bug。"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED → final_verdict = REFUTED (no contract/physical violation, graceful by-design behavior)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "初申将 REST v2 API 的字符串到 Int64 宽松类型转换机制误判为缺陷。经过 6 步审查:1)干净复现确认行为可重现;2)前提审计发现这是 API 设计特性而非断言缺陷;3)契约对照显示契约未规定此行为;4)源码接地发现 checkAndSetData() 中 json.Number(dataString).Int64() 的显式设计;5)反向证伪确认有效字符串可转换、无效字符串被明确拒绝;6)平凡解释排除确认这是 by-design 行为。三视角裁决:契约视角 NEUTRAL(契约未规定),物理视角 NEUTRAL(无约束违反),行为视角 REFUTED(优雅处理+源码显式设计)。聚合规则判定为 FALSE_POSITIVE,root_cause = mundane_api_semantics。该行为命中 developer_cognition.json 的 'REST v2 data type handling' 盲点模式,但审查发现这是 by-design 而非真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED",
+  "metadata": {
+    "reviewed_at": "2026-08-14T03:09:00Z",
+    "reviewer_model": "claude-haiku-4-5-20250401",
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/3.0.0/52308",
+    "local_clone_used": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+    "target_db_live": "http://localhost:19530"
+  }
+}

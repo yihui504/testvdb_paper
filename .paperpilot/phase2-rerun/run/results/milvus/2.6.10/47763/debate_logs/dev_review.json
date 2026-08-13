@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47763",
+      "endpoint": "entities+insert",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with dynamic field enabled, inserting data with invalid field names (123field, @field), then POST /v2/vectordb/entities/query attempting to access those fields",
+          "observed": "Insert succeeded for both 123field and @field (HTTP 200, insertCount=2), but query failed with error: 'parse output field name failed: 123field'",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_47763_review\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"123field\": \"v1\"}]}' && curl -s http://localhost:19530/v2/vectordb/entities/query -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_47763_review\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"123field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Milvus accepts insert requests with invalid field names (123field, @field) when enableDynamicField is enabled",
+            "Query fails when trying to access these invalid field names with 'parse output field name failed' error",
+            "The issue is NOT about missing parameters - all required parameters are present in the requests"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Constraint: Field names must be valid identifiers (parseable by ParseIdentifier function)",
+            "Source: internal/parser/planparserv2/plan_parser_v2.go line 179-177"
+          ],
+          "note": "The contract expects field names to be valid identifiers that can be parsed. The system accepts invalid field names during insert but cannot parse them during query, creating an inconsistent state."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "parse output field name failed",
+            "ParseIdentifier",
+            "outputFields",
+            "enableDynamicField"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/parser/planparserv2/plan_parser_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "tests/python_client/milvus_client_v2/test_milvus_client_search_invalid.py",
+            "tests/go_client/testcases/query_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 1660-1665\nif err != nil {\n\tlog.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n\treturn nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n}",
+          "call_chain_traced": "QueryRequest → parseOutputFields → ParseIdentifier (planparserv2/plan_parser_v2.go:161-177) → returns error for invalid identifiers like '123field' and '@field'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：Insert流程中未发现对动态字段名的验证逻辑。当enableDynamicField启用时，Milvus接受任意字段名（包括123field、@field等非法标识符）插入，但这些字段名无法通过ParseIdentifier函数解析（该函数在查询阶段用于验证字段名），导致数据插入成功但查询失败的不一致状态。这是真正的输入验证缺失缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to query inserted data using the invalid field names shows the bug consequence: data exists but cannot be accessed",
+          "observed": "Insert creates records with invalid field names, but any attempt to query these fields fails with 'parse output field name failed' error. This creates data that exists in storage but is inaccessible through normal query operations."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - tested on clean milvus v2.6.10 standalone",
+            "并发/race - single-threaded sequential operations",
+            "缓存/优化器延迟 - immediate query after insert",
+            "请求参数笔误 - all required parameters present and correct",
+            "API语义误解 - clearly documented that field names should be valid identifiers"
+          ],
+          "surviving": "none - all mundane explanations excluded"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "shape-parameter_validation-api_gateway",
+        "developer_quote": "Parameter validation defects involve input accepted without proper validation, matching the historical pattern where 'Input accepted without proper validation' leads to Type1_IllegalSuccess defects.",
+        "note": "从bug_shapes.json匹配到历史模式：shape-parameter_validation-api_gateway，症状为'Input accepted without proper validation'。此缺陷是该模式的新实例：字段名验证缺失导致非法输入被接受。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Field names must be valid identifiers parseable by ParseIdentifier function (internal/parser/planparserv2/plan_parser_v2.go:179-177)",
+          "source_implements_check": false,
+          "api_observed_value": "Insert accepts '123field' and '@field' (HTTP 200 success), Query fails with 'parse output field name failed'",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Field names must be valid programming language identifiers (no leading numbers, no special characters like @)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation confirmed by source analysis)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus v2.6.10 with enableDynamicField=true accepts insert of data with invalid field names (123field, @field) but cannot query these fields. Source code analysis reveals that ParseIdentifier (internal/parser/planparserv2/plan_parser_v2.go:161-177) validates field names during query but no equivalent validation exists during insert. This creates inconsistent state where data exists in storage but is inaccessible through normal query operations. Matches historical pattern shape-parameter_validation-api_gateway. Contract violation confirmed by source grounding showing validation_absent in insert path."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  },
+  "metadata": {
+    "session_dir": "C:/Users/11428/Desktop/testvdb_paper/.paperpilot/phase2-rerun/run/results/milvus/2.6.10/47763",
+    "testvdb_src_dir": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10",
+    "target": "milvus",
+    "version": "2.6.10",
+    "self_check": "PASSED"
+  }
+}
