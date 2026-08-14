@@ -27,7 +27,8 @@ def h(method, path, payload=None):
 
 
 def gen_output(did, sess_dir):
-    """raw_*.log → output_{did}.log（与 run_probes.gen_output_log 同格式）。"""
+    """raw_*.log → output_{did}.log（与 run_probes.gen_output_log 同格式）。
+    转换后 raw 中间文件由调用方删除（session 目录形态应只有 output_*.log）。"""
     raw = os.path.join(sess_dir, 'raw_%s.log' % did)
     out = os.path.join(sess_dir, 'output_%s.log' % did)
     if not os.path.exists(raw):
@@ -93,16 +94,36 @@ def probe_47752(name):
 
 
 def probe_47755(name):
-    """delete filter 结构非法（filter='123' 非布尔表达式）。"""
+    """delete filter 降序 IN range 被接受（filter validation too lenient）。"""
     dim_create(name)
     h('POST', '/v2/vectordb/entities/insert', {'collectionName': name, 'dbName': 'default',
                                                'data': [{'id': i, 'vector': [0.1] * 8, 'age': i * 10} for i in range(5)]})
-    h('POST', '/v2/vectordb/entities/delete', {'collectionName': name, 'dbName': 'default', 'filter': '123'})
+    h('POST', '/v2/vectordb/entities/delete', {'collectionName': name, 'dbName': 'default',
+                                               'filter': 'age in [10, 5]'})
 
 
 def probe_47767(name):
-    """drop 不存在的 database。"""
-    h('POST', '/v2/vectordb/databases/drop', {'dbName': name})
+    """search 空查询向量 [] 被接受（无校验）。"""
+    common_setup(name)
+    h('POST', '/v2/vectordb/entities/search',
+      {'collectionName': name, 'dbName': 'default',
+       'data': [[]], 'limit': 3, 'outputFields': ['id']})
+
+
+def probe_52313(name):
+    """REST insert JSON 字段纯字符串被接受（3.0.0，round-trip 缺陷）。"""
+    h('POST', '/v2/vectordb/collections/drop', {'collectionName': name, 'dbName': 'default'})
+    h('POST', '/v2/vectordb/collections/create', {'collectionName': name, 'dbName': 'default',
+        'schema': {'autoId': False, 'enableDynamicField': False,
+                   'fields': [{'fieldName': 'id', 'dataType': 'Int64', 'isPrimary': True},
+                              {'fieldName': 'vector', 'dataType': 'FloatVector',
+                               'elementTypeParams': {'dim': 4}},
+                              {'fieldName': 'meta', 'dataType': 'JSON'}]}})
+    h('POST', '/v2/vectordb/indexes/create', {'collectionName': name, 'dbName': 'default',
+        'indexParams': [{'fieldName': 'vector', 'metricType': 'COSINE', 'indexType': 'AUTOINDEX'}]})
+    h('POST', '/v2/vectordb/collections/load', {'collectionName': name, 'dbName': 'default'})
+    h('POST', '/v2/vectordb/entities/insert', {'collectionName': name, 'dbName': 'default',
+        'data': [{'id': 100, 'vector': [0.1, 0.2, 0.3, 0.4], 'meta': 'plain_string'}]})
 
 
 def probe_49059(name):
@@ -141,9 +162,11 @@ PROBES = {
     'milvus_47767': probe_47767,
     'milvus_49059': probe_49059,
     'milvus_49890': probe_49890,
+    'milvus_52313': probe_52313,
 }
 VERSION_OF = {'milvus_47729': '2.6.10', 'milvus_47752': '2.6.10', 'milvus_47755': '2.6.10',
-              'milvus_47767': '2.6.10', 'milvus_49059': '2.6.12', 'milvus_49890': '2.6.16'}
+              'milvus_47767': '2.6.10', 'milvus_49059': '2.6.12', 'milvus_49890': '2.6.16',
+              'milvus_52313': '3.0.0'}
 
 
 def main():
@@ -156,7 +179,8 @@ def main():
         os.makedirs(sess, exist_ok=True)
         os.environ['RAW_LOG_DIR'] = sess
         os.environ['PROBE_ID'] = did
-        name = 'repro_' + orig.split('_')[1]
+        # 集合名用匿名序号（v2 审计：orig issue 号进 log = GT 泄露）
+        name = 'repro_' + did.split('_')[1]
         try:
             probe_fn(name)
             status = 'OK'
@@ -164,6 +188,9 @@ def main():
             print('  %s EXC: %s' % (orig, str(e)[:80]))
             status = 'EXC'
         nreq = gen_output(did, sess)
+        raw_p = os.path.join(sess, 'raw_%s.log' % did)
+        if os.path.isfile(raw_p):
+            os.remove(raw_p)  # raw 已转换进 output_*.log，不留中间文件（v2 审计修复）
         print('%s (%s): %s reqs=%d' % (orig, did, status, nreq), flush=True)
 
 

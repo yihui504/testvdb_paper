@@ -79,11 +79,37 @@ def real_form_aggregation(did, old_agg):
                 'defect_type': old_c.get('defect_type', 'unknown'),
                 'severity_level': old_c.get('severity_level', 'High'),
                 'confirmed': True,
-                'related_issue_numbers': old_c.get('related_issue_numbers', []),
+                # 置空：三树该字段=自身 issue 号，SOP 解禁 github.com 时 = GT 泄露通道（v2 审计修复）
+                'related_issue_numbers': [],
             }
         },
         'rejected': {},
     }
+
+
+def clean_contract(path: str) -> None:
+    """清理契约文件里的实验侧元数据（v2 审计发现）：
+    - `_provenance_runs` / `_note`（phase1 构建溯源与实验失败笔记，真实契约无此字段）
+    - generation.knowledge_extractor_agent 里的 "(N independent runs: run1/run2/run3)" 字样
+    """
+    d = json.load(open(path, encoding='utf-8'))
+
+    def clean(node):
+        if isinstance(node, dict):
+            for k in ('_provenance_runs', '_note'):
+                node.pop(k, None)
+            for v in node.values():
+                clean(v)
+        elif isinstance(node, list):
+            for it in node:
+                clean(it)
+
+    clean(d)
+    gen = d.get('generation')
+    if gen:
+        gen['knowledge_extractor_agent'] = re.sub(
+            r'\s*\(.*runs.*\)', '', gen.get('knowledge_extractor_agent', ''))
+    json.dump(d, open(path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
 
 def main():
@@ -117,13 +143,14 @@ def main():
                   ensure_ascii=False, indent=1)
         records[did] = {'vendor': v, 'version': ver, 'orig': '%s_%d' % (v, num)}
 
-    # 版本级契约 + api_templates
+    # 版本级契约 + api_templates（契约清理实验元数据：_provenance_runs/_note/run 字样）
     for c in SCORED:
         v, ver = c['vendor'], c['version']
         vdir = os.path.join(OUT, 'sessions', v, ver)
         if os.path.isdir(vdir) and not os.path.isfile(os.path.join(vdir, 'structured_contract.json')):
             shutil.copy(os.path.join(ROOT, 'run', 'results', v, ver, 'structured_contract.json'),
                         os.path.join(vdir, 'structured_contract.json'))
+            clean_contract(os.path.join(vdir, 'structured_contract.json'))
             shutil.copy(os.path.join(ROOT, 'run', 'results', v, ver, 'api_templates.md'),
                         os.path.join(vdir, 'api_templates.md'))
 
