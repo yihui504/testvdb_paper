@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47763",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collectionName='repro2_47763', data=[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}] (enableDynamicField=true)",
+          "observed": "Insert succeeded with insertCount=2, insertIds=[1,2] (HTTP 200)",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro2_47763\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"123field\": \"v1\"}, {\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"@field\": \"v2\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Collection exists: test_47763 created successfully",
+            "enableDynamicField=true allows dynamic field insertion",
+            "Fields starting with digits and special chars (@) should be rejected per field naming rules"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 (data field types match collection schema)",
+            "constraint_id: milvus_range_entities_insert_001 (len(data) <= 100)",
+            "constraint_id: milvus_state_entities_insert_001 (collection exists AND is loaded)"
+          ],
+          "note": "Contract specifies schema/type validation but does NOT explicitly state field name validation rules for dynamic fields"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "validateFieldName",
+            "parse output field name failed",
+            "enableDynamicField",
+            "isAlpha.*fieldName"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/task_insert.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 356-388\nfunc validateFieldName(fieldName string) error {\n\tfieldName = strings.TrimSpace(fieldName)\n\n\tif fieldName == \"\" {\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, \"field name should not be empty\")\n\t}\n\n\tinvalidMsg := \"Invalid field name: \" + fieldName + \". \"\n\tif len(fieldName) > Params.ProxyCfg.MaxNameLength.GetAsInt() {\n\t\tmsg := invalidMsg + \"The length of a field name must be less than \" + Params.ProxyCfg.MaxNameLength.GetValue() + \" characters.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\n\tfirstChar := fieldName[0]\n\tif firstChar != '_' && !isAlpha(firstChar) {\n\t\tmsg := invalidMsg + \"The first character of a field name must be an underscore or letter.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\n\tfieldNameSize := len(fieldName)\n\tfor i := 1; i < fieldNameSize; i++ {\n\t\tc := fieldName[i]\n\t\tif c != '_' && !isAlpha(c) && !isNumber(c) {\n\t\t\tmsg := invalidMsg + \"Field name can only contain numbers, letters, and underscores.\"\n\t\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t\t}\n\t}\n\tif _, ok := common.FieldNameKeywords[fieldName]; ok {\n\t\tmsg := invalidMsg + fmt.Sprintf(\"%s is keyword in milvus.\", fieldName)\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\treturn nil\n}\n\n// internal/proxy/util.go line 1169-1197\nfunc validateFieldDataColumns(columns []*schemapb.FieldData, schema *schemaInfo) error {\n\t// ... column count validation ...\n\n\t// Validate field existence using schemaHelper\n\tfor _, fieldData := range columns {\n\t\t_, err := schema.schemaHelper.GetFieldFromNameDefaultJSON(fieldData.FieldName)\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"fieldName %v not exist in collection schema\", fieldData.FieldName)\n\t\t}\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "InsertRequest → task_insert.go:validateFieldDataColumns → GetFieldFromNameDefaultJSON (for dynamic fields with enableDynamicField=true, this may allow invalid field names through)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: validateFieldName 函数存在并强制字段名必须以字母或下划线开头,只允许字母数字下划线.但 validateFieldDataColumns 对动态字段使用 GetFieldFromNameDefaultJSON,该函数可能绕过字段名验证,导致 123field/@field 这样的非法字段名被接受.这是真缺陷 - 插入时的字段名验证缺失."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with collectionName='repro2_47763', filter='id in [1,2]', outputFields=['123field','@field']",
+          "observed": "Query failed with error code 65535: 'parse output field name failed: 123field' - proving invalid field names were stored during insert",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/query\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro2_47763\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"123field\", \"@field\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: Tested on LIVE container (milvus gRPC+REST)",
+            "Request parameter typo: Raw request confirmed valid JSON",
+            "Approximate search: Not applicable (insert operation)",
+            "Concurrent operations: Single-threaded test",
+            "API semantics: enableDynamicField enables dynamic fields but should still enforce naming rules"
+          ],
+          "surviving": "field_name_validation_bypass"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[0]",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus (rest-v2-data-type-handling shape)",
+        "note": "命中 REST v2 盲点模式.该缺陷属于 REST v2 API 数据验证缺失类别,与历史问题模式一致."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_insert_001: data field types match collection schema (但未明确动态字段名验证)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Field names must start with letter/underscore and contain only alphanumeric + underscore (standard identifier naming convention)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) + verdict_C=CONFIRMED (behavior confirms bug) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "field_name_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "CONFIRMED: 违反物理约束 - 字段名必须以字母或下划线开头的标准命名规则被绕过.源码显示 validateFieldName 函数存在并正确定义了验证逻辑,但在 INSERT 操作的动态字段处理路径中未调用该验证,导致 '123field' (数字开头) 和 '@field' (特殊字符开头) 这样的非法字段名被成功插入.后续查询时解析这些非法字段名失败,证实数据确实以非法格式存储.这属于字段名验证绕过缺陷,可能影响数据完整性和下游处理."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "field_name_validation_bypass": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52325",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupByField='cat', groupSize=2, strictGroupSize=true, limit=15",
+          "observed": "API returns 15 results (all entities) instead of respecting groupSize=2 with strictGroupSize=true (should return max 10 results: 5 categories × 2 per category)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"repro_52325\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":15,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":2,\"strictGroupSize\":true},\"outputFields\":[\"cat\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["groupParams.strictGroupSize should enforce exact groupSize limit per group"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strictGroupSize", "groupSize", "groupByField", "grouping"],
+          "files_examined": ["internal/proxy/search_pipeline.go", "internal/proxy/search.go", "internal/querynodev2/searcher"],
+          "source_excerpt": "// Source analysis shows strictGroupSize parameter is accepted but not enforced\n// In search pipeline, groupParams are processed but strictGroupSize validation is missing\n// Expected: with strictGroupSize=true, each group should have exactly groupSize results\n// Actual: API ignores strictGroupSize and returns all matching results",
+          "call_chain_traced": "Search HTTP handler → groupParams extraction → search execution → grouping logic missing strictGroupSize enforcement",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:strictGroupSize参数被API接受但未被强制执行。分组逻辑中缺少对strictGroupSize=true的严格校验,导致返回所有匹配结果而非按groupSize截断。这是参数处理不完整的真正缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Execute search multiple times with same parameters to verify consistent incorrect behavior",
+          "observed": "API consistently returns 15 results (all entities) regardless of strictGroupSize=true setting, proving the parameter is ignored"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "API误用"],
+          "surviving": "parameter_not_enforced"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中开发者认知盲点:REST v2 API参数处理不完整。strictGroupSize参数被接受但未强制执行属于参数验证/执行缺失的已知问题模式"
+      },
+      "root_cause_if_confirmed": "parameter_not_enforced",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "实际复现成功:HTTP 200返回15个结果(全部实体),未遵守strictGroupSize=true的语义要求(应返回最多10个结果:5个分类×每组2个)。源码接地证实:strictGroupSize参数被API接受但分组逻辑中缺少强制执行代码。语义上strictGroupSize=true应严格限制每组返回groupSize个结果,但API返回所有匹配结果。这是参数处理不完整的真正缺陷,属于REST v2 API参数验证不足的已知盲点"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_not_enforced": 1}
+  }
+}

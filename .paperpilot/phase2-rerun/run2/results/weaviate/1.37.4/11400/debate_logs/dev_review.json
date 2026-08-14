@@ -1,0 +1,101 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11400",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with flatSearchCutoff=-100",
+          "observed": "HTTP 200 OK, response shows vectorIndexConfig.flatSearchCutoff=-100 stored without validation",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"Repro11400\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"flatSearchCutoff\": -100}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_satisfied": [
+            "API accepts vectorIndexConfig parameters",
+            "Response reflects stored configuration"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "weaviate_inv_collection_queryable: after POST /schema returns 200, GET /schema/{className} returns 200"
+          ],
+          "note": "No explicit contract constraint found for flatSearchCutoff parameter validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["flatSearchCutoff", "validate", "check"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 201-205\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}",
+          "call_chain_traced": "POST /schema → UserConfig.FromMap() → OptionalIntFromMap() → direct assignment, no validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:flatSearchCutoff 参数通过 OptionalIntFromMap 直接赋值,完全无范围校验(应为非负整数)"
+        },
+        "falsification": {
+          "pass": true,
+          "note": "No falsification possible - invalid configuration is successfully stored and returned"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(非POSIX文件系统/Windows volume mount/Docker已知限制)",
+            "并发/race(delete+upsert、index drop+search)",
+            "缓存/优化器延迟(wait=false后立即查)",
+            "请求参数笔误(漏带关键参数)",
+            "对API语义的误解(把by-design当bug)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_id": "BS-004",
+        "note": "Matches BS-004 (Parameter Validation Issues in Request Parsing) - systematic parameter_validation defects"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found requiring flatSearchCutoff parameter validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "flatSearchCutoff must be >= 0 (it's a threshold for switching from flat to HNSW search, cannot be negative)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "API accepts invalid configuration without error - no by-design evidence in source",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical violation confirmed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认 POST /schema 的 vectorIndexConfig.flatSearchCutoff 参数在 entities/vectorindex/hnsw/config.go 中通过 OptionalIntFromMap 直接赋值,完全无校验。实测显示 API 接受逻辑无效配置(flatSearchCutoff=-100,负数)并成功存储返回,违反参数边界约束(应为非负)。属于 BS-004 模式(Parameter Validation Issues in Request Parsing)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED"
+}

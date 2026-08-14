@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11730",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with properties[0].tokenization='' (empty string, not in valid enum)",
+          "observed": "HTTP 200 returned, collection created successfully. Empty string accepted and defaulted to 'word' tokenization. Contract constraint weaviate_type_schema_create_003 states tokenization must be in enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}, but empty string '' is NOT in this enum.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}' && echo '' && curl -s http://localhost:18080/v1/schema/TestClass | grep -o '\"tokenization\":\"[^\"]\"'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["weaviate_type_schema_create_003"],
+          "contract_assertion": "properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+          "api_observed_value": "tokenization='' (empty string) accepted and defaulted to 'word'",
+          "api_violates_assertion": true
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["tokenization", "validateTokenization", "swag.IsZero"],
+          "files_examined": [
+            "entities/models/property.go"
+          ],
+          "source_excerpt": "// entities/models/property.go line 193-204\nfunc (m *Property) validateTokenization(formats strfmt.Registry) error {\n\tif swag.IsZero(m.Tokenization) { // not required\n\t\treturn nil  // <-- BUG: empty string bypasses enum validation!\n\t}\n\n\t// value enum\n\tif err := m.validateTokenizationEnum(\"tokenization\", \"body\", m.Tokenization); err != nil {\n\t\treturn err\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → Property.Validate() → validateTokenization() → swag.IsZero(\"\") returns true → returns nil (bypasses enum check)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_bypassed",
+          "note": "Source code shows validation logic缺陷: swag.IsZero(\"\") returns true for empty string, which bypasses enum validation at line 199. Empty string is NOT a valid enum value but is accepted."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify tokenization field in created schema - confirms empty string was accepted and defaulted to 'word'",
+          "observed": "Created schema shows tokenization:'word' - empty string was accepted despite not being in valid enum"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["empty string as valid default", "API semantics allowing empty tokenization", "environment issue"],
+          "surviving": "none - this is a validation bypass, not a by-design feature"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "Matches BS-004 pattern exactly - validation gap in request parsing for tokenization parameter at API boundary."
+      },
+      "root_cause_if_confirmed": "param_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema accepts tokenization='' (empty string) which is NOT in the valid enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch} specified in contract constraint weaviate_type_schema_create_003. Source code analysis reveals the validation bypass: validateTokenization() checks swag.IsZero(m.Tokenization) first, which returns true for empty string, bypassing the enum validation entirely. This is a param_validation gap at the API boundary (BS-004 pattern). The API should either reject empty string with 422 or document it as a valid default value, but current behavior violates the explicit contract constraint.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "tokenization must be in enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch} (constraint_id: weaviate_type_schema_create_003)",
+          "source_implements_check": true,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract explicitly requires enum membership; API accepts '' which is NOT in enum"
+        },
+        "physical": {
+          "objective_constraint": "tokenization must be a supported tokenizer (cannot be empty/undefined at indexing time)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Empty string is not a valid tokenizer but API accepts it"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API gracefully defaults empty string to 'word', but this is not documented in contract nor is there a 'by_design' comment in source - it's a validation bypass, not intentional grace"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation overrides behavioral grace)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"param_validation_gap": 1}
+  },
+  "self_check": "PASSED"
+}

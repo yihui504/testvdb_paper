@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49928",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create dimension=32768 (upper bound)",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":{}} - dimension=32768 accepted as expected",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49928_max\", \"dimension\": 32768}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate may have expected upper boundary violation, but testing shows correct acceptance"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_001", "assertion: 1 <= dimension <= 32768"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["validateDimension", "MaxDimension", "dimension.*range"],
+          "files_examined": ["internal/proxy/util.go", "pkg/util/paramtable/component_param.go"],
+          "source_excerpt": "// internal/proxy/util.go lines 434-437 (upper bound validation)\n} else {\n    if dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n        return fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n    }\n}\nreturn nil",
+          "call_chain_traced": "CreateCollectionRequest → validateDimension → line 434: if dim > 32768 (rejects > 32768, allows = 32768)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "contract_consistent"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test dimension=32768 (accepted) and dimension=32769 (rejected with error)",
+          "observed": "Boundary behavior correct: dim=32768 succeeds (HTTP 200), dim=32769 fails with 'invalid dimension: 32769 of field vector. float vector dimension should be in range 2 ~ 32768'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API boundary validation working correctly"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected_behavior",
+        "note": "Dimension validation at upper boundary works as expected per contract and source"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "1 <= dimension <= 32768 (constraint_id: milvus_range_collections_create_001)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violation at upper boundary",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_C=REFUTED → final=REFUTED (correct by-design behavior)",
+        "final_verdict": "REFUTED"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "FALSE_POSITIVE: API correctly enforces dimension <= 32768 per contract (milvus_range_collections_create_001). Testing confirms: dimension=32768 accepted (HTTP 200), dimension=32769 rejected with proper error message. Source code line 434 implements dim > 32768 check, consistent with contract. Boundary validation works as expected - no defect found."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

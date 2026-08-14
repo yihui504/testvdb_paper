@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11729",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with shardingConfig.desiredCount=-1 (negative value)",
+          "observed": "HTTP 200 returned, but collection NOT created (GET /schema/TestNeg returns 404). Inconsistency: desiredCount=-1 returns 200 but fails silently; desiredCount=0 returns 422 error but succeeds in creating collection.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}' && echo '' && curl -s http://localhost:18080/v1/schema/TestNeg"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint found in structured_contract.json for shardingConfig.desiredCount range validation"],
+          "note": "Contract specifies POST /schema accepts Class object with shardingConfig (optional), but does NOT specify that desiredCount must be >= 0. This is a contract gap."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["desiredCount", "validate", "shardingConfig"],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/parser.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go line 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → parser.ParseClass() → shardingConfig.ConfigFromMap() → validate() → NO CHECK for desiredCount >= 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code validation function (validate() at line 53) only validates Key, Strategy, and Function fields. It does NOT validate that DesiredCount is non-negative. This is the root cause of the bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: POST with desiredCount=-1 returns 200 but GET returns 404, proving the API accepts invalid value but fails silently during actual shard creation.",
+          "observed": "confirmed - HTTP 200 / 404 mismatch validates silent failure"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none - all mundane explanations excluded"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Candidate matches BS-004 (Parameter Validation Issues in Request Parsing) from bug_shapes.json - systematic validation gap at API boundary for shardingConfig parameter."
+      },
+      "root_cause_if_confirmed": "param_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema accepts shardingConfig.desiredCount=-1 (negative value) and returns HTTP 200, but the collection is not actually created (GET returns 404). Source code analysis confirms that Config.validate() function does NOT check that DesiredCount >= 0, creating a param_validation gap. This matches developer cognition pattern BS-004 (Parameter Validation Issues). The API should either reject negative values at input validation (422) or handle them correctly. Current behavior is inconsistent: desiredCount=0 returns 422 but creates the collection; desiredCount=-1 returns 200 but fails silently.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in structured_contract.json for shardingConfig.desiredCount range (contract gap)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract is silent on desiredCount validation - no assertion to violate"
+        },
+        "physical": {
+          "objective_constraint": "shard count must be non-negative integer (physical impossibility: cannot have -1 shards)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "API accepts desiredCount=-1 which violates physical constraint (shard count >= 0)"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API is not graceful - returns 200 but fails silently (collection not created, no error message)"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (physical violation + behavioral failure)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"param_validation_gap": 1}
+  },
+  "self_check": "PASSED"
+}

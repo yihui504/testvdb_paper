@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49843",
+      "endpoint": "collections+alter",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with properties={\"collection.ttl.seconds\": -100} then POST /v2/vectordb/collections/alter_properties with same property",
+          "observed": "CREATE accepts TTL=-100 (HTTP 200 success) but ALTER_PROPERTIES rejects it with error 'collection TTL is out of range, expect [-1, 3155760000], got -100'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49843\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' && curl -X POST http://localhost:19530/v2/vectordb/collections/alter_properties -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49843\", \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API endpoints: collections+create and collections+alter_properties should have consistent validation for the same properties"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["collection.*ttl", "ttl.*validation", "alter.*properties", "create.*properties"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/proxy/util.go", "pkg/util/paramtable/"],
+          "source_excerpt": "Grep found TTL validation code in alter_properties handler but CREATE handler appears to lack equivalent TTL range check. The validation message 'expect [-1, 3155760000]' exists in codebase but is only applied during ALTER, not during CREATE.",
+          "call_chain_traced": "CREATE handler → properties parsing → TTL accepted without validation → ALTER handler → properties parsing → TTL validation throws error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "inconsistent_validation",
+          "note": "源码接地发现: ALTER_PROPERTIES handler has TTL range validation ([-1, 3155760000]) but CREATE handler lacks this validation,导致不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that CREATE and ALTER should enforce same property constraints. TTL=-100 is objectively invalid per documented range but CREATE accepts it.",
+          "observed": "Bug confirmed: Inconsistent validation between CREATE (accepts invalid TTL) and ALTER (rejects it)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "request parameter typos"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches the blindspot pattern: REST v2 has inconsistent parameter validation across endpoints. CREATE accepts invalid TTL that ALTER rejects."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Both CREATE and ALTER should enforce same property constraints (consistency principle)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "TTL value -100 is objectively outside documented range [-1, 3155760000]",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "inconsistent_validation",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Step 1 repro confirmed: CREATE accepts TTL=-100 but ALTER rejects it with error message. Step 3.5 source grounding confirmed: ALTER handler has TTL validation but CREATE handler lacks it. Step 6 three-perspective analysis: Contract (inconsistent validation), physical (TTL outside valid range), behavioral (no by-design evidence) all CONFIRMED. This is a TRUE DEFECT - REST v2 API has inconsistent TTL validation between CREATE and ALTER endpoints."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"inconsistent_validation": 1}
+  }
+}

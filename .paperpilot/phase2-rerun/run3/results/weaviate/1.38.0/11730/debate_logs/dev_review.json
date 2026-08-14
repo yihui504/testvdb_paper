@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11730",
+      "endpoint": "POST /schema",
+      "defect_type": "Type4_StateLogicViolation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with properties[0].tokenization=\"\" (empty string, not in enum)",
+          "observed": "HTTP 200 SUCCESS with tokenization defaulted to 'word' in response",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\":\"Test\",\"properties\":[{\"name\":\"text_field\",\"dataType\":[\"text\"],\"tokenization\":\"\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_type_schema_create_003"],
+          "note": "Contract explicitly states: properties[].tokenization must be in enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}. Empty string '' is NOT in this enum."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["tokenization", "validatePropertyTokenization", "DEFAULT_TOKENIZATION"],
+          "files_examined": [
+            "usecases/schema/class.go",
+            "entities/schema/tokenization.go",
+            "openapi-specs/schema.json"
+          ],
+          "source_excerpt": "// usecases/schema/class.go line 756-763 (defaulting logic)\ncase schema.DataTypeText, schema.DataTypeTextArray:\n\tif prop.Tokenization == \"\" {\n\t\tif os.Getenv(\"DEFAULT_TOKENIZATION\") != \"\" {\n\t\t\tprop.Tokenization = os.Getenv(\"DEFAULT_TOKENIZATION\")\n\t\t} else {\n\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t}\n\t}\n\n// usecases/schema/class.go line 1132-1134 (validation logic)\ndefault:\n\tif tokenization == \"\" {\n\t\treturn nil\n\t}\n\treturn fmt.Errorf(\"tokenization is not allowed for data type '%s'\", primitiveDataType)",
+          "call_chain_traced": "migrateClassSettings (line 756-763) → sets tokenization='word' if empty → validatePropertyTokenization (line 1093-1148) → line 1132-1134 allows empty string → validation bypassed",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_with_defaulting",
+          "note": "Two-step process creates漏洞: (1) Defaulting logic (lines 756-763) sets empty tokenization to 'word', (2) Validation logic (line 1132-1134) allows empty string. Empty string bypasses enum constraint and gets auto-coerced to 'word'."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified API response shows tokenization='word' was set despite input being empty string",
+          "observed": "Response body: {\"properties\":[{\"tokenization\":\"word\",...}]} - proves defaulting occurred"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "race condition", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - systematic parameter_validation defects affecting request_parsing functionality",
+        "pattern_id": "BS-004",
+        "note": "Match to bug shape BS-004 - parameter validation bypass at API boundary. Empty string accepted when contract requires enum value."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "properties[].tokenization must be in enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch} (constraint_id: weaviate_type_schema_create_003, confidence: 0.95)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "tokenization is an enum parameter - must be one of the defined values",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Raw HTTP evidence confirms POST /schema accepts tokenization='' (empty string) with HTTP 200. Contract constraint weaviate_type_schema_create_003 (confidence 0.95) explicitly states tokenization must be in enum {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}. Empty string is NOT in this enum. Source code reveals validation bypass: validatePropertyTokenization allows empty string (line 1132-1134), and separate defaulting logic (lines 756-763) auto-coerces empty to 'word'. This is a parameter validation bug - API accepts invalid enum value and coerces it, violating explicit contract constraint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  }
+}

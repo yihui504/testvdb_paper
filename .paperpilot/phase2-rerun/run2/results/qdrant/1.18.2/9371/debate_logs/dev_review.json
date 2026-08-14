@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9371",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2_verify/points/batch with upsert operations containing mixed vector dimensions (4D and 3D)",
+          "observed": "HTTP 400 with error: 'Wrong input: Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_batch2_verify/points/batch -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}'",
+          "verification": "Reproducible against live container at http://localhost:6333 - dimension validation correctly rejects invalid input"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "checked_assumptions": [
+            "API should reject batch operations with mismatched vector dimensions",
+            "Error response should be HTTP 400 (bad request)",
+            "Error message should clearly indicate dimension mismatch",
+            "Collection should remain unchanged after failed batch operation"
+          ],
+          "audit_outcome": "All assumptions validated - API behaves as expected for input validation"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+batch - Batch update points (mixed operations)",
+            "constraint: qdrant_state_upsert_points_004 - Atomic batch upsert (all points inserted or none)",
+            "validation: Vector dimension validation occurs before batch execution"
+          ],
+          "contract_compliance": "API contract specifies batch operations but dimensional validation is implicit requirement - implementation correctly enforces vector dimension consistency"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "Vector dimension error",
+            "validate_vector_dimensions",
+            "WrongVectorDimension"
+          ],
+          "files_examined": [
+            "src/common/validate_vectors.rs",
+            "lib/segment/src/common/operation_error.rs"
+          ],
+          "source_excerpt": "validate_vector_dimensions() function performs early O(n) validation before WAL write. Returns StorageError::bad_input with clear dimension mismatch message. OperationError::WrongVectorDimension enum variant exists for this validation case.",
+          "call_chain_traced": "BatchOperation API -> validate_vector_dimensions() -> validate_batch_vectors() -> validate_single_vector_dim() -> StorageError::bad_input() -> HTTP 400 response",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Vector dimension validation is intentionally present and working correctly - rejecting invalid dimensions is expected API behavior, not a defect"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2_verify/points/batch with all vectors having correct 4D dimensions",
+          "observed": "HTTP 200 OK with operation_id acknowledged. Point count increased from 3 to 6, confirming successful batch upsert",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_batch2_verify/points/batch -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.9, 0.1, 0.2, 0.3]}]}}]}'",
+          "verification": "Confirmed API accepts valid batch operations and processes them correctly. Point count verification shows atomic success (count: 3 -> 6)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment_issue",
+            "network_error",
+            "docker_anomaly",
+            "transient_failure"
+          ],
+          "surviving": "mundane_api_semantics",
+          "mundane_explanation": "This is normal input validation behavior. The API correctly validates vector dimensions before processing batch operations and returns appropriate HTTP 400 error for invalid input. This is expected API semantics, not a bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No specific developer cognition pattern matched. The observed behavior is basic input validation working as intended - dimension checking is a fundamental API validation requirement."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "The API correctly implements vector dimension validation for batch operations. Source code shows intentional validation in validate_vectors.rs with proper error handling. The HTTP 400 response with clear error message 'Vector dimension error: expected dim: 4, got 3' is expected behavior for invalid input. Falsification testing confirms API processes valid batch operations correctly. This is standard input validation, not a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    },
+    "review_metadata": {
+      "reviewer_type": "dev-reviewer",
+      "review_session": "phase2-rerun-run2",
+      "timestamp": "2026-08-14T06:48:00Z",
+      "sop_compliance": "6-step SOP executed",
+      "steps_completed": [
+        "clean_repro",
+        "assumption_audit",
+        "contract_grounding",
+        "source_grounding",
+        "falsification",
+        "mundane_exclusion"
+      ]
+    }
+  }
+}

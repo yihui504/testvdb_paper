@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9027",
+      "endpoint": "points+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9027/points/search with score_threshold=2.0 and score_threshold=-0.5",
+          "observed": "HTTP 200 OK for both values > 1.0 and < 0.0. score_threshold=2.0 returns empty results; score_threshold=-0.5 returns point with score=1.0",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9027/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}' returns {'result': [], 'status': 'ok'}; with score_threshold=-0.5 returns {'result': [{'id': 1, 'score': 1.0}], 'status': 'ok'}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API templates show score_threshold as 'Minimum score threshold' type: number but no explicit [0,1] range constraint in structured_contract.json"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["score_threshold", "ScoreType", "validation", "range"],
+          "files_examined": ["lib/shard/src/search.rs", "lib/segment/src/types.rs", "lib/collection/src/operations/verification/mod.rs"],
+          "source_excerpt": "// lib/shard/src/search.rs line 31\n    pub score_threshold: Option<ScoreType>,\n\n// lib/segment/src/data_types/vectors.rs (typedef search for ScoreType)\npub type ScoreType = f32;\n\n// No validation logic found for score_threshold range [0,1] in source tree",
+          "call_chain_traced": "score_threshold defined as Option<ScoreType> (f32) with no [0,1] range validation - pass-through to search executor",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: score_threshold 定义为 Option<ScoreType> (f32)，没有任何 [0,1] 范围校验。对于余弦距离，分数应在 [-1, 1] 范围内；对于其他距离度量可能有不同范围。但 API 接受任意 f32 值（如 2.0 或 -10.0）而不报错。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified API accepts score_threshold=2.0 (> 1.0) and score_threshold=-0.5 without validation error",
+          "observed": "Both out-of-range values accepted with HTTP 200, no 4xx error returned"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞态", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "命中 bug_shapes 中的 numeric_boundary 模式 - Numeric Boundary 验证缺失"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "API 接受超出语义范围的 score_threshold 值（如 2.0 和 -0.5）而无需 4xx 错误。虽然这些值技术上'能工作'（过滤结果），但违反了分数阈值应有合理边界的预期。源码显示 score_threshold 为 Option<f32> 无范围校验。此为 Type1_IllegalSuccess 的边界情况 - 输入值虽不崩溃但违反参数语义。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit [0,1] range constraint in contract for score_threshold",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Score thresholds should have reasonable bounds (e.g., [0,1] for cosine similarity, [-1,1] for normalized distances) - accepting arbitrary values like 2.0 is semantically invalid",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (semantic constraint violation confirmed)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"semantic_boundary_validation_missing": 1}
+  }
+}

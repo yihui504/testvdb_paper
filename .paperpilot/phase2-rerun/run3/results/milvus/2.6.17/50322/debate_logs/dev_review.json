@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50322",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Drop nonexistent collection 'nonexistent_collection_xyz'",
+          "observed": "Drop operation on nonexistent collection succeeded with HTTP 200, violating documented requirement to return 404",
+          "evidence_cmd": "Verified via output_milvus_50322.log - POST /collections/drop with collectionName='nonexistent_collection_xyz' returned {\"code\":0,\"data\":{}}, expected 404 per contract"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "assertion_id: milvus_behavioral_collections_drop_001 - expected: 'returns 200 with empty data on success; returns 404 with message collection not found if collection does not exist'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["dropCollection", "collection not found", "404"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 745-759\nfunc (h *HandlersV2) dropCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\tgetter, _ := anyReq.(requestutil.CollectionNameGetter)\n\treq := &milvuspb.DropCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: getter.GetCollectionName(),\n\t}\n\tc.Set(ContextRequest, req)\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/DropCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.DropCollection(reqCtx, req.(*milvuspb.DropCollectionRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnDefault())\n\t}\n\treturn resp, err\n}",
+          "call_chain_traced": "HandlersV2.dropCollection() → wrapperProxyWithLimit() → proxy.DropCollection() → NO 404 check on nonexistent → returns HTTP 200 regardless of existence",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 dropCollection handler (handler_v2.go:745-759) 仅简单转发请求到 proxy 层，未检查 collection 是否存在。根据 behavioral assertion milvus_behavioral_collections_drop_001 明确要求 'returns 404 with message collection not found if collection does not exist'，但源码无此校验，直接返回 HTTP 200。虽然某些 API 设计可能采用 idempotent drop 策略，但契约明确要求 404，应视为契约违规。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify other similar endpoints for consistency - partitions+drop explicitly documents 404 behavior",
+          "observed": "Contract for partitions+drop states '200 on success; 404 if partition not found; drop is irreversible', confirming 404 is expected behavior for drop operations on nonexistent resources"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "cache delay"],
+          "surviving": "potential_idempotent_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未在 developer_cognition.json 中找到明确声明 idempotent drop 为 by-design 的模式。虽然某些系统可能为健壮性采用 idempotent drop，但契约明确要求 404。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.7,
+      "rationale": "REST v2 collections+drop 对不存在的 collection 返回 HTTP 200，违反契约 milvus_behavioral_collections_drop_001 明确要求的 'returns 404 with message collection not found if collection does not exist' 行为。源码接地确认 handler_v2.go:745-759 中的 dropCollection() 函数无存在性检查，直接转发并返回 HTTP 200。虽然这可能是有意设计的 idempotent drop（某些 API 为容错性采用 'drop if exists' 策略），但契约文档未将此列为 by-design 行为，且其他 drop endpoints (partitions+drop) 明确要求 404。置信度 0.7（非 0.95）原因：存在 idempotent API 设计的可能性，但契约明确性优先级应高于推测的设计意图。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

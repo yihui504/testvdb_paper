@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50018",
+      "endpoint": "aliases+create",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /aliases/create with wrong parameter name 'alias' instead of 'aliasName'",
+          "observed": "HTTP 200 with error code 1802: 'missing required parameters, error: Key: 'AliasCollectionReq.AliasName' Error:Field validation for 'AliasName' failed on the 'required' tag'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/aliases/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test\", \"alias\": \"bad_name\"}' | jq '.code, .message'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate claims Type1_IllegalSuccess (API should reject but accepts)",
+            "Reality: API DOES reject the request with error 1802",
+            "Request used wrong parameter name: 'alias' instead of 'aliasName'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: aliasName (required, type: string)",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+            "doc_quote: 200 on success; 400 if alias already exists"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["AliasCollectionReq", "aliasName.*binding.*required", "validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 672-686\ntype AliasCollectionReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\" binding:\"required\"`\n\tAliasName      string `json:\"aliasName\" binding:\"required\"`  // ← REQUIRED with validation\n}\n\nfunc (req *AliasCollectionReq) GetAliasName() string {\n\treturn req.AliasName\n}",
+          "call_chain_traced": "POST /aliases/create → Gin binding validation → 'aliasName' field not found → validation error 1802 returned (correct behavior)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source confirms aliasName has 'binding:\"required\"' tag. Gin validator enforces this. Request with 'alias' instead of 'aliasName' fails validation as expected. NOT a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /aliases/create with correct parameter name aliasName='valid_alias' succeeds",
+          "observed": "When 'aliasName' is used correctly, API returns HTTP 200. The 'bug' is just using wrong parameter name. API correctly validates required fields."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Parameter name typo in test script ('alias' vs 'aliasName')",
+            "API correctly enforces required field validation",
+            "Expected behavior: reject malformed requests"
+          ],
+          "surviving": "request_param_typo"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - Verify against documentation, check if behavior matches documented contract",
+        "note": "Hits rejection pattern RP-001: API correctly validates required parameter 'aliasName'. Using wrong parameter name 'alias' causes expected validation error. Not a defect."
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Raw HTTP evidence shows API correctly rejecting request with wrong parameter name. Error 1802 confirms field validation working: 'Field validation for 'AliasName' failed on the 'required' tag'. Test script used 'alias' instead of 'aliasName'. Source confirms AliasCollectionReq.aliasName has binding:'required' tag validated by Gin. This is expected parameter validation, not a bug. Type1_IllegalSuccess classification incorrect - API did reject the request."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_param_typo": 1
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_51085",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/insert - ATTEMPTED REPRODUCTION",
+          "observed": "output_milvus_51085.log only contains collections operations (drop, create, describe), NO entities+insert traffic captured. Known traffic deficiency case where SDK probe failed to capture the actual insert operation.",
+          "evidence_cmd": "cat output_milvus_51085.log shows only POST /collections/drop, POST /collections/create, POST /collections/describe - NO entities/insert requests present"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect conclusion assumes entities+insert operation occurred, but raw traffic logs contain no such operation"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_entities_insert_semantics - endpoint not actually exercised in captured traffic"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": ["insert", "entities", "insertHandler"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "No source grounding possible - the operation in question (entities+insert) was not captured in traffic logs, making source code review irrelevant to this specific execution instance.",
+          "call_chain_traced": "N/A - traffic not captured",
+          "source_verified_by_reviewer": false,
+          "verification_outcome": "traffic_not_captured",
+          "note": "This is a known traffic deficiency case (51085 flagged in issue tracker as having incomplete traffic capture). Without raw request/response for entities+insert, reproduction is impossible."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Cannot falsify - original operation not in traffic logs",
+          "observed": "No falsification possible without captured traffic"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "traffic_deficiency_known_issue"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "This appears to be an instrumentation/capture issue rather than an actual API behavior defect"
+      },
+      "root_cause_if_fp": "non_deterministic_unreproducible",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Known traffic deficiency case (issue #51085). Output logs contain only collections operations (drop, create, describe) with NO entities+insert requests captured. Live reproduction attempts fail because the raw request for entities+insert is not available in the evidence. SDK probe failed to capture the operation in question, making defect verification impossible. This is an instrumentation failure, not an API behavior defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"non_deterministic_unreproducible": 1}
+  }
+}

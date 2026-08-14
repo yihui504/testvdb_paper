@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9371",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /collections/repro_9371/points/batch with operations containing upsert with mixed vector dimensions (4 and 3)",
+          "observed": "API returns HTTP 400 with error: 'Vector dimension error: expected dim: 4, got 3'. Collection dimension requirement is correctly enforced.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/repro_9371/points/batch -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 2, \"vector\": [0.1, 0.2, 0.3]}]}}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate claims 'batch API accepts mixed vector dimensions without validation', but raw evidence shows HTTP 400 error",
+            "Vector dimension validation is enforced in validate_vector_dimensions() function (src/common/validate_vectors.rs:13-28)",
+            "Error message 'Vector dimension error: expected dim: 4, got 3' proves validation occurs"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_parameter_validation_numeric_boundary",
+            "Vector dimension validation is explicitly implemented in src/common/validate_vectors.rs:40-46",
+            "Collection creation requires vectors.size parameter (dimension constraint)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["validate_vector_dimensions", "Vector dimension error", "validate_batch_vectors"],
+          "files_examined": [
+            "src/common/validate_vectors.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// src/common/validate_vectors.rs lines 13-47\npub fn validate_vector_dimensions(\n    operation: &PointInsertOperationsInternal,\n    vectors_config: &VectorsConfig,\n) -> Result<(), StorageError> {\n    match operation {\n        PointInsertOperationsInternal::PointsBatch(batch) => {\n            validate_batch_vectors(&batch.vectors, vectors_config)?;\n        }\n        PointInsertOperationsInternal::PointsList(points) => {\n            for point in points {\n                validate_point_vectors(&point.vector, vectors_config)?;\n            }\n        }\n    }\n    Ok(())\n}\n\nfn validate_batch_vectors(\n    batch_vectors: &BatchVectorStructPersisted,\n    vectors_config: &VectorsConfig,\n) -> Result<(), StorageError> {\n    match batch_vectors {\n        BatchVectorStructPersisted::Single(vectors) => {\n            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {\n                return Ok(());\n            };\n            let expected_dim = params.size.get() as usize;\n            for vector in vectors {\n                if vector.len() != expected_dim {\n                    return Err(StorageError::bad_input(format!(\n                        \"Vector dimension error: expected dim: {expected_dim}, got {}\",\n                        vector.len()\n                    )));\n                }\n            }\n        }\n        // ... more validation\n    }\n    Ok(())\n}",
+          "call_chain_traced": "Batch API → validate_vector_dimensions() → validate_batch_vectors() → dimension check against vectors_config → HTTP 400 on mismatch",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: validate_vector_dimensions() 函数在 batch 操作前验证所有向量维度，与 collection 配置中的 size 参数比对，不符合则返回 HTTP 400 错误。这是正确的参数验证行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted same batch operation with mixed dimensions - received HTTP 400, confirming validation works",
+          "observed": "The candidate's claim that 'batch accepts invalid dimensions' is falsified by the HTTP 400 response. The API correctly rejects dimension mismatches."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - tested on clean Docker container",
+            "Concurrency issue - single-threaded test",
+            "Cache/delay issue - immediate response"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Matches developer cognition pattern: parameter validation is expected behavior, not a bug"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选声称 batch API 接受混合维度向量而不验证，但源码显示 validate_vector_dimensions() 函数在 src/common/validate_vectors.rs:13-28 明确实现了维度验证。实测复现显示 API 返回 HTTP 400 错误 'Vector dimension error: expected dim: 4, got 3'，证明验证正常工作。候选基于错误的假设（无验证）得出结论，属于 contract_misread。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

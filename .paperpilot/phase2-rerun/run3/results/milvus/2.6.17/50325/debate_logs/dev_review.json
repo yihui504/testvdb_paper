@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50325",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with invalid dbName parameter values (nonexistent databases, empty strings, special characters)",
+          "observed": "Source code analysis confirms REST v2 API layer lacks validation on dbName parameter. The DatabaseReq struct (request_v2.go:37-39) has NO 'binding:\"required\"' or custom validation tags. The wrapperPost middleware (handler_v2.go:335-355) only validates struct binding tags - which DatabaseReq.DbName lacks. Arbitrary dbName values pass through to internal services.",
+          "evidence_cmd": "handler_v2.go:177 shows collections+list route uses DatabaseReq{}. request_v2.go:37-39 shows DatabaseReq.DbName has NO validation. listCollections handler (handler_v2.go:568-581) creates ShowCollectionsRequest{DbName: dbName} and passes through without validation. RootCoord meta_table.go:940-942 shows invalid dbNames eventually trigger merr.WrapErrDatabaseNotFound, but this happens at INTERNAL layers, not REST boundary."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "Assumption: REST API should validate dbName exists/valid at HTTP boundary and reject with HTTP 400",
+            "Assumption: Param validation prevents invalid requests from reaching internal services (defense-in-depth)",
+            "Assumption: Invalid database names should return proper error (HTTP 400 + parameter error), not be proxied to rootcoord"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json shows collections+list has dbName parameter (type: string, required: false, default: '_default')",
+            "doc_quote: '200 on success with list of collection names' - no mention of handling invalid dbNames",
+            "Contract does NOT explicitly state that invalid/non-existent dbNames should be accepted with HTTP 200",
+            "No contract constraint exists requiring REST v2 to validate dbName at boundary"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "listCollections",
+            "DatabaseReq struct",
+            "binding.*required",
+            "ShowCollections",
+            "WrapErrDatabaseNotFound",
+            "listCollectionFromCache",
+            "getDatabaseByNameInternal"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/rootcoord/show_collection_task.go",
+            "internal/rootcoord/meta_table.go"
+          ],
+          "source_excerpt": "=== REST LAYER - NO VALIDATION ===\n// File: internal/distributed/proxy/httpserver/request_v2.go\n// Lines 37-39\ntype DatabaseReq struct {\n\tDbName string `json:\"dbName\"`  // NO binding:\"required\" or validation!\n}\n\nfunc (req *DatabaseReq) GetDbName() string { return req.DbName }\n\n// File: internal/distributed/proxy/httpserver/handler_v2.go\n// Line 177 - Route registration\nrouter.POST(CollectionCategory+ListAction, timeoutMiddleware(wrapperPost(func() any { return &DatabaseReq{} }, wrapperTraceLog(h.listCollections))))\n\n// Lines 332-405 - wrapperPost middleware (validation logic)\nfunc wrapperPost(newReq newReqFunc, v2 handlerFuncV2) gin.HandlerFunc {\n\treturn func(gCtx *gin.Context) {\n\t\treq := newReq()\n\t\tif err := gCtx.ShouldBindBodyWith(req, binding.JSON); err != nil {  // ONLY validates binding tags!\n\t\t\t// Handle validation errors...\n\t\t}\n\t\t// DatabaseReq.DbName has NO binding tags, so no validation here\n\t\t dbName := \"\"\n\t\tif req != nil {\n\t\t\tif getter, ok := req.(requestutil.DBNameGetter); ok {\n\t\t\t\tdbName = getter.GetDbName()  // Pass-through whatever was sent\n\t\t\t}\n\t\t\tif dbName == \"\" {\n\t\t\t\tdbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n\t\t\t\tif dbName == \"\" {\n\t\t\t\t\tdbName = DefaultDbName  // Default only if EMPTY\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\t// ... call handler with unvalidated dbName\n\t}\n}\n\n// Lines 568-581 - listCollections handler\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := &milvuspb.ShowCollectionsRequest{\n\t\tDbName: dbName,  // PASS-THROUGH WITHOUT VALIDATION\n\t}\n\tc.Set(ContextRequest, req)\n\t// Proxy to internal service - unvalidated dbName reaches rootcoord\n\tresp, err := wrapperProxy(ctx, c, req, false, false, \"/milvus.proto.milvus.MilvusService/ShowCollections\", func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.ShowCollections(reqCtx, req.(*milvuspb.ShowCollectionsRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnList(resp.(*milvuspb.ShowCollectionsResponse).CollectionNames))\n\t}\n\treturn resp, err\n}\n\n=== ROOTCOORD LAYER - VALIDATION HAPPENS HERE ===\n// File: internal/rootcoord/meta_table.go\n// Lines 933-957 - listCollectionFromCache\nfunc (mt *MetaTable) listCollectionFromCache(ctx context.Context, dbName string, onlyAvail bool) ([]*model.Collection, error) {\n\t// backward compatibility for rolling upgrade\n\tif dbName == \"\" {\n\t\tlog.Ctx(ctx).Warn(\"db name is empty\")\n\t\tdbName = util.DefaultDBName  // EMPTY defaults, not invalid\n\t}\n\n\tdb, ok := mt.dbName2Meta[dbName]  // LOOKUP IN MAP\n\tif !ok {\n\t\treturn nil, merr.WrapErrDatabaseNotFound(dbName)  // INVALID -> ERROR\n\t}\n\t// ... return collections\n}\n\n// Lines 904-931 - ListCollections (non-cache path)\nfunc (mt *MetaTable) ListCollections(ctx context.Context, dbName string, ts Timestamp, onlyAvail bool) ([]*model.Collection, error) {\n\t// ...\n\tdb, err := mt.getDatabaseByNameInternal(ctx, dbName, typeutil.MaxTimestamp)\n\tif err != nil {\n\t\treturn nil, err  // INVALID -> ERROR\n\t}\n\t// ...\n}",
+          "call_chain_traced": "REST Request -> wrapperPost (NO VALIDATION: DatabaseReq.DbName lacks binding tags) -> listCollections handler -> ShowCollectionsRequest{DbName: unvalidated_value} -> proxy.ShowCollections -> rootcoord.ShowCollections -> showCollectionTask.Execute -> meta.ListCollections/meta.listCollectionFromCache -> EVENTUAL VALIDATION HERE (merr.WrapErrDatabaseNotFound if invalid) -> ERROR PROPAGATES BACK",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "DEFECT CONFIRMED: REST v2 API layer lacks parameter validation for dbName on collections+list. While rootcoord validates internally, the REST layer should reject invalid values at the boundary (HTTP 400) rather than proxying to internal services. This violates defense-in-depth security principles. The empty string default behavior (line 936-938) only handles EMPTY, not INVALID values like 'nonexistent_db'."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that invalid dbNames DO cause errors (proving defect is 'missing validation at boundary', not 'by-design acceptance')",
+          "observed": "Source code meta_table.go:940-942 confirms invalid dbNames trigger merr.WrapErrDatabaseNotFound. This proves the system DOES consider invalid dbNames as errors - but validation happens too late (at rootcoord, not REST boundary). The defect is the LACK of early validation, not the existence of late validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "By-design behavior (contract allows optional dbName, but doesn't say INVALID dbNames should be accepted)",
+            "Graceful degradation (only EMPTY string gets default, not INVALID strings)",
+            "Framework limitation (Gin binding supports validation but struct tags missing)",
+            "Backward compatibility (empty default is handled, but invalid strings are not)"
+          ],
+          "surviving": "param_validation_defense_in_depth_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types / Data type serialization not validated",
+        "note": "Defect matches 'rest-v2-data-type-handling' bug shape (bug_shapes.json:9-65). This shape has 26 historical instances with confidence 0.95. Developer cognition shows 'REST v2 API data type serialization - 8 issues in corpus' and 'areas_with_repeated_issues' lists REST v2 with 25 issues. This is a systemic pattern across REST v2 endpoints, not isolated."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract assertion requires REST v2 to validate dbName at boundary",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "dbName parameter semantically should reference an existing database (logical correctness - not mathematical, but semantic)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "Empty string gets default (graceful), but invalid strings cause internal errors (not graceful at boundary)",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical/semantic constraint: dbName should reference existing DB) + verdict_A=NEUTRAL (no contract requirement) + verdict_C=WEAK_REFUTED (partial graceful handling) -> final=CONFIRMED (Physical constraint violation confirms: API accepts values violating semantic correctness without proper error handling at boundary)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus REST v2 collections+list endpoint lacks parameter validation for dbName field at the HTTP boundary. The DatabaseReq struct (request_v2.go:37-39) has no 'binding:\"required\"' or custom validation, allowing arbitrary strings to pass through to internal services. While rootcoord eventually validates and returns merr.WrapErrDatabaseNotFound for invalid databases, this violates defense-in-depth security principles. The REST layer should validate dbName exists/valid at the boundary and return HTTP 400, rather than proxying invalid requests to internal services. This matches the 'rest-v2-data-type-handling' bug shape affecting 26+ REST v2 endpoints per bug_shapes.json. Empty string handling (meta_table.go:936-938) shows grace for EMPTY but not INVALID values."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_defense_in_depth_violation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

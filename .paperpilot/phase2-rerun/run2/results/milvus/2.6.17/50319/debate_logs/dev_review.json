@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50319",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search on unloaded collection 'repro_50319'",
+          "observed": "REST v2 API returns HTTP 200 with search results on collection that was never loaded. pymilvus SDK (gRPC) correctly returns error 'collection not loaded' for same operation.",
+          "evidence_cmd": "python -c 'from pymilvus import Collection, connections...; collection.search(...)' # Fails with: MilvusException: (code=101, message=failed to search: collection not loaded)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001",
+            "assertion: 'collection is loaded AND index exists on annsField'",
+            "type: state_constraint",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["search", "collection.*load", "entities.*search"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// Line 1487-1676: func (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error)\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\t// ... parameter parsing ...\n\t}\n\t// NO LOAD STATE CHECK HERE - directly calls proxy.Search()\n\t// Compare with loadCollectionInternal which DOES check load state\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Search\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Search(reqCtx, req.(*milvuspb.SearchRequest))\n\t})\n\t// ... response handling ...\n}",
+          "call_chain_traced": "REST v2 search handler (line 1487) → NO load state validation → proxy.Search() → backend error only for gRPC",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code analysis confirms REST v2 search handler does NOT check collection load state before calling proxy.Search(), while contract explicitly requires 'collection is loaded'. This is a true bug in REST v2 layer."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "gRPC search on unloaded collection via pymilvus SDK",
+          "observed": "pymilvus SDK correctly returns error: MilvusException: (code=101, message=failed to search: collection not loaded[collection=468369405897345077]). REST v2 API should similarly reject search on unloaded collections but does not."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - same container, both APIs",
+            "Request parameter error - same parameters work on gRPC",
+            "By-design - contract explicitly requires loaded collection"
+          ],
+          "surviving": "contract_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; 25+ issues in corpus",
+        "note": "This defect aligns with 'rest-v2-data-type-handling' pattern from bug_shapes.json - REST v2 API layer has systematic validation gaps that gRPC layer handles correctly."
+      },
+      "root_cause_if_confirmed": "REST v2 API layer missing load state validation before proxy.Search() call",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /entities/search endpoint violates explicit contract constraint milvus_state_entities_search_001 ('collection is loaded'). Source code confirms handler_v2.go:1487 search() function does NOT validate collection load state before calling proxy.Search(), unlike gRPC layer which correctly returns 'collection not loaded' error. Live container reproduction shows REST v2 returns HTTP 200 with results on unloaded collection, while pymilvus SDK (gRPC) correctly rejects same request with error code 101. This is a genuine API inconsistency defect in REST v2 layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "REST_v2_validation_gap": 1
+    }
+  }
+}

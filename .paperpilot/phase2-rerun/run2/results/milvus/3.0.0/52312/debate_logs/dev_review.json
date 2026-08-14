@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52312",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "REST v2 upsert accepts string '100' for Int64 primary key field where gRPC correctly rejects it",
+          "observed": "REST v2: upsert with {id: '100'} succeeds HTTP 200 and overwrites data. gRPC: same operation fails with DataNotMatchException",
+          "evidence_cmd": "REST: curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -d '{\"collectionName\":\"repro_52312\",\"data\":[{\"id\":\"100\",\"vector\":[0.9,0.9,0.9,0.9]}]}' returns HTTP 200. gRPC: collection.upsert([{\"id\":\"100\",...}]) raises DataNotMatchException"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Primary key field type should be strictly enforced at API boundary",
+            "REST v2 and gRPC APIs should have consistent type checking behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavioral_primary_key_type_001 (Primary key must be Int64 or VarChar - schema-level, but does not specify runtime enforcement)",
+            "Historical pattern: REST_v2_data_type_handling (bug_shape_id: rest-v2-data-type-handling, 26 instances, confidence 0.95)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "upsert",
+            "checkAndSetData",
+            "DataType_Int64",
+            "fieldValue.String"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go:530-644\nfunc checkAndSetData(...)\n{\n    ...\n    dataString := fieldValue.String()  // Line 530 - gjson.String() loses type info\n    ...\n    case schemapb.DataType_Int64:\n        result, err := json.Number(dataString).Int64()  // Line 640 - accepts string \"100\" as valid\n        if err != nil {\n            return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n        }\n        reallyData[fieldName] = result\n}",
+          "call_chain_traced": "REST v2 upsert → handler_v2.upsert() → checkAndSetData() → fieldValue.String() → json.Number(dataString).Int64() → type coercion occurs",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Root cause found: gjson's fieldValue.String() converts both JSON string \"100\" and number 100 to string \"100\", then json.Number().Int64() successfully parses either. Contrast with gRPC path which checks types explicitly in entity_helper.pack_field_value_to_field_data() line 279."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert id=100 (int), Upsert id='100' (string), Query id==100",
+          "observed": "Bug CONFIRMED: Query returns vector [0.9,0.9,0.9,0.9] proving STRING '100' overwrote INT 100 data. Type coercion is real and causes data mutation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (same container, sequential operations)",
+            "Concurrent race (single-threaded test)",
+            "Request parameter typo (exact behavior under test)",
+            "API semantics misunderstanding (clear type safety violation)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 instances in historical corpus, confidence 0.95",
+        "note": "Matches blindspot indicator: 'REST v2 API data type serialization - 8 issues in corpus'. High-confidence historical pattern."
+      },
+      "root_cause_if_confirmed": "rest_v2_type_coercion_bug",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED - REST v2 upsert API accepts STRING '100' for INT64 primary key where gRPC correctly rejects with DataNotMatchException. Source code analysis proves root cause: gjson's fieldValue.String() loses type discrimination, allowing json.Number to parse string '100' as valid int64. Falsification confirms data mutation occurs. Matches historical bug shape 'REST_v2_data_type_handling' (26 instances, 95% confidence). This is a genuine type safety violation between REST v2 and gRPC APIs.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_primary_key_type_001 states 'Primary key must be Int64 or VarChar' but is schema-level only. No explicit contract assertion found for runtime type enforcement in REST v2 data operations.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Int64 primary key field requires integer values. JSON STRING '100' and NUMBER 100 are semantically different types.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED and verdict_C=CONFIRMED → final=CONFIRMED (physical type violation + data mutation confirmed)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_type_coercion_bug": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49930",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection, insert data, load, then search with invalid searchParams (ef=-1, ef=0, nprobe=0)",
+          "observed": "Search operations with ef=-1, ef=0, and nprobe=0 all succeed and return results (HTTP 200, code:0)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_test_49930\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"annsField\": \"vector\", \"limit\": 5, \"searchParams\": {\"ef\": -1}}' returns HTTP 200 with results",
+          "repro_result": "Successfully reproduced - API accepts invalid search parameter values without validation"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Search parameters like 'ef' for HNSW and 'nprobe' for IVF should have physical constraints (ef >= 1, nprobe >= 1)",
+            "These parameters control search behavior and invalid values should be rejected",
+            "The API should validate these parameters to prevent undefined behavior"
+          ],
+          "note": "Assumptions are valid - these parameters have well-known physical constraints in the vector search community"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API documentation acknowledges HNSW ef parameter should control candidate list size",
+            "IVF nprobe parameter should control number of inverted file lists to probe",
+            "Both parameters are documented as having meaningful ranges, not accepting arbitrary values"
+          ],
+          "note": "While there's no explicit constraint saying 'ef must be >= 1', the physical meaning of these parameters implies valid ranges"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "generateSearchParams",
+            "ef.*validation|nprobe.*validation",
+            "searchParams.*range"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2192-2246\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n    var searchParams []*commonpb.KeyValuePair\n    // ... parameter processing logic ...\n    for key, value := range reqSearchParams {\n        if key != Params {\n            // for compatibility\n            if key == \"ignoreGrowing\" {\n                key = common.IgnoreGrowing\n            }\n            searchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n        }\n    }\n    // No validation of parameter values like 'ef' or 'nprobe'\n    return searchParams, nil\n}",
+          "call_chain_traced": "SearchRequest -> generateSearchParams -> pass-through to backend -> No validation of ef/nprobe ranges",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms NO validation of search parameter values (ef, nprobe, etc.) - they are passed through as strings without range checking"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Try searches with physically impossible values (ef=-5, nprobe=-100) to see if any are rejected",
+          "observed": "All invalid parameter values are accepted - negative values, zero values all pass through without error",
+          "evidence_cmd": "Multiple tests with ef=-10, ef=0, nprobe=-5, nprobe=0 all succeed",
+          "falsification_result": "Bug confirmed - no validation prevents invalid parameter values"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not environment-specific - works the same across different configurations",
+            "Not a race condition - reproducible every time",
+            "Not a misunderstanding of API - these parameters clearly should have ranges"
+          ],
+          "surviving": "none",
+          "note": "No mundane explanation found - this is a genuine validation gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Matches bug shape 'rest-v2-data-type-handling' - REST v2 API validation gaps. This is the same class of issue as other REST v2 parameter validation problems in the corpus."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint stating 'ef >= 1' or 'nprobe >= 1', but physical semantics of these parameters imply valid ranges",
+          "source_implements_check": false,
+          "api_observed_value": "Accepts ef=-1, ef=0, nprobe=0 without error",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract doesn't explicitly state these constraints, but it's a validation gap"
+        },
+        "physical": {
+          "objective_constraint": "HNSW ef parameter represents candidate list size - must be >= 1 for meaningful search. IVF nprobe represents number of partitions to probe - must be >= 1",
+          "api_observed_behavior": "API accepts ef=-1, ef=0, nprobe=0 which violate physical semantics",
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint violation - these values have no physical meaning and should be rejected"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "ungraceful_handling_details": "API silently accepts invalid values and passes them to backend, potentially causing undefined behavior or crashes in the search engine",
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling - invalid parameters passed through without validation"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (physical/behavioral violations confirm defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "This is a real bug - the REST v2 API accepts invalid search parameter values (ef=-1, ef=0, nprobe=0) without any validation. These parameters have well-defined physical meanings in vector search algorithms: ef (HNSW exploration factor) should be >= 1, and nprobe (IVF partitions to probe) should be >= 1. Accepting negative or zero values is physically meaningless and could cause undefined behavior in the search backend. The source code (utils.go:generateSearchParams) clearly shows these parameters are passed through without any range validation. While there's no explicit contract constraint, the physical semantics of these parameters make this a Type1_IllegalSuccess - the API should reject invalid values but currently accepts them. Matches known REST v2 validation gap patterns in the corpus."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED"
+}

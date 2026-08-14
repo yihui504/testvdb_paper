@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49843",
+      "endpoint": "collections+alter",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with properties={'collection.ttl.seconds': -100}",
+          "observed": "HTTP 200 success (CREATE accepts -100)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_49843\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["validateCollectionTTL function: 'collection TTL is out of range, expect [-1, 3155760000]'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["collectionTTL", "ttlSeconds", "collection.ttl.seconds"],
+          "files_examined": ["internal/proxy/task.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/proxy/task.go line 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n    for _, pair := range props {\n        if pair.Key == common.CollectionTTLConfigKey {\n            val, err := strconv.Atoi(pair.Value)\n            if err != nil {\n                return true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n            }\n            if val < -1 || val > common.MaxTTLSeconds {\n                return true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n            }\n            return true, nil\n        }\n    }\n    return false, nil\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 2019-2024\nif _, ok := httpReq.Params[\"ttlSeconds\"]; ok {\n    req.Properties = append(req.Properties, &commonpb.KeyValuePair{\n        Key:   common.CollectionTTLConfigKey,\n        Value: fmt.Sprintf(\"%v\", httpReq.Params[\"ttlSeconds\"]),\n    })\n}\n\nBUG: REST v2 CREATE handler looks for 'ttlSeconds' in httpReq.Params, but actual REST v2 API sends 'collection.ttl.seconds' in properties field. This mismatch causes CREATE to bypass TTL validation.",
+          "call_chain_traced": "REST v2 CREATE → handler_v2.go looks for Params['ttlSeconds'] → NOT FOUND (actual key is properties['collection.ttl.seconds']) → TTL property NOT added to request → validateCollectionTTL returns (false, nil) → NO VALIDATION → CREATE succeeds with invalid TTL=-100",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_bypassed",
+          "note": "源码接地发现:REST v2 handler 只处理 httpReq.Params['ttlSeconds'],但实际请求用 properties['collection.ttl.seconds']。CREATE 时 TTL 属性未传入验证函数,导致接受非法值 -100。ALTER 时正确传入,所以拒绝 -100。这是 REST v2 处理不一致的真正缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 ALTER 正确拒绝 TTL=-100",
+          "observed": "ALTER 返回 code 1100: 'collection TTL is out of range, expect [-1, 3155760000], got -100'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "配置差异", "API版本差异"],
+          "surviving": "rest_v2_handler_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中 developer_cognition 中的 blindspot_indicators: REST v2 API 处理问题,properties 字段未正确映射到验证逻辑"
+      },
+      "root_cause_if_confirmed": "rest_v2_properties_mapping_bug",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现成功:REST v2 CREATE 接受 TTL=-100 返回 HTTP 200,但 ALTER 正确拒绝同一值。源码接地发现:handler_v2.go 只处理 httpReq.Params['ttlSeconds'],但实际 REST v2 请求用 properties['collection.ttl.seconds'],导致 CREATE 完全绕过 TTL 验证。三视角聚合:契约视角(validateCollectionTTL 明确要求 [-1, 3155760000]) + 物理视角(-100 超出范围) + 行为视角(CREATE/ALTER 不一致)→ 最终判 CONFIRMED。这是 REST v2 属性映射缺失导致的验证绕过真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"rest_v2_properties_mapping_bug": 1}
+  }
+}

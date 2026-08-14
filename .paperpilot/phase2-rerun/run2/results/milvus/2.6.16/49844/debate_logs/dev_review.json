@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49844",
+      "endpoint": "entities+query",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter=null vs without filter field",
+          "observed": "Both requests return identical results (HTTP 200, same data). filter=null behaves same as omitting filter field entirely.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49844\", \"filter\": null, \"outputFields\": [\"id\"]}' vs curl -X POST http://localhost:19530/v2/vectordb/entities/query -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49844\", \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect claim assumes filter=null should behave differently from omitting filter, but this is not documented as a violation"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API endpoint: entities+query - filter parameter is optional; when omitted or null, default behavior is to return all entities (no filtering)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["filter.*null", "query.*filter", "optional.*filter"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/proxy/search_util.go"],
+          "source_excerpt": "Query handler treats missing/null filter as 'no filter' by design. This is standard API pattern - optional parameters don't require explicit null handling.",
+          "call_chain_traced": "Query handler → filter parsing → null/missing treated as empty filter → returns all results (by design)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: filter=null或missing时,handler按设计返回所有结果,这是预期行为,不是bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that null filter and missing filter are semantically equivalent (both mean 'apply no filter')",
+          "observed": "Behavior is consistent: both return all entities as expected for 'no filter' semantics"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues"],
+          "surviving": "mundane_api_semantics - null filter = no filter is standard API design pattern"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rejection_patterns",
+        "developer_quote": "expected_behavior",
+        "description": "Issue rejected as expected system behavior",
+        "note": "This matches rejection pattern RP-001: null filter behaving same as missing filter is expected behavior, not a defect."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract requirement that filter=null should behave differently from omitting filter",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violated",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_C=REFUTED → final=REFUTED (by-design)",
+        "final_verdict": "REFUTED"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Step 1 repro confirmed: filter=null behaves identically to omitting filter field. Step 2 assumption audit: Defect claim assumes null should be different, but no such requirement exists. Step 3.5 source grounding: Handler treats null/missing as 'no filter' by design. Step 4 falsification: Behavior is semantically correct (null=no filter). Step 5 mundane explanation: Standard API pattern. Step 6 three-perspective: Contract REFUTED (no violation), behavioral REFUTED (by-design). This is a FALSE POSITIVE - filter=null is expected behavior, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

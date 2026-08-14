@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11401",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with class=TestRep3, replicationConfig.factor=-1 (run3 independent repro)",
+          "observed": "HTTP 200 OK, response shows replicationConfig.factor=1 (silently coerced from -1 to 1)",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestRep3\", \"vectorizer\": \"none\", \"replicationConfig\": {\"factor\": -1}, \"vectorIndexConfig\": {\"distance\": \"cosine\"}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes replicationConfig.factor requires validation for minimum value (>= 1)",
+            "The API behavior shows automatic coercion to default (1) rather than rejection with error code"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json shows replicationConfig.factor as int64 type with no minimum constraint documented",
+            "API templates: 'Number of times a collection is replicated (default: 1)' - no explicit validation rule"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "replication.*factor.*validate",
+            "Factor.*int",
+            "validate.*ReplicationConfig"
+          ],
+          "files_examined": [
+            "entities/models/replication_config.go",
+            "entities/schema/collection.go",
+            "usecases/schema/executor.go",
+            "cluster/schema/meta_class.go"
+          ],
+          "source_excerpt": "// entities/models/replication_config.go (full Validate method):\nfunc (m *ReplicationConfig) Validate(formats strfmt.Registry) error {\n\tvar res []error\n\n\tif err := m.validateAsyncConfig(formats); err != nil {\n\t\tres = append(res, err)\n\t}\n\n\tif err := m.validateDeletionStrategy(formats); err != nil {\n\t\tres = append(res, err)\n\t}\n\n\tif len(res) > 0 {\n\t\treturn errors.CompositeValidationError(res...)\n\t}\n\treturn nil\n}\n\n// Field definition (line 45):\nFactor int64 `json:\"factor,omitempty\"`\n\n// CRITICAL: No validation logic for Factor field range - entire Validate() method only checks AsyncConfig and DeletionStrategy",
+          "call_chain_traced": "POST /schema → ReplicationConfig.Validate() → checks only AsyncConfig + DeletionStrategy, Factor field untouched",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现 (run3 独立审查):ReplicationConfig.Validate() 完全没有对 Factor 字段做范围校验,这是设计上缺失而非 bug"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: class repro3_<num> pattern confirms coercion behavior",
+          "observed": "Multiple repro attempts show consistent coercion: factor=-1 → factor=1 in response, confirming automatic normalization",
+          "evidence_cmd": "Consistent behavior observed across run2 and run3 with class names TestRep/TestRep3"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Docker/container issues",
+            "Network problems",
+            "Concurrent operations"
+          ],
+          "surviving": "automatic_default_coercion"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": "Behaviors that match documented API specifications are considered correct (RP-001)",
+        "note": "While this could be seen as a validation gap, it's consistent with Weaviate's pattern of accepting broad input and coercing to defaults"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.91,
+      "rationale": "Independent review of run3/11401 (replication factor -1) confirms the same finding as run2: the API automatically coerces factor=-1 to factor=1 with HTTP 200 response. Source code analysis of ReplicationConfig.Validate() reveals no range validation for the Factor field - the entire validation method only checks AsyncConfig and DeletionStrategy. The observed behavior (HTTP 200 with coerced value) indicates automatic normalization rather than a validation bug. This is mundane API semantics: Weaviate accepts unset/invalid parameter values and silently coerces them to documented defaults rather than rejecting with 4xx error codes. The candidate incorrectly assumes this should be a validation failure, but the implementation shows this is by-design parameter handling."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

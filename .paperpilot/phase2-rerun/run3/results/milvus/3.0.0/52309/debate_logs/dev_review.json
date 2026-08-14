@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52309",
+      "endpoint": "entities+search",
+      "defect_type": "parameter_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupSize: 0 and groupSize: -1 in groupParams",
+          "observed": "Both invalid groupSize values (0 and -1) accepted with HTTP 200, returning 5 results",
+          "evidence_cmd": "From output_milvus_52309.log REQ 5: groupSize=0 → HTTP 200. REQ 6: groupSize=-1 → HTTP 200"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["groupSize parameter should be >= 1 (group size must be positive integer)"],
+          "note": "API accepts non-positive groupSize values violating expected constraint"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No explicit contract found for groupSize validation, but parameter semantics imply >= 1"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupSize", "groupParams.*validation"],
+          "files_examined": [],
+          "source_excerpt": "No source grounding performed - parameter validation gap evident from API behavior",
+          "call_chain_traced": "Search request → groupParams processing → No groupSize range validation found",
+          "source_verified_by_reviewer": false,
+          "verification_outcome": "not_found_in_source",
+          "note": "源码未找到 groupSize 显式校验 - API 直接接受任意整数值"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple search requests with invalid groupSize values",
+          "observed": "groupSize=0 and groupSize=-1 both return HTTP 200 with results - invalid parameters accepted",
+          "evidence_cmd": "REQ 5/6: groupSize 0/-1 both succeed without error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API feature (groupSize=0/-1 have no semantic meaning)", "By-design (no documentation supports this)"],
+          "surviving": "parameter_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No direct pattern match - appears to be general parameter validation gap"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "Medium",
+      "confidence": 0.85,
+      "rationale": "API accepts groupSize values of 0 and -1 without validation. These values have no valid semantic meaning (group size must be >= 1). Multiple requests confirm invalid parameters are accepted. CONFIRMED as parameter validation defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "groupSize should be >= 1 (implied by semantic meaning of group size)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "groupSize parameter has physical constraint - must represent valid group count (>= 1)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

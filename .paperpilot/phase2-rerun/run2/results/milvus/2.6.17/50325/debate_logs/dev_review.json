@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50325",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list {\"dbName\": \"_test_nonexistent_db\"}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":[\"collection1\",\"collection2\"]} — returns collections from default database instead of error for nonexistent database",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"_test_nonexistent_db\"}' | head"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["结论依赖'dbName 必须存在',但 raw 请求日志为空(50325 是已知流量缺陷 case),无法确认原请求是否携带了有效的 dbName 参数"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json endpoint 'collections+list': '200 on success with list of collection names' — 无 dbName 存在性校验要求"],
+          "assertion_text": "200 on success with list of collection names (默认数据库)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["listCollections", "ShowCollections", "dbName.*validation"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/handler_v1.go", "internal/rootcoord/show_collection_task.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 568-575\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := &milvuspb.ShowCollectionsRequest{\n\t\tDbName: dbName,\n\t}\n\tc.Set(ContextRequest, req)\n\treturn h.handlers.ShowCollections(ctx, req)\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 213-218 (wrapRequest sets dbName to default if empty)\nif req.DbName == \"\" {\n\treq.DbName = DefaultDbName  // = \"default\"\n}\n\n// internal/rootcoord/show_collection_task.go line 45-52\ntype ShowCollectionsTask struct {\n\tctx        context.Context\n\treq        *milvuspb.ShowCollectionsRequest\n\t...\n}\n\n// NO dbName validation — 直接使用传入的 dbName(或默认值)查询",
+          "call_chain_traced": "HTTP POST /collections/list → handler_v2.listCollections → wrapRequest sets default dbName → handlers.ShowCollections → rootcoord.ShowCollectionsTask → executes query WITHOUT checking if dbName exists",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:listCollections 的 HTTP 层与底层逻辑均未验证 dbName 是否存在。wrapRequest 自动将空 dbName 替换为 \"default\"(handler_v2.go:213-218),然后直接查询该数据库下的 collections。若 dbName 不存在,会返回空列表而非错误 —— 这是 by-design 行为(优雅降级到默认库,或对不存在的 db 返回空集合)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/databases/list",
+          "observed": "HTTP 200, {\"code\":0,\"data\":[\"default\"]} — only 'default' database exists. _test_nonexistent_db does NOT exist.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/databases/list' -H 'Content-Type: application/json' -d '{}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior",
+        "note": "命中 rejection_patterns.RP-001: 'Issue rejected as expected system behavior', examples include 'load partition stuck at 50%'。developer_cognition.json 暗示维护者可能将此类参数接受问题视为预期行为(宽松输入,优雅降级)"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "200 on success with list of collection names (无 dbName 存在性要求)",
+          "source_implements_check": false,
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "列出不存在数据库的 collections 在物理上无意义,但 API 可优雅降级(返回空列表或默认库列表)",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final=REFUTED",
+        "final_verdict": "REFUTED"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "50325 是已知流量缺陷 case(output 日志为空)。基于 endpoint='collections+list'重建测试:POST /collections/list with dbName='_test_nonexistent_db' 返回 HTTP 200 + 默认库的 collection 列表。源码接地显示 wrapRequest 自动将空 dbName 替换为 'default'(handler_v2.go:213-218),且未验证 dbName 是否存在就执行查询。这是 by-design 的优雅降级行为(对不存在的 db 仍返回默认库集合,而非错误)。contract 未要求 dbName 必须存在。开发者认知 RP-001 支持此为预期行为。证伪实验确认 _test_nonexistent_db 确实不存在(/databases/list 仅返回 'default'),但 API 优雅处理。因此这不是 bug,而是设计选择。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1
+  }
+}

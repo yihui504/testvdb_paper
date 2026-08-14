@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50354",
+      "endpoint": "users+create",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/users/create with passwords of varying lengths",
+          "observed": "password='12345' (5 chars): REJECTED with '5 out of range 6 <= value <= 72'. password='123456' (6 chars): ACCEPTED. password='abcdefgh' (8 chars): ACCEPTED. Actual validation range is 6-72, not 8-64 as documented.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/users/create' -H 'Content-Type: application/json' -d '{\"userName\": \"testuser_verify\", \"password\": \"12345\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Password length validation exists",
+            "Implementation uses different range than documented",
+            "Error message reveals actual validation range"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "constraint_id": "milvus_range_users_create_001",
+          "contract_assertion": "8 <= len(password) <= 64",
+          "actual_implementation": "6 <= len(password) <= 72",
+          "api_observed_value": "Password with 6 chars ACCEPTED, password with 5 chars REJECTED",
+          "contract_violated": true,
+          "violation_type": "documentation_mismatch"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": [
+            "MinPasswordLength",
+            "MaxPasswordLength",
+            "ValidatePassword"
+          ],
+          "files_examined": [
+            "pkg/util/paramtable/component_param.go",
+            "internal/proxy/util.go"
+          ],
+          "source_excerpt": "// pkg/util/paramtable/component_param.go lines 2089-2118\np.MinPasswordLength = ParamItem{\n    Key:          \"proxy.minPasswordLength\",\n    DefaultValue: \"6\",  // ACTUAL MIN: 6, DOC SAYS 8\n    Version:      \"2.0.0\",\n    PanicIfEmpty: true,\n}\np.MinPasswordLength.Init(base.mgr)\n\np.MaxPasswordLength = ParamItem{\n    Key:          \"proxy.maxPasswordLength\",\n    DefaultValue: \"72\", // ACTUAL MAX: 72, DOC SAYS 64\n    Version:      \"2.0.0\",\n    Formatter: func(v string) string {\n        n := getAsInt(v)\n        if n <= 0 || n > 72 {\n            return \"72\"\n        }\n        return v\n    },\n    PanicIfEmpty: true,\n}\n\n// internal/proxy/util.go lines 1306-1313\nfunc ValidatePassword(password string) error {\n    if len(password) < Params.ProxyCfg.MinPasswordLength.GetAsInt() || len(password) > Params.ProxyCfg.MaxPasswordLength.GetAsInt() {\n        return merr.WrapErrParameterInvalidRange(Params.ProxyCfg.MinPasswordLength.GetAsInt(),\n            Params.ProxyCfg.MaxPasswordLength.GetAsInt(),\n            len(password), \"invalid password length\")\n    }\n    return nil\n}",
+          "call_chain_traced": "users+create → ValidatePassword() → MinPasswordLength.GetAsInt()=6 AND MaxPasswordLength.GetAsInt()=72 → validates 6-72 range",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "documentation_mismatch_confirmed",
+          "note": "Source code clearly shows implementation uses MinPasswordLength=6 and MaxPasswordLength=72, but structured_contract.json documents '8 <= len(password) <= 64'. This is a documentation defect, not an implementation bug. The validation works correctly per the implemented values."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify actual validation range with boundary tests",
+          "observed": "6-char password accepted, 5-char password rejected, 8-char password accepted. Error message explicitly states '6 <= value <= 72'. Implementation matches source code constants, contradicts contract documentation.",
+          "verdict": "DOC_MISMATCH_CONFIRMED"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment_issue",
+            "concurrency_race",
+            "cached_stale_data",
+            "implementation_bug"
+          ],
+          "surviving": "documentation_incorrect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This is a documentation accuracy issue, not a behavioral bug. The implementation is correct, but the contract documentation is outdated. Developer cognition doesn't indicate this is a deliberate difference."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "8 <= len(password) <= 64 (constraint_id: milvus_range_users_create_001)",
+          "assertion_text_quoted": "8 <= len(password) <= 64",
+          "api_observed_value": "password='123456' (6 chars) ACCEPTED - violates contract min",
+          "actual_implementation": "6 <= len(password) <= 72",
+          "contract_outdated": true,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract documentation is incorrect. Implementation uses 6-72 range."
+        },
+        "physical": {
+          "objective_constraint": "Password must have minimum length for security",
+          "api_enforces_minimum": true,
+          "actual_min": 6,
+          "documented_min": 8,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "clear_error_message": true,
+          "verdict_C": "CONFIRMED",
+          "note": "API properly validates and provides clear error message showing actual range (6-72). Implementation is correct, only documentation is wrong."
+        },
+        "aggregation_applied": "Documentation mismatch confirmed across all perspectives → CONFIRMED (as doc_mismatch, not param_validation bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "documentation_incorrect",
+      "defect_type_correction": "doc_mismatch",
+      "severity_after_review": "Medium",
+      "confidence": 0.98,
+      "rationale": "CONFIRMED - Documentation Mismatch. Contract documents '8 <= len(password) <= 64' but implementation uses '6 <= len(password) <= 72'. Source code verification: (1) component_param.go:2091 MinPasswordLength default='6', (2) component_param.go:2107 MaxPasswordLength default='72', (3) util.go:1307 ValidatePassword() enforces 6-72 range. Live testing confirms: 6-char password ACCEPTED (violates contract min=8), 5-char password REJECTED (matches actual min=6). Error message explicitly states '6 <= value <= 72'. This is a documentation defect - the contract needs updating to reflect actual implementation. The validation works correctly; only the documentation is wrong."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "documentation_incorrect": 1
+    }
+  }
+}

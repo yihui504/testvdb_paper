@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9039",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9039/points with vector dimension mismatch (size 3 into size 4 collection) - first without wait=true, then with wait=true",
+          "observed": "Without wait=true: HTTP 200 with {\"result\":{\"operation_id\":1,\"status\":\"acknowledged\"}}. After waiting 2 seconds, points_count remains 0 (point silently failed). With wait=true: HTTP 400 with 'Wrong input: Vector dimension error: expected dim: 4, got 3'. The API returns success for an operation that will fail during async processing.",
+          "evidence_cmd": "curl -s -X PUT http://localhost:6333/collections/repro_9039/points -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}' && sleep 2 && curl -s -X GET http://localhost:6333/collections/repro_9039 && curl -s -X PUT 'http://localhost:6333/collections/repro_9039/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 2, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "When wait=false (default), API returns HTTP 200 for async operations even if they will fail",
+            "Vector dimension validation happens during async processing, not before returning HTTP 200",
+            "Client cannot detect the failure without polling or using wait=true"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json: collections+{collection_name}+points endpoint includes 'wait' parameter (boolean, optional) with description 'Await for operation result'",
+            "lib/collection/src/collection/clean.rs lines 50-52: 'If wait is false, the function will return immediately after creating a new task with the Acknowledged status. If wait is true this function will await at most timeout for the task to finish.'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["WrongVectorDimension", "check_vector_dimension", "wait.*upsert", "async.*operation"],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/collection/src/collection/clean.rs"
+          ],
+          "source_excerpt": "File: lib/segment/src/common/mod.rs, Lines 192-202\n\nlet dim = vector_config.size;\nif vector.len() != dim {\n    return Err(OperationError::WrongVectorDimension {\n        expected_dim: dim,\n        received_dim: vector.len(),\n    });\n}\n\nFile: lib/segment/src/common/operation_error.rs, Lines 22-26\n\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\nFile: lib/collection/src/operations/types.rs, Lines 1107-1109\n\nOperationError::WrongVectorDimension { .. } => Self::BadInput {\n    description: err.to_string(),\n},\n\nFile: lib/collection/src/collection/clean.rs, Lines 50-52\n\n/// If `wait` is `false`, the function will return immediately after creating a new task with\n/// the `Acknowledged` status. If `wait` is `true` this function will await at most `timeout`\n/// for the task to finish.",
+          "call_chain_traced": "Vector dimension validation occurs in lib/segment/src/common/mod.rs::check_vector_dimension() → returns WrongVectorDimension error → converted to BadInput in lib/collection/src/operations/types.rs → BUT this validation happens during async processing AFTER HTTP 200 is returned when wait=false. The async task silently fails without propagating error back to client unless wait=true.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_deferred_to_async",
+          "note": "源码接地发现:向量维度校验在 lib/segment/src/common/mod.rs::check_vector_dimension() 实现,返回 WrongVectorDimension error。但此校验发生在异步处理过程中,而非 HTTP 请求处理前。当 wait=false 时,API 在校验前就返回 HTTP 200 + acknowledged 状态。异步任务失败后不会自动通知客户端,导致操作静默失败。这是 Type1_IllegalSuccess - API 返回成功但操作实际失败。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that point was not actually stored: GET /collections/repro_9039 shows points_count=0 after async processing. Confirmed that wait=true returns HTTP 400 with proper error message. The dimension validation is correct but timing is wrong - happens too late for wait=false case.",
+          "observed": "The defect is NOT about incorrect validation logic. The validation itself is correct and works when wait=true. The defect is about WHEN the validation happens - in async processing vs. before returning HTTP 200. This creates a success response for a failing operation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on clean container",
+            "Request parameter typo - used exact dimension mismatch",
+            "Async design - valid async pattern but requires error propagation on failure"
+          ],
+          "surviving": "missing_synchronous_validation_for_async_operations"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-type-coercion-type-confusion",
+        "developer_quote": "Type Coercion issues where Type Confusion validation is missing",
+        "note": "Case matches bug shape 'qdrant-type-coercion-type-confusion' from bug_shapes.json. Known instances include issue #9039. While categorized as type_coercion, the actual issue is validation timing rather than type confusion per se - the vector type/dimension validation exists but runs too late to prevent false success response."
+      },
+      "root_cause_if_confirmed": "deferred_validation_in_async_path",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API returns HTTP 200 with 'acknowledged' status for vector dimension mismatches when wait=false, but the operation fails silently during async processing. The dimension validation exists and works correctly when wait=true (returns HTTP 400). The defect is the timing: validation happens during async processing after HTTP 200 is returned, not before. This is Type1_IllegalSuccess - the API incorrectly signals success for an operation that will fail. Verified via live container showing HTTP 200 + points_count=0, and source code tracing showing validation occurs in async worker path. This matches bug shape 'qdrant-type-coercion-type-confusion' with known instance #9039."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "deferred_validation_in_async_path": 1
+    }
+  },
+  "self_check": "PASSED"
+}

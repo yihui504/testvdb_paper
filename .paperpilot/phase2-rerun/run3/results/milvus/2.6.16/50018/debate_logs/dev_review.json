@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50018",
+      "endpoint": "aliases+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/aliases/list with empty collectionName",
+          "observed": "Returns HTTP 200 with empty data array (code:0, data:[])",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/aliases/list' -H 'Content-Type: application/json' -d '{\"collectionName\": \"\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Empty collectionName is a valid input for listing aliases - it means 'list all aliases in the database' when not filtered by collection",
+            "The behavior is consistent with other list endpoints - empty filter returns all results",
+            "This is expected API design, not a bug"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API documentation: collectionName is optional parameter for aliases+list",
+            "When collectionName is empty/not provided, lists all aliases in the database"
+          ],
+          "note": "Contract shows collectionName is optional filter parameter"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["aliases.*list", "collectionName.*empty"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "Source code treats empty collectionName as 'list all' filter - this is intentional design pattern",
+          "call_chain_traced": "ListAliases -> empty collectionName -> returns all aliases in database",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Empty collectionName is intentional - it means 'no filter, return all aliases'"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare with other list endpoints (collections+list, databases+list)",
+          "observed": "Empty filter parameters are standard API pattern for 'list all' operations",
+          "falsification_result": "Consistent with other list endpoints"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Standard API design pattern"],
+          "surviving": "mundane_api_semantics",
+          "note": "Empty collectionName as 'list all' filter is standard REST API pattern"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "note": "Standard API behavior, not matching any known rejection patterns"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collectionName is optional filter parameter for aliases+list",
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_C=REFUTED → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "This is expected API behavior - empty collectionName means 'list all aliases in database', which is the standard design pattern for list endpoints. The API correctly returns empty array when there are no aliases. This is not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1
+  },
+  "self_check": "PASSED"
+}

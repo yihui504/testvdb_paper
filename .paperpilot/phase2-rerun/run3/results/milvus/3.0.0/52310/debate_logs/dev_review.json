@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52310",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with multiple wrong-type field values: int64_f='123', varchar_f=123, bool_f='true'",
+          "observed": "All three wrong-type values accepted with HTTP 200 - type coercion occurs for multiple field types",
+          "evidence_cmd": "From output_milvus_52310.log REQ 1: int64_f='123' → HTTP 200. REQ 3: varchar_f=123 → HTTP 200. REQ 5: bool_f='true' → HTTP 200"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Clear type violations - Int64 field should reject strings, VarChar should reject integers, Bool should reject string literals"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_type_int64_001: Int64 scalar data type",
+            "milvus_type_varchar_001: VARCHAR scalar data type",
+            "milvus_type_bool_001: BOOL scalar data type"
+          ],
+          "note": "Contract defines strict types for all three fields - no automatic coercion specified"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["json.Unmarshal.*Int64|VarChar|Bool", "DataType_Int64|VarChar|Bool"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// Same root cause as milvus_52308 - json.Unmarshal auto-conversion\n// wrap_request.go lines 169-183 (Int64), 139-154 (VarChar), 125-130 (Bool)\n// All use json.Unmarshal(raw, &targetType) which performs implicit type coercion",
+          "call_chain_traced": "REST JSON → json.Unmarshal → Auto-converts strings to target types → No type validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: wrap_request.go 所有标量类型都用 json.Unmarshal 自动转换，无显式类型校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert requests with three different type mismatches across scalar field types",
+          "observed": "All three type mismatches (Int64←string, VarChar←int, Bool←string) accepted with HTTP 200",
+          "evidence_cmd": "REQ 1/7: int64_f='123' succeeds. REQ 3/9: varchar_f=123 succeeds. REQ 5/11: bool_f='true' succeeds"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Feature (no documentation supports auto-conversion)", "By-design (violates type safety principles)"],
+          "surviving": "implicit_type_coercion"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Matches bug_shape rest-v2-data-type-handling - same root cause as 52308 but for non-PK scalar fields"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Multiple scalar field types (Int64, VarChar, Bool) accept wrong-type values via JSON unmarshal auto-conversion.源码接地发现与 52308 相同根因。REQ 1/3/5 证明三种类型转换均成功。This is a genuine Type1_IllegalSuccess - implicit type coercion violates strict typing for scalar fields.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Scalar field types (Int64, VarChar, Bool) should accept only matching value types per contract definitions",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Scalar fields have physical type constraints - storage format fixed per schema",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9416",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9416 with vectors={}, then PUT /collections/repro_9416/points with point containing vector data",
+          "observed": "HTTP 400 with error 'Wrong input: Not existing vector name error: '. Collection created with vectors={} (empty config) correctly rejects points with vector data.",
+          "evidence_cmd": "curl -s -X PUT http://localhost:6333/collections/repro_9416 -d '{\"vectors\": {}}' && curl -s -X PUT http://localhost:6333/collections/repro_9416/points?wait=true -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: collections+{collection_name} (PUT method)", "parameter: vectors (object) - Vector params config (single or multi-vector mode)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["Not existing vector name", "VectorNameNotExists", "vector.*config"],
+          "files_examined": ["lib/segment/src/common/operation_error.rs", "lib/segment/src/common/mod.rs"],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 27-28\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\n// lib/segment/src/common/mod.rs line 159\n/// Get the vector config for the given name, or return a name error.\n/// This is used when inserting points with vectors to ensure the vector name exists.",
+          "call_chain_traced": "Point insert with vector -> validate vector name against collection config -> vectors={} means no vector config -> VectorNameNotExists error -> HTTP 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: VectorNameNotExists 错误是预期的参数校验逻辑，当 collection 的 vectors 配置为空对象 {} 时，拒绝接受任何 vector 数据是正确的行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify the error is consistent with collection config - GET collection shows vectors={}",
+          "observed": "GET /collections/repro_9416 returns config with vectors: {}, confirming empty vector config. The 400 error correctly rejects invalid input."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns。但 API 正确拒绝无效输入：empty vectors config + point with vector data = HTTP 400。这是参数校验的正确行为。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "LIVE 容器实测证实：创建 collection 时 vectors={}（空配置）后，尝试插入带 vector 数据的点会收到 HTTP 400 错误 'Not existing vector name error'。这是正确的参数校验行为 - 空向量配置意味着该 collection 不支持向量，因此拒绝向量数据是预期行为。原始日志 (raw_qdrant_9416.log) 显示相同的 400 响应。源码显示 VectorNameNotExists 是明确的错误类型，用于参数校验。未发现 contract 违规或物理约束违反。API 优雅地拒绝了无效输入。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

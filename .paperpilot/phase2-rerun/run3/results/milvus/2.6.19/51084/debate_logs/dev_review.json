@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_51084",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"repro3_51084\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}",
+          "observed": "API returns HTTP 200 with body {\"code\":0,\"data\":{}} - silently accepts invalid 'consistencyLevel' parameter value instead of rejecting with error",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro3_51084\", \"consistencyLevel\": \"Invalid\", ...}' returns HTTP 200 (should return error per contract)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_collections_create_001 - consistencyLevel must be one of [Strong, Session, Bounded, Eventually]"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": ["consistencyLevel", "Invalid", "ConsistencyLevel_value"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2042-2057\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CreateCollection request → httpReq.Params[\"consistencyLevel\"] → commonpb.ConsistencyLevel_value enum lookup → should reject invalid values",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_bypassed",
+          "note": "Source code shows validation logic EXISTS (lines 2044-2054) that SHOULD reject invalid consistencyLevel values by checking commonpb.ConsistencyLevel_value enum. However, the validation only triggers if 'consistencyLevel' is present in httpReq.Params. The parameter 'consistencyLevel' may be processed elsewhere or the enum check may have a loophole allowing 'Invalid' to pass through."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe {\"collectionName\": \"repro3_51084\", \"dbName\": \"default\"}",
+          "observed": "Response shows \"consistencyLevel\": \"Bounded\" (the default value), not \"Invalid\". The API silently discarded the invalid value and applied default instead of rejecting the request with error - confirming the Type1_IllegalSuccess defect pattern."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment_issue", "concurrency_race", "request_param_typo"],
+          "surviving": "contract_violation_confirmed"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Defect hits developer blindspot indicator: 'REST v2 API data type serialization - 8 issues in corpus'. Invalid consistencyLevel should be rejected but is silently defaulted."
+      },
+      "root_cause_if_confirmed": "rest_v2_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "CONFIRMED: REST v2 collections+create endpoint accepts invalid 'consistencyLevel': 'Invalid' value with HTTP 200 success, violating contract requirement that consistencyLevel must be one of [Strong, Session, Bounded, Eventually, Customized]. Source code shows validation logic exists but the invalid value bypasses rejection and triggers silent fallback to default ('Bounded'). This is a Type1_IllegalSuccess defect - API reports success for an operation that should have been rejected due to invalid input parameter. Developer cognition indicates REST v2 validation is a known blindspot area with 8 related issues in corpus."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"rest_v2_validation_bypass": 1}
+  }
+}

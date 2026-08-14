@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49890",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with dimension=32768 (accepted) vs dimension=32769 (rejected)",
+          "observed": "dimension=32768 succeeds (HTTP 200), dimension=32769 fails with error 'invalid dimension: 32769 of field vector. float vector dimension should be in range 2 ~ 32768'. Boundary validation working correctly.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49890\", \"schema\": {\"autoID\": false, \"enableDynamicField\": true, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 32768}}]}}' vs same with dim=32769"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect claim assumes 32768 should also be rejected or 32769 should be accepted, but [2, 32768] inclusive range is explicitly documented"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API endpoint: collections+create - dimension parameter for FloatVector should be in range [2, 32768]"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["dimension.*32768", "float.*vector.*dimension", "invalid dimension"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/proxy/"],
+          "source_excerpt": "CREATE handler validates dimension range [2, 32768] for FloatVector. Error message explicitly states 'float vector dimension should be in range 2 ~ 32768'.",
+          "call_chain_traced": "CREATE handler → dimension parsing → range check [2, 32768] → 32768 passes, 32769 fails with error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: dimension范围校验正确实现,[2, 32768]是有效范围,32768被接受,32769被拒绝,这是正确的边界检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that dimension boundary [2, 32768] is enforced correctly - 32768 (max valid) accepted, 32769 (invalid) rejected",
+          "observed": "Boundary validation working as designed"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues"],
+          "surviving": "mundane_api_semantics - inclusive upper boundary 32768 is correct, not a bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rejection_patterns",
+        "developer_quote": "expected_behavior",
+        "description": "Issue rejected as expected system behavior",
+        "note": "This matches rejection pattern RP-001: dimension boundary [2, 32768] with 32768 accepted and 32769 rejected is expected behavior."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "FloatVector dimension must be in range [2, 32768] inclusive",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violated",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_C=REFUTED → final=REFUTED (by-design)",
+        "final_verdict": "REFUTED"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Step 1 repro confirmed: dimension=32768 accepted, 32769 rejected with clear error message. Step 2 assumption audit: Range [2, 32768] is documented. Step 3.5 source grounding: Validation correctly implements inclusive upper boundary. Step 4 falsification: Boundary check working correctly. Step 5 mundane: Standard inclusive range behavior. Step 6 three-perspective: Contract REFUTED (no violation), behavioral REFUTED (by-design). This is a FALSE POSITIVE - dimension boundary validation is working correctly, accepting 32768 and rejecting 32769 as expected."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

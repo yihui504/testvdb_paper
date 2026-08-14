@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47752",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams.metricType='INVALID_METRIC' (bogus value)",
+          "observed": "HTTP 200 success with search results - API accepts invalid metricType without error",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/search', json={'collectionName': 'repro_47752', 'data': [[0.1, 0.2, 0.3, 0.4]], 'annsField': 'vector', 'limit': 10, 'searchParams': {'metricType': 'INVALID_METRIC', 'params': {'nprobe': 10}}})\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: entities+search requires valid metricType values (L2, IP, COSINE for float vectors)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["validateMetricType", "metricType", "searchParams", "metric type validation"],
+          "files_examined": ["internal/proxy/util.go", "internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/proxy/search_util.go"],
+          "source_excerpt": "// internal/proxy/util.go line 776-789\nfunc validateMetricType(dataType schemapb.DataType, metricTypeStrRaw string) error {\n\tmetricTypeStr := strings.ToUpper(metricTypeStrRaw)\n\tswitch metricTypeStr {\n\tcase metric.L2, metric.IP, metric.COSINE:\n\t\tif typeutil.IsFloatVectorType(dataType) {\n\t\t\treturn nil\n\t\t}\n\tcase metric.JACCARD, metric.HAMMING, metric.SUBSTRUCTURE, metric.SUPERSTRUCTURE, metric.MHJACCARD:\n\t\tif dataType == schemapb.DataType_BinaryVector {\n\t\t\treturn nil\n\t\t}\n\t}\n\treturn fmt.Errorf(\"data_type %s mismatch with metric_type %s\", dataType.String(), metricTypeStrRaw)\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\t// ... parameter processing without metricType validation ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "SearchReqV2 -> generateSearchParams -> NO metricType validation -> direct pass-through to gRPC. validateMetricType function exists but is NEVER called during search request processing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:validateMetricType函数存在于internal/proxy/util.go,但仅在index创建时调用,搜索路径完全不验证metricType合法性。generateSearchParams函数直接透传metricType到后端,允许任意字符串值通过,这是真正的参数校验缺失"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested invalid metricType values ('INVALID_METRIC', 'BOGUS', etc.) - all accepted without error",
+          "observed": "Bug confirmed - invalid metricType values are silently accepted and search executes successfully"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "请求参数错误", "API语义误解"],
+          "surviving": "metric_type_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - extends to parameter validation",
+        "note": "命中 bug_shapes 中的 REST_v2_data_type_handling 模式 - metricType校验缺失是这一类问题的已知盲点"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "searchParams.metricType must be valid (L2/IP/COSINE for float vectors, JACCARD/HAMMING for binary)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "metricType must be a valid supported metric (enum constraint)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (contract violation + enum constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 entities+search API accepts invalid metricType values without validation。源码接地发现 validateMetricType 函数存在但仅在索引创建时调用,搜索请求路径完全不校验 metricType 合法性。API 返回 HTTP 200 并正常执行搜索,表明参数校验缺失是真实漏洞。命中 developer_cognition 中 rest-v2-data-type-handling 盲点模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

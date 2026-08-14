@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47755",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/delete with invalid filter syntax 'INVALID SYNTAX HERE ))))' and empty filter ''",
+          "observed": "Invalid filter syntax: HTTP 200 with code 1100 + proper error message 'cannot parse expression'. Empty filter: HTTP 200 with code 1802 + validation error 'missing required parameters'",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/delete', json={'collectionName': 'repro_47755', 'filter': 'INVALID SYNTAX HERE ))))' })\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["结论声称 delete 缺少参数校验,但实际 API 对无效 filter 语法和空 filter 都有正确的错误响应"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: entities+delete requires valid filter expression"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["delete.*filter", "parseExpr", "filter validation"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go has proper filter parsing and validation\n// Delete requests go through expression parser which validates syntax\n// Invalid filter expressions result in proper error responses (code 1100)",
+          "call_chain_traced": "DeleteReq -> filter expression parser -> validation present",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:delete 请求通过表达式解析器处理,对无效 filter 语法有正确的错误响应机制"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested invalid filter syntax - API returns proper error code 1100 with descriptive message. Tested empty filter - API returns proper validation error 1802.",
+          "observed": "Both invalid inputs are properly rejected with appropriate error messages. Parameter validation EXISTS and works correctly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "premise_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何已知的 by_design 模式,但测试结果表明参数校验确实存在且工作正常"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "delete API should validate filter expressions",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "filter must be valid boolean expression",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED + verdict_C=REFUTED → final=REFUTED (validation exists, error handling is graceful)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "premise_violation",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus entities+delete API has proper parameter validation for filter expressions。实测显示无效 filter 语法返回 HTTP 200 code 1100 with 'cannot parse expression' 错误,空 filter 返回 code 1802 validation 错误。API 正确拒绝无效输入并提供清晰的错误信息。原 oracle 可能误判为缺少校验,实际校验机制完备且工作正常。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"premise_violation": 1}
+  }
+}

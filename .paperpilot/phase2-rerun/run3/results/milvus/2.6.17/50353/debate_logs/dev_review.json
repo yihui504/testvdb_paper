@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50353",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with limit=0 and dimension mismatch",
+          "observed": "limit=0 correctly rejected with error 'topk [0] is invalid, it should be in range [1, 16384], but got 0'. Dimension mismatch (64-dim vector to 4-dim collection) correctly rejected with error 'dimension: 4, but length of []float: 64'. Both validations working as expected.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_search_001",
+            "assertion: '1 <= topk <= 16384'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["topk.*16384", "invalid.*topk"],
+          "files_examined": ["internal/proxy/search.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "TopK validation properly implemented with clear error message",
+          "call_chain_traced": "Search handler → topk validation → error return",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified limit=0 and dimension mismatch both rejected with clear errors",
+          "observed": "API correctly rejects invalid parameters with proper error messages."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment", "Race"],
+          "surviving": "working_as_intended"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - parameter validation working correctly",
+        "note": "API correctly validates and rejects invalid search parameters. This is expected system behavior, not a bug."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Search API correctly rejects both limit=0 and dimension mismatch with clear error messages. Parameter validation is working as designed. Contract states topk range [1, 16384] and API enforces this. No bug found - working as intended."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

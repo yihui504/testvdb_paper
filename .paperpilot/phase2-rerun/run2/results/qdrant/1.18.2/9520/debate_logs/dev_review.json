@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9520",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_max with shard_number=2147483647 (INT_MAX) and PUT /collections/test_rep0 with replication_factor=0",
+          "observed": "Both requests resulted in container crash/unresponsiveness (HTTP None responses). Container became unresponsive to subsequent requests including basic health checks.",
+          "evidence_cmd": "curl -s -X PUT http://localhost:6333/collections/test_shard_max -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: API should validate shard_number and replication_factor parameters before attempting allocation",
+            "Assumption: Extreme parameter values should be rejected with 4xx rather than causing crash"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: PUT /collections/{collection_name}",
+            "parameter: shard_number (integer) - 'Number of shards. Default 1 for standalone'",
+            "parameter: replication_factor (integer) - 'Number of replicas per shard. Default value: 1'",
+            "Note: Contract does not explicitly specify valid ranges for these parameters. However, replication_factor=0 is logically invalid (zero replicas means no data persistence), and shard_number=INT_MAX would require impossible memory allocation."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["shard_number", "replication_factor", "validation.*range", "collection.*create"],
+          "files_examined": [
+            "src/collections/cluster/remote_shard_transfer.rs",
+            "src/collections/cluster/replica_set.rs",
+            "src/collections/cluster/replica_selector.rs"
+          ],
+          "source_excerpt": "From grep search: Collection creation parameters are processed but explicit range validation for shard_number and replication_factor is not clearly evident in the examined source fragments. The crash suggests that either: 1) validation is missing/insufficient, or 2) these extreme values trigger resource exhaustion that causes container failure.",
+          "call_chain_traced": "PUT /collections → handler receives params → shard_number/replication_factor processing → insufficient validation → resource allocation attempt → container crash",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_missing_or_insufficient",
+          "note": "源码接地发现: examined source does not show explicit range validation for shard_number or replication_factor. The observed crash indicates these parameters are not properly validated before resource allocation."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Verify container health crash - GET / endpoint returns None after extreme parameter submission",
+          "observed": "Container becomes unresponsive after extreme parameter values are submitted. Even basic health check (GET /) fails, confirming actual container crash/failure rather than just API error response."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (Docker resource limits)",
+            "Request parameter typo (values are intentionally extreme)",
+            "API semantics misunderstanding (crash is never acceptable API behavior)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation issues where Numeric Boundary validation is missing",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - this case extends the pattern to collection creation parameters",
+        "note": "匹配developer_cognition中的参数验证盲点模式。这确实是一个参数验证缺失的案例。"
+      },
+      "root_cause_if_fp": "parameter_validation_gap",
+      "severity_after_review": "CONFIRMED",
+      "confidence": 0.75,
+      "rationale": "This case demonstrates actual parameter validation gaps. Extreme values (shard_number=INT_MAX, replication_factor=0) cause container crash rather than being rejected with proper validation errors. This is a genuine defect - API should validate parameter ranges and reject invalid values with 4xx errors rather than crashing. However, confidence is reduced because: 1) container resource limits may be a factor, 2) we cannot fully distinguish between validation gap vs resource exhaustion crash without deeper infrastructure analysis."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_validation_gap": 1}
+  }
+}

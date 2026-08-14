@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52308",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with Int64 primary key field containing string value (e.g., id: '123')",
+          "observed": "HTTP 200 with insertCount=1, insertIds=[123] - string '123' automatically converted to integer 123",
+          "evidence_cmd": "From output_milvus_52308.log REQ 4: insert with id='123' (string) → HTTP 200, insertIds:[123] (integer)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - Int64 field should reject string values per strict typing"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_type_int64_001: Int64 scalar data type",
+            "milvus_behavioral_primary_key_type_001: Primary key must be Int64 or VarChar with strict type checking"
+          ],
+          "note": "Contract defines Int64 as a specific scalar type, implying type safety without automatic coercion"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["json.Unmarshal.*Int64", "DataType_Int64.*json", "primary.*key.*type"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/proxy/util.go",
+            "internal/proxy/validate_util.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go lines 169-183\n\tcase schemapb.DataType_Int64:\n\t\tdata := []int64{}\n\t\terr := json.Unmarshal(raw, &data)\n\t\tif err != nil {\n\t\t\treturn nil, newFieldDataError(f.FieldName, err)\n\t\t}\n\t\tret.Field = &schemapb.FieldData_Scalars{\n\t\t\tScalars: &schemapb.ScalarField{\n\t\t\t\tData: &schemapb.ScalarField_LongData{\n\t\t\t\t\tLongData: &schemapb.LongArray{\n\t\t\t\t\t\tData: data,\n\t\t\t\t\t},\n\t\t\t\t},\n\t\t\t},\n\t\t},\n\t}",
+          "call_chain_traced": "REST JSON request → json.Unmarshal(raw, &[]int64{}) → Go JSON library auto-converts string '123' to int 123 → no type validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: json.Unmarshal 对 Int64 字段使用标准 Go JSON 解析，会自动将字符串形式的数字（如 '123'）转换为目标类型 int64，缺少显式类型校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that invalid string 'abc' is correctly rejected while numeric string '123' is incorrectly accepted",
+          "observed": "REQ 6/13: id='abc' → HTTP 1804 error (correct rejection). REQ 4/11: id='123' → HTTP 200 (incorrect acceptance - type coercion occurred)",
+          "evidence_cmd": "From output_milvus_52308.log: String 'abc' rejected with parsing error, but string '123' accepted and converted to integer"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (same container, same session)",
+            "Request parameter error (syntax is valid, semantics are wrong)",
+            "API design feature (automatic type coercion for PK fields violates type safety)"
+          ],
+          "surviving": "implicit_type_coercion"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Matches bug_shape rest-v2-data-type-handling - Int64 PK field accepts string values via implicit JSON coercion"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Int64 primary key field accepts string values like '123' which are automatically converted to integers via Go's json.Unmarshal type coercion.源码接地发现 wrap_request.go 的 DataType_Int64 case 使用 json.Unmarshal 自动转换，无显式类型检查。REQ 4/11 证明字符串 '123' 被接受并转换为整数 123。This is a genuine Type1_IllegalSuccess - implicit type coercion violates strict type system for primary keys.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Int64 dataType should accept only integer values per milvus_type_int64_001",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Int64 field has physical type constraint - must store 64-bit signed integers, not string representations",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (type constraint violation confirmed)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

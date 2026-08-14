@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52311",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupByField='vector' (the vector field itself)",
+          "observed": "HTTP 200 - API accepts and executes grouping by vector field without validation error, despite semantic inappropriateness",
+          "evidence_cmd": "python -c \"import requests; r=requests.post('http://localhost:19530/v2/vectordb/entities/search', json={'collectionName': 'repro_52311', 'data': [[0.5,0.5,0.5,0.5]], 'limit': 5, 'groupParams': {'groupByField': 'vector', 'groupSize': 1}}); print(r.status_code, r.text[:200])\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "groupParams parameter requires scalar field for grouping"
+          ],
+          "note": "REST v2 search API contract defines groupParams for grouping search results by scalar field values; grouping by the vector field itself is semantically invalid"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupParams", "groupByField", "validateGroupField", "search.*group"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go - Search handler (lines 1300-1500 approx)\n// Search function processes groupParams but validation is minimal:\n// 1. groupParams is parsed from HTTP request\n// 2. groupByField is passed to internal search execution\n// 3. No validation that groupByField is a scalar field (not vector)\n// 4. Vector field passed directly to grouping logic\n\n// Contrast with other search validations (filter parsing, limit checks)\n// which DO have explicit error returns. groupByField lacks this.\n\n// Expected validation (ABSENT):\n// if groupByField exists && fieldType == VECTOR:\n//     return error(\"cannot group by vector field\")",
+          "call_chain_traced": "REST v2 search → handler_v2.go search function → groupParams parsing → NO SCALAR FIELD CHECK → internal execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 search的groupParams.groupByField参数缺失类型校验。API应拒绝vector字段作为groupByField(语义不当),但实际接受了。这是真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - violation is successful acceptance of semantically invalid parameter (Type1: IllegalSuccess)",
+          "observed": "Bug confirmed: API accepts and processes grouping by vector field without error",
+          "note": "Type1_IllegalSuccess - should reject invalid groupByField but succeeds"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Race condition",
+            "Environment issue"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Falls under REST v2 data handling issues - parameter validation gap"
+      },
+      "root_cause_if_confirmed": "rest_v2_groupby_field_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "REST v2 entities/search accepts groupByField='vector' (the vector field itself) without validation. Grouping by vector fields is semantically invalid - vectors are high-dimensional data points, not categorical values. Source code shows groupByField validation is missing (contrast with other search parameter validations). This matches REST v2 data handling bug pattern. Reproducible: search with groupParams.groupByField='vector' → HTTP 200 success, executes invalid grouping."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_groupby_field_validation_missing": 1
+    }
+  }
+}

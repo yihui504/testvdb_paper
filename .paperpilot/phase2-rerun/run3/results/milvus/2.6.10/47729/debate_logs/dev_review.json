@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47729",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams.params.nprobe=-1, ef=0 (both invalid)",
+          "observed": "HTTP 200 success with search results - API accepts invalid parameters without error",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/search', json={'collectionName': 'repro_47729', 'data': [[0.1, 0.2, 0.3, 0.4]], 'annsField': 'vector', 'limit': 10, 'searchParams': {'metricType': 'L2', 'params': {'nprobe': -1, 'ef': 0}}})\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: entities+search requires searchParams validation per contract"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["generateSearchParams", "nprobe", "searchParams", "param validation"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... deepEqual logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s, in search_param: %v, in search_param.params: %v\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// need to exposure ParamRoundDecimal in req?\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "SearchReqV2 -> generateSearchParams -> NO validation of nprobe/ef ranges -> direct pass-through to gRPC",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:generateSearchParams函数只做参数序列化,完全不做数值范围校验(nprobe应该>=1, ef应该>=1),直接透传给底层,这是真正的参数校验缺失漏洞"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested that invalid values (nprobe=-1, ef=0) are silently accepted and search executes successfully",
+          "observed": "Bug confirmed - no validation occurs, API returns HTTP 200 with valid search results despite invalid search parameters"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "请求参数错误", "API语义误解"],
+          "surviving": "param_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - extends to parameter validation",
+        "note": "命中 bug_shapes 中的 REST_v2_data_type_handling 模式 - 参数校验缺失是这一类问题的已知盲点"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "searchParams.params should contain valid search parameters (nprobe ≥ 1 for IVF, ef ≥ 1 for HNSW)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "nprobe ≥ 1 (cannot probe negative list partitions), ef ≥ 1 (cannot expand to 0 candidates)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (contract violation + physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 entities+search API accepts invalid search parameters (nprobe=-1, ef=0) without validation.源码接地发现 generateSearchParams 函数只做参数序列化和JSON编码,完全不做数值范围校验。API返回HTTP 200并正常执行搜索,表明参数校验缺失是真实漏洞,而非预期行为。命中developer_cognition中rest-v2-data-type-handling盲点模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

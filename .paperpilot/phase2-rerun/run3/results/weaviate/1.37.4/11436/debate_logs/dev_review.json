@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11436",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with class=TestEfneg3, vectorIndexConfig.ef=-1 (run3 independent repro)",
+          "observed": "HTTP 200 OK, response shows vectorIndexConfig.ef=-1 stored as-is (no coercion)",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestEfneg3\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate incorrectly assumes ef parameter should have a minimum value constraint (>= 0)",
+            "The candidate treats ef=-1 as an invalid error value, but this contradicts both API behavior and source code"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json documents vectorIndexConfig.ef as integer type with no minimum constraint",
+            "No validation rule in API specification that prohibits negative ef values"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "DefaultEF.*=",
+            "ef.*const",
+            "validate.*ef",
+            "UserConfig.*EF"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/schema/config/vector_index_config.go",
+            "usecases/schema/parser.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 28-32:\nconst (\n\tDefaultCleanupIntervalSeconds = 5 * 60\n\tDefaultMaxConnections         = 32\n\tDefaultEFConstruction         = 128\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\tDefaultDynamicEFMin           = 100\n\tDefaultDynamicEFMax           = 500\n\tDefaultDynamicEFFactor        = 8\n)\n\n// entities/vectorindex/hnsw/config.go lines 85-90 (SetDefaults method):\nfunc (u *UserConfig) SetDefaults() {\n\tu.MaxConnections = DefaultMaxConnections\n\tu.EFConstruction = DefaultEFConstruction\n\tu.CleanupIntervalSeconds = DefaultCleanupIntervalSeconds\n\tu.VectorCacheMaxObjects = vectorIndexCommon.DefaultVectorCacheMaxObjects\n\tu.EF = DefaultEF  // <-- Sets EF to -1 by default\n\n// entities/vectorindex/hnsw/config.go lines 171-175 (parsing ef from user input):\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"ef\", func(v int) {\n\tuc.EF = v  // Accepts any int value, including -1\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/hnsw/config.go lines 260-290 (validate method):\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// NOTE: EF field is completely absent from validation logic",
+          "call_chain_traced": "ef=-1 input → OptionalIntFromMap accepts → EF field → validate() skips EF entirely → stored as -1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现 (run3 独立审查):DefaultEF = -1 是显式声明的常量,注释明确说明 'indicates let Weaviate pick',validate() 方法完全没有对 EF 字段做任何校验"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: repro3_<num> class pattern confirms ef=-1 is valid",
+          "observed": "Both run2 and run3 show consistent behavior: POST with ef=-1 returns HTTP 200 and stores ef=-1, GET verification confirms -1 persists",
+          "evidence_cmd": "Cross-run consistency: TestEfneg/TestEfneg3/TestEfneg2 all show ef=-1 accepted and stored"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Platform-specific issues",
+            "Configuration errors",
+            "Test setup problems"
+          ],
+          "surviving": "documented_default_value"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Behaviors that match documented API specifications are considered correct - if behavior matches docs, it's not a bug",
+        "note": "ef=-1 is the documented default, not an error condition"
+      },
+      "root_cause_if_fp": "by_design_in_source",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.96,
+      "rationale": "Independent run3 review of weaviate_11436 (ef=-1) confirms the finding: ef=-1 is NOT an invalid error value but the explicitly documented default value in Weaviate's source code. Source code analysis reveals const DefaultEF = -1 with comment '// indicates \"let Weaviate pick\"' - this is intentional design for dynamic EF selection. The SetDefaults() method explicitly sets EF = DefaultEF (-1). The validate() method contains NO validation logic for the EF field whatsoever - it only validates MaxConnections, EFConstruction, and FilterStrategy. API response confirms this: POST with ef=-1 returns HTTP 200 and stores ef=-1 (not coerced), GET verification returns ef=-1 persistently. The candidate incorrectly assumes ef should have minimum >= 0, but both implementation and source code confirm -1 is the intended sentinel value for automatic EF tuning."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "by_design_in_source": 1
+    }
+  }
+}

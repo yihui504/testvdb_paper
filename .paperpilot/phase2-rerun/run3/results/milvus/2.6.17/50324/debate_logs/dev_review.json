@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50324",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/insert with 101 entities (id 0-100, dimension 4 vectors)",
+          "observed": "Insert succeeded with HTTP 200, insertCount=101, all IDs returned [0-100]. No parameter validation error occurred.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_limit\",\"data\":[{\"id\":0,\"vector\":[0.1,0.2,0.3,0.4]},...{\"id\":100,\"vector\":[0.1,0.2,0.3,0.4]}]}' # succeeds with insertCount=101"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Defect claim: param_validation error expected on insert operation",
+            "Actual: Insert request completed successfully with HTTP 200",
+            "No parameter validation failure observed - all 101 entities inserted"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 (data field types must match schema)",
+            "All inserted entities had valid Int64 IDs and Float64 vectors matching schema"
+          ],
+          "note": "Contract requires data types match schema. Inserted data (id: Int64, vector: 4-dim Float64) matches collection schema (dimension: 4). No contract violation found."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["insert.*validation", "InsertRequest", "data.*type.*check"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// Source code shows insert handler validates data types against schema. The test case data (id: Int64, vector: Float64[]) matches the collection schema (dimension: 4, metricType: COSINE). No validation error triggered. Insert of 101 entities succeeded as expected.",
+          "call_chain_traced": "HTTP POST /entities/insert → handler_v2.insert() → validates data types against collection schema → all entities valid → proxy.Insert() → returns insertCount=101",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "no_contract_violation_found",
+          "note": "No parameter validation error found. The insert operation behaved correctly."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification - check if any parameter should have been rejected",
+          "observed": "All parameters were valid: collectionName='test_limit', data array with 101 valid entities. No reason for validation failure. Insert succeeded legitimately."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "No parameter validation error occurred",
+            "Insert operation completed successfully",
+            "insertCount=101 confirms all entities were accepted"
+          ],
+          "surviving": "test_fails_to_trigger_claimed_defect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No by_design_pattern matched. The insert operation succeeded without any parameter validation error, suggesting the test case does not trigger the claimed defect."
+      },
+      "root_cause_if_fp": "test_fails_to_trigger_claimed_defect",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.75,
+      "rationale": "Stage2 aggregation claims endpoint='entities+insert' with defect_type='param_validation' and severity='High', but raw evidence shows insert operation succeeded with HTTP 200, insertCount=101. All 101 entities (id 0-100 with 4-dimension vectors) were successfully inserted. Contract constraints are satisfied (data types match schema). No parameter validation error observed. The test case appears to fail to trigger the claimed param_validation defect, or the defect claim is incorrect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "test_fails_to_trigger_claimed_defect": 1
+    }
+  }
+}

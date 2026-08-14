@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9149",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9149_test with shard_number=0 and shard_number=-1",
+          "observed": "shard_number=0 → 422 error ('must be 1 or larger'), shard_number=-1 → 400 error ('expected u32')",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/repro_9149_test' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant-param-shard_number-min-1 (implicit in API contract)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["shard_number", "range(min = 1)", "validate"],
+          "files_examined": ["lib/storage/src/content_manager/collection_meta_ops.rs", "lib/collection/src/config.rs", "lib/api/src/grpc/qdrant.rs"],
+          "source_excerpt": "// lib/storage/src/content_manager/collection_meta_ops.rs line 125-126\n#[serde(default)]\n#[validate(range(min = 1))]\npub shard_number: Option<u32>,\n\n// lib/collection/src/config.rs line 97\npub shard_number: NonZeroU32,\n\n// lib/api/src/grpc/qdrant.rs line 1187-1188\n#[validate(range(min = 1))]\npub shard_number: ::core::option::Option<u32>,",
+          "call_chain_traced": "CreateCollection request → collection_meta_ops.rs:CreateCollectionRequest.shard_number → validator::validate(range(min=1)) → validation error if < 1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:shard_number 参数在 API 层有显式 #[validate(range(min = 1))] 验证,NonZeroU32 类型保证非零。实际测试显示 shard_number=0 返回 422 错误,shard_number=-1 返回 400 错误(类型不匹配)。验证工作正常。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证无效值被拒绝",
+          "observed": "shard_number=0 被拒绝(422),shard_number=-1 被拒绝(400) - 无需证伪,验证逻辑工作正确"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["参数验证工作正常"],
+          "surviving": "test_artifact"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何 by_design 或盲点模式。这是一个测试工件 - 攻击脚本可能是在测试 Type1_IllegalSuccess 类型缺陷(参数验证缺失),但实际 API 正确执行了验证并拒绝了无效值。"
+      },
+      "root_cause_if_fp": "test_artifact",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码显示 shard_number 参数有显式 #[validate(range(min = 1))] 验证和 NonZeroU32 类型保证。实测显示 shard_number=0 返回 422 验证错误,shard_number=-1 返回 400 类型错误。API 正确拒绝无效值,无缺陷。这可能是攻击脚本在测试参数验证边界情况时的测试工件 - 脚本期望发现 Type1_IllegalSuccess(参数验证缺失),但实际 API 验证工作正常。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"test_artifact": 1}
+  }
+}

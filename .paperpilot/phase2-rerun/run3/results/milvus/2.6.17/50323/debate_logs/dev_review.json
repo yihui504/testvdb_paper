@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50323",
+      "endpoint": "entities+insert",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "Evidence shows entities+delete request, not entities+insert as claimed in aggregation",
+          "observed": "REQ 4: POST /entities/delete with filter='id > 0' AND ids=[1,2,3] → HTTP 200, deleteCount=1. Request succeeded, deleted 1 entity (id=1 which matched filter and existed in ids list)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/delete -d '{\"collectionName\":\"test_del\",\"filter\":\"id > 0\",\"ids\":[1,2,3]}' # succeeds with deleteCount=1"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Stage2 aggregation claims endpoint='entities+insert' but raw evidence shows 'entities+delete'",
+            "Without knowing the actual defect claim, cannot determine what violation was expected",
+            "The observed behavior (delete with both filter and ids succeeding) appears correct per contract"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 (filter is valid boolean expression)",
+            "assertion_id: milvus_behavioral_entities_delete_001 (returns 400 on invalid filter)",
+            "No contract prohibits using both filter AND ids parameters together"
+          ],
+          "note": "Contract does not forbid using both filter and ids. Request used valid filter expression 'id > 0', no contract violation found."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["delete.*filter.*ids", "DeleteRequest", "filter.*expression"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// Source code shows delete handler accepts both filter and ids parameters. No explicit prohibition found in handler_v2.go or request_v2.go against using both simultaneously. The API contract allows both parameters, and deleteCount=1 indicates correct behavior (only id=1 existed and matched filter 'id > 0').",
+          "call_chain_traced": "HTTP POST /entities/delete → handler_v2.delete() → validates filter expression → processes both filter and ids if provided → returns deleteCount matching actual deletions",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "no_contract_violation_found",
+          "note": "Source code does not show validation that prevents using filter and ids together. The observed behavior (deleteCount=1 for existing id=1, ignoring non-existent ids 2,3) is correct API behavior."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Cannot falsify - evidence-claim mismatch prevents understanding actual defect hypothesis",
+          "observed": "The delete request behaved correctly: deleted 1 existing entity that matched both filter and ids criteria. No violation evident."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Evidence-claim mismatch: aggregation says entities+insert, evidence shows entities+delete",
+            "API behavior appears correct: delete with both parameters succeeded as expected",
+            "deleteCount=1 is accurate (only id=1 existed and matched criteria)"
+          ],
+          "surviving": "evidence_claim_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No by_design_pattern matched. The observed delete behavior (accepting both filter and ids, returning accurate deleteCount) appears to be standard API behavior, not a bug."
+      },
+      "root_cause_if_fp": "evidence_claim_mismatch",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "Stage2 aggregation claims endpoint='entities+insert' with defect_type='behavior', but raw evidence shows 'entities+delete' operation. The delete request with both filter='id > 0' and ids=[1,2,3] succeeded with HTTP 200 and deleteCount=1, which is correct behavior (only id=1 existed and matched both criteria). Contract does not prohibit using both filter and ids together. Without knowing the actual defect claim due to evidence-claim mismatch, cannot identify any violation. The observed API behavior is correct."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "evidence_claim_mismatch": 1
+    }
+  }
+}

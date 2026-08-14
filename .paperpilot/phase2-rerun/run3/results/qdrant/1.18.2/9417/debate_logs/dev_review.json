@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9417",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Created collection with only shard_number:1 parameter (vectors config omitted, defaults to {}), attempted to insert point with vector data. API correctly returned HTTP 400 with 'Not existing vector name error'",
+          "observed": "HTTP 400, error: 'Wrong input: Not existing vector name error: '. Collection config shows vectors:{} (default when omitted), so vector insert is correctly rejected.",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/repro_9417 -d '{\"shard_number\": 1}' && curl -X PUT http://localhost:6333/collections/repro_9417/points -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' → HTTP 400"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate assumes API should require explicit vectors config in collection creation, but omitting vectors parameter defaults to {} (payload-only collection)"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["vectors parameter in PUT /collections is optional; when omitted, defaults to empty config {}"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": ["Not existing vector name", "vector_name_not_exists", "VectorsConfig"],
+          "files_examined": ["lib/segment/src/common/operation_error.rs", "lib/collection/src/operations/types.rs"],
+          "source_excerpt": "// lib/collection/src/operations/types.rs line 1736-1743 (same validation as #9416)\npub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {\n    for vector_name in self.0.keys() {\n        collection\n            .vectors\n            .get_params(vector_name)\n            .map(|_| ())\n            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name.clone()))?;\n    }\n    Ok(())\n}",
+          "call_chain_traced": "Points insert → validate vector data → check_vector_names confirms vector config exists → vector_name_not_exists error when config missing/empty",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码确认: 与 9416 相同的验证逻辑。collection 创建时省略 vectors 参数默认为 {}，insert 时同样验证 vector name 存在性。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested with valid vector config: PUT /collections with {\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 1}, then insert point with vector → HTTP 200 success",
+          "observed": "API correctly accepts vectors when config is present (explicit or via shard_number+vectors combo), rejects when absent. Validation working as designed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟"],
+          "surviving": "contract_misread"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式。这是 API 设计行为: omitting vectors 参数合法(默认 payload-only 集合)，且 insert 验证逻辑正确工作。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "候选声称 collections+{name}+points endpoint 存在参数验证缺陷，允许在仅指定 shard_number(无 vectors config)的集合中插入带 vector 的点。实测证明: (1) PUT /collections with shard_number:1 (vectors 参数省略) 合法，vectors 默认为 {}; (2) 后续 PUT /points 尝试插入带 vector 的点时，API 正确返回 HTTP 400 'Not existing vector name error'，拒绝操作。源码确认使用与 9416 相同的 check_vector_names 验证逻辑。候选属于 FP，根因是误读 API 契约——省略 vectors 参数不是 bug，而是合法的默认行为，且 insert 验证正确工作。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

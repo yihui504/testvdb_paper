@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52308",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with id as string '123' for Int64 field",
+          "observed": "API returned HTTP 200 with insertCount=1, auto-converted string '123' to integer 123",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -d '{\"collectionName\":\"repro_52308\",\"data\":[{\"id\":\"123\",\"vector\":[0.1,0.2,0.3,0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Assumption: API should reject string values for Int64 fields - Actual: API performs automatic type coercion"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_int64_001 (dataType == Int64)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strconv.ParseInt", "Int64.*parsing", "type.*conversion"],
+          "files_examined": ["internal/distributed/proxy/httpserver/wrap_request.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go line 154-164\ncase schemapb.DataType_Int8, schemapb.DataType_Int16, schemapb.DataType_Int32:\n\tdata := []int32{}\n\terr := json.Unmarshal(raw, &data)\n\tif err != nil {\n\t\treturn nil, newFieldDataError(f.FieldName, err)\n\t}\n\tret.Field = &schemapb.FieldData_Scalars{\n\t\tScalars: &schemapb.ScalarField{\n\t\t\tData: &schemapb.ScalarField_IntData{\n\t\t\t\tIntData: &schemapb.IntArray{\n\t\t\t\t\tData: data,\n\t\t\t\t},\n\t\t\t},\n\t\t},\n\t}",
+          "call_chain_traced": "InsertRequest → convertFieldDataArray → FieldData.AsSchemapb → JSON Unmarshal for Int32 (allows string-to-int coercion)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "graceful_coercion",
+          "note": "源码显示JSON Unmarshal会自动将数字字符串转换为对应整数类型,这是Go JSON库的标准行为"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with id as non-numeric string 'abc'",
+          "observed": "API correctly rejected with error code 1804: 'parsing \"abc\": invalid syntax'",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -d '{\"collectionName\":\"repro_52308\",\"data\":[{\"id\":\"abc\",\"vector\":[0.5,0.5,0.5,0.5]}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - JSON parsing automatically coerces numeric strings to numbers",
+        "note": "符合rejection_patterns RP-001: API预期行为,JSON标准库自动处理字符串到数字的转换"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dataType == Int64 (constraint_id: milvus_type_int64_001)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Int64 field must accept numeric values",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED → final=REFUTED",
+        "final_verdict": "REFUTED"
+      },
+      "rationale": "REST v2 API entities+insert端点接受字符串'123'作为Int64字段的值,这是JSON解析的标准行为,非缺陷。Go的json.Unmarshal会自动将可解析为整数的字符串转换为整数类型,这是预期的API语义。当字符串无法解析为整数时(如'abc'),API正确返回错误1804。此行为符合developer_cognition中RP-001模式(expected behavior),不是bug而是预期的类型转换机制。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

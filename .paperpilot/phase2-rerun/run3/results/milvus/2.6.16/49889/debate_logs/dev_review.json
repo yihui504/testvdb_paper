@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49889",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"repro_49889_dim1\", \"dimension\": 1}",
+          "observed": "HTTP 200 with {\"code\":65535,\"message\":\"invalid dimension: 1. should be in range 2 ~ 32768\"}",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49889_dim1\", \"dimension\": 1}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_001", "assertion: 1 <= dimension <= 32768"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["validateDimension", "dimension.*range", "invalid dimension", "MaxDimension"],
+          "files_examined": ["internal/proxy/util.go", "internal/proxy/util_test.go", "pkg/util/paramtable/component_param.go"],
+          "source_excerpt": "// internal/proxy/util.go lines 396-439\nfunc validateDimension(field *schemapb.FieldSchema) error {\n\texist := false\n\tvar dim int64\n\tfor _, param := range field.TypeParams {\n\t\tif param.Key == common.DimKey {\n\t\t\texist = true\n\t\t\ttmp, err := strconv.ParseInt(param.Value, 10, 64)\n\t\t\tif err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t\tdim = tmp\n\t\t\tbreak\n\t\t}\n\t}\n\t// for sparse vector field, dim should not be specified\n\tif typeutil.IsSparseFloatVectorType(field.DataType) {\n\t\tif exist {\n\t\t\treturn fmt.Errorf(\"dim should not be specified for sparse vector field %s(%d)\", field.GetName(), field.FieldID)\n\t\t}\n\t\treturn nil\n\t}\n\tif !exist {\n\t\treturn errors.Newf(\"dimension is not defined in field type params of field %s, check type param `dim` for vector field\", field.GetName())\n\t}\n\n\tif dim <= 1 {   // BUG: Contract says >= 1, code rejects <= 1 (i.e., must be >= 2)\n\t\treturn fmt.Errorf(\"invalid dimension: %d. should be in range 2 ~ %d\", dim, Params.ProxyCfg.MaxDimension.GetAsInt())\n\t}\n\n\t// for dense vector field, dim will be limited by max_dimension\n\tif typeutil.IsBinaryVectorType(field.DataType) {\n\t\tif dim%8 != 0 {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be multiple of 8. \", dim, field.GetName())\n\t\t}\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n\t\t}\n\t} else {\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n\t\t}\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "CreateCollectionRequest → validateDimension → line 421: if dim <= 1 (rejects dim=1)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "contract_source_mismatch"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested dimension=1 directly: API rejects with error message, confirming code behavior differs from contract",
+          "observed": "Source code enforces dim >= 2, contract allows dim >= 1 - mismatch confirmed"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "contract_source_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Not a by-design pattern - genuine contract-source mismatch"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "1 <= dimension <= 32768 (constraint_id: milvus_range_collections_create_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "dimension must be >= 2 for practical vector operations (geometric similarity requires at least 2D space)",
+          "api_accepts_violation": false,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (contract violation + physical constraint mismatch)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "TRUE BUG: Contract (milvus_range_collections_create_001) states dimension >= 1, but source code (internal/proxy/util.go line 421) enforces dim >= 2. Live testing confirms: dimension=1 rejected with error 'invalid dimension: 1. should be in range 2 ~ 32768'. This is a contract-source mismatch defect where the API accepts values per contract but rejects them per implementation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

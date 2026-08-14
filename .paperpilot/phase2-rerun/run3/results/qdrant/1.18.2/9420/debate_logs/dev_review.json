@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9420",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9420/points/query {\"query\": null, \"limit\": 5}",
+          "observed": "HTTP 200, returned 3 points [id=1,5,10] with score=1.0",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9420/points/query' -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["collections+{collection_name}+points+query: query parameter documented as Optional<QueryInterface>"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["QueryRequestInternal", "query.*Option", "missing.*prefetch"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "src/common/inference/query_requests_rest.rs", "lib/collection/src/operations/universal_query/collection_query.rs"],
+          "source_excerpt": "// lib/api/src/rest/schema.rs:566-575\n#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]\npub struct QueryRequestInternal {\n    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).\n    #[validate(nested)]\n    #[serde(default, with = \"MaybeOneOrMany\")]\n    #[schemars(with = \"MaybeOneOrMany<Prefetch>\")]\n    pub prefetch: Option<Vec<Prefetch>>,\n\n    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n    #[validate(nested)]\n    pub query: Option<QueryInterface>,\n\n    /// Define which vector name to use for querying. If missing, the default vector is used.\n    pub using: Option<VectorNameBuf>,",
+          "call_chain_traced": "QueryRequestInternal.query: Option<QueryInterface> → documented behavior: 'If missing without prefetches, returns points ordered by their IDs'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly documents query=null as valid behavior returning points ordered by IDs. No validation error intended."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - behavior is by-design",
+          "observed": "Response consistent with documented API contract"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "documented_api_behavior"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Not in developer cognition patterns. This is documented API behavior, not a bug."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "POST /points/query with query=null is documented by-design behavior. Source code at lib/api/src/rest/schema.rs:573 explicitly states: 'Query to perform. If missing without prefetches, returns points ordered by their IDs.' The API accepts null query and returns all points ordered by ID, which is the intended semantic. No validation error should occur."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

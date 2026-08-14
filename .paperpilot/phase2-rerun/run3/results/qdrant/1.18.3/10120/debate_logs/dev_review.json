@@ -1,0 +1,95 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "v1.18.3",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_10120",
+      "endpoint": "points+count",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_10120/points/count {\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}",
+          "observed": "exact:true returns 2, exact:false returns 1",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/repro_10120/points/count\" -H \"Content-Type: application/json\" -d '{\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: POST /collections/{collection_name}/points/count", "param: exact (boolean) - true=accurate scan count, false=approximate indexed cardinality estimate"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.3 @ v1.18.3",
+          "grep_queries": ["is_empty", "estimate_cardinality", "condition_cardinality", "FieldCondition", "MapIndexRead", "count.*exact"],
+          "files_examined": [
+            "lib/shard/src/count.rs",
+            "lib/segment/src/index/query_estimator.rs",
+            "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+            "lib/segment/src/index/struct_payload_index/read_view/payload_index_read.rs",
+            "lib/segment/src/index/field_index/map_index/read_ops.rs",
+            "lib/segment/src/index/field_index/field_index_base/field_index_read.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "src/actix/api/count_api.rs",
+            "src/common/query.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/index/struct_payload_index/read_view/filtering.rs line 104-109\n            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {\n                let available_points = self.available_point_count();\n                let condition = FieldCondition::new_is_empty(field.key.clone(), true);\n\n                self.estimate_field_condition(&condition, nested_path, hw_counter)?\n                    .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))\n            }\n\n// lib/segment/src/index/struct_payload_index/read_view/filtering.rs line 25-48\n    pub fn estimate_field_condition(\n        &self,\n        condition: &FieldCondition,\n        nested_path: Option<&JsonPath>,\n        hw_counter: &HardwareCounterCell,\n    ) -> OperationResult<Option<CardinalityEstimation>> {\n        let full_path = JsonPath::extend_or_new(nested_path, &condition.key);\n        let Some(indexes) = self.field_indexes.get(&full_path) else {\n            return Ok(None);\n        };\n        let full_path_condition = FieldCondition {\n            key: full_path,\n            ..condition.clone()\n        };\n        indexes\n            .iter()\n            .find_map(|index| {\n                index\n                    .estimate_cardinality(&full_path_condition, hw_counter)\n                    .transpose()\n            })\n            .transpose()\n    }\n\n// lib/segment/src/index/field_index/map_index/read_ops.rs line 101-103\n    fn values_is_empty(&self, idx: PointOffsetType) -> bool {\n        self.values_count(idx).unwrap_or(0) == 0\n    }\n\n// lib/shard/src/count.rs line 11-25\n#[derive(Clone, Debug, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]\n#[serde(rename_all = \"snake_case\")]\npub struct CountRequestInternal {\n    #[validate(nested)]\n    pub filter: Option<Filter>,\n    /// If true, count exact number of points. If false, count approximate number of points faster.\n    /// Approximate count might be unreliable during the indexing process. Default: true\n    #[serde(default = \"CountRequestInternal::default_exact\")]\n    pub exact: bool,\n}",
+          "call_chain_traced": "CountRequest.exact=false → condition_cardinality(IsEmpty) → estimate_field_condition → FieldIndexRead::estimate_cardinality → map_index (keyword index) missing is_empty cardinality method → falls back to unknown/incorrect estimation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source analysis reveals that IsEmpty conditions are converted to FieldCondition::new_is_empty and delegated to field indexes via estimate_field_condition. However, map_index (used for keyword indexes) only implements match_cardinality and except_cardinality methods (see read_ops.rs lines 105-150), but lacks a specific is_empty_cardinality implementation. The field_index_base trait requires estimate_cardinality to handle FieldCondition, but the concrete map_index implementation doesn't properly handle the IsEmpty case, causing incorrect approximate counts."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/repro_10120/points/scroll {\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"with_payload\": true}",
+          "observed": "Scroll ground truth returns 2 points (id=1, id=6) with empty kw field, confirming exact:true=2 is correct and exact:false=1 is wrong"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["concurrency_race", "env_noise", "request_param_typo", "eventual_consistency"],
+          "surviving": "indexed_path_estimation_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-cardinality-oracle-count-exact-false",
+        "developer_quote": "count API's approximate cardinality path (exact:false, uses index histograms / estimators) diverges from the exact path (exact:true, scan) and from scroll/search ground truth, for certain filter condition classes",
+        "note": "Matches bug_shapes.json pattern qdrant-cardinality-oracle-count-exact-false - estimator math imprecision for is_empty condition on indexed keyword field"
+      },
+      "root_cause_if_tp": "indexed_field_is_empty_cardinality_estimation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "POST /collections/{collection_name}/points/count with exact=false should return approximate count that is consistent with exact=true (within tolerated estimation error)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Cardinality estimation should be mathematically consistent - |count(exact:false) - count(exact:true)| should be within reasonable estimation bounds (typically <20% or not systematically one-directional)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Confirmed cardinality estimation bug in count API with exact=false for is_empty filter condition on indexed keyword field. Ground truth via scroll confirms exact:true=2 is correct, while exact:false=1 is a 50% undercount (exceeds typical estimation tolerance). Source analysis reveals map_index (keyword index) lacks proper is_empty cardinality implementation, causing the estimator to return incorrect values. This matches bug_shapes.json pattern qdrant-cardinality-oracle-count-exact-false for indexed field condition estimators."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "indexed_field_is_empty_cardinality_estimation_missing": 1
+    }
+  }
+}

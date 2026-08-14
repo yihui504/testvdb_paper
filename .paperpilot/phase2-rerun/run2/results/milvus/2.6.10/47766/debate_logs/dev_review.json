@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47766",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with enableDynamicField=true, insert entity1 with text_field='hello'(string), insert entity2 with text_field=12345(int), query both entities",
+          "observed": "Both inserts succeed (HTTP 200), query returns: [{\"id\":1,\"text_field\":\"hello\"},{\"id\":2,\"text_field\":12345}]. Field text_field contains mixed types: string and int.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -d '{\"collectionName\":\"test_47766_case\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"text_field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes type inconsistency is a bug, but dynamic fields are designed to accept arbitrary JSON values without schema enforcement",
+            "The candidate expects Milvus to enforce type consistency for dynamic fields, but dynamic fields are intentionally schema-flexible"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "enableDynamicField parameter in collections+create",
+            "DataType_JSON field type for dynamic $meta field"
+          ],
+          "note": "Contract defines enableDynamicField as a boolean flag to enable dynamic field support. When enabled, dynamic fields store arbitrary JSON without fixed schema constraints."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": [
+            "enableDynamicField",
+            "DataType_JSON",
+            "dynamic field",
+            "$meta"
+          ],
+          "files_examined": [
+            "client/column/json.go",
+            "client/column/dynamic.go",
+            "internal/parser/planparserv2/plan_parser_v2_test.go"
+          ],
+          "source_excerpt": "// internal/parser/planparserv2/plan_parser_v2_test.go\nFieldID: 130, Name: common.MetaFieldName, IsPrimaryKey: false, Description: \"dynamic field\", DataType: schemapb.DataType_JSON\n\n// client/column/json.go\ntype ColumnJSONBytes struct {\n\t*genericColumnBase[[]byte]\n\tisDynamic bool\n}\n\n// Dynamic fields store arbitrary JSON without type constraints\nfunc NewColumnJSONBytes(name string, values [][]byte) *ColumnJSONBytes {\n\treturn &ColumnJSONBytes{\n\t\tgenericColumnBase: &genericColumnBase[[]byte]{\n\t\t\tname:      name,\n\t\t\tfieldType: entity.FieldTypeJSON,\n\t\t\tvalues:    values,\n\t\t},\n\t}\n}",
+          "call_chain_traced": "enableDynamicField=true → schema.MetaFieldName with DataType_JSON → ColumnJSONBytes stores raw JSON bytes → no type validation applied to dynamic field values",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:dynamic field 的数据类型为 DataType_JSON,存储在 ColumnJSONBytes 中。JSON 字段可以存储任意 JSON 值(字符串、数字、布尔、对象、数组)且无单一类型约束。这是 JSON 数据模型的设计特性,不是 bug。混合类型存储(如同一字段既有 string 又有 int)是 JSON schema-flexible 的预期行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query the collection to verify the stored values match exactly what was inserted (no type coercion or conversion)",
+          "observed": "Query returns exact values as inserted: text_field='hello' and text_field=12345. This confirms no type coercion occurs - values are stored as-is.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -d '{\"collectionName\":\"test_47766_case\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"text_field\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - not an environment problem",
+            "Request parameter issue - request is valid"
+          ],
+          "surviving": "json_schema_flexible"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定的 by_design 模式,但符合通用 JSON 数据模型的设计原则:JSON 字段可以存储任意类型的值,无需单一类型约束。这是 NoSQL/dynamic schema 的核心特性。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "enableDynamicField allows flexible schema (contract provides no type consistency requirement for dynamic fields)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "JSON fields can store any JSON value type (string, number, boolean, object, array)",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (by-design JSON schema flexibility)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 报告 entities+insert 接受同一字段的混合类型(先 string 后 int)为 type_coercion 缺陷,但这实际上是 JSON 数据模型的设计特性。源码接地发现:当 enableDynamicField=true 时,动态字段使用 DataType_JSON,存储在 ColumnJSONBytes 中,可以接受任意 JSON 值类型而无需单一类型约束。查询验证存储的值与插入的值完全一致,无类型转换或强制。这是 NoSQL/flexible schema 的预期行为,不是 bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9373",
+      "endpoint": "collections+{collection_name}+points+count",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9373/points/count with exact=true and exact=false for filter category_id=cat_a on indexed keyword field",
+          "observed": "exact=true: {\"result\":{\"count\":25}}, exact=false: {\"result\":{\"count\":25}}. Both return 25, matching scroll ground truth (25 points with category_id=cat_a). Tested with cat_b (25 points) and no filter (50 points total) - all counts match exactly between exact=true/false paths.",
+          "evidence_cmd": "curl -s http://localhost:6333/collections/repro_9373/points/count -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"exact\": true}' && curl -s http://localhost:6333/collections/repro_9373/points/count -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"exact\": false}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["endpoint: collections+{collection_name}+points+count", "parameter: exact (bool, default true) - true=exact count, false=approximate count"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["count.*exact", "exact.*count", "CountRequestInternal"],
+          "files_examined": ["lib/shard/src/count.rs", "lib/collection/src/collection/collection_ops.rs"],
+          "source_excerpt": "// lib/shard/src/count.rs line 15-18\n/// If true, count exact number of points. If false, count approximate number of points faster.\n/// Approximate count might be unreliable during the indexing process. Default: true\n#[serde(default = \"CountRequestInternal::default_exact\")]\npub exact: bool,\n\nimpl CountRequestInternal {\n    pub const fn default_exact() -> bool {\n        true\n    }\n}",
+          "call_chain_traced": "CountRequestInternal.exact -> default_exact() returns true -> no cardinality estimation bug found for match condition on indexed keyword field",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: count API 的 exact 参数正确实现了精确计数和近似计数的分离，但 LIVE 测试显示对于 keyword 类型的 match 条件，exact=true 和 exact=false 返回相同结果（均为 25），与 scroll 真值集一致。未发现基数估计偏差。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/repro_9373/points/scroll with same filter to get ground truth",
+          "observed": "Scroll returns exactly 25 points with category_id=cat_a. No discrepancy between count(exact=true), count(exact=false), and scroll ground truth."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns。但实测显示 cardinality estimation 在 keyword match 条件下工作正常，无偏差。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "LIVE 容器实测显示 count API 在 indexed keyword field 的 match 条件下，exact=true 和 exact=false 返回相同且正确的计数结果（25 cat_a, 25 cat_b, 50 total），与 scroll 真值集完全一致。原始日志 (raw_qdrant_9373.log) 仅包含 scroll 操作，无 count API 流量，属已知流量缺陷（探针测了 index/scroll 而非 count）。根据 bug_shapes.json qdrant-cardinality-oracle 形状，#9373 被列为 adjacent under-count 报告（不同根因），但本次实测未复现任何基数估计偏差。未发现 contract 违规或物理约束违反。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

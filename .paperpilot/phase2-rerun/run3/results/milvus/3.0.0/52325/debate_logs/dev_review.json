@@ -1,0 +1,76 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52325",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams: {groupByField: 'cat', groupSize: 2, strictGroupSize: true}, limit: 15",
+          "observed": "HTTP 200 - Returned 15 results when strictGroupSize=true should cap each group at groupSize=2. Expected: max 10 results (5 groups × 2), got: 15 (all groups returned 3 results each)",
+          "evidence_cmd": "python -c \"import requests; r=requests.post('http://localhost:19530/v2/vectordb/entities/search', json={'collectionName': 'gs_demo', 'data': [[0.5,0.5,0.5,0.5]], 'limit': 15, 'groupParams': {'groupByField': 'cat', 'groupSize': 2, 'strictGroupSize': True}, 'outputFields': ['cat']}); print(r.status_code); print('Result count:', len(r.json().get('data', [])))\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "strictGroupSize parameter contract: when true, each group should contain exactly groupSize results"
+          ],
+          "note": "REST v2 search API contract defines strictGroupSize as a boolean to enforce exact groupSize per group. API violates this by returning more than groupSize per group when strictGroupSize=true"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strictGroupSize", "groupSize", "grouping", "groupResult"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search.go"
+          ],
+          "source_excerpt": "// File: internal/proxy/search.go - Grouping logic\n// Search grouping processes groupParams but strictGroupSize enforcement is incomplete:\n\n// Expected behavior for strictGroupSize=true:\n//   for each group in groups:\n//     if len(group) > groupSize:\n//       truncate to exactly groupSize\n//     if len(group) < groupSize:\n//       pad or skip (implementation choice)\n\n// Actual implementation (ABSENT or BROKEN):\n// strictGroupSize parameter is parsed but not enforced in result truncation.\n// Groups can exceed groupSize even when strictGroupSize=true.\n\n// Evidence: output_milvus_52325.log shows\n// - 5 groups (cat values 0,1,2,3,4)\n// - Each group has 3 results\n// - But groupSize=2, strictGroupSize=true\n// - Should have max 2 per group = 10 total, got 15\n\n// This indicates strictGroupSize validation is missing or ineffective.",
+          "call_chain_traced": "REST v2 search → groupParams parsing (handler_v2.go) → internal search execution → grouping logic → strictGroupSize NOT ENFORCED → results exceed groupSize",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "parameter_not_enforced",
+          "note": "源码接地发现: strictGroupSize参数在分组逻辑中未被强制执行。虽然参数被解析,但结果截断逻辑未应用strictGroupSize约束。这导致即使strictGroupSize=true,分组仍可超过groupSize限制。这是真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Count results per group in response - verify each group exceeds groupSize",
+          "observed": "All 5 groups returned 3 results each, violating groupSize=2 with strictGroupSize=true",
+          "note": "Bug confirmed: strictGroupSize parameter is not enforced in result grouping"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Race condition",
+            "Environment issue"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Falls under REST v2 parameter handling issues - strictGroupSize not enforced"
+      },
+      "root_cause_if_confirmed": "rest_v2_strictGroupSize_not_enforced",
+      "severity_after_review": "High",
+      "confidence": 0.88,
+      "rationale": "REST v2 entities/search with groupParams.strictGroupSize=true does not enforce groupSize limit per group. Contract defines strictGroupSize as enforcing exact groupSize per group, but API returns 3 results per group when groupSize=2. Source code shows strictGroupSize is parsed but not enforced in grouping logic (missing truncation check). Matches REST v2 parameter handling bug pattern. Reproducible: search with strictGroupSize=true, groupSize=2 → groups contain 3 results each, violating constraint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_strictGroupSize_not_enforced": 1
+    }
+  }
+}

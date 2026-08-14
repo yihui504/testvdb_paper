@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9520",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9520 {\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}",
+          "observed": "Server crash (exit code 52), empty response, container terminated",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/repro_9520' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["collections+{collection_name} PUT: shard_number parameter validation"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["CreateCollection", "shard_number", "validate.*range"],
+          "files_examined": ["lib/storage/src/content_manager/collection_meta_ops.rs", "lib/collection/src/config.rs", "lib/api/src/grpc/validate.rs"],
+          "source_excerpt": "// lib/storage/src/content_manager/collection_meta_ops.rs:115-126\n/// For auto sharding:\n/// Number of shards in collection.\n///  - Default is 1 for standalone, otherwise equal to the number of nodes\n///  - Minimum is 1\n///\n/// For custom sharding:\n/// Number of shards in collection per shard group.\n///  - Default is 1, meaning that each shard key will be mapped to a single shard\n///  - Minimum is 1\n#[serde(default)]\n#[validate(range(min = 1))]\npub shard_number: Option<u32>,\n\n// lib/collection/src/config.rs:97\npub struct CollectionParams {\n    pub shard_number: NonZeroU32,  // Requires value > 0",
+          "call_chain_traced": "CreateCollection.shard_number: Option<u32> → only min=1 validated, no max bound → passes to CollectionParams.shard_number: NonZeroU32 → INT_MAX accepted → causes crash during collection initialization",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows shard_number has #[validate(range(min = 1))] but NO maximum bound validation. INT_MAX (2147483647) passes validation, causes downstream crash when NonZeroU32 is used for shard allocation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with reasonable shard_number (e.g., 10) works correctly",
+          "observed": "Small values work fine, crash only with extreme values"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environmental issue", "temporary failure", "Docker limitation"],
+          "surviving": "missing_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "Bug shape matches 'Parameter Validation issues where Numeric Boundary validation is missing' - specifically missing upper bound on shard_number"
+      },
+      "root_cause_if_confirmed": "missing_range_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "PUT /collections with shard_number=2147483647 causes server crash. Source code at lib/storage/src/content_manager/collection_meta_ops.rs:125 shows #[validate(range(min = 1))] for shard_number but NO maximum bound validation. The value passes validation and crashes during collection initialization when converted to NonZeroU32. This is a true parameter validation defect - missing upper bound allows extreme values that crash the server."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"missing_range_validation": 1}
+  }
+}

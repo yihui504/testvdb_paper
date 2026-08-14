@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50351",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with shardsNum=0, shardsNum=-1, shardsNum=65535",
+          "observed": "All three invalid shardNum values succeeded with HTTP 200. shardsNum=0, -1 violate >= 1 constraint; 65535 may be unreasonably large but accepted.",
+          "evidence_cmd": "Verified via output_milvus_50351.log - 3 POST /collections/create with shardsNum=[0,-1,65535], all returned {\"code\":0,\"data\":{}}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_002 - assertion: 'shardsNum >= 1'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["shardsNum", "ShardNum", "validate.*shard"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 2000-2006 (within createCollection function)\n\tshardsNum := int32(ShardNumDefault)\n\tif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n\t\tif shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n\t\t\tshardsNum = int32(shards)  // NO RANGE CHECK HERE - directly accepts parsed value\n\t\t}\n\t}\n\treq.ShardsNum = shardsNum",
+          "call_chain_traced": "HandlersV2.createCollection() → parse shardsNum from params → strconv.ParseInt → NO validation >= 1 → assigns directly to req.ShardsNum → creates collection with invalid shard count",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 createCollection handler (handler_v2.go:2000-2006) 从请求参数解析 shardsNum 后，未执行范围校验 (>= 1)，直接赋值给 req.ShardsNum。根据契约 milvus_range_collections_create_002 要求 'shardsNum >= 1'，但源码无此校验，允许非法值 0、负数、过大值通过。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify reasonable upper bound exists for shardsNum in other parts of codebase",
+          "observed": "Shard count typically bounded by available resources; allowing 65535 shards could cause resource exhaustion. No evidence of upper bound validation at REST layer."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "cache delay", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, high confidence (0.95)",
+        "note": "虽 bug_shapes 主要描述类型序列化问题，但 shardsNum 校验缺失同属 REST v2 参数验证缺失模式，系统性问题一致。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 collections+create 接受非法 shardsNum 值 (0、-1、65535)，违反契约 milvus_range_collections_create_002 明确要求的 'shardsNum >= 1' 约束。源码接地确认 handler_v2.go:2000-2006 中的 createCollection() 函数仅解析 shardsNum 参数，未验证其是否 >= 1，直接透传给后端。实测复现确认：三个非法值 (0/-1/65535) 均成功创建 collection 返回 HTTP 200。shardsNum=0 会导致无分区可用，shardsNum=-1 为负数无意义，65535 可能导致资源耗尽。非平凡解释已排除。属真缺陷：数值范围校验缺失导致 API 违反其明文契约约束。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

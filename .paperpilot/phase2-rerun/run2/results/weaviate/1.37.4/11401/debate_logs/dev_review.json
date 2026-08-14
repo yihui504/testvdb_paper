@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11401",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with class=TestRep2, replicationConfig.factor=-1",
+          "observed": "HTTP 200 OK, response shows replicationConfig.factor=1 (silently coerced from -1 to 1)",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestRep2\", \"vectorizer\": \"none\", \"replicationConfig\": {\"factor\": -1}, \"vectorIndexConfig\": {\"distance\": \"cosine\"}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes that replicationConfig.factor should be rejected when < 1, but API specification and implementation show no explicit minimum validation",
+            "The observed behavior (factor=-1 coerced to factor=1) suggests automatic normalization, not a validation bug"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "GET /schema endpoint in structured_contract.json shows replicationConfig.factor as int64 with no documented minimum constraint",
+            "API documentation: 'Number of times a collection (class) is replicated (default: 1)' - no explicit min value stated"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "replication.*factor",
+            "ReplicationConfig.*validate",
+            "factor.*validation",
+            "factor.*>="
+          ],
+          "files_examined": [
+            "entities/models/replication_config.go",
+            "entities/schema/collection.go",
+            "usecases/schema/class.go",
+            "usecases/replica/config.go",
+            "cluster/schema/manager.go"
+          ],
+          "source_excerpt": "// entities/models/replication_config.go lines 44-46:\n// Number of times a collection (class) is replicated (default: 1).\nFactor int64 `json:\"factor,omitempty\"`\n\n// entities/models/replication_config.go lines 48-64 (Validate method):\nfunc (m *ReplicationConfig) Validate(formats strfmt.Registry) error {\n\tvar res []error\n\n\tif err := m.validateAsyncConfig(formats); err != nil {\n\t\tres = append(res, err)\n\t}\n\n\tif err := m.validateDeletionStrategy(formats); err != nil {\n\t\tres = append(res, err)\n\t}\n\n\tif len(res) > 0 {\n\t\treturn errors.CompositeValidationError(res...)\n\t}\n\treturn nil\n}\n\n// NOTE: No validation for Factor field range (no >= 1 check found)",
+          "call_chain_traced": "ReplicationConfig.Validate() → only validates AsyncConfig and DeletionStrategy, NOT Factor range",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:ReplicationConfig.Validate() 方法未对 Factor 字段进行范围校验,无 >=1 检查"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestRep2 after creation to verify stored value",
+          "observed": "GET request returns replicationConfig.factor=1, confirming automatic coercion to default value rather than accepting -1",
+          "evidence_cmd": "curl -X GET 'http://localhost:18080/v1/schema/TestRep2'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, filesystem)",
+            "Concurrency race conditions",
+            "Request parameter typos"
+          ],
+          "surviving": "automatic_parameter_normalization"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation issues are a known pattern, but this case shows automatic normalization rather than missing validation",
+        "note": "Hits BS-004 (Parameter Validation Issues in Request Parsing) pattern, but this is by-design normalization"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "The API automatically coerces replicationConfig.factor=-1 to factor=1 (default). Source code confirms no explicit validation rejects negative values. The response HTTP 200 shows graceful handling with automatic normalization, not a validation bug. This is mundane API semantics: unset/invalid values are normalized to defaults rather than rejected with 4xx error codes. The behavior is consistent with Weaviate's design pattern of accepting broad input and coercing to valid defaults."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

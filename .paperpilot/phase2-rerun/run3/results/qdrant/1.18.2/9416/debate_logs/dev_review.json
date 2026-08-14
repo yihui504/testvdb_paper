@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9416",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Created collection with vectors:{} (empty config), attempted to insert point with vector data. API correctly returned HTTP 400 with 'Not existing vector name error'",
+          "observed": "HTTP 400, error: 'Wrong input: Not existing vector name error: '. Collection has no vector config, so vector insert is correctly rejected.",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/repro_9416 -d '{\"vectors\": {}}' && curl -X PUT http://localhost:6333/collections/repro_9416/points -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' → HTTP 400"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate assumes API should reject collection creation with empty vectors config, but PUT /collections with vectors:{} is actually valid for payload-only collections"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["vectors parameter in PUT /collections is optional object; empty config {} is valid for payload-only collections"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": ["Not existing vector name", "vector_name_not_exists", "check_vector_names"],
+          "files_examined": ["lib/segment/src/common/operation_error.rs", "lib/collection/src/operations/types.rs"],
+          "source_excerpt": "// lib/collection/src/operations/types.rs line 1736-1743\npub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {\n    for vector_name in self.0.keys() {\n        collection\n            .vectors\n            .get_params(vector_name)\n            .map(|_| ())\n            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name.clone()))?;\n    }\n    Ok(())\n}",
+          "call_chain_traced": "Points insert → validate vector data → check_vector_names confirms vector config exists → vector_name_not_exists error when config missing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码确认: insert 操作时通过 check_vector_names 验证 vector name 是否在 collection config 中存在。缺失时返回 vector_name_not_exists 错误。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested with valid vector config: PUT /collections with {\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}, then insert point with vector → HTTP 200 success",
+          "observed": "API correctly accepts vectors when config is present, rejects when absent. Validation working as designed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟"],
+          "surviving": "contract_misread"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式。这是 API 设计行为: vectors:{} 允许创建 payload-only 集合，但 insert 时必须验证 vector name 存在性。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "候选声称 collections+{name}+points endpoint 存在参数验证缺陷，允许在无 vector config 的集合中插入带 vector 的点。实测证明: (1) PUT /collections with vectors:{} 是合法操作(用于创建 payload-only 集合); (2) 后续 PUT /points 尝试插入带 vector 的点时，API 正确返回 HTTP 400 'Not existing vector name error'，拒绝操作。源码确认 check_vector_names 函数在 insert 时验证 vector name 是否存在于 collection config 中。候选属于 FP，根因是误读了 API 契约——empty vectors config 不是 bug，而是支持 payload-only 集合的设计特性，且 insert 验证逻辑正确工作。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

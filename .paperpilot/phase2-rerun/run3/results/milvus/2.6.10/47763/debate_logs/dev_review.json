@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47763",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collectionName='repro3_47763', data=[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}] (enableDynamicField=true)",
+          "observed": "Insert succeeded with insertCount=2, insertIds=[1,2] (HTTP 200) - 独立复现成功",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro3_47763\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"123field\": \"v1\"}, {\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"@field\": \"v2\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Collection exists: repro3_47763 created successfully",
+            "enableDynamicField=true enabled in schema",
+            "字段名标准约束: 字段名必须以字母或下划线开头,只含字母数字下划线"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001",
+            "constraint_id: milvus_range_entities_insert_001",
+            "constraint_id: milvus_state_entities_insert_001"
+          ],
+          "note": "契约定义了数据类型和长度验证,但未明确动态字段名格式验证要求"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "func validateFieldName",
+            "isAlpha.*firstChar",
+            "field name.*letter.*underscore",
+            "GetFieldFromNameDefaultJSON"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go (lines 356-388, 1169-1197)",
+            "internal/proxy/task_insert.go",
+            "internal/proxy/validate_util.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 369-382\n\tfirstChar := fieldName[0]\n\tif firstChar != '_' && !isAlpha(firstChar) {\n\t\tmsg := invalidMsg + \"The first character of a field name must be an underscore or letter.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\n\tfieldNameSize := len(fieldName)\n\tfor i := 1; i < fieldNameSize; i++ {\n\t\tc := fieldName[i]\n\t\tif c != '_' && !isAlpha(c) && !isNumber(c) {\n\t\t\tmsg := invalidMsg + \"Field name can only contain numbers, letters, and underscores.\"\n\t\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t\t}\n\t}\n\n// internal/proxy/util.go line 1189-1194 (validateFieldDataColumns)\n\tfor _, fieldData := range columns {\n\t\t_, err := schema.schemaHelper.GetFieldFromNameDefaultJSON(fieldData.FieldName)\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"fieldName %v not exist in collection schema\", fieldData.FieldName)\n\t\t}\n\t}",
+          "call_chain_traced": "Insert → validateFieldDataColumns → GetFieldFromNameDefaultJSON (绕过 validateFieldName)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码分析确认: validateFieldName 函数定义了严格的字段名规则(首字符必须是字母或下划线),但 validateFieldDataColumns 在处理动态字段时直接使用 GetFieldFromNameDefaultJSON,未先调用 validateFieldName.这导致 '123field' (数字开头) 和 '@field' (特殊字符) 通过插入验证."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query collectionName='repro3_47763', filter='id in [1,2]', outputFields=['123field','@field']",
+          "observed": "Query failed with code 65535: 'parse output field name failed: 123field' - 证明确实存储了非法字段名",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/query\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro3_47763\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"123field\", \"@field\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题: LIVE 容器测试",
+            "并发竞争: 单线程顺序测试",
+            "API 误解: enableDynamicField 确实启用动态字段,但不应绕过基本命名规则",
+            "请求笔误: JSON 格式正确",
+            "近似搜索: 非搜索操作"
+          ],
+          "surviving": "字段名验证缺失"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[0]",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus (rest-v2-data-type-handling)",
+        "note": "命中 REST v2 数据验证盲点模式,与历史缺陷一致"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_insert_001: 字段类型匹配 (未覆盖字段名格式)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "标准标识符命名规则: 字段名首字符必须为字母/下划线",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (物理违反) + verdict_C=CONFIRMED (行为确认) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "field_name_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "CONFIRMED: 独立双盲复审确认该缺陷为真.物理约束违反 - 标准标识符命名规则被绕过.源码接地显示 validateFieldName 函数存在且定义了正确的字段名验证逻辑(首字符必须是字母或下划线,只允许字母数字下划线),但在动态字段 INSERT 路径中未调用该验证,导致 '123field' 和 '@field' 这样的非法字段名被成功写入存储.查询时这些字段名无法解析,证实数据完整性受损.该问题命中 Milvus REST v2 数据验证盲点模式,与历史缺陷 rest-v2-data-type-handling 一致.置信度 0.92 - 源码证据确凿,复现稳定,双盲独立验证一致."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "field_name_validation_bypass": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50351",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":{}} — accepts shardsNum=0 (invalid, should be >= 1)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json endpoint 'collections+create' parameter 'shardsNum': default_value=1, type=integer — 无明文范围约束"],
+          "assertion_text": "shardsNum should be >= 1 (物理约束: 至少需要 1 个 shard)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "ShardsNum", "max.*shard", "cfgShardLimit"],
+          "files_examined": ["internal/rootcoord/create_collection_task.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/wrap_request.go"],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go line 58-68\nshardsNum := t.Req.GetShardsNum()\nvar cfgMaxShardNum int32\nif Params.CommonCfg.PreCreatedTopicEnabled.GetAsBool() {\n\tcfgMaxShardNum = int32(len(Params.CommonCfg.TopicNames.GetAsStrings()))\n} else {\n\tcfgMaxShardNum = Params.RootCoordCfg.DmlChannelNum.GetAsInt32()\n}\nif shardsNum > cfgMaxShardNum {\n\treturn fmt.Errorf(\"shard num (%d) exceeds max configuration (%d)\", shardsNum, cfgMaxShardNum)\n}\n\n// internal/rootcoord/create_collection_task.go line 70-72\ncfgShardLimit := Params.ProxyCfg.MaxShardNum.GetAsInt32()\nif shardsNum > cfgShardLimit {\n\treturn fmt.Errorf(\"shard num (%d) exceeds proxy max shard num (%d)\", shardsNum, cfgShardLimit)\n}\n\n// NO MINIMUM CHECK — 源码仅检查上限(> cfgMaxShardNum 或 > cfgShardLimit),未检查下界(shardsNum < 1)",
+          "call_chain_traced": "HTTP POST /collections/create → handler_v2.createCollection → wrapRequest → proxy.CreateCollection → rootcoord.CreateCollectionTask → checks ONLY upper bounds (shardsNum > max) → NO check for shardsNum <= 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:CreateCollectionTask(create_collection_task.go:58-72)仅检查 shardsNum 是否超过配置的上限(cfgMaxShardNum/cfgShardLimit),但**完全没有检查下界**(shardsNum >= 1)。允许 shardsNum=0 或负数违反物理约束(至少需要 1 个 shard 来存储数据) → 真缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe {\"collectionName\": \"test_shard_0\"}",
+          "observed": "HTTP 200, returned collection schema shows shardsNum=0 (or -1 for negative test) — created successfully with invalid value, confirming API accepts illegal input",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design/rejection_patterns。这是明显的参数验证缺失,非预期行为"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shardsNum default=1, type=integer (contract 无明文下界,但类型 integer 暗示非负)",
+          "source_implements_check": false,
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "shardsNum >= 1 for data partitioning (物理约束: 至少需要 1 个 shard)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_lower_bound_validation",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Milvus REST v2 /collections/create 接受 shardsNum=0 (以及负数,从 test_shard_neg/test_shard_max 实验可见),返回 HTTP 200 成功创建。源码接地(CreateCollectionTask)显示仅检查 shardsNum 上限(是否超过配置的 maxShardNum),但**完全没有检查下界**(shardsNum < 1)。这违反了物理约束(至少需要 1 个 shard 来存储和分区数据)。证伪实验确认创建的 collection 确实携带了无效的 shardsNum 值。contract 虽未明文规定下界,但 integer 类型与默认值=1 暗示应为正数。开发者认知未显示此为 by-design。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52314",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with type coercion: string for Double field, string for Boolean, int for Boolean, string for Int16",
+          "observed": "HTTP 200 success - API accepts and stores mismatched types without validation: dbl_f='3.14159' (string), bool_f='true' (string), bool_f=1 (int), i16_f='42' (string)",
+          "evidence_cmd": "python -c \"import requests; r=requests.post('http://localhost:19530/v2/vectordb/entities/upsert', json={'collectionName': 'repro_52314', 'data': [{'id': 0, 'vector': [0.9,0.9,0.9,0.9], 'dbl_f': '3.14159', 'bool_f': 'true', 'i16_f': '42'}]}); print(r.status_code, r.text[:200])\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_double_001 - DataType Double requires numeric values",
+            "constraint_id: milvus_type_bool_001 - DataType Bool requires boolean values",
+            "constraint_id: milvus_type_int16_001 - DataType Int16 requires integer values"
+          ],
+          "note": "Schema contract defines field types (Double/Bool/Int16) expecting matching JSON types. REST v2 should validate incoming types match schema, not coerce strings to numbers/bools"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["case schemapb.DataType_Double", "case schemapb.DataType_Bool", "case schemapb.DataType_Int16", "cast\\..*E"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Type coercion cases:\n\n// Double field (line 764-768):\n\t\t\t\tcase schemapb.DataType_Double:\n\t\t\t\t\tresult, err := cast.ToFloat64E(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// Bool field (line 615-620):\n\t\t\t\tcase schemapb.DataType_Bool:\n\t\t\t\t\tresult, err := cast.ToBoolE(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// Int16 field (line 627-632):\n\t\t\t\tcase schemapb.DataType_Int16:\n\t\t\t\t\tresult, err := cast.ToInt16E(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// PROBLEM: cast.ToFloat64E('3.14159'), cast.ToBoolE('true'), cast.ToInt16E('42')\n// all succeed because cast library AUTO-CONVERTS strings to target types.\n// This silently accepts wrong types instead of rejecting them.",
+          "call_chain_traced": "REST v2 upsert → checkAndSetData (utils.go:466) → fieldType switch → cast.ToXXXE functions → AUTO-CONVERSION SUCCESS → no error returned",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "type_coercion_by_design",
+          "note": "源码接地发现: REST v2使用cast库的ToXXXE函数处理类型转换。这些函数会自动将字符串'3.14159'转为float64,'true'/'1'转为bool,'42'转为int16。这不是bug,而是cast库的自动类型转换特性。但问题是:对于schema严格的数据库,应该REJECT类型不匹配而不是自动转换。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify stored values are actually coerced types, not rejected",
+          "observed": "Values successfully coerced and stored - no validation error",
+          "note": "Type coercion succeeds, confirming the validation gap"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Race condition",
+            "Environment issue"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Falls under REST v2 data handling issues - permissive type coercion instead of strict validation"
+      },
+      "root_cause_if_confirmed": "rest_v2_permissive_type_coercion",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "REST v2 entities/upsert uses cast.ToXXXE functions which auto-convert strings to target types (e.g., '3.14159' → Double, 'true'/'1' → Bool, '42' → Int16). For a schema-enforced vector database, this is incorrect behavior - should reject type mismatches instead of coercing. Source code (utils.go:615-768) shows cast library auto-conversion is by design but inappropriate for strict schema validation. Matches REST v2 data handling bug pattern. Reproducible: upsert with string for Double/Bool/Int16 → HTTP 200 success, values coerced."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_permissive_type_coercion": 1
+    }
+  }
+}

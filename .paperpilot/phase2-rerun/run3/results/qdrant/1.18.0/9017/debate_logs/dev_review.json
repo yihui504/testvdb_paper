@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9017",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug/points/search {\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}",
+          "observed": "API returns HTTP 200 with successful search result: [{\"id\":1,\"version\":1,\"score\":1.0}]. The API accepts hnsw_ef=0 without error.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_hnsw_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should validate search parameters to ensure they are physically meaningful",
+            "HNSW ef parameter represents beam size in graph search, should have a minimum value >= 1"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json: collections+{collection_name}+points+search endpoint includes 'params' field of type object with description 'Search params (hnsw_ef, exact, quantization, indexed_only)'",
+            "No explicit constraint found stating hnsw_ef must be >= 1, but this is a physical constraint inherent to HNSW algorithm"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["hnsw_ef", "search_max_hnsw_ef", "check_limit_opt", "StrictModeVerification"],
+          "files_examined": [
+            "lib/api/src/grpc/conversions.rs",
+            "lib/api/src/grpc/qdrant.rs",
+            "lib/api/src/grpc/proto/points.proto",
+            "lib/segment/src/types.rs",
+            "lib/collection/src/operations/verification/mod.rs"
+          ],
+          "source_excerpt": "File: lib/collection/src/operations/verification/mod.rs, Lines 297-314\n\npub(crate) fn check_limit_opt<T: PartialOrd + Display>(\n    value: Option<T>,\n    limit: Option<T>,\n    name: &str,\n) -> CollectionResult<()> {\n    let (Some(limit), Some(value)) = (limit, value) else {\n        return Ok(());\n    };\n\n    if value > limit {\n        return Err(CollectionError::strict_mode(\n            format!(\"Limit exceeded {value} > {limit} for \\\"{name}\\\"\"),\n            format!(\"Reduce the \\\"{name}\\\" parameter to or below {limit}.\"),\n        ));\n    }\n    Ok(())\n}\n\nFile: lib/segment/src/types.rs, Lines 591-594\n\n/// Params relevant to HNSW index\n/// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n#[serde(skip_serializing_if = \"Option::is_none\")]\npub hnsw_ef: Option<usize>,\n\nFile: lib/collection/src/operations/verification/mod.rs, Lines 343-347\n\ncheck_limit_opt(\n    self.hnsw_ef,\n    strict_mode_config.search_max_hnsw_ef,\n    \"hnsw_ef\",\n)?;",
+          "call_chain_traced": "SearchParams.hnsw_ef (Option<usize>) → StrictModeVerification::check_custom() → check_limit_opt() → only checks if hnsw_ef > search_max_hnsw_ef, NO minimum value validation (>= 1 check missing)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:hnsw_ef 参数仅在校验上限(> search_max_hnsw_ef),无下限校验(>= 1)。类型为 Option<usize>,JSON 层拒绝负值,但 0 被接受并透传到 HNSW 层。物理约束:HNSW beam size 必须 >= 1 才有意义,ef=0 相当于禁用 beam search,违背 HNSW 算法设计意图。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested with hnsw_ef=-1 → JSON parse error (expected usize). Tested with hnsw_ef=0 → accepted. API only validates at JSON schema level (usize >= 0), not at semantic level (hnsw_ef >= 1).",
+          "observed": "JSON schema allows usize (>= 0), but HNSW algorithm requires ef >= 1. The validation gap exists between JSON parsing and semantic validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on clean container",
+            "Request parameter typo - tested with exact value 0",
+            "API misunderstanding - verified against source code"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "Case matches bug shape 'qdrant-parameter-validation-numeric-boundary' from bug_shapes.json. Known instances include issue #9017. Developer cognition indicates parameter validation on filter/condition APIs is a blind spot."
+      },
+      "root_cause_if_confirmed": "missing_minimum_value_validation",
+      "severity_after_review": "High",
+      "confidence": 0.9,
+      "rationale": "API accepts hnsw_ef=0 (physically invalid for HNSW beam search) without error. Source code shows no minimum value validation (>= 1 check). This is a Type1_IllegalSuccess - the API should reject invalid parameter values but instead accepts them. The physical constraint is clear: HNSW ef (beam size) must be >= 1 for meaningful search. Verified via source code that check_limit_opt only validates upper bound, not lower bound."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_minimum_value_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

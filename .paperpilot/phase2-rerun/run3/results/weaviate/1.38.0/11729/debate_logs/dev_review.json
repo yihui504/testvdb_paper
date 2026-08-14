@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11729",
+      "endpoint": "POST /schema",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with shardingConfig.desiredCount=-1 (and 0 for contrast)",
+          "observed": "desiredCount=-1 → HTTP 200 (SUCCESS, illegal), desiredCount=0 → HTTP 422 (correctly rejected)",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\":\"TestNeg\",\"shardingConfig\":{\"desiredCount\":-1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["shardingConfig is optional parameter in POST /schema body"],
+          "note": "No explicit constraint found in structured_contract asserting desiredCount ≥ 1, but physical constraint applies"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["desiredCount", "validate", "shardingConfig"],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/class.go",
+            "usecases/schema/namespace_create_test.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go line 53-69\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "ParseConfig (line 85) → optionalIntFromMap for desiredCount (line 104-108) → validate() (line 141-143) → NO RANGE CHECK on desiredCount",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "validate() function checks Key/Strategy/Function but NOT desiredCount range. desiredCount=-1 bypasses validation and creates invalid sharding state"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted GET /schema/repro_11729_neg to verify collection creation succeeded",
+          "observed": "Collection created with desiredCount=-1, confirmed by HTTP 200 on POST"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "race condition", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - systematic parameter_validation defects affecting request_parsing functionality",
+        "pattern_id": "BS-004",
+        "note": "Direct match to bug shape BS-004 (Parameter Validation Issues) - desiredCount lacks range validation at API boundary"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion found for desiredCount range, but structured_contract lists shardingConfig as optional parameter with type object",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "desiredCount represents number of physical shards, must be ≥ 1 (cannot have zero or negative shards)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Raw HTTP evidence confirms POST /schema accepts desiredCount=-1 with HTTP 200 (illegal success). Source code analysis reveals validate() function in config.go performs NO range check on desiredCount - it only validates Key/Strategy/Function fields. Physical constraint violated: shard count must be ≥ 1. This is a true parameter validation bug at the API boundary (BS-004 pattern match)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  }
+}

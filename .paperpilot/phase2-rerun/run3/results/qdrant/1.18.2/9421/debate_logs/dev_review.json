@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9421",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover in standalone mode",
+          "observed": "HTTP 500 with error: 'Service internal error: Qdrant is running in standalone mode'",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/cluster/recover'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["cluster+recover endpoint exists in API but is cluster-only"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["request_snapshot", "get_consensus_proposal_sender", "standalone mode"],
+          "files_examined": ["src/actix/api/cluster_api.rs", "lib/storage/src/content_manager/toc/mod.rs"],
+          "source_excerpt": "// lib/storage/src/content_manager/toc/mod.rs:774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender\n        .as_ref()\n        .ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))\n}\n\n// src/actix/api/cluster_api.rs:60-73\n#[post(\"/cluster/recover\")]\nfn recover_current_peer(\n    dispatcher: web::Data<Dispatcher>,\n    ActixAuth(auth): ActixAuth,\n) -> impl Future<Output = HttpResponse> {\n    helpers::time(async move {\n        auth.check_global_access(AccessRequirements::new().manage(), \"recover_current_peer\")?;\n        dispatcher.toc(&auth, &pass).request_snapshot()?;\n        Ok(true)\n    })\n}",
+          "call_chain_traced": "POST /cluster/recover → recover_current_peer → request_snapshot → get_consensus_proposal_sender → returns 'standalone mode' error when consensus unavailable",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Cluster recovery operations require consensus/raft. In standalone mode, consensus_proposal_sender is None, causing expected error. This is by-design behavior for cluster-only APIs."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - error is intentional for standalone mode",
+          "observed": "Error message clearly indicates standalone mode limitation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "cluster_api_standalone_limitation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Cluster APIs are designed for distributed mode only. Standalone mode intentionally limits cluster operations."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "POST /cluster/recover is a cluster-only API that requires consensus/raft. Source code shows get_consensus_proposal_sender() returns 'standalone mode' error when consensus is unavailable (lib/storage/src/content_manager/toc/mod.rs:777). This is by-design behavior - cluster recovery operations are intentionally disabled in standalone mode where consensus doesn't exist. The 500 error with clear message 'Qdrant is running in standalone mode' is the expected API contract for this configuration."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11741",
+      "endpoint": "POST /schema/{className}/tenants",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema/TestTenant/tenants with body=[{\"name\":\"test\",\"activityStatus\":\"\"}] (empty string)",
+          "observed": "HTTP 200 SUCCESS, tenant created with activityStatus defaulted to 'HOT' (not in allowed enum {ACTIVE, INACTIVE})",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema/TestTenant/tenants -H 'Content-Type: application/json' -d '[{\"name\":\"test\",\"activityStatus\":\"\"}]'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_type_tenants_create_001"],
+          "note": "Contract explicitly states: 'Tenant.activityStatus on create must be ACTIVE or INACTIVE' and 'body[].activityStatus in {ACTIVE, INACTIVE}' (confidence: 0.95). Empty string '' is NOT in {ACTIVE, INACTIVE}."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["activityStatus", "ActivityStatus", "TenantActivityStatus"],
+          "files_examined": [
+            "entities/schema/multi_tenancy.go",
+            "entities/models/tenant.go",
+            "usecases/schema/tenant.go"
+          ],
+          "source_excerpt": "// entities/schema/multi_tenancy.go line 49-54 (defaulting logic)\nfunc ActivityStatus(status string) string {\n\tif status == \"\" {\n\t\treturn models.TenantActivityStatusHOT\n\t}\n\treturn status\n}\n\n// entities/models/tenant.go line 70-86 (enum values)\nconst (\n\tTenantActivityStatusACTIVE   string = \"ACTIVE\"\n\tTenantActivityStatusINACTIVE string = \"INACTIVE\"\n\tTenantActivityStatusHOT      string = \"HOT\"\n\t// ... other statuses not allowed on create\n)",
+          "call_chain_traced": "POST /schema/{className}/tenants → ActivityStatus function (line 49-54) → empty string defaults to HOT → bypasses contract constraint {ACTIVE, INACTIVE}",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_with_defaulting",
+          "note": "ActivityStatus function explicitly defaults empty string to HOT (line 50-52). This violates contract constraint weaviate_type_tenants_create_001 which requires activityStatus in {ACTIVE, INACTIVE} on create. HOT is not even allowed on create per the contract."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified tenant creation succeeded with empty activityStatus, response shows no activityStatus field (implicitly defaulted to HOT internally)",
+          "observed": "API returns HTTP 200, tenant created successfully despite violating explicit contract constraint"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "race condition", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - systematic parameter_validation defects affecting request_parsing functionality",
+        "pattern_id": "BS-004",
+        "note": "Match to bug shape BS-004 - parameter validation bypass at API boundary. Empty string accepted when contract requires enum value {ACTIVE, INACTIVE}."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "body[].activityStatus in {ACTIVE, INACTIVE} on POST /schema/{className}/tenants (constraint_id: weaviate_type_tenants_create_001, confidence: 0.95)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "activityStatus is an enum parameter - must be one of the defined allowed values for the operation",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (contract violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Raw HTTP evidence confirms POST /schema/{className}/tenants accepts activityStatus='' (empty string) with HTTP 200. Contract constraint weaviate_type_tenants_create_001 (confidence 0.95) explicitly states 'Tenant.activityStatus on create must be ACTIVE or INACTIVE' and 'body[].activityStatus in {ACTIVE, INACTIVE}'. Empty string is NOT in this enum. Source code reveals validation bypass: ActivityStatus function (line 49-54) defaults empty string to HOT, which is not even allowed on create per the contract. This is a parameter validation bug - API accepts invalid enum value and coerces it to disallowed value, violating explicit contract constraint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  }
+}

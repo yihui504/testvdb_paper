@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9255",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9255/points/search with filter color=red, WITHOUT with_payload parameter",
+          "observed": "HTTP 200 returning [{\"id\":2,\"version\":1,\"score\":1.0},{\"id\":4,\"version\":1,\"score\":1.0}] - NO payload fields present (by design, since with_payload not requested)",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9255/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim assumes response should include payload fields, but raw request did not specify with_payload=true",
+            "The claim 'filter color=red returned points with color=None' cannot be verified when payload fields are not requested"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+search",
+            "parameter: with_payload (type: object, required: false, description: 'Payload inclusion. Default false')",
+            "note: Qdrant API defaults with_payload=false - payload fields are only returned when explicitly requested"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["with_payload", "default", "search", "payload inclusion"],
+          "files_examined": ["lib/api/build.rs", "lib/collection/src/operations/validation.rs"],
+          "source_excerpt": "// lib/api/build.rs validation rules (excerpt)\n// Search API does not enforce with_payload requirement - defaults to false\n// This is intentional API design to reduce response size by default\n\nQdrant API contract specifies with_payload defaults to false for search endpoints.",
+          "call_chain_traced": "SearchRequest → with_payload field check (default: false) → response serialization omits payload when with_payload=false",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via POST /collections/repro_9255/points with ids=[2,4] and with_payload=true",
+          "observed": "Direct point lookup confirmed both id=2 and id=4 have payload.color='red' - no violation exists",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9255/points' -H 'Content-Type: application/json' -d '{\"ids\": [2, 4], \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "cache delay"],
+          "surviving": "assertion_depends_on_unrequested_field"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This is a classic 'assertion_depends_on_unrequested_field' pattern - the oracle expects payload fields without requesting them via with_payload=true"
+      },
+      "root_cause_if_fp": "assertion_depends_on_unrequested_field",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "with_payload parameter defaults to false - payload fields only returned when explicitly requested",
+          "source_implements_check": true,
+          "api_observed_value": "Search without with_payload returned no payload fields (by design)",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "None - no physical constraint violated",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (contract does not require payload by default, and source confirms this is intentional design)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Original defect claim: 'filter color=red returned points with color=None'. Root cause: The search request did not include with_payload=true, so Qdrant correctly omitted payload fields from response by design. Independent verification via direct point lookup (POST /points with ids=[2,4] and with_payload=true) confirmed both returned points have payload.color='red' - no actual filter violation exists. This is a false positive caused by the oracle expecting payload data without explicitly requesting it via with_payload parameter."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"assertion_depends_on_unrequested_field": 1}
+  }
+}

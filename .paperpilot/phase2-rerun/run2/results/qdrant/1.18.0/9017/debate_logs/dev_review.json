@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9017",
+      "endpoint": "points+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9017/points/search with params={hnsw_ef: 0}",
+          "observed": "HTTP 200 OK, search executed successfully with hnsw_ef=0",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9017/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}' returns {'result': [{'id': 1, 'version': 1, 'score': 1.0}], 'status': 'ok'}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_range_search_points_006 - 'hnsw_ef parameter is applicable only when exact=false' (but no lower bound validation specified)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["hnsw_ef", "SearchParams", "validation", "range"],
+          "files_examined": ["lib/segment/src/types.rs", "lib/collection/src/operations/verification/mod.rs", "lib/storage/src/content_manager/conversions.rs"],
+          "source_excerpt": "// lib/segment/src/types.rs line 585-605\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash)]\n#[serde(rename_all = \"snake_case\")]\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\n    /// Search without approximation. If set to true, search may run long but with exact results.\n    #[serde(default)]\n    pub exact: bool,\n\n    /// Quantization params\n    #[serde(default)]\n    #[validate(nested)]\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub quantization: Option<QuantizationSearchParams>,\n}",
+          "call_chain_traced": "SearchParams.hnsw_ef defined as Option<usize> with no range validation - pass-through to HNSW index without checking ef >= 1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: hnsw_ef 定义为 Option<usize>，没有任何 >= 1 的范围校验。根据 HNSW 算法原理，ef (efficiency) 参数必须 >= 1 才有意义，0 值会导致未定义行为或搜索退化。API 应该拒绝 hnsw_ef=0 的非法输入但实际接受了。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that API accepts hnsw_ef=0 and returns search results without error",
+          "observed": "No validation error returned, search completes with HTTP 200"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞态", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "命中 bug_shapes 中的 numeric_boundary 模式 - Numeric Boundary 验证缺失"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API 接受非法的 hnsw_ef=0 值而无需 4xx 错误。HNSW 算法要求 ef >= 1，0 值无意义且可能导致搜索退化。源码显示 hnsw_ef 定义为 Option<usize> 无下界校验。此为 Type1_IllegalSuccess - API 应拒绝的非法值被成功接受。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "hnsw_ef applicable only when exact=false (constraint qdrant_range_search_points_006) - but contract silent on lower bound",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "HNSW ef parameter must be >= 1 (algorithm requirement - beam size cannot be zero or negative)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical constraint violation confirmed)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"numeric_boundary_validation_missing": 1}
+  }
+}

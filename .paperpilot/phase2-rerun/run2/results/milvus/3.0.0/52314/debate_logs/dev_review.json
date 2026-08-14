@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52314",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/upsert with scalar fields accepting wrong type values (string for Double/Int16, string/int for Bool)",
+          "observed": "Current API correctly rejects invalid type coercions with error code 1804: 'unable to cast string to float64' and 'strconv.ParseBool: parsing invalid syntax'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_tc\",\"data\":[{\"id\":0,\"vector\":[0.9,0.9,0.9,0.9],\"dbl\":\"3.14159\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["原始测试假设API接受类型强转,但当前版本已修复此行为"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["Scalar fields have strict type requirements - Double requires numeric values, Bool requires boolean values"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["cast.ToBoolE", "cast.ToInt16E", "json.Unmarshal", "strconv.ParseBool"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "pkg/util/cast/cast.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 616-620\ncase schemapb.DataType_Bool:\n    result, err := cast.ToBoolE(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n    }\n// Line 627-631\ncase schemapb.DataType_Int16:\n    result, err := cast.ToInt16E(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n    }",
+          "call_chain_traced": "Upsert HTTP handler → checkAndSetData → type-specific cast functions (ToBoolE/ToInt16E) → error validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:标量字段(Bool/Int16/Double等)在utils.go中都有严格的类型转换校验。Bool字段使用cast.ToBoolE,Int16使用cast.ToInt16E,这些函数在类型转换失败时会返回error并被正确处理。当前版本的源码包含完整的类型验证逻辑"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to upsert invalid type values - API rejects them with proper error messages",
+          "observed": "API correctly rejects invalid type coercions with descriptive error messages, proving the validation is working as expected"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "issue_already_fixed_in_current_version"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何开发者认知模式。原始测试记录的行为在当前版本中已被修复,API现在正确拒绝无效的类型强转"
+      },
+      "root_cause_if_fp": "issue_already_fixed_in_current_version",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "实际复现失败:当前版本API正确拒绝无效类型强转(Double字段接受字符串'3.14159'被拒绝,Bool字段接受字符串'true'被拒绝)。源码接地证实:utils.go中Bool/Int16/Double等标量字段都有严格的类型转换校验(cast.ToBoolE/cast.ToInt16E等),转换失败返回error并被正确处理。原始测试记录显示HTTP 200成功,但当前测试显示HTTP 200 with code 1804 error,表明此问题已在当前版本修复。这是FALSE_POSITIVE - 原始缺陷已不存在"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"issue_already_fixed_in_current_version": 1}
+  }
+}

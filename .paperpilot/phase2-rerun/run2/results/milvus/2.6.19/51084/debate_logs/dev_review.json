@@ -1,0 +1,108 @@
+{
+  "judge": "dev-reviewer",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_51084",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel=Invalid (top-level field)",
+          "observed": "HTTP 200 success, collection created with consistencyLevel defaulted to 'Bounded'. Invalid value 'Invalid' silently ignored without validation error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro2_51084\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No violated assumptions - the API truly accepts invalid consistencyLevel values and silently defaults to Bounded"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json api_endpoints[0].parameters[7] - consistencyLevel description: Strong, Session, Bounded, Eventually"
+          ],
+          "note": "Contract clearly documents consistencyLevel as an enum with 4 valid values. No validation in the API layer for this top-level parameter."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ 2.6.19",
+          "grep_queries": [
+            "consistencyLevel",
+            "CollectionReq struct",
+            "createCollection validation"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "From request_v2.go lines 690-703:\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\nFrom handler_v2.go lines 2042-2057:\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n\tif level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n\t\tconsistencyLevel = commonpb.ConsistencyLevel(level)\n\t} else {\n\t\terr := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n\t\t\t\"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n\t\tlog.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode:    merr.Code(err),\n\t\t\tHTTPReturnMessage: err.Error(),\n\t\t})\n\t\treturn nil, err\n\t}\n}\nreq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CreateCollection -> handler_v2.go:2043 checks httpReq.Params['consistencyLevel'] -> CollectionReq struct has no ConsistencyLevel field (line 690-703) -> top-level JSON field ignored or mishandled",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_bypassed",
+          "note": "Source code reveals validation logic EXISTS (lines 2043-2055) but it checks httpReq.Params['consistencyLevel'], while the CollectionReq struct has no ConsistencyLevel field. This creates a mismatch: API docs suggest top-level field, but validation checks nested params. Top-level consistencyLevel in JSON payload is ignored by Go unmarshaler, bypassing validation entirely."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST collections/describe to verify actual consistencyLevel applied",
+          "observed": "collections/describe returns consistencyLevel='Bounded' for all invalid inputs - confirms silent default behavior",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro2_51084\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Windows/Docker)",
+            "Concurrency/race conditions",
+            "Request parameter typos"
+          ],
+          "surviving": "API validation bypass due to struct field mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Bug shape 'REST_v2_data_type_handling' matches this issue - REST v2 API not validating consistencyLevel enum properly. This is a known blindspot for Milvus developers (25 issues in this area per bug_shapes.json)."
+      },
+      "root_cause_if_confirmed": "API validation bypass: validation checks httpReq.Params['consistencyLevel'] but CollectionReq lacks ConsistencyLevel field, so top-level JSON field bypasses validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "constraint_id": "milvus_enum_consistencyLevel_001",
+          "assertion_text_quoted": "consistencyLevel must be one of: Strong, Session, Bounded, Eventually",
+          "api_observed_value": "API accepts 'Invalid' and returns HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is an enum with 4 valid values",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API gracefully defaults to 'Bounded' but no source evidence this is intentional - appears to be validation bypass bug"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (C cannot override contract/physical violations)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Case 51084 confirmed as TRUE DEFECT. Root cause: API validation bypass in collections/create endpoint. The validation logic (handler_v2.go:2043-2055) checks httpReq.Params['consistencyLevel'], but the CollectionReq struct (request_v2.go:690-703) has no ConsistencyLevel field. When clients send 'consistencyLevel' as a top-level JSON field (as documented in API contract), the Go unmarshaler ignores it, bypassing validation entirely. Invalid values like 'Invalid', empty string, or arbitrary text are silently accepted and defaulted to 'Bounded'. This violates the contract requirement that consistencyLevel must be one of [Strong, Session, Bounded, Eventually]. The bug aligns with the 'REST_v2_data_type_handling' pattern from bug_shapes.json - a known Milvus blindspot (25 issues in REST v2 validation). Confidence: 0.95 - verified via clean repro (3 different invalid inputs), source code inspection, and falsification via describe endpoint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "API validation bypass (struct field mismatch)": 1
+    }
+  },
+  "self_check": "PASSED"
+}

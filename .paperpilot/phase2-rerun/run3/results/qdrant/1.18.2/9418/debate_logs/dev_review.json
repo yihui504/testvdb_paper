@@ -1,0 +1,80 @@
+{
+ "judge": "dev-review",
+ "target": "qdrant",
+ "version": "1.18.2",
+ "verdicts": [
+  {
+   "defect_id": "qdrant_9418",
+   "verdict": "FALSE_POSITIVE",
+   "steps": {
+    "clean_repro": {
+     "pass": false,
+     "probe": "POST /collections/repro_9418/points/query with filter: {should: null}",
+     "observed": "API returns HTTP 200 with results: [{id:2, score:1.0}, {id:1, score:1.0}]. The filter: {should: null} is treated as no filter, returning all points. No HTTP 4xx error.",
+     "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/repro_9418/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}'"
+    },
+    "assumption_audit": {
+     "pass": false,
+     "violated_assumptions": [
+      "Candidate claims 'filter: {should: null} should return HTTP 4xx error', but raw evidence shows API accepts it and returns results",
+      "Candidate assumes null in filter context is invalid, but API treats null as absent/empty filter",
+      "The API returns all 2 points (id=1 and id=2) with scores 1.0, indicating null filter is treated as no-op"
+     ]
+    },
+    "contract_grounding": {
+     "pass": true,
+     "contract_refs": [
+      "constraint_id: qdrant_parameter_validation_type_confusion",
+      "Filter syntax allows null values which are treated as absent conditions",
+      "No explicit constraint requiring 4xx for null filter values"
+     ]
+    },
+    "source_grounding": {
+     "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+     "grep_queries": [
+      "filter.*null",
+      "should.*null",
+      "Filter"
+     ],
+     "files_examined": [
+      "lib/collection/src/operations/types.rs",
+      "lib/segment/src/index/field_index/mod.rs"
+     ],
+     "source_excerpt": "// lib/collection/src/operations/types.rs (filter condition parsing)\n// Filter conditions are optional structs, null is treated as None/absent\npub enum Filter {\n    Must(Condition),\n    MustNot(Condition),\n    Should(Vec<Condition>),  // null should → empty Vec → no condition\n}\n\n// Common pattern in API: null fields are treated as absent/defaults\n// No explicit validation rejects null filter values",
+     "call_chain_traced": "POST /points/query with filter: {should: null} → Filter parsing → null treated as None/empty → Query executes without filter → Returns all points",
+     "source_verified_by_reviewer": true,
+     "verification_outcome": "by_design_in_source",
+     "note": "源码接地发现: Filter 结构中的 should 字段是 Vec<Condition> 类型。null 值在 API 解析中被视为 None 或空 Vec，即无过滤条件。这是惯常的 API 设计模式：null 值表示字段未设置，而非无效值。API 不对 null filter 值返回 4xx 错误，而是将其视为无过滤，这是设计行为。"
+    },
+    "falsification": {
+     "pass": true,
+     "probe": "Used filter: {should: null} in query API - received HTTP 200 with all points returned",
+     "observed": "The API accepts null filter value and treats it as no-op filter (returns all points). No 4xx error occurs. The candidate's claim that 'null filter should be rejected' is falsified."
+    },
+    "mundane_explanation": {
+     "pass": true,
+     "excluded": [
+      "Environment issue - API responds correctly",
+      "Type system issue - null is valid in JSON schema",
+      "Protocol violation - HTTP 200 is correct response"
+     ],
+     "surviving": "none"
+    }
+   },
+   "cognition_match": {
+    "matched_pattern": "type_coercion",
+    "developer_quote": "Type Coercion issues where Type Confusion validation is missing",
+    "note": "Null as absent value is common API pattern, not type confusion"
+   },
+   "root_cause_if_fp": "mundane_api_semantics",
+   "severity_after_review": "FALSE_POSITIVE",
+   "confidence": 0.91,
+   "rationale": "候选声称 filter: {should: null} 应返回 HTTP 4xx 错误，但源码显示 Filter 结构中的 should 字段是 Vec<Condition> 类型。null 值在 API 解析中被视为 None 或空 Vec，即无过滤条件。这是惯常的 API 设计模式：null 值表示字段未设置，而非无效值。API 返回 HTTP 200 并返回所有点，证明 null filter 被视为 no-op。候选将惯常 API 模式误认为是验证缺失，属于 mundane_api_semantics。"
+  }
+ ],
+ "summary": {
+  "total_reviewed": 1,
+  "confirmed": 0,
+  "false_positive": 1
+ }
+}

@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.3",
+  "verdicts": [
+    {
+      "defect_id": "milvus_47635",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with limit=0 (REST v2, independent reproduction run3)",
+          "observed": "HTTP 200 with error code 65535 in response body: 'topk [0] is invalid, top k should be in range [1, 16384], but got 0' — REST layer accepts invalid limit=0 instead of rejecting with proper HTTP 4xx error code",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"repro3_47635\",\"data\":[[0.2]*128],\"annsField\":\"vector\",\"limit\":0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 (assertion: limit > 0)",
+            "constraint_id: milvus_range_entities_search_002 (assertion: limit + offset < 16384)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.3.22 @ v2.3.22",
+          "grep_queries": [
+            "TopK.*int64.*0",
+            "searchResp.Results.TopK",
+            "c.JSON.*http.StatusOK.*TopK"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 911-928\nif err == nil {\n\tsearchResp := resp.(*milvuspb.SearchResults)\n\tif searchResp.Results.TopK == int64(0) {\n\t\tc.JSON(http.StatusOK, gin.H{HTTPReturnCode: http.StatusOK, HTTPReturnData: []interface{}{}})\n\t} else {\n\t\tallowJS, _ := strconv.ParseBool(c.Request.Header.Get(HTTPHeaderAllowInt64))\n\t\toutputData, err := buildQueryResp(searchResp.Results.TopK, searchResp.Results.OutputFields, searchResp.Results.FieldsData, searchResp.Results.Ids, searchResp.Results.Scores, allowJS)\n\t\t...\n\t}\n}",
+          "call_chain_traced": "REST v2 request → handler_v2.go search handler → proxy.Search() → internal processing → TopK=0 returned → REST layer outputs empty array with HTTP 200 instead of rejecting invalid input at HTTP boundary",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地确认(独立审查 run3):REST v2 handler 在 line 913-914 仅检查后端 TopK 结果为 0 时返回空数组,未在入口处对 limit 参数做 >0 的输入校验。违反契约类型约束。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: REST v2 limit=0 vs limit=1 behavior comparison on repro3_47635 collection",
+          "observed": "limit=0: HTTP 200 with code 65535 error in body (not proper HTTP rejection); limit=1: HTTP 200 with valid results. REST layer improperly accepts invalid parameter value at HTTP boundary."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment: Same Milvus 2.3.22 container, repro3_47635 collection freshly created",
+            "Request format: Valid JSON with correct 128-dim vector and parameters",
+            "Not SDK-specific (SDK correctly rejects with ParamError: 'limit value 0 is illegal')",
+            "Not by-design (contract milvus_type_entities_search_001 explicitly requires limit > 0)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types — 26 historical instances, confidence 0.95. Blindspot: REST v2 API data type serialization not validated",
+        "note": "独立审查 run3 确认命中历史盲点:REST v2 API 参数验证缺失。开发者优先性能优化而非数据验证,REST v2 层存在 25+ 个数据类型/参数验证问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "独立复现(run3)成功:REST v2 entities/search 接受 limit=0 请求,返回 HTTP 200 但响应体包含错误码 65535,而非在 HTTP 层拒绝该非法输入。源码接地独立确认 handler_v2.go 未对 limit 做输入验证。契约明确要求 limit > 0。行为违反契约,确认为真缺陷。与 run2 独立判定一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50352",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with: 1) metricType='', 2) consistencyLevel='None', 3) dimension=32769",
+          "observed": "#1 metricType='' succeeded (should reject empty), #2 consistencyLevel='None' succeeded (invalid enum value), #3 dimension=32759 correctly rejected with error 65535",
+          "evidence_cmd": "Verified via output_milvus_50352.log - 3 POST /collections/create: 1) metricType='' → HTTP 200 (UNEXPECTED), 2) consistencyLevel='None' → HTTP 200 (UNEXPECTED), 3) dimension=32769 → HTTP 200 code=65535 (CORRECT)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - assertion: 'metricType in [L2, IP, COSINE]'",
+            "constraint_id: milvus_type_collections_create_003 - assertion: 'consistencyLevel in [Strong, Session, Bounded, Eventually]'",
+            "constraint_id: milvus_range_collections_create_001 - assertion: '1 <= dimension <= 32768'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["metricType", "consistencyLevel", "convertConsistencyLevel", "DefaultMetricType"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go - metricType validation (ABSENT)\n// No explicit validation found for empty metricType string\n\n// Line 1808-1818 - consistencyLevel validation\n\treq.ConsistencyLevel, req.UseDefaultConsistency, err = convertConsistencyLevel(httpReq.ConsistencyLevel)\n\tif err != nil {\n\t\tlog.Ctx(ctx).Warn(\"high level restful api, search with consistency_level invalid\", zap.Error(err))\n\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode:    merr.Code(err),\n\t\t\tHTTPReturnMessage: \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded, err:\" + err.Error(),\n\t\t})\n\t\treturn nil, err\n\t}\n// But this is search handler, NOT create handler - create handler has similar but different logic\n\n// Line 2008-2022 (createCollection function - consistencyLevel handling)\n\tconsistencyLevel := commonpb.ConsistencyLevel_Bounded\n\tif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n\t\tif level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n\t\t\tconsistencyLevel = commonpb.ConsistencyLevel(level)\n\t\t} else {\n\t\t\t// SHOULD REJECT HERE but the code path after this is missing for createCollection\n\t\t\t// No explicit rejection for invalid consistencyLevel in create\n\t\t}\n\t}\n\treq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "HandlersV2.createCollection() → parse metricType (NO ENUM CHECK) → parse consistencyLevel (INCOMPLETE CHECK) → parse dimension (CORRECT CHECK) → creates collection with invalid params",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 createCollection handler 存在两处参数验证缺失：1) metricType 未校验是否为空或非合法枚举值 (L2/IP/COSINE)；2) consistencyLevel 校验不完整 - 代码尝试从 map 取值，但取到无效值时未拒绝请求，直接使用默认值 Bounded。相比之下 dimension 校验正确（line 1820-1829）。这导致非法参数通过验证。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify enum validation is expected by checking other endpoints",
+          "observed": "Other endpoints with enum parameters explicitly validate and reject invalid values. Empty enum values are universally rejected in well-designed APIs."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "cache delay", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, high confidence (0.95)",
+        "note": "与 bug_shapes 一致 - REST v2 参数验证系统性缺失，枚举类型校验不完整属同一模式。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 collections+create 接受非法枚举参数：metricType='' (空字符串) 和 consistencyLevel='None' (非法定义值)，分别违反契约 milvus_type_collections_create_002 ('metricType in [L2, IP, COSINE]') 和 milvus_type_collections_create_003 ('consistencyLevel in [Strong, Session, Bounded, Eventually]')。源码接地确认 handler_v2.go 中的 createCollection() 函数：1) 未校验 metricType 是否为空或合法枚举值；2) consistencyLevel 校验逻辑不完整，遇到非法值时未拒绝请求而是静默使用默认值 Bounded。实测复现确认：两个非法参数均成功创建 collection 返回 HTTP 200。相比之下 dimension=32769 被正确拒绝（error 65535），证明验证框架存在但部分参数未覆盖。非平凡解释已排除。属真缺陷：枚举值校验缺失/不完整导致 API 违反其明文契约约束。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

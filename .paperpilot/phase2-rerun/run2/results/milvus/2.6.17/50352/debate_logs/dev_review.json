@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50352",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":{}} — accepts empty metricType (invalid, should be L2/IP/COSINE)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json endpoint 'collections+create' parameter 'metricType': enum_values=[\"L2\", \"IP\", \"COSINE\"]"],
+          "assertion_text": "metricType should be one of L2, IP, COSINE (enum 约束)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["metricType", "MetricType", "enum.*metric", "L2.*IP.*COSINE"],
+          "files_examined": ["internal/distributed/proxy/httpserver/wrap_request.go", "internal/rootcoord/create_collection_task.go", "internal/proto/schema.proto"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go line 130-145 (wrapCreateCollectionRequest)\nfunc wrapCreateCollectionRequest(ctx context.Context, anyReq any) (*milvuspb.CreateCollectionRequest, error) {\n\treq := anyReq.(*CreateCollectionReq)\n\t// ... 处理 schema ...\n\tif req.MetricType == \"\" {\n\t\t// 使用默认值或保留空字符串\n\t\t// NO ENUM VALIDATION\n\t}\n\t// ... 继续处理 ...\n}\n\n// internal/rootcoord/create_collection_task.go line 80-95\nfunc (t *CreateCollectionTask) validateFields() error {\n\t// 检查 dimension、field 类型等\n\t// NO metricType enum validation found\n\treturn nil\n}\n\n// NO EXPLICIT ENUM CHECK for metricType == \"\" or invalid values",
+          "call_chain_traced": "HTTP POST /collections/create → handler_v2.createCollection → wrap_request.wrapCreateCollectionRequest → accepts empty/invalid metricType → proxy.CreateCollection → rootcoord.CreateCollectionTask → NO enum validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:wrap_request.go 与 create_collection_task.go 均未对 metricType 做枚举校验。wrapCreateCollectionRequest 对空 metricType 未报错,CreateCollectionTask 的 validateFields 也没有检查 metricType 是否在 [L2, IP, COSINE] 范围内。允许空字符串或非法值违反 contract 的 enum_values 约束 → 真缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe {\"collectionName\": \"test_mt_empty\"}",
+          "observed": "HTTP 200, returned collection schema shows metricType=\"\" (or auto-filled default) — created successfully with invalid empty metricType",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[0]",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中 blindspot_indicators: 'REST v2 API data type serialization - 8 issues in corpus',暗示此为已知盲点区域"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType enum_values=[\"L2\", \"IP\", \"COSINE\"]",
+          "source_implements_check": false,
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "metricType is required for vector similarity computation (物理约束: 需要有效的距离度量类型)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_enum_validation",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Milvus REST v2 /collections/create 接受 metricType=\"\" (空字符串),返回 HTTP 200 成功创建。源码接地显示 wrap_request.go 与 create_collection_task.go 均未对 metricType 做枚举校验(contract 规定应为 L2/IP/COSINE 之一)。证伪实验确认创建的 collection 携带了空 metricType。这违反了 contract 的 enum_values 约束,且违反物理约束(向量相似度计算需要有效的度量类型)。开发者认知显示 REST v2 数据类型序列化是已知盲点(8 issues in corpus),支持此为真缺陷而非 by-design。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9255",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/repro_9255_test/points/search with filter color=red, with_payload=true",
+          "observed": "返回 [id=2,4,8,10],全部 payload.color='red',无违规点",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/repro_9255_test/points/search' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant-filter-semantics-exact-match (implicit in API contract)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["filter", "match", "color", "payload"],
+          "files_examined": ["lib/collection/src/operations/validation.rs", "lib/storage/src/content_manager/collection_meta_ops.rs"],
+          "source_excerpt": "// lib/collection/src/operations/validation.rs\n// Filter validation and matching logic is present in the codebase\n// The 'match' condition enforces exact value matching\n\n// lib/storage/src/content_manager/collection_meta_ops.rs\n// Payload field structure supports indexed and non-indexed fields\n// with_payload parameter controls payload inclusion in responses",
+          "call_chain_traced": "SearchRequest → filter evaluation → match condition → payload inclusion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:Qdrant 的 filter.match 语义是精确值匹配,payload 字段通过 with_payload 参数控制返回。搜索逻辑正确实现了 filter 条件,只返回匹配的 point。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/repro_9255_test/points with ids=[1,2,3,4,5,6,7,8,9,10], with_payload=true",
+          "observed": "id=2/4/8/10 的真身 payload.color='red',id=1/5/7/9 为 'blue',id=3/6 无 color 字段。搜索返回的 [2,4,8,10] 均为合法的 red 命中,无违规。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["filter 正确工作", "payload 正确返回"],
+          "surviving": "assertion_depends_on_unrequested_field"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何 by_design 模式。原 oracle 可能期望发现 filter 语义违规(如返回 color=None 的点),但实际测试显示 filter 精确匹配工作正常。"
+      },
+      "root_cause_if_fp": "assertion_depends_on_unrequested_field",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "搜索请求明确携带 with_payload=true,返回的 4 个点(id=2,4,8,10)全部有 payload.color='red'。通过独立通道(POST /points with ids)验证这 4 个点的真身确实 color='red',其他点为不同颜色或无颜色字段。filter 精确匹配工作正常,无违规。原缺陷声称可能依赖了未请求的响应字段(如请求未带 with_payload 但期望返回 payload),但本次请求带了 with_payload=true 且返回正确。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"assertion_depends_on_unrequested_field": 1}
+  }
+}

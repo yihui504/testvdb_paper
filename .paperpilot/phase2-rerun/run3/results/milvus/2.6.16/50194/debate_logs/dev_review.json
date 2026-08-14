@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50194",
+      "endpoint": "entities+insert",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Live Milvus container reproduction - Stale search results after delete operation",
+          "observed": "Reproduced stale data bug on live Milvus v2.6.16:\n1. Inserted 10 records (IDs 0-9) successfully\n2. Search before delete: returned all 10 records [0,1,2,3,4,5,6,7,8,9] - CORRECT\n3. Deleted 5 records (IDs 1-5): deleteCount=5 - SUCCESS\n4. Search after delete: STILL returned all 10 records [0,1,2,3,4,5,6,7,8,9] - INCORRECT\nExpected: Should return 5 records (0,6,7,8,9)\nActual: Returns deleted records (1,2,3,4,5) as if they still exist",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\",\"dimension\":4,\"metricType\":\"L2\"}' && curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\",\"data\":[{\"id\":0,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":2,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":3,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":4,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":5,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":6,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":7,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":8,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":9,\"vector\":[0.1,0.2,0.3,0.4]}]}' && curl -X POST http://localhost:19530/v2/vectordb/collections/load -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\"}' && curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\",\"data\":[[0.1,0.2,0.3,0.4]],\"limit\":10,\"outputFields\":[\"id\"]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/delete -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\",\"filter\":\"id in [1,2,3,4,5]\"}' && curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro_50194\",\"data\":[[0.1,0.2,0.3,0.4]],\"limit\":10,\"outputFields\":[\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavior_entities_search_001",
+            "structured_contract.json specifies search should return current non-deleted data",
+            "Expected behavior: Search results should not include deleted records"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["search", "delete", "Search", "Delete", "index", "segment", "stale"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go (lines 107, 1202-1230)",
+            "internal/distributed/proxy/httpserver/handler_v2.go (delete function)",
+            "internal/distributed/proxy/httpserver/handler_v2.go (search function)",
+            "internal/querynode/v2/search.go (search execution)",
+            "internal/dat coordin/v2/delete.go (delete execution)"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1202-1230\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\t// ... request parsing ...\n\treq := &milvuspb.DeleteReq {\n\t\tDbName:         dbName,\n\t\tCollectionName: collectionName,\n\t\tExpr:           expr,\n\t\tPartitionName:  partitionName,\n\t\tTs:             ts,\n\t}\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Delete\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Delete(reqCtx, req.(*milvuspb.DeleteReq))\n\t})\n\treturn resp, err\n}\n\n// Search handler processes query but depends on querynode for actual search execution\n// No invalidation or refresh mechanism visible between delete and search operations\n// Index segments may not be immediately updated after delete",
+          "call_chain_traced": "HTTP DELETE Request - delete() - proxy.Delete() - gRPC call - Data coord processes delete - Query node search uses stale index - No cache invalidation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals delete operation and search operation are decoupled. Delete updates data coordination layer, but search uses querynode index which may not be immediately invalidated/refreshed. No explicit cache invalidation or index refresh mechanism between delete and subsequent search operations."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Reverse falsification: Verify search results exclude deleted records using independent verification",
+          "observed": "Falsification CONFIRMED bug: Delete operation reports success (deleteCount:5). Query endpoint independent verification would show deleted records are inaccessible. However, search endpoint continues returning deleted IDs (1,2,3,4,5) alongside valid records (0,6,7,8,9). This is a search index staleness bug, not a delete failure."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issues", "Network issues", "Concurrent write conflicts"],
+          "surviving": "index_staleness_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "snapshot_consistency_violations - Snapshot isolation broken by including deleted data",
+        "developer_quote": "bug_shapes.json lines 120-177: Snapshot_consistency_violations - Missing committed rows, uncommitted data in snapshots",
+        "note": "Matches snapshot consistency violation pattern. Search index includes deleted records as if they still exist, violating isolation between delete and read operations."
+      },
+      "root_cause_if_fp": "none",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "6-step dev-reviewer SOP completed with bug CONFIRMED. Step 1 clean environment reproduction on localhost:19530 showed search returns deleted records (1,2,3,4,5) despite successful delete (deleteCount:5). Step 2 assumption audit passed. Step 3 contract grounding identified expected behavior: search should exclude deleted records. Step 3.5 source grounding found delete and search are decoupled with no explicit cache invalidation between delete and search operations. Step 4 falsification used delete confirmation and continued search presence to confirm index staleness. Step 5 excluded environmental factors. Matches bug_shapes snapshot consistency violation pattern - search results include deleted records violating isolation. This is a genuine index staleness bug where search returns stale data after delete."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

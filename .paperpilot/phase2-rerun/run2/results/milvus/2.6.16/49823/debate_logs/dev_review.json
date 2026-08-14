@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49823",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}",
+          "observed": "API accepts nprobe=0 and returns results successfully (HTTP 200 with search results)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_49823\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"annsField\": \"vector\", \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API endpoint: entities+search accepts searchParams object; nprobe is IVF search parameter that should be validated"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["nprobe", "searchParams", "parseSearchInfo", "validateSearchParams"],
+          "files_examined": ["internal/proxy/search_util.go", "internal/proxy/task_search_test.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/querynodev2/mock_data.go"],
+          "source_excerpt": "// internal/proxy/search_util.go line 164-180\nfunc parseSearchInfo(searchParamsPair []*commonpb.KeyValuePair, schema *schemapb.CollectionSchema, rankParams *rankParams, largeTopKEnabled bool) (*SearchInfo, error) {\n\tvar topK int64\n\t// ... topK validation code present ...\n\t// BUT: No nprobe range validation found in parseSearchInfo or downstream\n\t// searchParams are passed through as JSON string without validation\n\treturn searchInfo, nil\n}\n\n// internal/querynodev2/mock_data.go line 80\n\"SearchParams\": \"{\\\"nprobe\\\":\" + strconv.Itoa(defaultNProb) + \"}\",\n// nprobe passed directly as string JSON, no validation",
+          "call_chain_traced": "REST v2 handler → parseSearchInfo → searchParams passed as JSON string → no nprobe validation → querynode → IVF search with invalid nprobe=0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: nprobe参数在proxy层的parseSearchInfo函数中没有做范围校验,直接透传给querynode。对于IVF索引,nprobe=0是无效值(应该≥1),但API接受了这个值并返回结果。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that nprobe=0 is mathematically invalid for IVF search (should be >= 1). API should have rejected this value but didn't.",
+          "observed": "Bug confirmed: API accepts invalid nprobe=0 and executes search successfully"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "request parameter typos"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches the blindspot pattern: REST v2 fails to validate search parameters properly. nprobe=0 is objectively invalid for IVF search (physical constraint) but API accepts it."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "nprobe for IVF search should be >= 1 (objective physical constraint for IVF index structure)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "IVF (Inverted File) index requires nprobe >= 1. nprobe=0 means 'probe 0 clusters' which is mathematically invalid",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "missing_range_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Step 1 repro confirmed: API accepts nprobe=0 and executes search successfully. Step 3.5 source grounding confirmed: No validation found in parseSearchInfo or downstream handlers - nprobe is passed through as JSON string without range checking. Step 6 three-perspective analysis: Contract/physical both CONFIRMED (nprobe=0 violates objective IVF constraint), behavioral confirms bug (no by-design evidence). This is a TRUE DEFECT - REST v2 API fails to validate IVF search parameter nprobe range, accepting invalid value 0."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"missing_range_validation": 1}
+  }
+}

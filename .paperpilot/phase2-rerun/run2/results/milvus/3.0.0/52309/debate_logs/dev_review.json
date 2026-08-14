@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52309",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupSize=0 and groupSize=-1",
+          "observed": "API returned HTTP 200 for both invalid groupSize values, should reject negative and zero values",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\":\"repro_52309\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Assumption: groupSize parameter validated to be >= 1 - Actual: API accepts 0 and -1 without error"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["groupSize parameter should be positive integer (group by size constraint)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupSize.*validation", "groupParams.*check", "groupByField.*validation"],
+          "files_examined": ["internal/proxy/search.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// Source search for groupSize validation found no explicit range checks for groupSize parameter in REST v2 handlers",
+          "call_chain_traced": "SearchRequest → groupParams → NO VALIDATION for groupSize >= 1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地未发现groupSize参数的显式范围校验,REST v2 handler直接透传该参数到下层"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple search requests with groupSize=0 and groupSize=-1 both succeeded",
+          "observed": "API accepts invalid groupSize values, returns topks=[1] instead of proper grouped results",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\":\"repro_52309\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":-1}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "param_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization not validated",
+        "note": "符合bug_shapes:REST_v2_data_type_handling模式,参数验证缺失"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.80,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "groupSize should be >= 1 (group by size must be positive)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "groupSize parameter represents result count per group, must be >= 1",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API entities+search端点接受无效的groupSize参数值(0和-1),违反参数语义约束。groupSize代表每组返回结果数量,应为正整数。实测显示API对groupSize=0和groupSize=-1均返回HTTP 200,未做参数校验。源码分析未发现REST v2 handler中对groupSize的显式范围检查。此问题符合bug_shapes中'rest-v2-data-type-handling'模式,该模式指出REST v2 API在参数验证方面存在系统性缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52313",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collection having JSON field 'meta', sending plain string value instead of JSON object",
+          "observed": "HTTP 200 success, insert accepted. Query returned stored value as plain string 'plain_string' instead of rejecting non-JSON input",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_52313\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "valid_assumptions": [
+            "Collection exists and is loaded",
+            "JSON field 'meta' is defined as dataType: JSON in schema",
+            "REST v2 API should validate field types before accepting data"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+insert (line 796, 2459, 2603, 2675 in structured_contract.json)",
+            "constraint_id: milvus_type_json_001 - JSON scalar data type exists in schema"
+          ],
+          "note": "No explicit contract assertion found stating 'JSON fields must reject non-JSON values', but implicit requirement exists from type system"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "DataType_JSON",
+            "JSON field validation",
+            "case schemapb.DataType_JSON"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go, lines 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// The JSON field handler accepts ANY string (dataString) without validating if it's valid JSON.\n// It directly converts the raw input string to bytes and stores it.\n// Missing validation: no json.Unmarshal() check, no error returned if dataString is not valid JSON.\n// Compare to other types (e.g., Array at line 645-759) which do json.Unmarshal with error checking.",
+          "call_chain_traced": "handler_v2.insert() → checkAndSetData() → case DataType_JSON → direct []byte(dataString) conversion WITHOUT validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "SOURCE CODE BUG FOUND: Line 760-761 in utils.go shows JSON field accepts ANY string without validation. Should check: json.Valid([]byte(dataString)) or attempt json.Unmarshal() first."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query inserted entity with filter 'id in [1]' and outputFields ['meta']",
+          "observed": "Query returned {\"id\":1,\"meta\":\"plain_string\"} - confirms the plain string was stored as-is, not rejected or converted to JSON object",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_52313\", \"filter\": \"id in [1]\", \"outputFields\": [\"meta\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Container timeout issues - tested with small batch (1 entity), immediate response",
+            "Collection not loaded - confirmed load success, insert succeeded",
+            "Network issues - successful HTTP 200 responses",
+            "Invalid schema - schema created with proper JSON field definition"
+          ],
+          "surviving": "type_coercion_bug_in_source_code"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "This defect EXACTLY matches bug_shape 'rest-v2-data-type-handling' which has 26 instances in corpus. Issue #52212 specifically mentions 'REST insert stores invalid JSON for a JSON field holding a string'. This is the SAME bug pattern."
+      },
+      "root_cause_if_true": "source_code_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion found requiring JSON fields to reject non-JSON values",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract doesn't explicitly state this constraint, but type system implies it"
+        },
+        "physical": {
+          "objective_constraint": "JSON fields should only accept valid JSON objects/arrays/primitives (not arbitrary strings)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: JSON field MUST accept only valid JSON. API accepts plain string 'plain_string' which is NOT valid JSON."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling, no by-design comments in source. Raw acceptance of any string is clearly a bug."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final_verdict=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 entities/insert endpoint accepts plain string values for JSON fields without validation. Source code (utils.go:760-761) shows direct conversion to []byte without json.Valid() check. Query confirms plain string 'plain_string' was stored as-is, not rejected. This matches known bug_shape 'rest-v2-data-type-handling' (26 instances) and specifically issue #52212. Type constraint violation confirmed."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "source_code_validation_missing": 1
+    }
+  }
+}

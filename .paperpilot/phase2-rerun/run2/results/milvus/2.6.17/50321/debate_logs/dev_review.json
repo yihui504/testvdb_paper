@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50321",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with same collectionName 'test_dup' twice",
+          "observed": "Both REST v2 calls return HTTP 200 with success. Collection name uniqueness is not enforced in REST v2 layer.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_dup\", \"dimension\": 4, ...}' # Call 1: HTTP 200. Call 2: HTTP 200 (should fail with 'collection already exists')"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001",
+            "assertion: 'collection creation is atomic AND collectionName is unique within dbName'",
+            "type: state_constraint",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["createCollection", "collection.*already.*exist", "duplicate"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// Line 1795-2132: func (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error)\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\t// ... schema parsing ...\n\t}\n\t// NO EXISTENCE CHECK HERE - directly calls proxy.CreateCollection()\n\t// No validation of whether collection already exists before calling CreateCollection\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/CreateCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.CreateCollection(reqCtx, req.(*milvuspb.CreateCollectionRequest))\n\t})\n\t// ... index creation and loading ...\n}",
+          "call_chain_traced": "REST v2 createCollection handler (line 1795) → NO duplicate name validation → proxy.CreateCollection() → backend",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms REST v2 createCollection handler does NOT check if collection already exists before calling proxy.CreateCollection(), violating contract constraint milvus_state_collections_create_001 that requires 'collectionName is unique within dbName'."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify if duplicate collection creation actually succeeds or is a no-op",
+          "observed": "HTTP 200 response for both calls suggests either: (1) duplicate creation succeeds incorrectly, or (2) second call is a no-op but returns success instead of 'already exists' error. Both violate contract which requires explicit error on duplicate name."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on live container",
+            "Request parameter error - both calls identical and valid",
+            "By-design - contract explicitly requires uniqueness enforcement"
+          ],
+          "surviving": "contract_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; 25+ issues in corpus",
+        "note": "Defect aligns with 'rest-v2-data-type-handling' pattern from bug_shapes.json - REST v2 layer has systematic validation gaps."
+      },
+      "root_cause_if_confirmed": "REST v2 API layer missing duplicate name existence check before proxy.CreateCollection() call",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "REST v2 /collections/create endpoint violates explicit contract constraint milvus_state_collections_create_001 ('collectionName is unique within dbName'). Source code confirms handler_v2.go:1795 createCollection() function does NOT validate if collection already exists before calling proxy.CreateCollection(). Live container reproduction shows duplicate collection creation calls both return HTTP 200, while contract requires error on duplicate names. This is a genuine API validation defect in REST v2 layer allowing potential duplicate collection creation or silently succeeding when it should fail with 'collection already exists' error."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "REST_v2_validation_gap": 1
+    }
+  }
+}

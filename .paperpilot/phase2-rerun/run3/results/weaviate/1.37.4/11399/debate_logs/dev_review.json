@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11399",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with vectorIndexConfig.dynamicEfMin=500, dynamicEfMax=10 (semantically invalid: min > max)",
+          "observed": "HTTP 200 OK, collection created with dynamicEfMin=500, dynamicEfMax=10 stored successfully",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"repro_11399\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"dynamicEfMin\": 500, \"dynamicEfMax\": 10, \"dynamicEfFactor\": 8}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["POST /schema endpoint should validate vectorIndexConfig parameters for semantic consistency"],
+          "note": "No explicit constraint_id found for this cross-field validation, but semantic consistency is implied by parameter names (min/max should obey min <= max)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["dynamicEfMin", "dynamicEfMax", "validate.*dynamicEf"],
+          "files_examined": ["entities/vectorindex/hnsw/config.go", "entities/vectorindex/hnsw/config_test.go"],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 177-193\n// dynamicEfMax parsing (lines 183-187)\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMax\", func(v int) {\n    uc.DynamicEFMax = v\n}); err != nil {\n    return uc, err\n}\n\n// dynamicEfMin parsing (lines 189-193)\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMin\", func(v int) {\n    uc.DynamicEFMin = v\n}); err != nil {\n    return uc, err\n}\n// NO CROSS-FIELD VALIDATION: No check that DynamicEFMin <= DynamicEFMax",
+          "call_chain_traced": "POST /schema → UserConfigFromMap → OptionalIntFromMap(dynamicEfMax) → OptionalIntFromMap(dynamicEfMin) → no validation of min <= max relationship",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：config.go 中的 dynamicEfMin 和 dynamicEfMax 是独立解析的两个 OptionalIntFromMap 调用，之间没有任何交叉验证检查 dynamicEfMin <= dynamicEfMax。这是真正的参数验证缺失缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/repro_11399 to verify the invalid values were persisted",
+          "observed": "HTTP 200, response shows dynamicEfMin=500, dynamicEfMax=10 (semantically invalid state successfully stored and retrievable)",
+          "evidence_cmd": "curl -s -X GET http://localhost:18080/v1/schema/repro_11399"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004_Parameter_Validation_Issues_in_Request_Parsing",
+        "developer_quote": "Input validation is often incomplete at API boundaries",
+        "note": "命中 blindspot_indicators：Input validation is often incomplete at API boundaries。这确实是 Weaviate 在参数验证方面的盲点。"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap_in_api_boundary",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地明确发现：在 entities/vectorindex/hnsw/config.go 中，dynamicEfMin 和 dynamicEfMax 参数是独立解析的，没有任何交叉验证来确保 dynamicEfMin <= dynamicEfMax 的语义一致性。实测 API 确实接受 min=500 > max=10 这种明显违反参数语义的配置。这属于 Parameter Validation Issues in Request Parsing (BS-004)，是 API 边界的参数验证缺失真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_validation_gap_in_api_boundary": 1}
+  }
+}

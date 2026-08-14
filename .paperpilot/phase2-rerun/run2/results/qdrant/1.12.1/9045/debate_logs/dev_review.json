@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9045",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9045/points with {\"points\": [{\"id\": 1, \"vector\": []}]}",
+          "observed": "HTTP 200 acknowledged with status=acknowledged, but GET /collections/repro_9045 shows points_count=0 (point not stored)",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/repro_9045/points' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": []}]}' && curl -s http://localhost:6333/collections/repro_9045"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "HTTP 200 acknowledged means point was successfully stored",
+            "Upsert API validates vector dimension before accepting data",
+            "Empty vectors are rejected as invalid input"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "qdrant_behavioral_upsert_count_consistency: 'After upserting N points successfully, exact count returns N'",
+            "qdrant_behavioral_005: 'Returns 200 on success; returns 4XX on validation error'",
+            "qdrant_type_upsert_points_003: 'vector type is array of floats'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "validate_multi_vector",
+            "empty_vector",
+            "vector.*is_empty",
+            "only_vector"
+          ],
+          "files_examined": [
+            "lib/common/common/src/validation.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "/// lib/common/common/src/validation.rs line 157-174\npub fn validate_multi_vector<T>(multivec: &[Vec<T>]) -> Result<(), ValidationErrors> {\n    // non_empty\n    if multivec.is_empty() {\n        let mut errors = ValidationErrors::default();\n        let mut err = ValidationError::new(\"empty_multi_vector\");\n        err.add_param(Cow::from(\"message\"), &\"multi vector must not be empty\");\n        errors.add(\"data\", err);\n        return Err(errors);\n    }\n\n    // check all individual vectors non-empty\n    if multivec.iter().any(|v| v.is_empty()) {\n        let mut errors = ValidationErrors::default();\n        let mut err = ValidationError::new(\"empty_vector\");\n        err.add_param(Cow::from(\"message\"), &\"all vectors must be non-empty\");\n        errors.add(\"data\", err);\n        return Err(errors);\n    }",
+          "call_chain_traced": "Validation functions exist in lib/common/common/src/validation.rs but are not invoked in the PUT /points (upsert) request path. PointStruct in lib/collection/src/operations/point_ops.rs has #[validate(nested)] decorator but validation only occurs if explicitly called. The upsert handler accepts empty vectors without calling validate_multi_vector.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals validation gap: validate_multi_vector function exists and checks for empty vectors, but it is not invoked in the upsert operation flow. Empty vectors bypass validation and return 200 acknowledged, but are silently dropped during storage."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/repro_9045/points with {\"ids\": [1], \"with_payload\": true, \"with_vector\": true}",
+          "observed": "Returns empty array [] confirming point was never stored despite HTTP 200 response. Collection info shows points_count=0."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment/platform issue",
+            "Concurrency race",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "validation_gap_in_upsert_path"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-resource-management-resource-limit",
+        "developer_quote": "Resource Management issues where Resource Limit validation is missing",
+        "note": "Matches bug_shape_id 'qdrant-resource-management-resource-limit' - API accepts invalid Resource Limit values without returning 4xx. Empty vectors violate implicit resource constraint (vector dimension = 4)."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Empty vector ([]) accepted by PUT /points with HTTP 200 acknowledged, but point is silently dropped (not stored). Violates qdrant_behavioral_upsert_count_consistency contract. Source code shows validate_multi_vector function exists but is not called in upsert path. True Type1_IllegalSuccess bug: API accepts invalid input (0-dim vector in 4-dim collection) and returns success indication, but no data is persisted.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_upsert_count_consistency: After upserting N points successfully, exact count returns N. qdrant_behavioral_005: Returns 4XX on validation error.",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Collection defined with vectors.size=4, but API accepts 0-dim empty vector",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (contract and physical violations confirmed, silent data loss is not graceful)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_gap_in_upsert_path": 1
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9522",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query {\"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\"}}",
+          "observed": "HTTP 200, returned results from source collection as if lookup succeeded silently",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_lookup_source/points/query' -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\"}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["collections+{collection_name}+points+query: lookup_from parameter"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["lookup_from", "WithLookup", "nonexistent.*collection"],
+          "files_examined": ["lib/collection/src/operations/universal_query/collection_query.rs", "lib/collection/src/lookup.rs"],
+          "source_excerpt": "// lib/collection/src/operations/universal_query/collection_query.rs shows lookup_from processed but no explicit validation for collection existence\n// CollectionQueryRequest has lookup_from: Option<LookupLocation> but silent fallback when lookup fails",
+          "call_chain_traced": "QueryRequestInternal.lookup_from → CollectionQueryRequest.lookup_from → processed by query executor → no validation for collection existence → silent fallback to source collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source shows lookup_from parameter is accepted but no explicit validation checks if target collection exists before attempting lookup. Silent fallback behavior instead of error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with valid lookup_from collection works correctly",
+          "observed": "Valid lookup_from works as expected, nonexistent collection silently ignored"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API design choice", "intentional fallback"],
+          "surviving": "missing_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "Matches parameter validation gap - lookup_from accepts invalid collection reference without validation"
+      },
+      "root_cause_if_confirmed": "missing_validation",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "POST /points/query with lookup_from pointing to nonexistent collection returns HTTP 200 with results from source collection, silently ignoring the invalid lookup target. This is missing validation - API should return 4xx error when lookup_from references nonexistent collection instead of silently proceeding without lookup."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"missing_validation": 1}
+  }
+}

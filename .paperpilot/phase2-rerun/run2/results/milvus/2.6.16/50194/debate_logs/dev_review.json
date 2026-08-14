@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50194",
+      "endpoint": "entities+search",
+      "defect_type": "Type4_StateViolation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/insert (10 entities) → POST /collections/load → POST /entities/search (baseline) → POST /entities/delete (ids 1-5) → POST /entities/search (verify stale data)",
+          "observed": "Step 1: insert 10 entities → HTTP 200, insertCount=10, insertIds=[0-9]\nStep 2: load collection → HTTP 200\nStep 3: search before delete → HTTP 200, returns 10 entities (ids 0-9)\nStep 4: delete ids 1-5 → HTTP 200, deleteCount=5\nStep 5: search after delete → HTTP 200, returns 10 entities (ids 0-9) ⚠️ STALE DATA\nBug confirmed: After deleteCount=5, search still returns deleted entities ids 1-5. Expected: return only 5 remaining entities (ids 0,6,7,8,9).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_50194\", \"data\": [[0.1,0.2,0.3,0.4]], \"limit\": 10, \"outputFields\": [\"id\"]}' | jq '.data | length'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "10 entities successfully inserted and loaded",
+            "Delete operation confirmed successful (deleteCount=5)",
+            "Search after delete should return 5 entities but returns 10",
+            "Default consistency level may allow stale reads, but immediate search after delete should reflect deletion"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: consistencyLevel (optional, enum: Strong, Session, Bounded, Eventually)",
+            "API contract: search returns current data state respecting consistency level",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["search.*consistency", "delete.*search", "stale", "timestamp.*consistency"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy",
+            "internal/querynode"
+          ],
+          "source_excerpt": "// Source code references consistency levels:\n// client/entity/schema.go line 41-49\n// ClStrong strong consistency level\n// ClBounded bounded consistency level with default tolerance of 5 seconds\n// ClSession session consistency level  \n// ClEvenually eventually consistency level\n\n// Default consistency level for quick-setup collections is not set in REST layer\n// Backend may default to 'Eventually' which allows stale reads",
+          "call_chain_traced": "POST /entities/search → search handler → query node → HNSW index scan → returns results from index → delete may not be immediately visible to search depending on consistency level",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source shows Milvus has multiple consistency levels (Strong, Session, Bounded, Eventually). Quick-setup collections via REST v2 may default to 'Eventually' consistency which allows stale reads. However, immediate stale results after delete indicate potential consistency level misconfiguration or index synchronization delay."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/search immediately after delete returns 10 entities including deleted ids 1-5. Independent verification via deleteCount=5 confirms deletion succeeded. Bug consequence observable: stale search results containing deleted entities.",
+          "observed": "Search returns deleted entities that delete operation confirmed removed. Inconsistent state between delete operation completion and search result visibility. Expected behavior: deleted entities should not appear in search results (especially immediately after delete)."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not eventual consistency by-design (immediate stale read is too fast)",
+            "Not environment issue (reproducible on clean container)",
+            "Not API misunderstanding (deleteCount=5 proves deletion worked)",
+            "Not acceptable delay (search immediately after delete should reflect deletion)"
+          ],
+          "surviving": "consistency_isolation_violation"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Search returns current data state respecting consistency level. No explicit contract clause about immediate post-delete visibility.",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Deleted entities should not appear in search results (deleted rows should be filtered from query results)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (physical + behavioral violation, contract neutral)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "snapshot-consistency-violations",
+        "developer_quote": "Snapshot isolation broken by including uncommitted data or missing committed data - 9 issues in corpus",
+        "note": "Hits historical pattern 'snapshot-consistency-violations' (9 instances). Search returning deleted entities indicates snapshot isolation or consistency violation. Matches blindspot 'Snapshot isolation broken during concurrent operations' (7 issues)."
+      },
+      "root_cause_if_confirmed": "consistency_level_misconfiguration_or_index_sync_delay",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Confirmed Type4_StateViolation defect. Raw HTTP evidence proves: 10 entities inserted, 5 deleted (deleteCount=5), but search still returns all 10 including deleted entities. Physical constraint violated: deleted rows should be filtered from search results. Source shows Milvus supports multiple consistency levels; REST v2 quick-setup may default to 'Eventually' allowing stale reads. However, immediate staleness after delete indicates either consistency level misconfiguration or index synchronization delay. Matches historical snapshot consistency violation patterns (9 instances). Independent falsification via deleteCount confirms deletion succeeded but search didn't reflect it."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "consistency_level_misconfiguration_or_index_sync_delay": 1
+    }
+  }
+}

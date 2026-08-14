@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52312",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with id field as string '\"100\"' instead of integer 100",
+          "observed": "HTTP 200 OK - API accepts string ID for Int64 primary key field and performs type coercion",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_upsert_pk\",\"data\":[{\"id\":\"100\",\"vector\":[0.9,0.9,0.9,0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Collection schema has id field as Int64 (primary key)",
+            "Request provides id as string value",
+            "Expected behavior: API should reject type mismatch or require strict type matching"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "REST v2 API entities+upsert: data type validation should enforce schema compliance",
+            "Milvus schema enforcement: Int64 fields should accept only integer values"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "upsert.*type.*coercion",
+            "parseInt64.*string",
+            "type.*validation.*upsert"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task_upsert.go",
+            "pkg/util/typeutil"
+          ],
+          "source_excerpt": "REST v2 handler directly parses JSON and passes through without type checking. The upsert operation accepts the data and performs implicit type coercion from string to Int64, allowing the upsert to succeed despite the type mismatch.",
+          "call_chain_traced": "REST v2 handler -> upsert request -> data insertion -> implicit type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "type_coercion_present",
+          "note": "API performs silent type coercion from string to Int64, which may be by design for REST API flexibility but differs from strict schema enforcement expected in database systems"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query confirmed upsert succeeded with vector=[0.9,0.9,0.9,0.9], proving the string ID was accepted and processed",
+          "observed": "Query returns id=100 with vector updated to [0.9,0.9,0.9,0.9], confirming the upsert operation succeeded despite type mismatch"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (clean container state)",
+            "Schema mismatch (collection has Int64 PK)",
+            "Network error (successful HTTP 200 response)"
+          ],
+          "surviving_explanation": "rest_api_type_coercion"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - returns wrong values for large integers, array fields in raw protobuf format",
+        "note": "Matches historical pattern of REST v2 data type handling issues from bug_shapes.json"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Schema should enforce type compliance - Int64 primary key fields should accept only integer values",
+          "source_implements_check": false,
+          "api_performs_coercion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Primary key fields have strict type requirements for data integrity and indexing",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "Type coercion may be intentional for REST API flexibility but compromises schema integrity",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint violation) -> final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_type_coercion",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "REST v2 upsert API accepts string value '\"100\"' for Int64 primary key field and performs implicit type coercion, allowing the operation to succeed. While this may be intentional API flexibility, it violates strict schema enforcement principles and matches the historical 'REST v2 data type handling' bug pattern. The behavior is confirmed through raw request testing and verified by successful query showing the upsert took effect. This is a real type coercion issue that could lead to data integrity problems in production systems expecting strict type validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_type_coercion": 1
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52307",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with JSON field containing string value instead of JSON object",
+          "observed": "HTTP 200 success - upsert accepted meta='invalid_json_string' (plain string) for JSON field without validation error",
+          "evidence_cmd": "python -c \"import requests; r=requests.post('http://localhost:19530/v2/vectordb/entities/upsert', json={'collectionName': 'repro_52307', 'data': [{'id': 0, 'vector': [0.9, 0.9, 0.9, 0.9], 'meta': 'invalid_json_string'}]}); print(r.status_code, r.text)\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 - JSON scalar data type (schema definition)",
+            "constraint_id: milvus_type_json_041 - Supported data type: JSON"
+          ],
+          "note": "Contract defines JSON as a valid data type for schema fields, expecting JSON object/array values, not arbitrary strings"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["case schemapb.DataType_JSON", "json.Unmarshal", "json.Valid", "checkAndSetData"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// Context from checkAndSetData function (line 466):\n// This function processes incoming upsert/insert data and validates field types.\n// For JSON fields (line 760-761), it directly converts dataString to []byte\n// WITHOUT any json.Valid() or json.Unmarshal validation check.\n// In contrast, other types like Bool, Int8, Array, etc. all have explicit validation.\n// For example:\n// - Bool (line 615-620): cast.ToBoolE with error return\n// - Int8 (line 621-626): cast.ToInt8E with error return  \n// - Array (line 645-760): json.Unmarshal with type-specific validation\n// But JSON fields just pass through: reallyData[fieldName] = []byte(dataString)",
+          "call_chain_traced": "REST v2 upsert endpoint (handler_v2.go:1637) → checkAndSetData (utils.go:466) → switch fieldType (line 542) → case JSON (line 760-761) → NO VALIDATION → raw byte storage",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code接地发现: JSON字段在REST v2 API的upsert/insert路径中完全缺失类型校验。其他标量类型(Bool/Int/Float/Array等)都有明确的类型转换和错误处理,唯独JSON类型直接将dataString转[]byte存储,不检查是否为合法JSON。这是真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - violation is successful acceptance of invalid data (Type1: IllegalSuccess), no falsification needed",
+          "observed": "Bug confirmed: API accepts and stores non-JSON values in JSON fields without error",
+          "note": "This is a Type1_IllegalSuccess - the API should reject invalid JSON but succeeds"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container - reproducible across runs)",
+            "Race condition (deterministic behavior)",
+            "Request parameter error (minimal valid request)",
+            "Approximate search by design (exact type mismatch)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Hits bug_shapes.json shape_id 'rest-v2-data-type-handling' - REST v2 data type serialization issues. Also hits developer_cognition blindspot: 'REST v2 API data type serialization - 8 issues in corpus'"
+      },
+      "root_cause_if_confirmed": "rest_v2_json_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 entities/upsert accepts non-JSON string values for JSON-type fields without validation. Source code (utils.go:760-761) shows JSON fields bypass all type checking that other field types receive. Contract defines JSON as a distinct data type implying JSON object/array values, not arbitrary strings. This matches historical REST v2 data type handling issues (bug_shapes rest-v2-data-type-handling, 26 instances) and developer_cognition blindspot for REST v2 serialization. Reproducible: upsert with meta='invalid_json_string' → HTTP 200 success, no error."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_json_validation_missing": 1
+    }
+  }
+}

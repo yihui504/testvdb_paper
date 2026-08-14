@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50192",
+      "endpoint": "collections+rename",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/rename with newCollectionName that already exists",
+          "observed": "HTTP 200 with {\"code\":65535,\"message\":\"duplicated new collection name default:repro_50192_dst with other collection name or alias\"}",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/rename\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_50192_src\", \"newCollectionName\": \"repro_50192_dst\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate may have expected duplicate name to be allowed or produce different error"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_state_collections_rename_001", "assertion: source collection exists AND new collection name does NOT exist"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["duplicated new collection name", "rename collection", "getCollectionByNameInternal"],
+          "files_examined": ["internal/rootcoord/meta_table.go", "tests/go_client/testcases/collection_test.go"],
+          "source_excerpt": "// internal/rootcoord/meta_table.go lines 1126-1135\n// check new collection already exists\ncoll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\nif coll != nil {\n\tlog.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n\treturn fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n}\nif err != nil && !errors.Is(err, merr.ErrCollectionNotFound) {\n\tlog.Warn(\"fail to check if new collection name is already taken\", zap.Error(err))\n\treturn err\n}",
+          "call_chain_traced": "RenameCollectionRequest → getCollectionByNameInternal → duplicate check → error if coll != nil",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "contract_consistent"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test successful rename to non-existing name (confirmed working), duplicate rejection working as designed",
+          "observed": "API correctly enforces uniqueness: rename to existing name rejected with error 65535, rename to new name succeeds with HTTP 200"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Standard duplicate name prevention working correctly"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected_behavior",
+        "note": "Preventing duplicate collection names via rename is standard database behavior"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "new collection name does NOT exist (constraint_id: milvus_state_collections_rename_001)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Collection names must be unique within database (physical database invariant)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_C=REFUTED → final=REFUTED (correct by-design behavior)",
+        "final_verdict": "REFUTED"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "FALSE_POSITIVE: API correctly prevents renaming collections to existing names per contract (milvus_state_collections_rename_001: 'new collection name does NOT exist'). Source code at internal/rootcoord/meta_table.go lines 1127-1130 implements duplicate detection: getCollectionByNameInternal checks if target name exists, returns error if coll != nil. Testing confirms: rename to existing name → Error 65535 with clear message, rename to non-existing name → Success HTTP 200. Proper duplicate prevention is expected database behavior, not a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

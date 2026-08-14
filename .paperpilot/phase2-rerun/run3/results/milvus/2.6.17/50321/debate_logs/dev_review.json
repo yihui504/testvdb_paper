@@ -1,0 +1,67 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50321",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection 'test_dup', then create same collection 'test_dup' again",
+          "observed": "Both create operations succeeded with HTTP 200, violating uniqueness constraint. Second create should have returned 400 for duplicate name.",
+          "evidence_cmd": "Verified via output_milvus_50321.log - POST /collections/create with collectionName='test_dup' executed twice, both returned {\"code\":0,\"data\":{}}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001 - assertion: 'collectionName is unique within dbName'",
+            "assertion_id: milvus_behavioral_collections_create_002 - expected: 'returns 400 on duplicate collection name'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["createCollection", "collectionName.*unique", "already exists", "duplicate"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1795-2030\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\tc.Set(ContextRequest, req)\n\n\t// ...schema validation logic...\n\t// ...dimension checks...\n\t// ...type validation...\n\t// NO DUPLICATE NAME CHECK HERE - directly proceeds to build schema\n\n\t// ...shardNum, consistencyLevel, ttlSeconds processing...\n\n\t// Finally calls proxy to create collection WITHOUT checking if name already exists\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/CreateCollection\", true, h.proxy, ...)\n\treturn resp, err\n}",
+          "call_chain_traced": "HandlersV2.createCollection() → schema validation → shard/consistency processing → wrapperProxyWithLimit() → NO duplicate name pre-check → creates duplicate collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 createCollection handler (handler_v2.go:1795-2030) 仅验证请求参数合法性(schema/dimension/type)，未检查 collectionName 是否已存在于该 database 中。根据契约 milvus_state_collections_create_001 要求 'collectionName is unique within dbName' 且 behavioral assertion milvus_behavioral_collections_create_002 明确期望 'returns 400 on duplicate name'，但源码无此预检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that uniqueness is a legitimate requirement by checking other similar endpoints",
+          "observed": "Other create endpoints (databases+create, users+create, roles+create, aliases+create, partitions+create) explicitly document '400 if already exists' in contract, confirming uniqueness is standard expectation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "cache delay", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, high confidence (0.95)",
+        "note": "虽然 bug_shapes 显示 REST v2 存在系统性问题，但本案例是唯一性校验缺失而非类型序列化。不过这进一步证实 REST v2 层存在系统性验证缺失问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 collections+create 允许创建同名 collection，违反契约 milvus_state_collections_create_001 明确要求的 'collectionName is unique within dbName' 约束及 behavioral assertion milvus_behavioral_collections_create_002 期望的 'returns 400 on duplicate name' 行为。源码接地确认 handler_v2.go:1795-2030 中的 createCollection() 函数仅验证参数合法性，未检查 collectionName 是否已存在。实测复现确认：对同一 collectionName 执行两次 create 均成功返回 HTTP 200。其他 create endpoints (databases/users/roles/aliases/partitions) 的契约均明文规定重复返回 400，证明唯一性检查是标准预期。非平凡解释已排除。属真缺陷：唯一性校验缺失导致 API 违反其明文契约。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

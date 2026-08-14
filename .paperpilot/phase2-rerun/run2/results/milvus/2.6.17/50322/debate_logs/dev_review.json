@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50322",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":{}} — drop on nonexistent collection returns success instead of 404",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/drop' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}' | head"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json endpoint 'collections+drop': '404 if collection does not exist; Drop is irreversible'"],
+          "assertion_text": "HTTP 404 if collection does not exist"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["DropCollection", "dropCollection", "404.*collection"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/rootcoord/drop_collection_task.go", "internal/distributed/proxy/httpserver/constant.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 177-182\nrouter.POST(CollectionCategory+DropAction, timeoutMiddleware(wrapperPost(func() any { return &CollectionNameReq{} }, wrapperTraceLog(h.dropCollection))))\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 440-445\nfunc (h *HandlersV2) dropCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := anyReq.(*CollectionNameReq)\n\treturn h.dropCollectionHandler(ctx, req.CollectionName, dbName)\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 430-437 (dropCollectionHandler delegates to proxy.DropCollection)\n// NO 404 CHECK at HTTP layer — passes through to gRPC layer which also lacks explicit 404 handling",
+          "call_chain_traced": "HTTP POST /collections/drop → handler_v2.dropCollection → proxy.DropCollection(ctx, req) → rootcoord.DropCollectionTask → no explicit collection existence check → returns success even for nonexistent collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:HTTP handler (handler_v2.go) 与底层逻辑 (rootcoord/drop_collection_task.go) 均未在 drop 前检查 collection 是否存在。contract 声明应返回 404,但源码无此校验 → 真缺陷(Type1_IllegalSuccess:DROP 作用于不存在的资源返回成功而非 404)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200, {\"code\":0,\"data\":{\"value\":false}} — collection does not exist, yet drop returned success. This contradicts expected idempotency (DROP on nonexistent should be error, not success).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design/rejection_patterns。REST v2 API 盲点之一(developer_cognition.json: 'REST v2 API data type serialization - 8 issues in corpus'),但此 case 为行为缺失校验非数据类型问题"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "404 if collection does not exist (contract endpoint: collections+drop)",
+          "source_implements_check": false,
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Dropping a nonexistent resource is physically meaningless — should fail fast",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_validation_before_operation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 /collections/drop 对不存在的 collection 返回 HTTP 200 + code:0(成功)而非 contract 声明的 HTTP 404。源码接地显示 HTTP 层(handler_v2.go)与底层逻辑(rootcoord/drop_collection_task.go)均未在 drop 前检查 collection 存在性。证伪实验证明目标 collection 确实不存在(/has 返回 false),但 drop 仍返回成功。这违反了 contract 明文规定('404 if collection does not exist')且违反物理约束(DROP 不存在的资源应失败)。开发者认知未显示此为 by-design 模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

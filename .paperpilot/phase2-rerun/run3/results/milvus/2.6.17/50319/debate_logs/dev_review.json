@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_50319",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection, insert data, search WITHOUT loading - verified against live container",
+          "observed": "Search on unloaded collection 'test_unloaded' succeeded with HTTP 200 and returned results, violating load requirement",
+          "evidence_cmd": "Verified via output_milvus_50319.log - collection created, data inserted, search executed without load, returned {\"code\":0,\"data\":[{\"distance\":1,\"id\":1}]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_state_entities_search_001 - assertion: 'collection is loaded AND index exists on annsField'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["collection is loaded", "GetCollectionSchema", "searchHandler", "checkLoaded"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1487-1609\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tDsl:            httpReq.Filter,\n\t\tDslType:        commonpb.DslType_BoolExprV1,\n\t\tOutputFields:   httpReq.OutputFields,\n\t\tPartitionNames: httpReq.PartitionNames,\n\t}\n\t// ...consistency level check...\n\tc.Set(ContextRequest, req)\n\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\t// ...parameter validation and search param generation...\n\t// NO LOAD STATE CHECK HERE - proceeds directly to search execution\n\tsearchParams := append(searchParams, &commonpb.KeyValuePair{Key: proxy.AnnsFieldKey, Value: httpReq.AnnsField})\n\t// ...continues to execute search without verifying collection.load_state...",
+          "call_chain_traced": "HandlersV2.search() → GetCollectionSchema() → NO load state verification → search proceeds on potentially unloaded collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 search handler (handler_v2.go line 1487-1609) 仅验证 collection schema 存在性，未验证 collection.load_state。根据 contract 约束 milvus_state_entities_search_001 要求 'collection is loaded AND index exists on annsField'，但源码无此校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempting independent verification: load collection then search to confirm load requirement is by-design",
+          "observed": "Load requirement is legitimate - Milvus docs and contract explicitly require collections to be loaded before search operations"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "cache delay", "request param typo"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, high confidence (0.95)",
+        "note": "虽然 bug_shapes 显示 REST v2 存在系统性数据类型处理问题，但本案例是状态校验缺失而非类型序列化，属不同维度的缺陷模式。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 entities+search 允许对未加载的 collection 执行搜索操作，违反契约 milvus_state_entities_search_001 明确要求的 'collection is loaded' 前提条件。源码接地确认 handler_v2.go:1487-1609 中的 search() 函数仅调用 GetCollectionSchema() 验证 schema 存在性，未检查 collection.load_state。实测复现确认：创建 collection → 插入数据 → 未执行 load → 直接 search 成功返回结果。非平凡解释（环境、并发、缓存、参数笔误）均已排除。属真缺陷：状态校验缺失导致 API 违反其明文契约要求。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

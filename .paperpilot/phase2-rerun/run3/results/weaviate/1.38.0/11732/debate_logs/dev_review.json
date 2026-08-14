@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_11732",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with null vectorIndexConfig distance value",
+          "observed": "API accepts null and coerces to default 'cosine' instead of rejecting as invalid",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestNullDistance_Run3\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": []
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["distance", "OptionalStringFromMap", "DefaultDistanceMetric", "ParseAndValidateConfig"],
+          "files_examined": ["entities/vectorindex/common/config.go", "entities/vectorindex/hnsw/config.go", "entities/vectorindex/common/config.go"],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 213-217\nif err := vectorIndexCommon.OptionalStringFromMap(asMap, \"distance\", func(v string) {\n\tuc.Distance = v\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/common/config.go lines 95-109\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}\n\n// entities/vectorindex/common/config.go line 31\nDefaultDistanceMetric        = DistanceCosine",
+          "call_chain_traced": "HTTP Request -> ParseAndValidateConfig -> OptionalStringFromMap -> skip null/invalid -> SetDefaults provides default",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows null values are silently ignored by OptionalStringFromMap, allowing default values to be used instead of rejecting null as invalid"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /schema with invalid distance string (not null)",
+          "observed": "API properly rejects 'invalid_distance' with 422 error: 'unrecognized distance metric', proving API can validate when string is provided"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "race conditions", "parameter typos"],
+          "surviving": "inconsistent_input_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Issue matches developer blindspot indicators: 'Input validation is often incomplete at API boundaries'"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API shows inconsistent validation behavior: properly rejects invalid distance strings with 422 errors, but silently coerces null values to defaults. Source code confirms OptionalStringFromMap ignores null/invalid values without validation, leading to type coercion. This violates input validation expectations and could cause silent configuration errors."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

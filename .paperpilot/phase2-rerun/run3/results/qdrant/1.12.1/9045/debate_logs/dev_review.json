@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9045",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/repro_9045/points (wait=false, empty vector []) vs /points?wait=true (same payload)",
+          "observed": "wait=true returns HTTP 400: 'Vector dimension error: expected dim: 4, got 0'. wait=false returns HTTP 200 with status=acknowledged (operation_id=1). Point is NOT actually inserted (points_count remains 0), but operation was accepted as valid.",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/repro_9045/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": []}]}' => HTTP 400; curl -s -X PUT 'http://localhost:6333/collections/repro_9045/points' -d '{\"points\": [{\"id\": 2, \"vector\": []}]}' => HTTP 200 acknowledged"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - 'id type is integer (uint64) or UUID string; vector type is array of floats or object of named vectors; payload type is key-value object'",
+            "API documentation: PUT /collections/{collection_name}/points accepts 'wait' parameter - 'Await for operation result'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "Vector dimension error",
+            "acknowledged",
+            "wait.*true.*validation",
+            "WrongVectorDimension"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/common/common/src/validation.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/wal.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 20-24\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\n// lib/collection/src/collection/point_ops.rs line 163-169 (showing wait parameter handling)\n.update_with_consistency(operation, wait, ordering, false)\n    .await?;\n\n// lib/collection/src/wal.rs line 117-123 (showing acknowledged vs closed operations)\npub fn read_all(\n    &self,\n    with_acknowledged: bool,\n) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {\n    if with_acknowledged {\n        self.read(self.first_closed_index())\n    } else {\n        self.read(self.first_index())\n    }",
+          "call_chain_traced": "REST API (wait param) → collection.update_with_consistency() → WAL write(acknowledged) vs segment.insert_with_validation(wait=true). When wait=false, validation is deferred to async worker; invalid data sits in WAL but fails at segment insertion, silently discarded.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: wait=false 时,REST API 直接将操作写入 WAL (status=acknowledged),不做同步验证。维度检查发生在 segment 层的 insert_with_validation,但这是异步执行的。如果验证失败,操作被静默丢弃,客户端看到 HTTP 200 acknowledged 但实际数据未插入。这是 resource management 问题 - 无效操作消耗 WAL 空间且客户端无法感知失败。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/repro_9045 → points_count=0 confirms no data was actually inserted despite acknowledged response",
+          "observed": "Collection shows points_count=0 after acknowledged upsert, proving silent failure"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (reproducible on clean container)",
+            "Concurrent race (single-threaded test)",
+            "API misunderstanding (API docs clearly state wait=true sync vs wait=false async)"
+          ],
+          "surviving": "async_validation_deficit"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-resource-management-resource-limit",
+        "developer_quote": "Resource Management issues where Resource Limit validation is missing",
+        "pattern_id": "qdrant-resource-management-resource-limit",
+        "note": "Fits bug_shapes.json pattern: 'API accepts invalid Resource Limit values without returning 4xx' - here invalid vector (dimension mismatch) is accepted in async mode without 4xx error"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Confirmed async validation bypass bug: PUT /points with wait=false accepts empty vector (dim 0 vs expected dim 4) returning HTTP 200 acknowledged, but wait=true correctly returns HTTP 400 dimension error. The invalid operation enters WAL and is silently discarded by async worker (points_count stays 0), consuming resources without client-visible failure. Source code shows dimension validation (WrongVectorDimension error) exists in segment layer but only runs in wait=true synchronous path. Wait=false bypasses this, violating the contract that invalid input should return 4xx regardless of wait mode. Matches bug_shapes.json resource-management pattern and is a real bug, not by-design (validated that 400 error exists for same input in sync mode, proving intent to reject invalid data)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "async_validation_deficit": 1
+    }
+  }
+}

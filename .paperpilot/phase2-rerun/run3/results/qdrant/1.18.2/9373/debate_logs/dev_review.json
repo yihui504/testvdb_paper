@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9373",
+      "endpoint": "collections+{collection_name}+points+count",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Created collection repro_9373 with indexed payload field 'category', inserted 3 points (2 with category='a', 1 with category='b'), built keyword index, tested both exact=true and exact=false count API with filter category='a'",
+          "observed": "count(exact=true)=2, count(exact=false)=2, scroll returned 2 points with category='a'. Both count paths returned identical values matching ground truth.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/repro_9373/points/count -d '{\"filter\": {\"must\": [{\"key\": \"category\", \"match\": {\"value\": \"a\"}}]}, \"exact\": true}' → {\"count\":2}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["exact parameter controls count accuracy: true=exact scan, false=approximate estimator"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": ["points/count", "do_count_points", "CountRequestInternal"],
+          "files_examined": ["src/actix/api/count_api.rs", "lib/shard/src/count.rs", "src/common/query.rs"],
+          "source_excerpt": "// lib/shard/src/count.rs line 15-18\n/// If true, count exact number of points. If false, count approximate number of points faster.\n/// Approximate count might be unreliable during the indexing process. Default: true\n#[serde(default = \"CountRequestInternal::default_exact\")]\npub exact: bool,",
+          "call_chain_traced": "REST /points/count → count_api.rs::count_points → common/query.rs::do_count_points → TOC.count → shard count with exact parameter routing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码确认: exact 参数是 bool 类型，默认 true。API 路由正确传递 exact 参数到 count 逻辑层。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via scroll API with same filter returned 2 points, matching both count(exact=true)=2 and count(exact=false)=2",
+          "observed": "No divergence found between exact and approximate paths for this test case with indexed keyword field."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": ["环境问题", "并发 race", "缓存延迟"],
+          "surviving": "oracle_traffic_defect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-cardinality-oracle-count-exact-false",
+        "developer_quote": "Approximate count might be unreliable during the indexing process",
+        "note": "命中 cardinality_oracle shape，但实测未复现 divergence——可能是探测流量未触发近似路径条件。"
+      },
+      "root_cause_if_fp": "oracle_traffic_defect",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "候选声称 count API 的 exact=false 路径与 exact=true 路径存在 cardinality divergence。但实测:在相同 filter (category='a') 下，exact=true 和 exact=false 均返回 count=2，与 scroll ground truth (2 points) 一致。原始 output_9373.log 中只有 index 和 scroll 操作，**完全没有 count 请求**——这是 probe 流量缺陷，oracle 未实际测试候选 endpoint。基于实测结果，未发现 cardinality divergence 证据。候选属于 FP，根因是 oracle 流量缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"oracle_traffic_defect": 1}
+  }
+}

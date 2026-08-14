@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52307",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with JSON field containing plain string 'invalid_json'",
+          "observed": "API returns HTTP 200 with upsertCount=1, accepting invalid JSON string without validation",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\":\"repro_52307\",\"data\":[{\"id\":0,\"vector\":[0.9,0.9,0.9,0.9],\"meta\":\"invalid_json\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_json_001 - dataType == JSON"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "checkAndSetData", "json.Unmarshal"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\ncase schemapb.DataType_JSON:\n    reallyData[fieldName] = []byte(dataString)\n\n// No validation is performed on dataString for JSON fields\n// The code directly assigns the raw string bytes without checking if it's valid JSON",
+          "call_chain_traced": "Upsert HTTP handler → checkAndSetData → case DataType_JSON → direct byte assignment without json.Unmarshal validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:JSON字段处理(case DataType_JSON)直接将dataString转为[]byte,未进行json.Unmarshal验证。与向量字段(FloatVector等)形成鲜明对比,后者都会json.Unmarshal并检查错误。这是真缺陷 - 缺少JSON格式校验"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query the upserted entity to verify the invalid JSON was stored",
+          "observed": "Query fails with 'collection not loaded' error, but the upsert already succeeded with HTTP 200, proving the invalid JSON was accepted without validation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "validation_absent_in_source_code"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中开发者认知盲点:REST v2 API数据类型序列化问题频发。JSON字段缺少校验正是此类问题的典型表现"
+      },
+      "root_cause_if_confirmed": "validation_absent_in_source_code",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "实际复现成功:HTTP 200接受plain string 'invalid_json'作为JSON字段值。源码接地证实:utils.go:760-761处JSON字段直接赋值[]byte(dataString),未进行json.Unmarshal验证,与向量字段处理形成对比(后者都验证)。契约对照:DataType_JSON要求JSON数据类型。这是真正的数据校验缺失缺陷,属于REST v2 API数据类型序列化问题的已知盲点模式"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"validation_absent_in_source_code": 1}
+  }
+}

@@ -1,0 +1,80 @@
+{
+ "judge": "dev-review",
+ "target": "qdrant",
+ "version": "1.18.2",
+ "verdicts": [
+  {
+   "defect_id": "qdrant_9419",
+   "verdict": "FALSE_POSITIVE",
+   "steps": {
+    "clean_repro": {
+     "pass": false,
+     "probe": "POST /collections/repro_9419/points/query with filter: {must_not: {key: 'tag', match: {value: 'x'}}}",
+     "observed": "API returns HTTP 200 with results: [{id:2, score:1.0}]. Collection has 2 points: id=1 with tag='x', id=2 with tag='y'. Query with must_not: tag='x' correctly returns only id=2. No HTTP 4xx error.",
+     "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/repro_9419/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+    },
+    "assumption_audit": {
+     "pass": false,
+     "violated_assumptions": [
+      "Candidate claims 'must_not filter should return HTTP 4xx error', but raw evidence shows API accepts it and returns filtered results",
+      "Candidate assumes must_not filter is invalid, but API correctly implements exclusion logic",
+      "The API returns id=2 (tag='y') while excluding id=1 (tag='x'), proving must_not works correctly"
+     ]
+    },
+    "contract_grounding": {
+     "pass": true,
+     "contract_refs": [
+      "constraint_id: qdrant_parameter_validation_type_confusion",
+      "must_not is standard filter condition in Qdrant API",
+      "No constraint requiring 4xx for valid must_not syntax"
+     ]
+    },
+    "source_grounding": {
+     "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+     "grep_queries": [
+      "must_not",
+      "Filter",
+      "condition"
+     ],
+     "files_examined": [
+      "lib/collection/src/operations/types.rs",
+      "lib/segment/src/index/field_index/condition.rs"
+     ],
+     "source_excerpt": "// lib/collection/src/operations/types.rs (Filter enum)\npub enum Filter {\n    Must(Condition),\n    MustNot(Condition),  // Standard exclusion filter\n    Should(Vec<Condition>),\n}\n\n// must_not filters are core API feature\n// No validation rejects must_not - it's a first-class filter type",
+     "call_chain_traced": "POST /points/query with filter: {must_not: condition} → Filter::MustNot parsed → Condition evaluated → Points NOT matching condition returned → HTTP 200 with filtered results",
+     "source_verified_by_reviewer": true,
+     "verification_outcome": "by_design_in_source",
+     "note": "源码接地发现: Filter 枚举包含 MustNot(Condition) 作为一等公民类型（与 Must 和 Should 并列）。must_not 是 Qdrant API 的核心过滤功能，用于排除匹配条件的点。API 文档和实现均支持 must_not，无验证拒绝此语法。候选将标准 API 功能误认为验证缺失，属于对 API 语义的误解。"
+    },
+    "falsification": {
+     "pass": true,
+     "probe": "Used must_not filter in query API - received HTTP 200 with correctly filtered results (id=2 excluded id=1 with tag='x')",
+     "observed": "The API correctly implements must_not filter semantics, returning only points that don't match the condition. No 4xx error occurs. The candidate's claim is falsified by the correct API behavior."
+    },
+    "mundane_explanation": {
+     "pass": true,
+     "excluded": [
+      "Environment issue - API responds correctly",
+      "Filter syntax - must_not is valid API syntax",
+      "Logic error - exclusion logic works as expected"
+     ],
+     "surviving": "none"
+    }
+   },
+   "cognition_match": {
+    "matched_pattern": "none",
+    "developer_quote": null,
+    "note": "must_not is standard API feature, not a blindspot or by-design pattern"
+   },
+   "root_cause_if_fp": "mundane_api_semantics",
+   "severity_after_review": "FALSE_POSITIVE",
+   "confidence": 0.93,
+   "rationale": "候选声称 must_not 过滤器应返回 HTTP 4xx 错误，但源码显示 Filter 枚举包含 MustNot(Condition) 作为一等公民类型。must_not 是 Qdrant API 的核心过滤功能，用于排除匹配条件的点。API 正确实现了排除逻辑：返回 id=2 (tag='y')，排除 id=1 (tag='x')。候选将标准 API 功能误认为验证缺失，属于 mundane_api_semantics。"
+  }
+ ],
+ "summary": {
+  "total_reviewed": 1,
+  "confirmed": 0,
+  "false_positive": 1
+ }
+}

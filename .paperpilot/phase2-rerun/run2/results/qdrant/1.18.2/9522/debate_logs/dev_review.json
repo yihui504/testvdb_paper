@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9522",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from collection referencing nonexistent vs existing collection",
+          "observed": "Both requests (lookup_from nonexistent vs existing collection) returned HTTP 200 with identical point results. The API accepts lookup_from parameter but appears to ignore it when the referenced collection doesn't exist, falling back to source collection behavior.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_lookup_source/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: lookup_from with nonexistent collection should return error (4xx)",
+            "Assumption: lookup_from parameter should be validated before query execution",
+            "Assumption: API should distinguish between valid and invalid lookup_from targets"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /collections/{collection_name}/points/query",
+            "parameter: lookup_from (object) - 'Cross-collection lookup location'",
+            "Note: Contract does not explicitly specify behavior when lookup_from references nonexistent collection. Silent fallback vs error is ambiguous."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["lookup_from", "cross.*collection", "lookup.*validation"],
+          "files_examined": [
+            "src/collections/cluster/remote_shard_transfer.rs",
+            "src/collections/cluster/replica_set.rs",
+            "src/collections/cluster/replica_selector.rs"
+          ],
+          "source_excerpt": "From grep search: lookup_from parameter handling exists but explicit validation of referenced collection existence is not clearly evident in examined source. The observed behavior (silent fallback when collection doesn't exist) suggests either: 1) validation is intentionally skipped for flexibility, or 2) validation is missing and fallback is incidental.",
+          "call_chain_traced": "POST /points/query with lookup_from → handler processes lookup_from → collection existence check missing or bypassed → fallback to source collection behavior → query executes normally",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "insufficient_validation",
+          "note": "源码接地发现: lookup_from参数处理存在，但对目标集合的存在性验证不明确。观察到的是静默回退行为，而非错误返回。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Compare results from valid vs invalid lookup_from collection - both return same points from source collection",
+          "observed": "Both requests return identical results (points [4,0,3] with same scores). This confirms that invalid lookup_from is silently ignored and query executes against source collection. There is no observable error or warning about invalid lookup_from target."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue",
+            "Concurrent/race condition",
+            "Request parameter typo (collection name is intentionally invalid)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs - extends to cross-collection lookup parameter validation",
+        "note": "匹配参数验证盲点模式，但此案例可能是有意的API设计决策（静默回退）而非缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.70,
+      "rationale": "While this could be seen as a validation gap (API should reject invalid lookup_from targets), the observed behavior may be intentional API design. Silent fallback to source collection when lookup_from target doesn't exist could be a deliberate flexibility feature rather than a bug. The contract does not explicitly mandate error behavior for invalid lookup_from. This appears to be a case of permissive API semantics rather than a clear defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

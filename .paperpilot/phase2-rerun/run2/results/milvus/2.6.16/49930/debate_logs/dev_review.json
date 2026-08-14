@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_49930",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with searchParams={\"ef\": -1}, {\"ef\": 0}, {\"nprobe\": 0} on IVF_FLAT and HNSW indexes",
+          "observed": "All three invalid search parameter values are accepted by the API:\n- HNSW ef=-1: HTTP 200, returns id=1\n- HNSW ef=0: HTTP 200, returns id=1\n- IVF nprobe=0: HTTP 200, returns ids 0,1\nExpected: HTTP 400 with parameter validation error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ivf\", \"data\": [[0.1,0.2,0.3,0.4]], \"limit\": 5, \"searchParams\": {\"nprobe\": 0}}' | jq '.code'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "HNSW ef parameter has physical constraint: ef ≥ 1 for search quality",
+            "IVF nprobe parameter has physical constraint: nprobe ≥ 1 for meaningful search",
+            "API should reject invalid values but currently accepts them"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 - search endpoint type contract",
+            "API contract: searchParams should be validated for physical constraints",
+            "No explicit range constraint found in structured_contract.json for ef/nprobe"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["generateSearchParams", "searchParams.*validation", "ef.*validation", "nprobe.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2192-2247\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\t// ... parameter processing code ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION of ef, nprobe ranges - just pass-through to query layer\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "POST /entities/search → generateSearchParams() → formats key-value pairs → NO RANGE CHECK → passes to query layer → IVF/HNSW accept invalid values",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms NO validation of ef (HNSW) or nprobe (IVF) parameter ranges in REST v2 layer. Parameters are passed through as strings without bounds checking. True defect: missing parameter validation allows physically impossible values."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/search with ef=-1, ef=0, nprobe=0 all succeed with HTTP 200 and return results",
+          "observed": "API accepts and processes invalid parameter values. No error returned. Search executes with physically impossible parameters. Bug consequence observable: invalid values accepted without error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not environment issue (reproducible on clean container)",
+            "Not API misunderstanding (clear physical constraint violation)",
+            "Not by-design (no graceful handling, no fallback logic in source)"
+          ],
+          "surviving": "physical_constraint_violation"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit range constraint for ef/nprobe in structured_contract.json (contract gap)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "HNSW ef ≥ 1 (cannot search with 0 or negative candidates); IVF nprobe ≥ 1 (must probe at least 1 cluster)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (physical + behavioral violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 issues in corpus",
+        "note": "Hits blindspot indicator: 'REST v2 API data type serialization - 8 issues in corpus'. This is a REST v2 parameter validation gap, a known weak area in Milvus."
+      },
+      "root_cause_if_confirmed": "missing_parameter_validation_rest_v2",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Confirmed REST v2 parameter validation defect. Source code confirms no range checking for ef (HNSW) or nprobe (IVF) search parameters. API accepts physically impossible values (ef=-1, ef=0, nprobe=0) with HTTP 200 success. Physical constraints violated: HNSW requires ef≥1, IVF requires nprobe≥1. No graceful handling or fallback - just pass-through of invalid values. Matches historical pattern 'rest-v2-data-type-handling' (26 instances)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_parameter_validation_rest_v2": 1
+    }
+  }
+}

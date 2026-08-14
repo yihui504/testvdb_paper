@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_9027",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with score_threshold=2.0 and score_threshold=-0.5",
+          "observed": "score_threshold=2.0 (above max possible score of 1.0) returns empty result []. score_threshold=-0.5 (negative, physically meaningless for Cosine similarity [0,1]) returns [{\"id\":1,\"version\":1,\"score\":1.0}]. API accepts negative score_threshold values without validation.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_score_threshold_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}' && curl -s -X POST http://localhost:6333/collections/test_score_threshold_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": -0.5}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should validate score_threshold to ensure it's within physically meaningful range for the distance metric",
+            "For Cosine similarity, valid score range is [0, 1], so score_threshold should be in [0, 1]",
+            "Inconsistent threshold comparison operators found in source (>= vs >)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json: score_threshold parameter documented as 'Define a minimal score threshold for the result. If defined, less similar results will not be returned.'",
+            "lib/collection/src/operations/types.rs lines 694-698: 'Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["score_threshold", "check_threshold", "ScoreType"],
+          "files_examined": [
+            "lib/collection/src/operations/types.rs",
+            "lib/segment/src/types.rs",
+            "lib/segment/src/segment/read_view/formula_rescore.rs",
+            "lib/common/common/src/types.rs"
+          ],
+          "source_excerpt": "File: lib/segment/src/types.rs, Lines 358-364\n\n/// Checks if score satisfies threshold condition\npub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {\n    match self.distance_order() {\n        Order::LargeBetter => score > threshold,  // STRICTLY GREATER THAN\n        Order::SmallBetter => score < threshold,   // STRICTLY LESS THAN\n    }\n}\n\nFile: lib/segment/src/segment/read_view/formula_rescore.rs, Lines 85-91\n\n// Handle score threshold.\nlet rescored = match score_threshold {\n    Some(threshold) => {\n        Either::Left(rescored_iter.filter(move |point| point.score >= threshold))  // GREATER THAN OR EQUAL\n    }\n    None => Either::Right(rescored_iter),\n}\n\nFile: lib/common/common/src/types.rs, Line 8\n\npub type ScoreType = f32;\n\nFile: lib/collection/src/operations/types.rs, Lines 694-698\n\n/// Define a minimal score threshold for the result.\n/// If defined, less similar results will not be returned.\n/// Score of the returned result might be higher or smaller than the threshold depending on the\n/// Distance function used. E.g. for cosine similarity only higher scores will be returned.\npub score_threshold: Option<ScoreType>,",
+          "call_chain_traced": "score_threshold (Option<f32>) → passed through without range validation → used in two places with inconsistent logic: (1) formula_rescore.rs uses >=, (2) types.rs check_threshold() uses > for LargeBetter → NO validation of value range (e.g., for Cosine, should enforce 0 <= threshold <= 1)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_inconsistent",
+          "note": "源码接地发现:score_threshold 参数无范围校验。源码中存在两处不一致的比较逻辑:formula_rescore.rs 用 >= (包含等于),types.rs::check_threshold() 用 > (不包含等于)。对于 Cosine 相似度(有效范围[0,1]),API 接受 score_threshold=2.0(超出上限)和 score_threshold=-0.5(超出下限),但无语义验证。这是 Type2_PoorDiagnostics - 缺少输入验证且逻辑不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested score_threshold=1.0 with exact match (score=1.0): API returns empty result, confirming strict > comparison behavior in tested code path. Tested score_threshold=2.0 (> max score 1.0): returns empty (expected). Tested score_threshold=-0.5: returns results (physically meaningless for Cosine [0,1] range).",
+          "observed": "The API has inconsistent behavior: some paths use >=, others use >. No validation prevents physically meaningless thresholds (negative for Cosine, >1.0 for Cosine). This violates the principle that APIs should reject invalid input."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on clean container",
+            "Request parameter typo - tested with exact values",
+            "API semantics - documented behavior contradicted by source code inconsistency"
+          ],
+          "surviving": "missing_range_validation_plus_inconsistent_logic"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match known by_design patterns. This appears to be a genuine validation gap and logic inconsistency. Developer cognition indicates parameter validation is a blind spot, but this specific inconsistency (> vs >=) suggests code evolution without comprehensive review."
+      },
+      "root_cause_if_confirmed": "missing_range_validation_and_logic_inconsistency",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API accepts score_threshold values outside physically meaningful ranges (e.g., negative values or >1.0 for Cosine similarity) without validation. Source code reveals inconsistent comparison operators (>= vs >) between different code paths (formula_rescore.rs vs types.rs), creating unpredictable behavior. This is a Type2_PoorDiagnostics issue: the API should validate parameter ranges and ensure consistent logic. Verified via live container and source code analysis."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_range_validation_and_logic_inconsistency": 1
+    }
+  },
+  "self_check": "PASSED"
+}

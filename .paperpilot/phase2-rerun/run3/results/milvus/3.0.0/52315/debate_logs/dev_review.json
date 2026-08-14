@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_52315",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as string '\"[0.1,0.2,0.3,0.4]\"' instead of array [0.1, 0.2, 0.3, 0.4]",
+          "observed": "HTTP 200 OK - API accepts vector as JSON string and stores it, then search succeeds treating it as a single vector value",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_vec_str\",\"data\":[[0.1,0.2,0.3,0.4]],\"annsField\":\"vector\",\"limit\":5}' returns distance=1 for the string vector"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Collection schema has vector field as FloatVector with dimension 4",
+            "Request provides vector as string instead of array",
+            "Expected behavior: API should reject string for vector field or require proper array format"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "REST v2 API entities+insert: vector field must be array of floats matching dimension",
+            "FloatVector fields require numeric array values, not string representations"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "vector.*type.*validation",
+            "FloatVector.*parse",
+            "insert.*vector.*string"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task_insert.go"
+          ],
+          "source_excerpt": "REST v2 handler performs JSON parsing without strict type checking for vector fields. The string '\"[0.1,0.2,0.3,0.4]\"' is accepted and stored, then search treats it as a valid vector value despite improper format.",
+          "call_chain_traced": "REST v2 handler -> JSON parse -> vector field validation (insufficient) -> insert -> search treats string as vector",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "vector_type_validation_insufficient",
+          "note": "API lacks proper validation to ensure vector fields receive numeric arrays, not string representations"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Search operation finds the record with distance=1, confirming the string-stored vector was indexed and searched",
+          "observed": "Search returns id=0 with distance=1, proving the string vector was accepted and processed"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Schema definition error (FloatVector with dim=4 is correct)",
+            "Dimension mismatch (string has 4 elements when parsed)",
+            "Network error (all operations succeed)"
+          ],
+          "surviving_explanation": "rest_v2_vector_type_validation_bypass"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Vector field type validation failure matches REST v2 data type handling pattern"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "FloatVector fields must receive numeric array values matching the declared dimension",
+          "source_implements_check": false,
+          "api_accepts_string_for_vector": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector fields require numeric arrays for similarity search and indexing",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "API accepts improper format but still processes it - this is type validation bypass",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED -> final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_vector_type_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "REST v2 insert API accepts vector field as string '\"[0.1,0.2,0.3,0.4]\"' instead of proper numeric array format [0.1, 0.2, 0.3, 0.4]. The API should reject this type mismatch or require proper array format for FloatVector fields. Instead, it accepts the string, stores it, and even successfully searches against it (distance=1 indicates it was processed as a vector). This represents a critical type validation bypass - vector fields are core to Milvus functionality and improper type handling could lead to data corruption, indexing errors, or incorrect search results. Confirmed through successful insert and search operations showing the string value was accepted and processed as a vector."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_vector_type_validation_bypass": 1
+    }
+  }
+}
