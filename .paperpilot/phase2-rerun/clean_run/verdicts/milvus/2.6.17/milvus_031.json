@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/upsert with collection created using explicit schema (autoID=true, NO dynamicField), data contains extra field 'color' not in schema",
+          "observed": "HTTP 200 with error code 1804: 'has pass more field without dynamic schema, please check it: invalid parameter'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "结论依赖 'upsert should accept extra fields without dynamic schema' - 事实上源码在第692行明确检查 enableDynamicField，未启用时直接返回错误",
+            "结论忽略 'upsert 操作需要主键字段' 这一前提 - 源码第2159-2161行硬性检查 must assign pk when upsert，无autoID豁免"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_upsert_001 - 'Primary key field must be specified in data for upsert'",
+            "constraint_id: milvus_state_entities_upsert_001 - 'If primary key exists, entity is updated; if not, inserted'",
+            "源码 internal/distributed/proxy/httpserver/utils.go:692 硬性检查动态schema开关",
+            "源码 internal/proxy/util.go:2159-2161 硬性检查主键字段必须存在"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "dynamic schema",
+            "has pass more field without dynamic schema",
+            "checkUpsertPrimaryFieldData",
+            "must assign pk when upsert"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/util.go",
+            "internal/proxy/util_test.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/utils.go line 692:\nreturn nil, nil, merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\")\n\ninternal/proxy/util.go lines 2159-2161:\n// must assign primary field data when upsert\nif primaryFieldData == nil {\n    return nil, nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"must assign pk when upsert, primary field: %v\", primaryFieldName))\n}",
+          "call_chain_traced": "entities+upsert → checkUpsertPrimaryFieldData() → line 692 dynamic schema check + line 2160 PK field hard check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present - 源码明确实现双重校验：动态schema检查和主键字段存在性检查",
+          "note": "源码接地发现：upsert 操作有两道硬性关卡：(1) 第692行检查是否启用动态schema，未启用时不接受schema外的字段；(2) 第2160行检查主键字段是否存在，无autoID豁免。原oracle触发了两个检查失败。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "创建启用enableDynamicField=true的collection，同样upsert带额外字段 - 仍因主键字段缺失失败（code 1804: row 0 does not has field id）",
+          "observed": "证明错误主因是主键字段缺失，而非动态schema问题。insert操作在autoID=true时能自动生成ID，但upsert强制要求提供PK字段。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 在干净容器上复现",
+            "并发/竞态 - 单线程顺序操作",
+            "请求参数笔误 - 使用标准REST v2 API格式",
+            "API语义误解 - 源码明确注释 'must assign primary field data when upsert'"
+          ],
+          "surviving": "upsert_api_semantics - upsert与insert的PK处理逻辑差异：insert在autoID=true时可省略PK字段，upsert则强制要求。这是API设计的显式不对称性，非bug。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - API returns proper error code 1804 with descriptive message for invalid parameter combination",
+        "note": "命中 developer_cognition.rejection_patterns.RP-001。响应包含明确的错误码和诊断消息，符合维护者对'合法失败'的期望。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码明确显示双重校验逻辑：(1) utils.go:692检查动态schema，未启用时拒绝额外字段；(2) util.go:2160检查主键字段存在性，无autoID豁免。原oracle的upsert请求同时触犯了这两条规则。HTTP 200响应携带error code 1804是REST v2 API的标准错误报告机制，不是非法成功。upsert与insert的PK处理差异是API设计的显式不对称性，非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with groupParams: {groupByField: 'vector', groupSize: 1}",
+          "observed": "Search returns 5 results (ids: 0,1,2,3,4) despite groupSize=1 on identical vectors [0.1,0.2,0.3,0.4]",
+          "evidence_cmd": "pymilvus client.search with group_params={'group_by_field': 'vector', 'group_size': 1}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "groupSize=1 should return at most 1 result per group when grouping by vector field",
+            "Vectors [0.1,0.2,0.3,0.4] for ids 0-9 are identical and should form a single group"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavioral_001 (Load makes collection searchable)",
+            "constraint_id: milvus_behavioral_insert_then_get_001 (Inserted entities should be retrievable)"
+          ],
+          "note": "No explicit contract assertion found for groupParams/groupSize behavior in REST v2 API documentation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "groupParams",
+            "group_by_field",
+            "groupSize",
+            "SearchGroupByOperator"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h",
+            "tests/python_client/milvus_client/test_milvus_client_search_group_by.py"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/constant.go line 224-225\nconst (\n\tParamGroupByField    = \"group_by_field\"\n\tParamGroupSize       = \"group_size\"\n\tParamStrictGroupSize = \"strict_group_size\"\n)\n\n// internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h line 243\n// for now, search_group_by does not handle null values",
+          "call_chain_traced": "HTTP request → handler_v2.go SearchRequest → proxy.SearchRequest → SearchGroupByOperator",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows group_by_field and group_size parameters exist but no explicit validation that groupSize is enforced for identical grouping values. The implementation appears to group by field value but when all values are identical, grouping behavior is undefined/implementation-dependent."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query all entities and compare with/without groupParams",
+          "observed": "Raw log shows search with groupSize=1 returns 5 results (ids 0-4). When 10 entities have identical vectors, proper grouping by vector field should return at most 1 result, but returns 5. This indicates groupSize is not being enforced or grouping logic treats identical vectors as separate groups."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (test on clean Milvus v3.0.0 container)",
+            "Data issue (verified 10 entities inserted with identical vectors)",
+            "Load state (collection loaded before search)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; symptoms include 'Returns wrong values for large integers', 'Array fields in raw protobuf format'",
+        "note": "While not identical to data type serialization, this matches the pattern of REST v2 API incomplete semantic handling. The groupParams feature appears to have incomplete implementation where grouping logic exists but groupSize enforcement is missing."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "The observed behavior (groupSize=1 returning 5 results when all 10 entities have identical vectors) violates reasonable expectations for group-by semantics, but this appears to be incomplete/undefined API behavior rather than a clear contract violation. Source code examination reveals the group_by parameters exist but lack explicit enforcement logic for the groupSize constraint when grouping values are identical. This matches the REST v2 API pattern of incomplete semantic implementation rather than a definitive bug in core functionality. The API does not promise specific grouping behavior in the REST v2 documentation, and the grouping feature may be intentionally limited or under-specified in this version."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

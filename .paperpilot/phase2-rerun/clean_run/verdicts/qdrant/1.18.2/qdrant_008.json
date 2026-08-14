@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_008",
+      "endpoint": "collections+{collection_name}+points+scroll",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_idx2/points/scroll with filter={must: [{key: \"category_id\", match: {value: \"cat_a\"}}]}, limit=100",
+          "observed": "API returns HTTP 200 with correct result: 25 points (ids 1-25) all with category_id='cat_a', next_page_offset=null indicating complete pagination",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_idx2/points/scroll\" -H \"Content-Type: application/json\" -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"limit\": 100}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Request includes filter parameter (category_id=cat_a)",
+            "Request includes limit parameter (100)",
+            "Response contains payload field with category_id values",
+            "Index exists on category_id field (keyword index created before scroll)",
+            "Scroll returns all matching points without omission"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_scroll_points_005 - 'limit default=10 (adjustable)'"
+          ],
+          "contract_analysis": "Contract states limit default=10 but does not assert any maximum limit constraint. The observed behavior (accepting limit=100) complies with the contract as there is no asserted upper bound violation."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "ScrollRequestInternal",
+            "limit.*validate|validate.*limit",
+            "range(min",
+            "scroll.*limit"
+          ],
+          "files_examined": [
+            "lib/shard/src/scroll.rs",
+            "src/actix/api/retrieve_api.rs",
+            "lib/collection/src/operations/types.rs",
+            "src/common/query.rs"
+          ],
+          "source_excerpt": "// lib/shard/src/scroll.rs lines 10-31\n#[derive(Clone, Debug, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]\n#[serde(rename_all = \"snake_case\")]\npub struct ScrollRequestInternal {\n    /// Start ID to read points from.\n    pub offset: Option<PointIdType>,\n\n    /// Page size. Default: 10\n    #[validate(range(min = 1))]\n    pub limit: Option<usize>,\n\n    /// Look only for points which satisfies this conditions. If not provided - all points.\n    #[validate(nested)]\n    pub filter: Option<Filter>,\n    /// ... (truncated)\n}\n\n// Line 47-49: default_limit() implementation\npub const fn default_limit() -> usize {\n    10\n}",
+          "call_chain_traced": "ScrollRequest (API layer) → ScrollRequestInternal (shard layer) → validator crate processes #[validate(range(min = 1))] attribute → validates limit >= 1 if Some(limit) provided. NO maximum limit validation exists in source.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_min_only",
+          "note": "源码接地发现: limit 参数仅有最小值验证 (range(min=1)), 无最大值限制。contract 仅陈述 default=10, 未断言上限。API 行为与源码一致,无违规。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test edge cases: limit=0 (rejected with validation error), limit=-1 (rejected with format error), limit=999999999999 (accepted, returns correct results), limit=1 (accepted, returns 1 point with next_page_offset for pagination)",
+          "observed": "limit=0 → HTTP 400 error: 'value 0 invalid, must be 1 or larger'. limit=-1 → HTTP 400 error: 'invalid value: integer `-1`, expected usize'. limit=999999999999 → HTTP 200, returns all 25 cat_a points correctly. limit=1 → HTTP 200, returns 1 point with next_page_offset=2 for pagination. API enforces min>=1 boundary correctly and accepts arbitrarily large limits.",
+          "evidence_cmd": "curl -X POST \"http://localhost:6333/collections/test_idx2/points/scroll\" -H \"Content-Type: application/json\" -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"limit\": 0}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker container, standard REST API)",
+            "Concurrency/race (single-threaded sequential test)",
+            "Cache/optimizer delay (used wait=true on index creation)",
+            "Request parameter typo (limit=100 is valid syntax)",
+            "API semantic misunderstanding (scroll API is working as designed)"
+          ],
+          "surviving_explanation": "none",
+          "conclusion": "No mundane explanation found - API behaves exactly as designed and documented."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns。候选测试的是 scroll API 的基本功能(过滤 + 分页), 属于正常 API 行为, 非维护者明确拒绝的模式。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 测试 scroll API 的基本功能:使用 keyword 索引过滤 category_id='cat_a' 并设置 limit=100。API 正确返回全部 25 个匹配点。源码显示 limit 参数仅有最小值验证 (>=1), 无最大值限制。contract 仅陈述 default=10, 未断言上限。API 行为与契约、源码完全一致, 无违规。这不是 bug, 而是 scroll API 的正常工作模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

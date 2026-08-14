@@ -1,0 +1,68 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=0, shardsNum=-1, shardsNum=65535",
+          "observed": "All three invalid values returned HTTP 200 (success) with code: 0, violating constraint shardsNum >= 1",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\":\"test_shard_0\",\"dimension\":4,\"shardsNum\":0,\"metricType\":\"L2\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_002", "assertion: shardsNum >= 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "ShardNumDefault", "shardsNum.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2000-2006\nshardsNum := int32(ShardNumDefault)  // ShardNumDefault = 1\nif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n    if shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n        shardsNum = int32(shards)  // NO RANGE CHECK - direct assignment without validation\n    }\n}\nreq.ShardsNum = shardsNum",
+          "call_chain_traced": "CreateCollection HTTP handler -> parse shardsNum from request params -> strconv.ParseInt -> direct int32() cast -> NO validation of shardsNum >= 1 -> pass to gRPC CreateCollectionRequest",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 API 层在 handler_v2.go:2000-2006 完全没有对 shardsNum 做范围校验,直接将用户输入的任何整数值(包括 0, -1, 65535)传递给下游。虽然下游可能会默认为 1,但 API 层应该拒绝无效值并返回 400 错误,而非静默接受。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe for collection created with shardsNum=0",
+          "observed": "Describe returned shardsNum=1 (API silently defaulted invalid value), confirming the bug: API accepts invalid input without error and performs silent fallback instead of proper validation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "concurrency race", "request param typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的 by_design_patterns 或 rejection_patterns。此属参数校验缺失的典型 bug,非维护者有意为之的设计。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 API 的 collections/create 端点存在参数校验漏洞:根据 structured_contract.json 中的约束 milvus_range_collections_create_002,shardsNum 必须 >= 1,但源码显示 handler_v2.go:2000-2006 完全没有范围校验。实测证明 API 接受 shardsNum=0、-1、65535 等明显非法值,返回 HTTP 200 而非预期的 400 错误。describe 响应显示 shardsNum 被静默默认为 1,说明这是缺失的参数校验而非 by-design 行为。违反契约 + 源码无校验 + 实测可复现 → 确认为真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

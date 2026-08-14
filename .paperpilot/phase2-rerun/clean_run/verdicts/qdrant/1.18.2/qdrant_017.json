@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/search with offset-based pagination",
+          "observed": "Successfully reproduced offset-based pagination behavior. Search API accepts offset parameter and returns paginated results. Page 1 (offset 0, limit 10): returned 10 points [0-9]. Page 2 (offset 10, limit 10): returned 10 points [10-19]. Page 3 (offset 20, limit 10): returned 5 points [20-24]. Pagination mechanism functions as designed.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_pagination_dedup/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.5, 0.5, 0.5, 0.5], \"limit\": 10, \"offset\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The candidate's implied assumption that offset-based pagination should return deduplicated, stable results across pages",
+            "The assumption that HNSW approximate search should behave like exact search with respect to pagination guarantees"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /collections/{collection_name}/points/search",
+            "parameter: offset (type: integer, required: false, description: 'Pagination offset')",
+            "parameter: limit (type: integer, required: true, description: 'Max results to return')"
+          ],
+          "note": "Contract defines offset parameter for pagination but does not specify guarantees about result deduplication or stability across paginated queries in approximate search context."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "offset.*skip|skip.*take",
+            "HNSW.*duplicate|duplicate.*HNSW",
+            "pagination"
+          ],
+          "files_examined": [
+            "lib/collection/src/collection/query.rs",
+            "lib/shard/src/search.rs",
+            "src/actix/api/search_api.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/collection/query.rs, lines 437-438\n// The pagination implementation applies skip/take AFTER HNSW results are retrieved\nlet result: Vec<ScoredPoint> = result.into_iter().skip(*offset).take(*limit).collect();\n\n// lib/shard/src/search.rs, lines 23-27\n/// Offset of the first result to return.\n/// May be used to paginate results.\n/// Note: large offset values may cause performance issues.\npub offset: usize,\n\n// No deduplication logic exists between paginated queries. HNSW approximate search can naturally return duplicate points across different search result sets due to graph-based traversal.",
+          "call_chain_traced": "CoreSearchRequest.offset (lib/shard/src/search.rs:26) → Collection query execution (lib/collection/src/collection/query.rs:437) → result.into_iter().skip(*offset).take(*limit).collect() - NO deduplication step",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code examination confirms that offset-based pagination applies simple skip/take to HNSW results without any deduplication mechanism. This is the expected behavior for approximate search, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified scroll API returns consistent point IDs across all pagination requests. No data inconsistency or point loss occurs.",
+          "observed": "Scroll API with limit=10 returned points [0-9] with next_page_offset=10, confirming that the underlying data is consistent. The offset parameter in search API is functioning as designed for approximate search pagination, not causing data corruption or loss."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, filesystem)",
+            "Concurrency or race conditions",
+            "Request parameter typos or missing fields",
+            "API semantic misunderstandings"
+          ],
+          "surviving_explanation": "HNSW_approximation_limitation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "HNSW_approximation_duplicates_in_pagination",
+        "developer_quote": "HNSW approximation duplicates in pagination - developer_stance: 'Accepted limitation of approximate search', should_report: false",
+        "note": "This candidate directly matches the developer cognition model's by_design_pattern for 'HNSW approximation duplicates in pagination'. Developers explicitly consider this an accepted limitation of approximate search algorithms, not a defect."
+      },
+      "root_cause_if_fp": "HNSW_approximation_limitation",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate suggests that offset-based pagination in Qdrant's search API has a defect. However, source code examination reveals that this is the expected behavior for HNSW approximate search: pagination applies simple skip/take logic to HNSW results without deduplication. The developer cognition model explicitly lists 'HNSW approximation duplicates in pagination' as a by_design pattern with stance 'Accepted limitation of approximate search' and should_report: false. This is not a bug but a fundamental trade-off in approximate vector search systems. HNSW graph-based search can return duplicate points across different queries due to its approximate nature, and offset-based pagination on approximate results is inherently limited. Users requiring strict deduplication should use scroll API or accept approximate search limitations."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "HNSW_approximation_limitation": 1
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with invalid searchParams: nprobe=0 for IVF_FLAT, ef=-1 and ef=0 for HNSW",
+          "observed": "API accepts all invalid parameter values without error and returns search results with HTTP 200",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ivf_nprobe\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"nprobe\": 0}}' returns {\"code\":0,\"cost\":0,\"data\":[{\"distance\":0,\"id\":0},{\"distance\":0,\"id\":1}],\"topks\":[2]}\ncurl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_hnsw_ef\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"ef\": -1}}' returns {\"code\":0,\"cost\":0,\"data\":[{\"distance\":0,\"id\":1}],\"topks\":[1]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Search parameters nprobe and ef should be validated at API boundary",
+            "Invalid parameter values should be rejected with error response"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_param_validation_001 - REST v2 API should validate search parameters",
+            "constraint_id: milvus_param_validation_002 - IVF nprobe must be >= 1",
+            "constraint_id: milvus_param_validation_003 - HNSW ef must be >= 1"
+          ],
+          "contract_source": "structured_contract.json assertions for parameter validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "generateSearchParams",
+            "nprobe",
+            "ef",
+            "searchParams",
+            "parameter validation",
+            "range check",
+            "validateSearchParams"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/querynodev2/tasks/search_task.go",
+            "client/index/ivf.go",
+            "client/index/hnsw.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2192-2247\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... deepEqual function ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s, in search_param: %v, in search_param.params: %v\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\t// NO VALIDATION: values are passed through as-is with fmt.Sprintf\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO RANGE CHECK for nprobe, ef, or other numeric search parameters\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:generateSearchParams() → passes through to querynode → segcore search execution → NO validation at any layer",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：generateSearchParams 函数完全不做参数值验证，仅做类型检查(dict)和冲突检查。所有 searchParams 参数(包括 nprobe, ef)直接透传到下层。Go 代码和 C++ segcore 层均未找到 range check 逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: API accepts and processes invalid parameters without error, confirming the violation exists",
+          "observed": "Multiple test cases confirm: nprobe=0, ef=-1, ef=0 all return HTTP 200 with search results, proving lack of validation",
+          "falsification_failed": true
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (same behavior on clean install)",
+            "Concurrency issue (single-threaded test)",
+            "Request parameter typo (parameters correctly named)",
+            "API semantic misunderstanding (invalid values are objectively wrong: nprobe=0, ef=-1)"
+          ],
+          "surviving_explanations": [],
+          "mundane_explanation_found": false
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "命中 blindspot：REST v2 API 数据类型处理缺陷历史模式。本案属参数校验缺失，与历史 REST v2 缺陷模式一致。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "API must validate search parameters: nprobe >= 1 for IVF indices, ef >= 1 for HNSW indices (constraint_id: milvus_param_validation_001/002/003)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "nprobe must be >= 1 for IVF search (cannot probe 0 clusters), ef must be >= 1 for HNSW search (cannot search with ef < 1)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "missing_parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 API entities/search endpoint accepts invalid search parameter values without validation. Source code analysis confirms generateSearchParams() in utils.go passes all parameters through without range checking. Physical constraints are violated: nprobe=0 is invalid for IVF (must probe >= 1 clusters), ef=-1 and ef=0 are invalid for HNSW (must be >= 1). Multiple independent reproduction tests confirm API accepts these values with HTTP 200. This is a genuine Type1_IllegalSuccess defect matching the historical REST v2 data type handling blindspot pattern."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_parameter_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create with metricType='INVALID_METRIC'",
+          "observed": "API properly rejected invalid metricType with error code=1100, message='float vector index does not support metric type: INVALID_METRIC: invalid parameter'",
+          "evidence_cmd": "python -c 'from pymilvus import MilvusClient; client = MilvusClient(\"http://localhost:19530\"); client.create_collection(\"_test_repro_collection\", 128, \"INVALID_METRIC\")'",
+          "raw_response": "MilvusException: (code=1100, message=float vector index does not support metric type: INVALID_METRIC: invalid parameter[expected=valid index params][actual=invalid index params])"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate metricType parameter against allowed values",
+            "Invalid metricType values should be rejected with error"
+          ],
+          "note": "Assumption that invalid metricType should be rejected is CORRECT and validated by repro"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002",
+            "assertion: 'metricType must be L2, IP, or COSINE'",
+            "source: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "metricType",
+            "DefaultMetricType",
+            "CreateCollection",
+            "validateMetric"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "client/entity/common.go",
+            "pkg/util/paramtable/autoindex_param.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2067-2075\nif len(httpReq.Schema.Fields) == 0 {\n    if len(httpReq.MetricType) == 0 {\n        httpReq.MetricType = DefaultMetricType\n    }\n    createIndexReq := &milvuspb.CreateIndexRequest{\n        DbName:         dbName,\n        CollectionName: httpReq.CollectionName,\n        FieldName:      httpReq.VectorFieldName,\n        IndexName:      httpReq.VectorFieldName,\n        ExtraParams:    []*commonpb.KeyValuePair{{Key: common.MetricTypeKey, Value: httpReq.MetricType}},\n    }\n}\n\n// client/entity/common.go lines 24-27\ntype MetricType string\nconst (\n    L2             MetricType = \"L2\"\n    IP             MetricType = \"IP\"\n    COSINE         MetricType = \"COSINE\"\n)",
+          "call_chain_traced": "CreateCollection handler -> MetricType assignment to CreateIndexRequest -> CreateIndex RPC (validation happens at index layer, not REST handler)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source shows MetricType is passed to CreateIndex; validation occurs at index creation layer (not explicitly at REST handler level). Invalid metricType values ARE rejected with proper error (code=1100). This is working as designed."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with invalid metricType to verify rejection",
+          "observed": "API correctly rejects invalid metricType with error code=1100. Bug consequence (invalid value accepted) does NOT occur.",
+          "note": "Falsification succeeded: claimed bug behavior (accepting invalid metricType) is not present"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Race conditions",
+            "Parameter typos",
+            "API semantic misunderstandings"
+          ],
+          "surviving": "none",
+          "note": "No mundane explanations found - API behaves correctly"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No by_design_pattern matches - this is proper parameter validation, not a by-design behavior"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] (constraint_id: milvus_type_collections_create_002)",
+          "source_implements_check": true,
+          "api_observed_value": "API rejects invalid metricType='INVALID_METRIC' with error code=1100",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "metricType must be valid enum value",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED -> final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "The candidate claims param_validation defect for collections+create endpoint. However, Step 1 reproduction shows the API PROPERLY rejects invalid metricType values with error code=1100 ('float vector index does not support metric type: INVALID_METRIC: invalid parameter'). Contract constraint milvus_type_collections_create_002 explicitly states 'metricType must be L2, IP, or COSINE' and this constraint is NOT violated. Source code analysis (Step 3.5) shows MetricType is passed to CreateIndex where validation occurs. The API behavior is CORRECT - invalid values are rejected as expected. This is a FALSE_POSITIVE."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

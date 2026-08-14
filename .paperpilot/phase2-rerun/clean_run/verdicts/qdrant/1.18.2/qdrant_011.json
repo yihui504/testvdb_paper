@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "self_check": "PASSED",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_011",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_filter_null_review/points/query {\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}",
+          "observed": "API returned HTTP 200 with result points (no validation error despite null in array field)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_filter_null_review/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}' | jq '.status'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate filter structure and reject null values in array fields (should/must/must_not fields expect array of conditions, not null)"
+          ],
+          "note": "The Filter struct defines should as Option<Vec<Condition>> with #[validate(nested)] but accepts null instead of requiring array or omitting field"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "segment::types::Filter (line 3834) - struct derives Validate with #[validate(nested)] on should field",
+            "lib/api/src/rest/schema.rs:582 - QueryRequestInternal.filter: Option<Filter> with #[validate(nested)]"
+          ],
+          "note": "Contract uses validator crate with nested validation but doesn't explicitly prevent null in array-typed Option fields"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": ["struct Filter", "validate.*nested", "should.*Option.*Vec"],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs",
+            "lib/api/src/grpc/qdrant.rs",
+            "src/actix/api/query_api.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs lines 3830-3850\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash)]\n#[serde(deny_unknown_fields, rename_all = \"snake_case\")]\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    #[serde(default, with = \"MaybeOneOrMany\", skip_serializing_if = \"Option::is_none\")]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,\n    /// All conditions must match\n    #[validate(nested)]\n    #[serde(default, with = \"MaybeOneOrMany\", skip_serializing_if = \"Option::is_none\")]\n    pub must: Option<Vec<Condition>>,\n}",
+          "call_chain_traced": "QueryRequest (rest) -> QueryRequestInternal.filter (Option<Filter>) -> Filter struct with should: Option<Vec<Condition>> and #[validate(nested)]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_insufficient",
+          "note": "源码接地发现:Filter struct 使用 validator 嵌套验证,但对 Option<Vec<Condition>> 字段(should/must)未明确检查 null 值。serde 配置允许 default + MaybeOneOrMany 处理,导致 null 被接受而非拒绝。这是验证缺口,非显式设计。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Comparison test: filter:{\"should\":[]} vs filter:{\"should\":null} vs no filter",
+          "observed": "All three variants return identical results (all points), confirming null is treated as empty array - no data corruption but validation gap confirmed",
+          "evidence_cmd": "curl -s with filter:{\"should\":[]} returns HTTP 200; with filter:{\"should\":null} returns HTTP 200; no filter returns HTTP 200 - all return same points"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (tested in clean Docker container)",
+            "并发/竞态 (single-threaded test)",
+            "缓存/优化器延迟 (immediate query)",
+            "请求参数笔误 (exact null payload tested)"
+          ],
+          "surviving": "validation_gap_in_filter_parser"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中明确的 by_design 模式;属于参数验证缺口类别"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Filter.should should be array of Condition or omitted, not null (struct definition: Option<Vec<Condition>> with nested validation)",
+          "source_implements_check": true,
+          "api_observed_value": "POST /points/query with filter:{\"should\":null} returns HTTP 200 (accepted)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "None - this is API semantic validation, not physical/mathematical constraint",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "evidence": "Source shows #[validate(nested)] but no explicit null handling; API treats null as empty array (graceful degradation), but no source comment or constant indicates this is intentional by-design behavior",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (Behavioral gracefulness cannot override contract violation; validation gap is confirmed even if API handles null gracefully)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Step 1 复现确认:API 接受 filter:{\"should\":null} 返回 HTTP 200 (期望 400/422)。Step 3.5 源码接地发现:Filter struct 在 lib/segment/src/types.rs line 3834 定义 should 为 Option<Vec<Condition>> 并使用 #[validate(nested)],但未明确验证 null 值。validator 嵌套验证对 Option 包装的字段无法拒绝 null 输入。Step 4 证伪显示 null 被视为空数组(无数据损坏),但这是验证缺口非显式设计。Step 6 三视角:契约视角(A)-API 违反结构验证要求→CONFIRMED;物理视角(B)-无客观约束→NEUTRAL;行为视角(C)-API 优雅处理但源码无 by-design 证据→WEAK_REFUTED。聚合规则:verdict_A=CONFIRMED → final=CONFIRMED (行为优雅不能推翻契约违反)。确认为真缺陷:filter 解析器缺少 null 值验证。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

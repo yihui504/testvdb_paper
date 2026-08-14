@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with JSON field containing invalid string value",
+          "observed": "HTTP 200, upsertCount=1, upsertIds=[0] - upsert succeeded",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_dev_review\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"meta\": \"invalid_json_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["dataType constraint: milvus_type_json_001 asserts JSON is a valid scalar dataType"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "anyToColumns", "json.Marshal", "JSON.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 1967-1968\n\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\tnameColumns[field.Name] = append(nameColumns[field.Name].([][]byte), candi.v.Interface().([]byte))",
+          "call_chain_traced": "REST v2 Upsert -> handler_v2.upsert() -> anyToColumns() -> case DataType_JSON: type assertion to []byte WITHOUT JSON validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: JSON字段在anyToColumns函数中(line 1968)直接做candi.v.Interface().([]byte)类型断言,未做JSON格式校验。输入'invalid_json_string'字符串被直接转换为[]byte存储,没有json.Marshal或validation检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter='id==0' outputFields=['meta']",
+          "observed": "HTTP 200, data=[{\"id\":0,\"meta\":\"invalid_json_string\"}] - invalid string stored as-is, confirming the bug",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_dev_review\", \"filter\": \"id==0\", \"outputFields\": [\"meta\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "REST_v2_data_type_handling"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK, Incorrect JSON for JSON field",
+        "note": "命中developer_cognition.json中rest-v2-data-type-handling模式(26个历史案例),属于REST v2 API数据类型序列化/反序列化缺陷集群"
+      },
+      "root_cause_if_true": "REST_v2_JSON_field_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "JSON is a valid dataType (constraint_id: milvus_type_json_001) but NO explicit constraint requiring JSON format validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "JSON field has objective semantic constraint: value MUST be valid JSON (object/array/string/number/boolean/null)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violated) + verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 upsert接受JSON字段的非法值('invalid_json_string'字符串而非JSON对象)并成功存储,违反了JSON字段的客观语义约束。源码接地发现anyToColumns函数在处理DataType_JSON时(line 1968)直接做类型断言candi.v.Interface().([]byte),未进行JSON格式验证。查询证实非法字符串被原样存储。此缺陷属于developer_cognition.json中识别的'rest-v2-data-type-handling'模式(26个历史案例),是该类REST v2数据类型处理缺陷集群的实例。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"REST_v2_JSON_field_validation_missing": 1}
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/collections/list with payload {\"dbName\": \"\"}",
+          "observed": "HTTP 200 with response {\"code\":0,\"data\":[\"test_coll_falsify\",\"test_coll\"]} - API accepts empty string dbName and returns collections successfully",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/list\" -H \"Content-Type: application/json\" -d '{\"dbName\": \"\"}' | python -m json.tool"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The candidate defect likely assumes that empty string dbName should be rejected as invalid parameter",
+            "Oracle may expect dbName validation to reject empty strings or enforce non-empty constraint",
+            "The defect report may rely on contract stating default_value=\"_default\" while code accepts empty string as equivalent to not specified"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Endpoint: POST /v2/vectordb/collections/list",
+            "Parameter: dbName (type: string, required: false, default_value: \"_default\")",
+            "Source: structured_contract.json collections+list endpoint definition"
+          ],
+          "contract_assertion": "The contract explicitly states dbName has default_value=\"_default\" (with underscore prefix), implying the API should either require explicit dbName or use \"_default\" when not specified"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "DatabaseReq",
+            "DefaultDbName",
+            "collections/list",
+            "GetDbName",
+            "listCollections"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 36-40\ntype DatabaseReq struct {\n    DbName string `json:\"dbName\"`\n}\n\nfunc (req *DatabaseReq) GetDbName() string { return req.DbName }\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 356-367\n            dbName := \"\"\n            if req != nil {\n                if getter, ok := req.(requestutil.DBNameGetter); ok {\n                    dbName = getter.GetDbName()\n                }\n                if dbName == \"\" {\n                    dbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n                    if dbName == \"\" {\n                        dbName = DefaultDbName\n                    }\n                }\n            }\n\n// internal/distributed/proxy/httpserver/constant.go line 126\n\tDefaultDbName = \"default\"\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 177\n\trouter.POST(CollectionCategory+ListAction, timeoutMiddleware(wrapperPost(func() any { return &DatabaseReq{} }, wrapperTraceLog(h.listCollections))))\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 568-581\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n    req := &milvuspb.ShowCollectionsRequest{\n        DbName: dbName,\n    }",
+          "call_chain_traced": "HTTP Request → wrapperPost() creates DatabaseReq{} → JSON binding parses dbName from request body → GetDbName() returns value → If empty string, check header then DefaultDbName=\"default\" → Pass to listCollections() → ShowCollectionsRequest.DbName set",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: DatabaseReq struct的DbName字段没有任何validation标签(binding:required等),可以接受空字符串。当空字符串传入时,代码会将其视为'未指定'并fallback到DefaultDbName='default'。但contract规定default应该是'_default'(带下划线),这里存在行为与契约不一致。然而,从实际测试看,系统确实正常运行并返回了结果,说明这是一个implementation choice而非bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test multiple variations: 1) Empty string dbName, 2) No dbName parameter, 3) dbName=\"default\", 4) dbName=\"_default\"",
+          "observed": "All variations except 3 and 4 succeed. Empty string dbName (\"\") behaves identically to omitting dbName parameter entirely - both return HTTP 200 with valid collection list. dbName=\"default\" and dbName=\"_default\" both return 'database not found' errors, proving the system uses a different internal database name.",
+          "evidence_commands": [
+            "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/list\" -H \"Content-Type: application/json\" -d '{\"dbName\": \"\"}' → HTTP 200, collections returned",
+            "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/list\" -H \"Content-Type: application/json\" -d '{}' → HTTP 200, collections returned",
+            "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/list\" -H \"Content-Type: application/json\" -d '{\"dbName\": \"default\"}' → HTTP 200, code=800, 'database not found'",
+            "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/list\" -H \"Content-Type: application/json\" -d '{\"dbName\": \"_default\"}' → HTTP 200, code=800, 'database not found'"
+          ]
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - Milvus container is running and responsive",
+            "Request parameter typo - Empty string is intentional test input",
+            "Concurrent/race condition - Reproducible on retry",
+            "API semantic misunderstanding - Behavior is consistent: empty string = not specified"
+          ],
+          "surviving": "contract_documentation_mismatch",
+          "explanation": "This is a documentation/contract mismatch issue, not a functional bug. The source code implementation treats empty string dbName as 'use default database' (which resolves to some internal database name, likely not 'default' or '_default'), while the API contract claims the default should be '_default'. The API functions correctly - it accepts empty string, omits dbName, and returns valid results. This is a mundane by-design implementation choice that differs from documented contract."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - Verify against documentation, check if behavior matches documented contract",
+        "note": "命中developer_cognition.json的rejection_pattern RP-001。虽然代码实现与contract文档存在不一致(default='default' vs '_default'),但这是文档落后于实现的常见情况,开发者会认为这是'expected behavior'而非bug。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Empty string dbName is intentionally treated as 'use default' by the source code implementation (handler_v2.go lines 356-367: empty string triggers fallback to DefaultDbName). The API correctly processes this input and returns valid collection lists. While the API contract (structured_contract.json) states default_value='_default', the actual implementation uses DefaultDbName='default'. This documentation mismatch does not constitute a functional defect - the API behaves consistently and correctly. The candidate defect 'param_validation' suggesting empty string should be rejected is FALSE_POSITIVE because: (1) Step 1 clean reproduction succeeded - API accepts empty string and returns correct results, (2) Step 3 source grounding proves empty string handling is intentional by-design behavior, (3) Step 4 falsification confirms empty string behaves identically to omitting the parameter, (4) Step 5 mundane explanation identifies this as contract documentation mismatch, not a bug. Developers would reject this as 'expected system behavior' (cognition pattern RP-001)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

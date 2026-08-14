@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with vectorFieldType='InvalidVectorType'",
+          "observed": "HTTP 200 (code: 0) returned, collection created successfully. Vector field type in created collection is FloatVector (default), not the requested 'InvalidVectorType'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"InvalidVectorType\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: API should validate vectorFieldType parameter - VIOLATED (parameter silently ignored)",
+            "Assumption 2: Invalid values should be rejected with error - VIOLATED (returns 200 instead of 400)",
+            "Assumption 3: The parameter should affect collection schema - VIOLATED (parameter has no effect on created field type)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavioral_collections_create_001 - 'Returns 200 on success, 400 on invalid parameters'",
+            "assertion: '400 on invalid params or collection already exists'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "vectorFieldType",
+            "VectorFieldType",
+            "CollectionReq struct",
+            "DataType_FloatVector",
+            "createCollection"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 690-703\ntype CollectionReq struct {\n        DbName           string                 `json:\"dbName\"`\n        CollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n        Dimension        int32                  `json:\"dimension\"`\n        IDType           string                 `json:\"idType\"`\n        AutoID           bool                   `json:\"autoID\"`\n        MetricType       string                 `json:\"metricType\"`\n        PrimaryFieldName string                 `json:\"primaryFieldName\"`\n        VectorFieldName  string                 `json:\"vectorFieldName\"`\n        Schema           CollectionSchema       `json:\"schema\"`\n        IndexParams      []IndexParam           `json:\"indexParams\"`\n        Params           map[string]interface{} `json:\"params\"`\n        Description      string                 `json:\"description\"`\n}\n\n// NOTE: No VectorFieldType field defined in struct - parameter will be silently ignored by JSON unmarshaling\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1915-1920\n{\n        FieldID:      common.StartOfUserFieldID + 1,\n        Name:         httpReq.VectorFieldName,\n        IsPrimaryKey: false,\n        DataType:     schemapb.DataType_FloatVector,  // HARDCODED - ignores any vectorFieldType parameter\n        TypeParams: []*commonpb.KeyValuePair{",
+          "call_chain_traced": "POST /collections+create → handler_v2.createCollection() → quick create mode → CollectionReq struct (no VectorFieldType field) → hardcoded DataType_FloatVector at line 1919",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionReq 结构体(第690-703行)未定义 VectorFieldType 字段,JSON unmarshaling 自动忽略未知参数。quick create 模式(第1842行起)在第1919行硬编码 DataType_FloatVector,完全忽略用户传入的 vectorFieldType 参数。这是典型的 REST v2 参数验证缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/describe to verify created collection schema",
+          "observed": "Created collection shows vector field type='FloatVector' regardless of vectorFieldType parameter value (tested with both 'InvalidVectorType' and 'FloatVector'), confirming parameter is completely ignored",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (reproducible on official REST v2 API)",
+            "Parameter typo (parameter name is clear and consistent)",
+            "API semantic misunderstanding (contract explicitly requires 400 for invalid params)"
+          ],
+          "surviving": "parameter_validation_missing_rest_v2"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "Performance optimization over data validation (REST v2 issues persist)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "blindspot_hit": true,
+        "note": "命中 REST v2 API 数据类型验证盲点(该区域历史有8个 issue)。REST v2 层倾向于性能优化而非参数验证,与本次发现的 vectorFieldType 参数缺失验证完全一致。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_collections_create_001: 'Returns 200 on success, 400 on invalid parameters'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "api_violates_assertion": true,
+          "assertion_text_quoted": "400 on invalid params or collection already exists",
+          "api_observed_value": "HTTP 200 with invalid vectorFieldType parameter"
+        },
+        "physical": {
+          "objective_constraint": "Request parameters must either be validated or documented as explicitly ignored",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "constraint_violated": "Unknown parameter 'vectorFieldType' accepted without validation or documentation"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "behavior_observed": "Silent parameter acceptance with no effect on created collection - not graceful error handling"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED OR verdict_B=CONFIRMED → final=CONFIRMED (契约违反和物理约束违反,行为视角也确认问题)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_missing_rest_v2",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 API collections/create 端点在 quick create 模式下完全忽略 vectorFieldType 参数:1) CollectionReq 结构体未定义该字段(request_v2.go:690-703),JSON unmarshaling 自动忽略未知输入;2) handler_v2.go:1919 硬编码 DataType_FloatVector,完全不读取用户参数;3) 契约明文要求'400 on invalid parameters'(milvus_behavioral_collections_create_001),但实际返回 200。这符合已知的 REST v2 数据类型验证盲点模式(历史8个 issue),是典型的参数缺失导致输入验证绕过。源码接地确认参数未在代码任何位置被引用或验证。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_missing_rest_v2": 1
+    }
+  },
+  "self_check": "PASSED"
+}

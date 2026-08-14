@@ -1,0 +1,100 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_014",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with schema.fields[1].elementTypeParams.dim=32769",
+          "observed": "HTTP 200, code=65535, message='invalid dimension: 32769 of field vector. float vector dimension should be in range 2 ~ 32768'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dim_32769\", \"schema\": {\"autoID\": false, \"enableDynamicField\": true, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 32769}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should reject dimension values outside valid range",
+            "Error message should indicate valid range"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001",
+            "assertion_text: '1 <= dimension <= 32768'",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ],
+          "contract_discrepancy": "Contract states '1 <= dimension <= 32768' but actual API behavior (per source code and testing) is '2 <= dimension <= 32768'. This is a contract documentation error, not an API bug."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateDimension",
+            "should be in range 2 ~",
+            "MaxDimension"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "configs/milvus.yaml",
+            "tests/go_client/testcases/collection_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 421-436\nif dim <= 1 {\n    return fmt.Errorf(\"invalid dimension: %d. should be in range 2 ~ %d\", dim, Params.ProxyCfg.MaxDimension.GetAsInt())\n}\n\n// for dense vector field, dim will be limited by max_dimension\nif typeutil.IsBinaryVectorType(field.DataType) {\n    if dim%8 != 0 {\n        return fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be multiple of 8. \", dim, field.GetName())\n    }\n    if dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n        return fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n    }\n} else {\n    if dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n        return fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n    }\n}",
+          "call_chain_traced": "CreateCollection REST API → createCollectionTask.PreExecute → validateField → validateDimension",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "actual_range": "2 <= dim <= 32768 (from line 421 and 434-435)",
+          "config_max_dimension": "configs/milvus.yaml line 325: maxDimension: 32768"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Boundary test: dim=1 (rejected), dim=2 (accepted), dim=32768 (accepted), dim=32769 (rejected)",
+          "observed": "API correctly implements range 2~32768. dim=1 returns error 'should be in range 2 ~ 32768'. dim=32769 returns error 'should be in range 2 ~ 32768'. All boundary values behave correctly.",
+          "evidence_commands": [
+            "dim=1: curl returned 'invalid dimension: 1. should be in range 2 ~ 32768'",
+            "dim=2: curl returned HTTP 200 (success)",
+            "dim=32768: curl returned HTTP 200 (success)",
+            "dim=32769: curl returned 'invalid dimension: 32769...should be in range 2 ~ 32768'"
+          ]
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container)",
+            "Concurrency/race condition",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "contract_documentation_error"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "pattern_id": "RP-001",
+        "rejection_reason": "expected_behavior",
+        "developer_quote": "Issue rejected as expected system behavior - dimension validation works as designed per source code implementation",
+        "note": "Falls under rejection pattern RP-001: expected_behavior. API correctly validates dimension range per implementation."
+      },
+      "root_cause_if_fp": "contract_documentation_error",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "This is a contract documentation error, not an API bug. The structured_contract.json incorrectly states '1 <= dimension <= 32768' (constraint_id: milvus_range_collections_create_001), but the actual API implementation in internal/proxy/util.go validates '2 <= dimension <= 32768' (line 421: 'if dim <= 1' returns error). Live testing confirms the API correctly rejects dim=1 and accepts dim=2 through dim=32768, rejecting dim=32769. The error messages explicitly state 'should be in range 2 ~ 32768', matching the source code logic. The candidate confuses contract error with API defect—this is a false positive."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_documentation_error": 1
+    }
+  },
+  "self_check": "PASSED"
+}

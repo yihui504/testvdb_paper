@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_032",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel='Invalid'",
+          "observed": "HTTP 200 with code=0 - collection created successfully. Describe shows consistencyLevel='Bounded' (default), not 'Invalid'",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\":\"audit1\",\"dimension\":4,\"metricType\":\"L2\",\"idType\":\"Int64\",\"autoID\":true,\"vectorFieldType\":\"FloatVector\",\"consistencyLevel\":\"Invalid\"}' && curl -s http://localhost:19530/v2/vectordb/collections/describe -d '{\"collectionName\":\"audit1\",\"dbName\":\"default\"}' | grep -o '\"consistencyLevel\":\"[^\"]*\"'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion: consistencyLevel in [Strong, Session, Bounded, Eventually]",
+            "description: consistencyLevel must be Strong, Session, Bounded, or Eventually"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "consistencyLevel",
+            "ConsistencyLevel",
+            "type CollectionReq",
+            "createCollection"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 690-703\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// NOTE: No ConsistencyLevel field defined in CollectionReq!\n// Compare with QueryReqV2 (line 298) and CollectionIDReq (line 311) which DO have ConsistencyLevel fields.\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 2042-2057\n\tconsistencyLevel := commonpb.ConsistencyLevel_Bounded\n\tif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n\t\tif level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n\t\t\tconsistencyLevel = commonpb.ConsistencyLevel(level)\n\t\t} else {\n\t\t\terr := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n\t\t\t\t\"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n\t\t\tlog.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n\t\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\t\tHTTPReturnCode:    merr.Code(err),\n\t\t\t\tHTTPReturnMessage: err.Error(),\n\t\t\t})\n\t\t\treturn nil, err\n\t\t}\n\t}\n\treq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CollectionReq struct (no ConsistencyLevel field) -> createCollection() checks httpReq.Params['consistencyLevel'] (line 2043) -> JSON binding places consistencyLevel at top level, not in params -> Check fails -> Default Bounded used",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现根本原因:CollectionReq 结构体缺少 ConsistencyLevel 字段。JSON 反序列化时,请求中的 consistencyLevel 字段无法绑定到任何结构体字段,被静默忽略。代码仅检查 httpReq.Params['consistencyLevel'],但实际请求中 consistencyLevel 作为顶级字段传递,不在 params 内部。结果: 非法值绕过验证,默认值 Bounded 被使用。这是真正的 bug,不是 by-design。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test 6 different invalid consistencyLevel values ('Invalid', 'invalid', 'INVALID', 'Garbage', '123', '')",
+          "observed": "All 6 invalid values SUCCEEDED without error, all defaulted to 'Bounded'. Valid values ('Strong', 'Session', 'Bounded', 'Eventually') also work correctly. This confirms silent fallback rather than explicit rejection."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker container healthy)",
+            "Concurrency issues (single sequential requests)",
+            "Request parameter typo (tested multiple invalid values, all bypass validation)",
+            "API misunderstanding (contract explicitly validates this field)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches the blindspot pattern: REST v2 API fails to properly validate/handle data types. The consistencyLevel field is silently ignored rather than rejected, fitting the historical pattern of REST v2 data type handling issues (52232, 52230, 52229)."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "DEFECT CONFIRMED. 根源:CollectionReq 结构体缺少 ConsistencyLevel 字段 (request_v2.go:690-703),导致 JSON 反序列化时该字段被静默忽略。createCollection() 仅检查 httpReq.Params['consistencyLevel'] (handler_v2.go:2043),但请求中 consistencyLevel 作为顶级字段传递,不在 params 内部,导致检查失败。非法值绕过验证,默认值 Bounded 被使用。这违反了契约 (milvus_type_collections_create_003: consistencyLevel in [Strong, Session, Bounded, Eventually])。实测验证: 6 个不同非法值全部成功创建,全部默认为 Bounded。4 个合法值也正常工作。这是真正的 bug,不是 by-design 或平凡解释。匹配历史盲点模式: REST v2 API 数据类型处理问题 (52232, 52230, 52229)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

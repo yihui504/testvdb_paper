@@ -1,0 +1,103 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestNegFinal\", \"shardingConfig\": {\"desiredCount\": -1}}",
+          "observed": "HTTP 200 returned, but collection NOT actually created (missing from /schema list)",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -d '{\"class\": \"TestNegFinal\", \"shardingConfig\": {\"desiredCount\": -1}}' && curl -X GET 'http://localhost:18080/v1/schema' | grep TestNegFinal"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "desiredCount parameter should be validated (represents physical shard count)",
+            "Negative values should be rejected as physically impossible",
+            "Zero should be rejected (cannot have zero physical shards in distributed system)"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for desiredCount range validation",
+            "ShardingConfig parameter exists in contract but lacks range assertion",
+            "Expected: constraint like 'desiredCount >= 1' or 'desiredCount in [1, max_shards]'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": ["desiredCount", "DesiredCount", "validate", "ParseConfig"],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/class.go",
+            "usecases/sharding/config/config_update.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go:53-67\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, got: %s\", c.Key)\n\t}\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, got: %s\", c.Strategy)\n\t}\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, got: %s\", c.Function)\n\t}\n\treturn nil\n}\n\n// usecases/sharding/config/config.go:104-108\nif err := optionalIntFromMap(asMap, \"desiredCount\", func(v int) {\n\tout.DesiredCount = v\n}); err != nil {\n\treturn out, err\n}\n// No range validation (>= 1 check) is performed on desiredCount",
+          "call_chain_traced": "POST /schema → ParseConfig(shardingConfig) → optionalIntFromMap('desiredCount') → set DesiredCount = v → validate() (NO range check) → ActualCount = DesiredCount",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source接地发现: ParseConfig函数的validate()方法只校验Key/Strategy/Function字段,完全缺失对DesiredCount的范围校验(≥1检查)。desiredCount=-1直接透传到ActualCount,导致后续sharding state初始化失败,但API仍返回HTTP 200。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /schema with desiredCount=-1 returns HTTP 200, then GET /schema to verify collection existence",
+          "observed": "HTTP 200 returned but TestNegFinal/TestNeg2 NOT in collection list → Silent failure / misleading success response. Collection creation failed but API reported success."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (standard Docker, normal filesystem)",
+            "Concurrency/race (single-threaded sequential test)",
+            "Request param typo (clear use of 'desiredCount': -1)",
+            "API semantic misunderstanding (shard count must be >= 1 is objective physical constraint)"
+          ],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing: Accepting invalid parameter values on write endpoints (e.g. empty vectors, invalid types) with per-item success status",
+        "note": "Matches historical pattern BS-004 (Parameter Validation Issues) - API accepts invalid desiredCount=-1 and returns success despite actual failure. This is exactly the type of input validation gap developers consider a bug."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint found in structured_contract.json for desiredCount range",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "desiredCount represents physical shard count in distributed system, objectively must be >= 1 (cannot have negative or zero physical shards)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) + verdict_C=CONFIRMED (silent failure) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Source接地(本地Grep)证实 ParseConfig.validate()函数缺失对desiredCount的范围校验。API接受desiredCount=-1返回HTTP 200,但实际未创建collection(静默失败),违反物理约束(shard数≥1)。开发者认知BS-004明确将此类'请求参数校验缺失'视为bug。非平凡解释可排除。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap": 1
+    }
+  }
+}

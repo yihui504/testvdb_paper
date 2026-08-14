@@ -1,0 +1,122 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_ttl_neg\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}",
+          "observed": "HTTP 200 OK - collection created successfully with invalid TTL=-100",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_neg\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' && echo $?"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_validated": [
+            "API should validate collection.ttl.seconds range [-1, 3155760000]",
+            "Validation should occur at collection creation time",
+            "Same endpoint should enforce same validation regardless of request field name"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Milvus source code internal/proxy/task.go:359-373 - validateCollectionTTL() enforces range [-1, MaxTTLSeconds]",
+            "internal/proxy/task.go:460 - CreateCollection PreExecute calls validateCollectionTTL()",
+            "internal/proxy/task.go:1446 - AlterCollection PreExecute calls validateCollectionTTL()",
+            "common.MaxTTLSeconds = 3155760000 (100 years in seconds)"
+          ],
+          "assertion_text_quoted": "if val < -1 || val > common.MaxTTLSeconds: return true, merr.WrapErrParameterInvalidMsg('collection TTL is out of range, expect [-1, 3155760000], got %d', val)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateCollectionTTL",
+            "collection.ttl.seconds",
+            "CollectionTTLConfigKey",
+            "type CollectionReq struct",
+            "ttlSeconds"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "pkg/common/common.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/request_v2.go, Lines 643-656\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, Lines 2019-2024\nif _, ok := httpReq.Params[\"ttlSeconds\"]; ok {\n\treq.Properties = append(req.Properties, &commonpb.KeyValuePair{\n\t\tKey:   common.CollectionTTLConfigKey,\n\t\tValue: fmt.Sprintf(\"%v\", httpReq.Params[\"ttlSeconds\"]),\n\t})\n}\n\nFile: internal/proxy/task.go, Lines 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}",
+          "call_chain_traced": "REST v2 create endpoint → CollectionReq struct (no Properties field, only Params) → handler_v2.go checks httpReq.Params[\"ttlSeconds\"] (line 2019) → NOT found → TTL property NOT added to req.Properties → validateCollectionTTL() (task.go:460) returns false (no validation) → collection created with invalid TTL",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionReq结构体缺少Properties字段，只有Params字段。原始HTTP请求使用properties.collection.ttl.seconds，但handler只检查params.ttlSeconds。这是REST v2 API的字段映射缺失bug，导致TTL验证被绕过。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with params.ttlSeconds=-100 (alternative field path)",
+          "observed": "HTTP 200 with code=1100 error: 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter' - validation CORRECTLY triggers via params path",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_params\", \"dimension\": 4, \"metricType\": \"L2\", \"params\": {\"ttlSeconds\": -100}}'",
+          "falsification_result": "证伪失败 - bug存在。两种请求路径行为不一致: properties路径绕过验证，params路径正确拒绝。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - Docker容器正常运行",
+            "并发竞态 - 单线程顺序请求",
+            "缓存延迟 - 直接调用API响应",
+            "请求参数笔误 - properties字段是文档规定的正确字段名",
+            "API语义误解 - TTL验证是明确的安全要求"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "命中bug_shapes.json中的REST v2数据处理模式。该模式记录了26个历史案例，显示REST v2层存在数据类型/字段映射的系统性问题。本案是同一根因：properties字段未映射到Go结构体，导致验证绕过。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collection.ttl.seconds must be in range [-1, 3155760000] (source: internal/proxy/task.go:367 validateCollectionTTL)",
+          "source_implements_check": true,
+          "api_observed_value": "create with properties.collection.ttl.seconds=-100 succeeded (HTTP 200)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "TTL is a time duration in seconds, must be >= -1 (disabled) or >= 0 (valid duration)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "source_evidence": "源码validateCollectionTTL()明确拒绝范围外值，且有错误消息。不存在by-design处理负值的逻辑。",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree: validation bypassed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "rest_v2_field_mapping_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API的CollectionReq结构体缺少Properties字段映射，导致通过properties.collection.ttl.seconds传递的TTL值完全绕过了validateCollectionTTL()验证。同一API端点存在两种字段路径(params.ttlSeconds正常触发验证，properties.collection.ttl.seconds绕过验证)，形成不一致的安全边界。源码接地证实：handler_v2.go:2019只检查httpReq.Params[\"ttlSeconds\"]，不处理properties字段，而task.go:460的validateCollectionTTL()仅在Properties字段非空时被触发。这是典型的数据绑定层漏洞，允许创建语义无效的集合。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_field_mapping_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

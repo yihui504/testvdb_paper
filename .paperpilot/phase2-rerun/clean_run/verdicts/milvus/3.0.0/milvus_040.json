@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with JSON field containing plain string value",
+          "observed": "HTTP 200 OK, insertCount: 1, insertIds: [100] - API accepts plain string in JSON field",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_milvus_040\", \"dbName\": \"default\", \"data\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "checked_assumptions": [
+            "JSON field should accept only valid JSON objects/arrays/primitives",
+            "Type validation should occur at insert time",
+            "Schema definition dataType: JSON should enforce JSON format"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "constraint_id": "milvus_type_json_001",
+          "assertion_text_quoted": "dataType == JSON",
+          "api_observed_value": "Accepts plain string 'plain_string' in JSON field",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "checkAndSetData", "dataString"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)",
+          "call_chain_traced": "Insert handler → checkAndSetData() → case DataType_JSON → blind []byte(dataString) conversion without JSON validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:DataType_JSON 分支仅将 dataString 转换为 []byte,未验证是否为有效 JSON。允许任意字符串通过(如 'plain_string'),导致类型约束失效。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/query filter=id==100 to verify stored data",
+          "observed": "Query returns {\"id\":100,\"meta\":\"plain_string\",\"vector\":[0.1,0.2,0.3,0.4]} - plain string IS stored in JSON field, confirming type violation is real and falsification FAILED"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker stable)",
+            "Race condition (single insert)",
+            "API semantic misunderstanding (JSON field should enforce JSON format)",
+            "By-design (no source comment indicating plain strings are allowed)"
+          ],
+          "surviving": "type_validation_bypass"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format",
+        "note": "命中 blindspot_indicators: REST v2 API data type serialization - 8 issues in corpus。本缺陷属于同一根因模式:JSON 字段类型验证缺失"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dataType == JSON (constraint_id: milvus_type_json_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONTRACT VIOLATION - API accepts plain string 'plain_string' violating JSON type requirement"
+        },
+        "physical": {
+          "objective_constraint": "JSON field must contain valid JSON (object, array, or primitive)",
+          "api_accepts_violation": true,
+          "verdict_B": "PHYSICAL VIOLATION - plain string is not valid JSON format"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "NOT GRACEFUL - no error, no validation, silent data corruption"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (Contract + Physical violation, no by-design evidence)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus REST v2 insert endpoint has a critical type validation bypass in the JSON field handler. The source code at internal/distributed/proxy/httpserver/utils.go:760-761 shows that DataType_JSON case blindly converts the input string to []byte without validating if it's actually valid JSON format. This allows arbitrary strings like 'plain_string' to be stored in JSON fields, violating the schema contract. The defect was independently reproduced (HTTP 200, insertCount: 1) and verified via query (stored data shows plain string). No source evidence indicates this is by-design. Matches known blindspot pattern: 'REST v2 data type serialization' issues."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

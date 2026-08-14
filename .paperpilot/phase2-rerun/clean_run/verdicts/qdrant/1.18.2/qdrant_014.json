@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_014",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover",
+          "observed": "status=500, body={'status':{'error':'Service internal error: Qdrant is running in standalone mode'}}",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/cluster/recover"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim assumes POST /cluster/recover should return 4xx (e.g., 400 Bad Request) when called in standalone mode",
+            "Defect claim assumes this is a validation error (invalid input) rather than a service unavailability scenario"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /cluster/recover (cluster+recover)",
+            "description: 'Recover current peer Raft state'",
+            "category: management",
+            "No explicit behavioral assertion found for error handling in standalone mode"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "cluster.*recover",
+            "standalone mode",
+            "service_error"
+          ],
+          "files_examined": [
+            "src/actix/api/cluster_api.rs",
+            "src/actix/helpers.rs",
+            "lib/storage/src/content_manager/toc/mod.rs"
+          ],
+          "source_excerpt": "// src/actix/api/cluster_api.rs lines 60-73\n#[post(\"/cluster/recover\")]\nfn recover_current_peer(\n    dispatcher: web::Data<Dispatcher>,\n    ActixAuth(auth): ActixAuth,\n) -> impl Future<Output = HttpResponse> {\n    let pass = new_unchecked_verification_pass();\n\n    helpers::time(async move {\n        auth.check_global_access(AccessRequirements::new().manage(), \"recover_current_peer\")?;\n        dispatcher.toc(&auth, &pass).request_snapshot()?;\n        Ok(true)\n    })\n}\n\n// src/actix/helpers.rs lines 247-248 (HTTP status code mapping)\nStorageError::ServiceError { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,\n\n// lib/storage/src/content_manager/toc/mod.rs lines 777-778\n.ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))",
+          "call_chain_traced": "POST /cluster/recover → recover_current_peer → dispatcher.toc.request_snapshot → consensus_state check → StorageError::service_error('Qdrant is running in standalone mode') → HttpError → INTERNAL_SERVER_ERROR (500)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:该端点明确设计为仅在分布式集群模式下可用。当在standalone模式调用时，源码显式返回StorageError::service_error('Qdrant is running in standalone mode')，该错误类型在HTTP映射层(src/actix/helpers.rs:247)被映射到INTERNAL_SERVER_ERROR (500)。这是有意设计，而非validation缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare error handling patterns with other cluster-only endpoints in same source file",
+          "observed": "Endpoints GET /cluster/metadata/keys and GET /cluster/metadata/keys/{key} (lines 115-154) use identical error handling pattern: .ok_or_else(|| StorageError::service_error('Qdrant is running in standalone mode')). This confirms 500 for standalone mode is consistent design choice across cluster management API surface."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发/race",
+            "缓存/优化器延迟"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未在developer_cognition.json中找到关于standalone模式API错误处理语义的明确声明，但源码一致性强力支持by-design判断"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "POST /cluster/recover 是集群专用的Raft状态恢复API，仅在分布式部署中有效。源码显示其在standalone模式下返回StorageError::service_error('Qdrant is running in standalone mode')，该错误类型被HTTP层一致映射到500 (INTERNAL_SERVER_ERROR)。这与同文件中其他cluster专用端点(metadata/keys)的处理模式完全一致，证明500是预期的by-design行为——表达'服务能力不可用'(cluster功能未启用)而非'请求参数错误'(400)。原oracle错误地将'能力不可用'解读为'参数验证失败'，误报为defect。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

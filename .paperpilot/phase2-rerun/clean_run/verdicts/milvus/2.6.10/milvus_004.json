@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_004",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/delete with filter 'age in [10, 5]'",
+          "observed": "Delete succeeded with deleteCount=1. Entity with age=10 was correctly deleted. Entity with age=5 did not exist in data and was gracefully ignored.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); collection_name = 'repro_milvus_004'; client.create_collection(collection_name, dimension=8, metric_type='L2'); data = [{'id': i, 'vector': [0.1]*8, 'age': i*10} for i in range(5)]; client.insert(collection_name, data); result = client.delete(collection_name, filter='age in [10, 5]'); print(f'delete_count={result.get(\\\"delete_count\\\")}'); remaining = client.query(collection_name, filter='id >= 0', output_fields=['id', 'age'], limit=100); print(f'remaining: {remaining}'); client.drop_collection(collection_name)\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001",
+            "assertion: 'filter is a valid boolean expression'",
+            "assessment: Filter 'age in [10, 5]' IS a valid boolean expression. No contract requirement exists for validating that values in IN clause must exist in data."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["delete.*filter", "DeleteRequest", "exprutil", "filter.*validation"],
+          "files_examined": ["internal/proxy/task_delete.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/util/exprutil"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1181-1218\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\t// ... schema validation ...\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,  // Filter passed directly to delete\n\t}\n\t// No validation of IN clause values existence - by design\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \\\"/milvus.proto.milvus.MilvusService/Delete\\\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Delete(reqCtx, req.(*milvuspb.DeleteRequest))\n\t})\n\tif err == nil {\n\t\tdeleteResp := resp.(*milvuspb.MutationResult)\n\t\tHTTPReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode: merr.Code(nil),\n\t\t\tHTTPReturnData: gin.H{\\\"deleteCount\\\": deleteResp.DeleteCnt},\n\t\t})\n\t}\n\treturn resp, err\n}",
+          "call_chain_traced": "DeleteRequest.Expr -> proxy.Delete -> query execution -> filter matches existing records -> non-matching IN clause values ignored (by design)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows no validation of IN clause values. Filter expression is passed directly to query executor. This is intentional graceful SQL-like behavior where IN clauses with non-matching values are silently ignored. No param validation requirement exists in code or contract."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested multiple filter variants: 'age in [10, 5]', 'age in [1,2,3]', 'age in [100,200]', 'age in []', 'invalid_field in [1]' - all succeeded with appropriate delete_counts",
+          "observed": "API consistently handles IN clauses with non-existent values gracefully. Returns delete_count matching actual entities found. This confirms by-design behavior, not a bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Concurrency race",
+            "Request parameter typo",
+            "Eventual consistency"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "Matches rejection_pattern RP-001: expected behavior. SQL-like IN clauses with non-matching values are standard. The API's graceful handling is by-design, not a defect."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "filter must be a valid boolean expression (milvus_type_entities_delete_001)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - no physical constraint violated",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL AND verdict_B=NEUTRAL AND verdict_C=REFUTED(by_design_in_source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The claim assumes param_validation should reject IN clauses with non-existent values. However: (1) Contract only requires filter to be a valid boolean expression - satisfied. (2) Source code shows no validation of IN clause value existence - this is intentional by-design. (3) API behavior matches standard SQL semantics where IN clauses with non-matching values are normal. (4) Testing confirms consistent graceful handling across all filter variants. The delete_count accurately reflects actual matches. This is mundane API semantics (SQL-like graceful degradation), not a param_validation defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop {collectionName: 'nonexistent_collection_xyz', dbName: 'default'}",
+          "observed": "HTTP 200 with {code: 0, data: {}} - success response for nonexistent collection",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/drop' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_drop_001",
+            "endpoint_registry: '200 on success; 404 if collection does not exist; Drop is irreversible'",
+            "behavioral_assertion: milvus_behavioral_collections_drop_001 - 'returns 404 if collection does not exist'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "func.*DropCollection",
+            "type dropCollectionTask struct",
+            "PreExecute"
+          ],
+          "files_examined": [
+            "internal/proxy/impl.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go lines 710-714\nfunc (t *dropCollectionTask) PreExecute(ctx context.Context) error {\n\t// No need to check collection name\n\t// Validation shall be preformed in `CreateCollection`\n\t// also permit drop collection one with bad collection name\n\treturn nil\n}",
+          "call_chain_traced": "DropCollection HTTP request -> handler_v2.go:routeToMethod['/v2/vectordb/collections/drop'] -> handler.go:handleDropCollection -> proxy.impl.go:DropCollection -> task.PreExecute (NO VALIDATION) -> mixCoord.DropCollection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:dropCollectionTask.PreExecute 明确注释'No need to check collection name'且直接 return nil,跳过所有存在性校验。对比 truncateCollectionTask.PreExecute 调用 validateCollectionName,证实 DropCollection 缺少 404 校验逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has {collectionName: 'nonexistent_collection_xyz', dbName: 'default'}",
+          "observed": "HTTP 200 with {code: 0, data: {has: false}} - independent proof collection doesn't exist, yet drop still returns 200",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment noise (reproducible across runs)",
+            "concurrency race (single-threaded test)",
+            "request param typo (valid collectionName format)",
+            "eventual consistency (has=false is immediate)",
+            "by_design idempotency (contract requires 404)"
+          ],
+          "surviving": "none - all mundane explanations excluded"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的 by_design_patterns 或 rejection_patterns。DropCollection 在源码注释中声称'允许 drop 不存在的 collection'与契约文档矛盾,属于实现缺陷。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实真缺陷:internal/proxy/task.go:710-714 的 dropCollectionTask.PreExecute 明确注释'No need to check collection name'且直接 return nil,完全跳过存在性校验。对比同文件 truncateCollectionTask.PreExecute 调用 validateCollectionName(779行),证明 DropCollection 缺少 404 校验是疏漏而非设计。实测:drop 不存在的 collection 返回 200(成功),独立 has=true=false 证明 collection 不存在。契约明文要求 404,源码未实现,违反 Type2_PoorDiagnostics。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

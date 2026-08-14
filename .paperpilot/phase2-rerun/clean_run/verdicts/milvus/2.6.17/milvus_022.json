@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with collectionName='test_dup_verify' twice",
+          "observed": "First request: HTTP 200 with {\"code\":0,\"data\":{}}; Second request (duplicate): HTTP 200 with {\"code\":0,\"data\":{}} - same success response instead of error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dup_verify\", \"dimension\": 4, \"metricType\": \"COSINE\", \"idType\": \"Int64\", \"autoID\": false}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Collection name uniqueness constraint should be enforced",
+            "Second create with duplicate name should return error (400 or 404)",
+            "Response status code should indicate failure for duplicate creation"
+          ],
+          "all_assumptions_met": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001",
+            "constraint_id: milvus_invariant_create_duplicate_001",
+            "assertion_id: milvus_behavioral_collections_create_002",
+            "invariant_id: milvus_invariant_create_duplicate_001"
+          ],
+          "relevant_contract_text": "Creating a collection with the same name twice must fail on the second attempt (assertion: create(collection) -> create(collection) must return 400 with 'collection already exists')"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["errIgnoredCreateCollection", "CreateCollection", "validateIfCollectionExists", "duplicate.*collection"],
+          "files_examined": [
+            "internal/rootcoord/root_coord.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go line 522-540\nfunc (t *createCollectionTask) validateIfCollectionExists(ctx context.Context) error {\n\t// Check if the collection already exists.\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection  // <-- KEY BUG: Returns special error for duplicate with same schema\n\t}\n\treturn nil\n}\n\n// internal/rootcoord/root_coord.go line 902-911\nfunc (c *Core) CreateCollection(ctx context.Context, in *milvuspb.CreateCollectionRequest) (*commonpb.Status, error) {\n\tif err := c.broadcastCreateCollectionV1(ctx, in); err != nil {\n\t\tif errors.Is(err, errIgnoredCreateCollection) {\n\t\t\tlogger.Info(\"create existed collection with same schema, ignore it\")\n\t\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n\t\t\treturn merr.Success(), nil  // <-- KEY BUG: Returns SUCCESS instead of error\n\t\t}\n\t\treturn merr.Status(err), nil\n\t}\n\treturn merr.Success(), nil\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:2060 -> proxy.CreateCollection -> root_coord.CreateCollection:902 -> broadcastCreateCollectionV1 -> validateIfCollectionExists:531 -> Equal check:534 -> return errIgnoredCreateCollection:537 -> caught at root_coord.go:903 -> return merr.Success():906",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_misused",
+          "note": "源码接地发现: collection creation 实现了重复检查逻辑(validateIfCollectionExists),但当发现同名且相同schema的collection时,系统设计为'幂等创建'(返回 errIgnoredCreateCollection),然后在CreateCollection中捕获此错误并返回 SUCCESS(而非400错误)。这与契约约束(milvus_invariant_create_duplicate_001)明确要求的'must return 400 with collection already exists'矛盾。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has + /v2/vectordb/collections/list to verify only one collection exists",
+          "observed": "has_collection returned {\"code\":0,\"data\":{\"has\":true}}; list returned ['test_unloaded_review','test_dup_verify'] - only ONE instance of test_dup_verify exists (not duplicate), proving idempotent behavior rather than true duplicate creation",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dup_verify\", \"dbName\": \"default\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - tested on fresh container",
+            "Concurrent operations - sequential requests",
+            "Request parameter typos - both requests identical",
+            "API semantic misunderstanding - REST v2 contract is clear",
+            "By-design idempotency - this is NOT documented behavior"
+          ],
+          "surviving": "contract_violation",
+          "note": "Developer cognition shows no by_design_patterns indicating idempotent create is intentional (BDP-001/BDP-002 don't apply)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何by_design_pattern。developer_cognition.json 中'what_developers_consider_not_bugs'未包含'idempotent create'模式。盲点指标显示'REST v2 API data type serialization'是已知盲点区域,但本案是行为违反契约而非序列化问题。"
+      },
+      "root_cause_if_confirmed": "idempotent_create_design_contract_mismatch",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "原 oracle 断言正确 - 第2次 POST /collections/create (同名同参数) 返回 HTTP 200 {\"code\":0} 违反了契约约束 milvus_invariant_create_duplicate_001 ('Creating a collection with the same name twice must fail on the second attempt')。源码接地证实: Milvus 实现了'幂等创建'逻辑(create_collection_task.go:537 返回 errIgnoredCreateCollection → root_coord.go:906 捕获后返回 SUCCESS),但这是未文档化的内部行为,与公开契约矛盾。反向证伪显示只有1个collection实例存在(非真重复),证明这是设计上的幂等行为而非真正的重复创建失败。该行为违反 API 契约明确要求,应返回400错误而非200成功。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_invariant_create_duplicate_001: Creating a collection with the same name twice must return 400 with 'collection already exists'",
+          "source_implements_check": true,
+          "verdict_A": "CONFIRMED",
+          "api_observed_value": "Second create returned HTTP 200 with code:0 (success) instead of 400",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Collection names within a database must be unique (enforced by meta store)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "API accepts duplicate collection creation request without enforcing uniqueness constraint"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "源码显示幂等行为是故意的(errIgnoredCreateCollection注释: 'create collection with same schema, so it can be ignored'),但此行为未在API文档或契约中披露,且与契约明确矛盾。无by-design注释或常量表明这是公开API特性。"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (behavioral perspective cannot override contract/physical violation)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "idempotent_create_design_contract_mismatch": 1
+    },
+    "notes": "milvus_022 是 REST v2 API 契约违反 - 幂等 collection 创建行为未文档化且与公开约束矛盾。源码接地证实这是内部设计决策(errIgnoredCreateCollection),但维护者未通过契约或文档披露此行为。"
+  }
+}

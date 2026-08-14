@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_008",
+      "endpoint": "/schema/{className}/tenants POST",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema/TestTenant/tenants with [{\"name\": \"tenant_empty\", \"activityStatus\": \"\"}]",
+          "observed": "HTTP 200 OK, response: [{\"name\":\"tenant_empty\"}]",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema/TestTenant/tenants' -H 'Content-Type: application/json' -d '[{\"name\": \"tenant_empty\", \"activityStatus\": \"\"}]'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_tenants_create_001",
+            "assertion: body[].activityStatus in {ACTIVE, INACTIVE}",
+            "doc_quote: Array of Tenant objects (activityStatus: ACTIVE|INACTIVE on create)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "activityStatus",
+            "swag.IsZero",
+            "validateActivityStatuses",
+            "allowEmpty"
+          ],
+          "files_examined": [
+            "entities/models/tenant.go",
+            "usecases/schema/tenant.go",
+            "test/acceptance/multi_tenancy/create_delete_update_tenants_test.go"
+          ],
+          "source_excerpt": "// usecases/schema/tenant.go:157-159\nfunc (h *Handler) validateActivityStatuses(ctx context.Context, tenants []*models.Tenant,\n\tallowEmpty, allowFrozen bool,\n) error {\n\t...\n\tfor _, tenant := range tenants {\n\t\ttenant.ActivityStatus = convertNewTenantNames(tenant.ActivityStatus)\n\t\tswitch status := tenant.ActivityStatus; status {\n\t\tcase models.TenantActivityStatusHOT, models.TenantActivityStatusCOLD:\n\t\t\tcontinue\n\t\t...\n\t\tdefault:\n\t\t\tif status == \"\" && allowEmpty {\n\t\t\t\tcontinue  // BUG: empty string bypasses validation\n\t\t\t}\n\t\t}\n\t\tmsgs = append(msgs, fmt.Sprintf(\n\t\t\t\"invalid activity status '%s' for tenant %q\", tenant.ActivityStatus, tenant.Name))\n\t}\n...\n}\n\n// usecases/schema/tenant.go:63 (AddTenants caller)\nif err = h.validateActivityStatuses(ctx, validated, true, false); err != nil {\n    return 0, err\n}\n\n// entities/models/tenant.go:110 (model validation)\nfunc (m *Tenant) validateActivityStatus(formats strfmt.Registry) error {\n\tif swag.IsZero(m.ActivityStatus) { // not required\n\t\treturn nil  // Empty string treated as zero/missing, passes validation\n\t}\n\t...\n}",
+          "call_chain_traced": "POST /schema/{className}/tenants → AddTenants → validateActivityStatuses(allowEmpty=true) → default case: status==\"\" bypasses enum check → tenant created with defaulted HOT status",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:validateActivityStatuses 函数在 default 分支中,当 allowEmpty=true 时显式允许空字符串绕过枚举值校验。这违反了契约明文规定的 activityStatus 必须是 ACTIVE 或 INACTIVE。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestTenant/tenants/tenant_empty (verify actual stored state)",
+          "observed": "返回 {\"activityStatus\":\"HOT\",\"name\":\"tenant_empty\"} - 空字符串被静默转为 HOT (ACTIVE 的废弃名)",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:18080/v1/schema/TestTenant/tenants/tenant_empty'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "请求参数笔误 (空字符串是故意的测试输入)",
+            "环境问题 (Docker/平台无关,纯 API 行为)",
+            "并发/race (单次顺序请求)",
+            "缓存/延迟 (即时查询验证)",
+            "API 语义误解 (契约明文规定不允许空值)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "命中 bug_shape BS-004 (Parameter Validation Issues in Request Parsing) - 系统性的参数校验缺失,在 API 边界接受非法值"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: weaviate_type_tenants_create_001 - body[].activityStatus in {ACTIVE, INACTIVE}",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "body[].activityStatus in {ACTIVE, INACTIVE}",
+          "api_observed_value": "POST with activityStatus=\\\"\\\" succeeded with HTTP 200",
+          "api_violates_assertion": true
+        },
+        "physical": {
+          "objective_constraint": "activityStatus must be one of {ACTIVE, INACTIVE} per contract enum",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "虽然 API 优雅处理(不报错,默认为 HOT),但源码无显式 by-design 注释说明这是有意行为。相反,契约明文要求必须是 ACTIVE 或 INACTIVE,源码的 allowEmpty 分支绕过了契约要求。"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (契约违反 + 物理约束违反,behavioral 不能推翻)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "第 1 步干净复现:POST /schema/TestTenant/tenants 携带 activityStatus=\\\"\\\" 成功(HTTP 200)。第 2 步前提审计:通过。第 3 步契约对照:constraint weaviate_type_tenants_create_001 明文规定 activityStatus 必须是 ACTIVE 或 INACTIVE。第 3.5 步源码接地:usecases/schema/tenant.go:157-159 显式允许空字符串绕过枚举校验(当 allowEmpty=true);entities/models/tenant.go:110 将空字符串视为 zero/missing 值通过验证。第 4 步反向证伪:GET /schema/TestTenant/tenants/tenant_empty 返回 activityStatus=HOT,证明空字符串被静默转为 HOT(ACTIVE 的废弃名)。第 5 步平凡解释排除:排除所有平凡解释(环境、并发、笔误等)。第 6 步三视角聚合:契约视角(A)=CONFIRMED(违反明文 enum 约束),物理视角(B)=CONFIRMED(违反客观枚举约束),行为视角(C)=CONFIRMED(无 by-design 证据)。聚合结果=CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

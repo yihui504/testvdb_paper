@@ -1,0 +1,84 @@
+{
+  "defect_id": "milvus_018",
+  "judge": "dev-review",
+  "verdict": "CONFIRMED",
+  "confidence": 1.0,
+  "defect_type": "Type1_IllegalSuccess",
+  "endpoint": "collections+rename",
+  "evidence": {
+    "reproduction": {
+      "steps": [
+        "1. Create source collection 'test_rename_src'",
+        "2. Create destination collection 'test_rename_dst' (pre-existing)",
+        "3. Insert data into source collection",
+        "4. Call POST /v2/vectordb/collections/rename with collectionName=test_rename_src, newCollectionName=test_rename_dst"
+      ],
+      "expected": "HTTP 400 with error message 'new name already exists' per API contract",
+      "actual": "HTTP 200 with error code 65535 in response body: {\"code\":65535,\"message\":\"duplicated new collection name default:test_rename_dst with other collection name or alias\"}"
+    },
+    "contract_violation": {
+      "source": "structured_contract.json endpoint_registry",
+      "doc_quote": "200 on success; 400 if new name already exists; 404 if source not found",
+      "constraint_id": "milvus_state_collections_rename_001",
+      "constraint_assertion": "source collection exists AND new collection name does NOT exist",
+      "violation": "API returns HTTP 200 (success code) instead of HTTP 400 (bad request) when new collection name already exists"
+    },
+    "source_grounding": {
+      "file": "internal/distributed/proxy/httpserver/handler_v2.go",
+      "line": 539,
+      "function": "wrapperProxyWithLimit",
+      "code_excerpt": "HTTPAbortReturn(ginCtx, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})",
+      "explanation": "When gRPC handler returns error (like duplicate collection name), REST handler unconditionally returns HTTP 200 with error code in body instead of mapping to appropriate HTTP error status code"
+    },
+    "root_cause_analysis": {
+      "pattern": "systematic_rest_v2_error_handling",
+      "scope": "global",
+      "affected_endpoints_count": 72,
+      "code_location": "internal/distributed/proxy/httpserver/handler_v2.go:539",
+      "mechanism": "The wrapperProxyWithLimit function catches all gRPC errors and returns HTTP 200 with error code in response body, violating REST conventions and documented API contract"
+    },
+    "test_coverage": {
+      "unit_tests_found": true,
+      "test_files": [
+        "tests/python_client/testcases/test_database.py:589",
+        "tests/go_client/testcases/collection_test.go:1113"
+      ],
+      "test_expectation": "Tests expect error code 65535, indicating this is known internal behavior but violates documented REST API contract"
+    }
+  },
+  "three_perspective_analysis": {
+    "api_contract_perspective": {
+      "assessment": "VIOLATION",
+      "reasoning": "API contract explicitly states '400 if new name already exists' but implementation returns HTTP 200. This is a Type1_IllegalSuccess - success HTTP status indicates operation succeeded when it actually failed.",
+      "confidence": 1.0
+    },
+    "developer_cognition_perspective": {
+      "assessment": "CONFIRMED_BUG",
+      "reasoning": "Test code shows developers expect error code 65535 for this case, but this internal error code format violates REST API standards. Error code 65535 is not documented in public API. Developer cognition patterns show REST v2 API data type handling issues are a known blindspot area.",
+      "confidence": 0.95
+    },
+    "source_code_perspective": {
+      "assessment": "SYSTEMATIC_ISSUE",
+      "reasoning": "The issue stems from a single line (handler_v2.go:539) that maps ALL gRPC errors to HTTP 200, affecting 72 endpoints. The code comment and structure show this is intentional error handling design, not a bug in rename logic specifically.",
+      "confidence": 1.0,
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/utils.go",
+        "internal/rootcoord/meta_table.go",
+        "tests/python_client/testcases/test_database.py",
+        "tests/go_client/testcases/collection_test.go"
+      ]
+    }
+  },
+  "aggregation": {
+    "final_verdict": "CONFIRMED",
+    "defect_type": "Type1_IllegalSuccess",
+    "primary_reason": "API contract violation with documented expectation of HTTP 400 for duplicate name errors, but systematic error handling returns HTTP 200 for all errors. High confidence due to direct source code evidence and contract documentation.",
+    "severity": "Medium",
+    "scope": "systematic_rest_v2_api_issue",
+    "related_constraints": [
+      "milvus_state_collections_rename_001"
+    ],
+    "recommendation": "This is a valid API contract defect. However, fixing it requires changes to error handling strategy across 72 REST v2 endpoints. Consider as REST v2 API improvement rather than individual bug fix."
+  }
+}

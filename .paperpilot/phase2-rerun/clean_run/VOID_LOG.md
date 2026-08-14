@@ -1,0 +1,5 @@
+voided: milvus_001 (src=empty, conf=1.0 FP 无源码; 历史三轮同材料有完整审查)
+voided: milvus_008 (JSON 损坏 line43 转义; 待 2.6.12 容器重判)
+voided: qdrant_007 (派发prompt版本误写1.18.1[编排失误]; 判词格式平铺无verdicts数组)
+voided: qdrant_009 (JSON 损坏 line37 转义; 重判)
+voided: milvus_018 (格式平铺无verdicts数组; 重判)

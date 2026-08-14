@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert {\"collectionName\": \"test_upsert_pk\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}",
+          "observed": "HTTP 200, upsertCount=1, upsertIds=[100]. Query shows vector updated to [0.9,0.9,0.9,0.9]. String \"100\" successfully coerced to int64 100.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_pk\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes type coercion from string to int64 is a defect, but REST v2 API explicitly supports this via gjson + cast/json.Number libraries",
+            "Candidate assumes mismatched types should cause errors, but HTTP JSON APIs commonly accept numeric strings for numeric fields (loose typing is by-design for web APIs)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 (dataType == Int64 for scalar fields)",
+            "No contract assertion found prohibiting string-to-int64 coercion for REST v2 endpoints"
+          ],
+          "note": "Contract defines data types but does not prohibit automatic type coercion in HTTP JSON layer"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "anyToColumns",
+            "json.Number.Int64",
+            "DataType_Int64"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/request.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 639-644\n\t\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// File: internal/distributed/proxy/httpserver/utils.go, Lines 530, 513\n\t\t\tdataString := fieldValue.String()\n\t\t\tfieldValue := data.Get(fieldName)\n\n// EXPLANATION: When JSON contains {\"id\": \"100\"} (string), gjson parses it as string type.\n// fieldValue.String() returns \"100\" (unquoted). json.Number(\"100\").Int64() succeeds because\n// \"100\" is valid JSON number syntax. This is INTENTIONAL type coercion for HTTP REST APIs.",
+          "call_chain_traced": "HTTP JSON → gjson.Parse → checkAndSetData (line 466) → fieldValue.String (line 530) → json.Number.Int64 (line 640) → int64 conversion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code explicitly uses json.Number(dataString).Int64() which handles string-to-int64 coercion. This is not a bug but intentional design for REST API flexibility."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Independent verification: Query entity after upsert shows successful update",
+          "observed": "POST /v2/vectordb/entities/query returned [{\"id\":100,\"vector\":[0.9,0.9,0.9,0.9]}]. The upsert with string id=\"100\" correctly updated the int64 pk=100 row. No data corruption or inconsistency observed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, platform)",
+            "Concurrency race",
+            "Request parameter typo"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This is mundane API semantics: HTTP REST APIs commonly accept loose typing (numeric strings for numeric fields) as a convenience feature. This is not a bug but by-design behavior for web APIs."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any rejection pattern or by-design pattern from developer_cognition.json. However, the behavior (loose typing in REST APIs) is consistent with common web API design patterns."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate claims type coercion from string to int64 is a defect, but source code analysis shows this is INTENTIONAL behavior in the REST v2 API layer. The code at utils.go:640 explicitly uses json.Number(dataString).Int64() which handles string-to-int64 coercion. This is a common pattern in HTTP REST APIs to accept loose typing (e.g., accepting \"100\" for int64 fields). The reproduction confirms the coercion works correctly without data corruption. This is mundane API semantics, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

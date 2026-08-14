@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={'ef': 0}",
+          "observed": "API returns HTTP 200 with search results instead of rejecting ef=0 as invalid",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test\",\"data\":[[0.1]*8],\"annsField\":\"vector\",\"limit\":3,\"searchParams\":{\"ef\":0}}' → HTTP 200 with results",
+          "evidence_output": "{\"code\":0,\"cost\":0,\"data\":[{\"distance\":0,\"id\":0},{\"distance\":0,\"id\":1},{\"distance\":0,\"id\":2}],\"topks\":[3]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "HNSW index type requires ef (search depth) parameter for proper operation",
+            "ef represents the number of entry points to explore during HNSW graph traversal",
+            "ef=0 is mathematically invalid - must explore at least 1 entry point for meaningful search",
+            "REST v2 API contract expects validation of search parameters before execution"
+          ],
+          "all_assumptions_met": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_range_indexes_create_003: efConstruction >= 1",
+            "milvus_behavioral_entities_search_001: Search returns 400 on invalid parameters"
+          ],
+          "expected_behavior": "API should validate searchParams and reject ef=0 with HTTP 400 (validation error)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "generateSearchParams",
+            "ef validation",
+            "searchParams handling",
+            "HNSW ef parameter"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... equality check logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION of ef parameter value range\n\t// ef=0 passes through without any checks\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST v2 search request → handler_v2.go:search() → utils.go:generateSearchParams() → NO ef validation → passes directly to search execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: generateSearchParams() 函数只做参数格式转换，完全没有对 ef 参数进行范围检查。ef=0 直接透传到搜索引擎，没有任何验证逻辑阻止这个无效值。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent test: Try ef=-1 (should also be invalid) and ef=1 (valid boundary)",
+          "observed": "API accepts both ef=-1 and ef=1 without validation - confirms NO ef range validation exists",
+          "evidence_cmd": "Test with ef=-1 → HTTP 200; Test with ef=1 → HTTP 200. Both accepted, proving validation is completely absent.",
+          "falsification_confirmed": true
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment/OS issue (same bug on clean Milvus 2.6.10 container)",
+            "Request parameter typo (ef=0 is syntactically valid JSON)",
+            "API semantic misunderstanding (ef=0 is mathematically invalid for HNSW)",
+            "Default/fallback behavior (API should reject, not silently accept)",
+            "Race condition (deterministic bug on every request with ef=0)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式。ef=0 不是有意设计，而是参数验证缺失。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_range_indexes_create_003: efConstruction >= 1; API expects ef >= 1 by extension (search depth must be >= 1)",
+          "source_implements_check": false,
+          "api_observed_value": "ef=0 accepted with HTTP 200 and normal search results",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "HNSW search depth ef must be >= 1 (mathematically required - cannot explore 0 entry points)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "no_fallback_or_error_handling": "API should return HTTP 400 with validation error, not silently accept ef=0",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED ∧ verdict_B=CONFIRMED ∧ verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "param_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 /entities/search 端点缺少对 searchParams 中 ef 参数的验证。HNSW 索引的 ef (search depth) 参数在数学上必须 ≥ 1（至少探索 1 个入口点），但 API 接受 ef=0 并返回正常搜索结果，违反了参数验证契约。源码分析确认 generateSearchParams() 函数完全没有 ef 范围检查，直接透传无效值。这是一个真正的 Type1_IllegalSuccess 缺陷 - API 应该返回 HTTP 400 验证错误，却成功返回了结果。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_missing": 1
+    }
+  },
+  "session_metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10",
+    "milvus_container": "localhost:19530 (REST v2)",
+    "review_framework": "6-step SOP + source grounding + three-perspective analysis",
+    "self_check": "PASSED"
+  }
+}

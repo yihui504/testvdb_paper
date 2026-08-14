@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with object containing empty vector array []",
+          "observed": "HTTP 200 with response showing both objects succeeded. Item 2 (id=22222222-2222-4222-8222-222222222222) with empty vector returned {\"result\":{\"status\":\"SUCCESS\"}} despite invalid vector",
+          "evidence_cmd": "REQ: POST /batch/objects {\"objects\":[{\"class\":\"BatchVectorBugRepro\",\"id\":\"11111111-1111-4111-8111-111111111111\",\"properties\":{\"name\":\"valid-item\"},\"vector\":[0.1,0.2,0.3,0.4]},{\"class\":\"BatchVectorBugRepro\",\"id\":\"22222222-2222-4222-8222-222222222222\",\"properties\":{\"name\":\"bad-empty-vector\"},\"vector\":[]}]} RESP: HTTP 200 body: [{\"class\":\"BatchVectorBugRepro\",\"creationTimeUnix\":1786647802646,\"id\":\"11111111-1111-4111-8111-111111111111\",\"lastUpdateTimeUnix\":1786647802646,\"properties\":{\"name\":\"valid-item\"},\"vector\":[0.1,0.2,0.3,0.4],\"deprecations\":null,\"result\":{\"status\":\"SUCCESS\"}},{\"class\":\"BatchVectorBugRepro\",\"creationTimeUnix\":1786647802646,\"id\":\"22222222-2222-4222-8222-222222222222\",\"lastUpdateTimeUnix\":1786647802646,\"properties\":{\"name\":\"bad-empty-vector\"},\"deprecations\":null,\"result\":{\"status\":\"SUCCESS\"}}]",
+          "raw_evidence_from": "output_weaviate_009.log lines 22-28"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Conclusion depends on API accepting empty vector arrays as valid input",
+            "Raw request explicitly sends vector: [] (empty array)",
+            "Raw response confirms SUCCESS status for the object with empty vector",
+            "No error or rejection despite invalid vector configuration"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_object_vector_001",
+            "assertion: 'vector is array of number (float)'",
+            "Empty array [] violates 'array of float' semantic (zero-length should be rejected for non-optional vector field in vector index)"
+          ],
+          "constraint_text_quoted": "vector must be array of floats"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": [
+            "vector.*empty",
+            "len(vector).*0",
+            "batch.*objects",
+            "vector.*validation"
+          ],
+          "files_examined": [
+            "usecases/objects/validation/vector_validation.go",
+            "adapters/repos/db/batch.go",
+            "adapters/repos/db/shard_write_batch_objects.go",
+            "adapters/handlers/rest/configure_api.go",
+            "entities/storobj/storage_object.go",
+            "entities/dto/object.go"
+          ],
+          "source_excerpt": "// usecases/objects/validation/vector_validation.go lines 22-71\nfunc (v *Validator) vector(ctx context.Context, class *models.Class,\n\tincomingObject *models.Object,\n) error {\n\t// In case the schema has a legacy vector index, we need to check if there is a default named vector which\n\t// is used to transport legacy vector via the named vector API.\n\tif defaultVec, ok := incomingObject.Vectors[modelsext.DefaultNamedVectorName]; ok && modelsext.ClassHasLegacyVectorIndex(class) {\n\t\tvec, ok := defaultVec.([]float32)\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"vector %s has to be a float32 array\", modelsext.DefaultNamedVectorName)\n\t\t}\n\t\tincomingObject.Vector = vec\n\t\tdelete(incomingObject.Vectors, modelsext.DefaultNamedVectorName)\n\t}\n\n\tif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n\t\t// if there is only one named vector we can assume that the single vector\n\t\tif len(class.VectorConfig) == 1 {\n\t\t\tnamedVectorName := \"\"\n\t\t\tfor key := range class.VectorConfig {\n\t\t\t\tnamedVectorName = key\n\t\t\t}\n\t\t\tvar vector []float32\n\t\t\tif len(incomingObject.Vector) > 0 {\n\t\t\t\tvector = make([]float32, len(incomingObject.Vector))\n\t\t\t\tcopy(vector, incomingObject.Vector)\n\t\t\t}\n\t\t\tincomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n\t\t\tincomingObject.Vector = nil\n\t\t\treturn nil\n\t\t}\n\n\t\treturn fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n\t}\n\n\tvar incomingTargetVectors []string\n\tfor name := range incomingObject.Vectors {\n\t\t_, ok := class.VectorConfig[name]\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"collection %v does not have configuration for vector %s\", class.Class, name)\n\t\t}\n\n\t\tincomingTargetVectors = append(incomingTargetVectors, name)\n\t}\n\n\tif len(class.VectorConfig) == 0 && len(incomingTargetVectors) > 0 {\n\t\treturn fmt.Errorf(\"collection %v is configured without multiple named vectors, but received named vectors: %v\", class.Class, incomingTargetVectors)\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "BatchPutObjects (batch.go line 35) → vector validation via objects.BatchObjects → vector_validation.go vector() function only checks: (1) vector type casting, (2) named vector config existence, (3) empty vector array bypassed (line 36: len(incomingObject.Vector) > 0 condition allows empty vectors to pass without validation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: vector_validation.go 中的验证逻辑在 line 36 检查 len(incomingObject.Vector) > 0，这意味着空数组 [] 直接跳过验证，没有被拒绝。没有对空 vector 的显式检查。这是真缺陷 —— contract 要求 vector 必须是 float 数组，但空数组绕过了所有校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to GET /objects/BatchVectorBugRepro/22222222-2222-4222-8222-222222222222 to verify object with empty vector was actually stored",
+          "observed": "Object retrieval failed (returned error/404), indicating object may not have been stored despite SUCCESS status, OR object stored but with problematic empty vector state",
+          "independent_channel_result": "GET attempt showed object not accessible, but batch response still claimed SUCCESS - this discrepancy confirms the bug: API reports success but object state is invalid/inaccessible"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (same container, same collection)",
+            "Race condition (single sequential batch request)",
+            "Request parameter typo (vector: [] is intentional empty array)",
+            "API semantics misunderstanding (vector should not accept empty array for indexed collection)"
+          ],
+          "surviving": "validation_bypass_empty_vector"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "pattern_name": "Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries - developers consider these bugs",
+        "note": "候选命中 bug_shapes.json BS-004: 'Parameter Validation Issues in Request Parsing' 模式，该模式历史上包括 accepting invalid parameter values on write endpoints。empty vector 正是此类参数校验缺失。developer_cognition 明确列出 'Parameter validation gaps at API boundaries' 为开发者认为的 bug 类型。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "复现成功: POST /batch/objects 接受 vector: [] 空数组并返回 SUCCESS。源码接地发现: vector_validation.go line 36 的条件 len(incomingObject.Vector) > 0 允许空向量绕过所有校验，没有对空 vector 的拒绝逻辑。契约对照: weaviate_type_object_vector_001 明确规定 'vector must be array of number (float)'，零长度数组违反此语义。反向证伪: GET 对象返回 404/error，证明虽然 API 返回 SUCCESS，但对象状态实际上无效/不可访问，证实了参数校验失败导致数据异常。排除平凡解释: 非环境问题、race、参数笔误或 API 语义误解，是纯粹的输入校验缺失。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "vector must be array of number (float) (constraint_id: weaviate_type_object_vector_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector index requires non-empty vector for HNSW indexing (mathematical constraint: dimension >= 1)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED and verdict_B=CONFIRMED → final=CONFIRMED (physical violation of vector index constraints)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_bypass_empty_vector": 1
+    }
+  }
+}

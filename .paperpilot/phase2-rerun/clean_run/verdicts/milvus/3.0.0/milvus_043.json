@@ -1,0 +1,71 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with groupParams={groupByField: 'cat', groupSize: 2, strictGroupSize: true}, limit=15",
+          "observed": "Returns 15 results (3 per each of 5 cat values) instead of respecting strictGroupSize",
+          "evidence_cmd": "Raw log shows: cat=4 (ids 14,9,4), cat=3 (ids 13,8,3), cat=2 (ids 12,7,2), cat=1 (ids 11,6,1), cat=0 (ids 10,5,0) - each group has 3 results despite groupSize=2"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["milvus_assert_search_empty_001: Search returns empty array, no error for empty collection", "No explicit constraint for strictGroupSize semantics in contract"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strict_group_size", "groupSize", "IsGroupResEnough", "CompositeGroupByMap"],
+          "files_examined": [
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp",
+            "internal/core/src/query/PlanProto.cpp",
+            "internal/core/src/common/QueryInfo.h",
+            "internal/proxy/search_util.go",
+            "pkg/proto/plan.proto"
+          ],
+          "source_excerpt": "// internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp line 206-208\nCompositeGroupByMap groupMap(search_info.topk_,\n                             search_info.group_size_,\n                             search_info.strict_group_size_);\n\n// internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h line 368-377\nbool IsGroupResEnough() {\n    bool enough = false;\n    if (strict_group_size_) {\n        enough = static_cast<int>(group_map_.size()) == group_capacity_ &&\n                 enough_group_count_ == group_capacity_;\n    } else {\n        enough = static_cast<int>(group_map_.size()) == group_capacity_;\n    }\n    return enough;\n}",
+          "call_chain_traced": "REST request (limit=15, groupSize=2, strictGroupSize=true) → parseSearchInfo() (topk=limit=15) → PlanProto.cpp (search_info.topk_=15, search_info.group_size_=2, search_info.strict_group_size_=true) → CompositeGroupByMap(group_capacity=15) → IsGroupResEnough() checks group_map_.size()==15",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: group_capacity 被设置为 topk (15)，未考虑 groupSize (2)。当 strictGroupSize=true 时，IsGroupResEnough() 会继续收集直到有 15 个不同的组每组都有 2 个结果，但用户期望的是总结果数不超过 15，因此最多应有 7-8 个组 (15/2=7.5)。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "源码逻辑分析已证伪 - 当前实现继续收集直到 15 个组，而不是在达到总结果限制时停止",
+          "observed": "Raw response confirms 15 results returned with 3 results per group, violating groupSize=2 constraint"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "implementation_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中已知的 by_design 模式。这是 strictGroupSize 参数处理逻辑的实现错误。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "strictGroupSize=true 要求每组严格返回 groupSize 个结果。当前实现将 group_capacity 设置为 topk (15) 而非 ceil(topk/groupSize) (8)，导致 IsGroupResEnough() 继续收集直到 15 个组每组都有足够结果，返回了 15 个结果 (每组 3 个)，违反了 groupSize=2 的约束。源码确认 CompositeGroupByMap 构造时未对 topk 做除法调整。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

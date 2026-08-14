@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}] to Int64 primary key field",
+          "observed": "Server correctly returns HTTP 200 with error code 1804: 'fail to deal the insert data, error: strconv.ParseInt: parsing \"abc\": invalid syntax: invalid parameter[expected=Int64][actual=abc]'",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_pk_review\", \"data\": [{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Server processes insert requests with JSON data payload",
+            "Server performs type validation on primary key field",
+            "Server returns structured error response for invalid type"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 (dataType == Int64 for scalar fields)",
+            "assertion_id: milvus_behavioral_insert_success_001 (inserting valid data succeeds)",
+            "state_constraint: milvus_state_insert_collection_001 (insert requires existing collection)"
+          ],
+          "contract_analysis": "The contract defines Int64 as a valid scalar data type for fields and specifies that inserting valid data should succeed. The contract does NOT explicitly specify the behavior for type coercion attempts (string to Int64), leaving this as implementation-defined behavior."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "strconv.ParseInt",
+            "convertIDsToSchemapbIDs",
+            "checkAndSetData",
+            "ErrInvalidInsertData"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "pkg/util/merr/errors.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/utils.go, Lines 275-281\n\n\t\tcase string:\n\t\t\t// Try to parse string as int64\n\t\t\tparsed, err := strconv.ParseInt(v, 10, 64)\n\t\t\tif err != nil {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidErr(err, \"invalid int64 id at index %d: %v\", i, id)\n\t\t\t}\n\t\t\tint64ID = parsed\n\nFile: pkg/util/merr/errors.go, Line 229\n\tErrInvalidInsertData = newMilvusError(\"fail to deal the insert data\", 1804, false, WithErrorType(InputError))",
+          "call_chain_traced": "HTTP POST /entities/insert → checkAndSetData() → convertIDsToSchemapbIDs() → strconv.ParseInt(string) → error wrapped with ErrInvalidInsertData (code 1804) → HTTP 200 response with error details",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:Milvus REST v2 API 在 utils.go:277-281 中显式实现了字符串到Int64的类型转换尝试。当字符串无法解析为Int64时,返回明确的参数错误(通过merr.WrapErrParameterInvalidErr包装),最终映射到HTTP 200 + error code 1804。这是有意的数据验证行为,不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with valid Int64 ID to confirm type validation works correctly",
+          "observed": "Valid Int64 ID insert succeeds: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[999]}}. Invalid string ID correctly fails with structured error. This confirms the system properly validates and rejects type mismatches.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_pk_review\", \"data\": [{\"id\": 999, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (在本地Docker容器中复现,非环境问题)",
+            "并发/race (单顺序请求,无并发)",
+            "缓存/延迟 (即时响应)",
+            "请求参数笔误 (参数格式正确,值类型故意不符)",
+            "对API语义的误解 (行为符合预期)"
+          ],
+          "surviving": "无平凡解释存活 - 这是预期的类型验证行为"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (from bug_shapes.json shape_id: rest-v2-data-type-handling)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "analysis": "This candidate matches the historical bug shape 'REST_v2_data_type_handling' which documents 26 instances of REST v2 API data type serialization issues. However, this specific case is NOT a bug - it's correct validation behavior. The source code shows the validation is intentional and returns proper error codes. The pattern match indicates this is a high-frequency area for issues, but this particular instance is working as designed."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_int64_001: dataType == Int64 for scalar fields; milvus_behavioral_insert_success_001: inserting valid data succeeds",
+          "source_implements_check": true,
+          "api_observed_value": "Insert with string 'abc' to Int64 field returns HTTP 200 + error code 1804 (structured error)",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "rationale": "Contract defines Int64 type and valid insert behavior, but does NOT specify type coercion rules. The API's behavior (rejecting invalid type with structured error) does not violate any explicit contract assertion."
+        },
+        "physical": {
+          "objective_constraint": "Int64 fields must contain 64-bit integer values (physical data type constraint)",
+          "api_accepts_violation": false,
+          "verdict_B": "CONFIRMED_PHYSICAL_CONSTRAINT_EXISTS",
+          "rationale": "There is an objective physical constraint - Int64 fields can only store integer values. The API correctly enforces this constraint by rejecting string values that cannot be parsed as integers."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "rationale": "The API handles the invalid type gracefully by returning a structured error response (HTTP 200 with error code 1804 and detailed message). Source code explicitly implements type conversion attempt with clear error handling (utils.go:277-281). This is intentional by-design behavior, not a bug."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL (no contract violation) + verdict_B=PHYSICAL_CONSTRAINT_ENFORCED (correct behavior) + verdict_C=REFUTED (graceful, by-design) → final=FALSE_POSITIVE (this is correct validation behavior, not a defect)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 API 正确实现了对Int64主键字段的类型验证。当插入字符串'abc'到Int64字段时,系统在utils.go:277-281中显式尝试strconv.ParseInt转换,失败后返回结构化错误响应(HTTP 200 + error code 1804)。源码显示这是有意的数据验证逻辑,符合bug_shapes.json中记录的'REST_v2_data_type_handling'模式的预期正确行为。没有违反任何契约约束,API优雅地处理了类型不匹配情况。这是正确的类型验证行为,不是缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

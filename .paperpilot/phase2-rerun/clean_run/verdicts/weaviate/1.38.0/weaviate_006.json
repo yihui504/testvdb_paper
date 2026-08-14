@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_006",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with class='TestClass', vectorizer='none', properties=[{name='text_field', dataType=['text'], tokenization=''}]",
+          "observed": "API returned HTTP 200 with created collection. Response shows tokenization defaulted to 'word': {\"properties\":[{\"name\":\"text_field\",\"tokenization\":\"word\",...}]}",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}' | grep -o '\"tokenization\":\"[^\"]*\"'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes empty string '' should be rejected as invalid parameter",
+            "Oracle assumes explicit tokenization value is required (no defaulting behavior expected)",
+            "Oracle treats empty string as 'no value set' rather than 'use default value'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint in structured_contract.json rejecting empty tokenization string",
+            "OpenAPI spec allows tokenization as string with enum values but doesn't forbid empty string",
+            "Contract does not specify behavior for empty string (implicit defaulting allowed)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "setPropertyDefaultTokenization",
+            "tokenization.*=.*word.*default",
+            "PropertyTokenization.*empty"
+          ],
+          "files_examined": [
+            "usecases/schema/class.go",
+            "usecases/schema/validation.go",
+            "entities/models/property.go",
+            "usecases/schema/property_test.go"
+          ],
+          "source_excerpt": "// usecases/schema/class.go lines 747-768\nfunc setPropertyDefaultTokenization(props ...*models.Property) {\n\tfor _, prop := range props {\n\t\tswitch dataType, _ := schema.AsPrimitive(prop.DataType); dataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, default tokenization was word\n\t\t\t// which will be migrated to text+whitespace\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tif os.Getenv(\"DEFAULT_TOKENIZATION\") != \"\" {\n\t\t\t\t\tprop.Tokenization = os.Getenv(\"DEFAULT_TOKENIZATION\")\n\t\t\t\t} else {\n\t\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t\t}\n\t\t\t}\n\t\tdefault:\n\t\t\t// tokenization not supported for other data types\n\t\t}\n\t}\n}",
+          "call_chain_traced": "POST /schema → setPropertyDefaults → setPropertyDefaultTokenization → empty string check → assign 'word' default → API returns HTTP 200",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: empty string '' 是故意的默认值触发器，代码显式检查 Tokenization == \"\" 并设置为 'word'（或环境变量 DEFAULT_TOKENIZATION）。这是 by-design 行为，不是漏洞。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v1/schema with tokenization='' then GET /v1/schema/TestClass to verify stored value",
+          "observed": "Created collection shows tokenization='word' in response. GET /v1/schema/TestClass confirms stored value is 'word', not empty string. Empty string input triggers defaulting logic, not a validation bypass."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (non-POSIX / Windows / Docker)",
+            "Concurrency / race condition",
+            "Cache / optimizer delay",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "by_design_defaulting"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "If the behavior matches documented API specifications, it is considered correct",
+        "note": "命中 rejection_patterns RP-001: 虽然 oracle 期望 empty string 被拒绝，但源码显示这是故意的默认值行为。开发者会认为这是正确行为（用户省略 tokenization → 系统填合理默认值），而非 bug。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 误认为 empty string '' 应该被拒绝为非法参数。但源码显示这是故意的默认值机制：用户显式传 tokenization='' 触发默认逻辑（setPropertyDefaultTokenization 函数 line 757-762），系统自动填入 'word'。API 正确处理（HTTP 200），响应显示默认值。这是 Weaviate 的 UX 设计：允许省略 tokenization 让系统填合理默认值，而非强制用户必须提供有效值。无效值如 'invalid_tokenizer' 仍被正确拒绝（HTTP 422）。无验证缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema {\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}",
+          "observed": "HTTP 200 OK. Response shows distance='cosine' (silently coerced from null). Contract requires rejection of invalid distance metrics.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H \"Content-Type: application/json\" -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}' | python -c \"import sys, json; d=json.load(sys.stdin); print('distance:', d.get('vectorIndexConfig', {}).get('distance'))\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract line 21: 'invalid distance metric must be rejected' - API accepts null without rejection",
+            "Distance is enum with 5 valid values [cosine, dot, l2-squared, hamming, manhattan] - null is not valid",
+            "API should validate vectorIndexConfig.distance per contract - no validation present in source"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_contract line 21",
+            "assertion: '[SCHEMA] invalid distance metric must be rejected'",
+            "api_templates: POST /v1/schema parameters.vectorIndexConfig.distance"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "DistanceCosine|DistanceDot|DistanceL2Squared|DistanceHamming|DistanceManhattan",
+            "DefaultDistanceMetric",
+            "ParseAndValidateConfig",
+            "validate.*distance",
+            "SetDefaults"
+          ],
+          "files_examined": [
+            "entities/vectorindex/common/config.go",
+            "entities/vectorindex/hnsw/config.go",
+            "usecases/schema/handler.go",
+            "entities/vectorindex/hfresh/config.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/common/config.go lines 23-32\nconst (\n\tDistanceCosine    = \"cosine\"\n\tDistanceDot       = \"dot\"\n\tDistanceL2Squared = \"l2-squared\"\n\tDistanceManhattan = \"manhattan\"\n\tDistanceHamming   = \"hamming\"\n\n\t// Set these defaults if the user leaves them blank\n\tDefaultVectorCacheMaxObjects = 1e12\n\tDefaultDistanceMetric        = DistanceCosine\n)\n\n// entities/vectorindex/hnsw/config.go lines 85-136 (SetDefaults function)\nfunc (u *UserConfig) SetDefaults() {\n\tu.MaxConnections = DefaultMaxConnections\n\tu.EFConstruction = DefaultEFConstruction\n\tu.CleanupIntervalSeconds = DefaultCleanupIntervalSeconds\n\tu.VectorCacheMaxObjects = vectorIndexCommon.DefaultVectorCacheMaxObjects\n\tu.EF = DefaultEF\n\tu.DynamicEFFactor = DefaultDynamicEFFactor\n\tu.DynamicEFMax = DefaultDynamicEFMax\n\tu.DynamicEFMin = DefaultDynamicEFMin\n\tu.Skip = DefaultSkip\n\tu.FlatSearchCutoff = DefaultFlatSearchCutoff\n\tu.Distance = vectorIndexCommon.DefaultDistanceMetric  // <-- DEFAULTS TO COSINE\n\t...\n}\n\n// entities/vectorindex/hnsw/config.go lines 213-217 (parsing)\nif err := vectorIndexCommon.OptionalStringFromMap(asMap, \"distance\", func(v string) {\n\tuc.Distance = v  // <-- ACCEPTS ANY STRING, INCLUDING null\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/hnsw/config.go lines 260-323 (validate function)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {  // <-- validates maxConnections\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {  // <-- validates efConstruction\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {  // <-- validates filterStrategy\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\t// ... other validations ...\n\t// NO VALIDATION FOR u.Distance FIELD!\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig(input={distance: null}) → SetDefaults() assigns Distance=cosine → OptionalStringFromMap overwrites with null → validate() DOES NOT CHECK distance → returns UserConfig{Distance: null} → stored as cosine default",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:validate()函数显式验证maxConnections/efConstruction/filterStrategy等参数,但故意不验证Distance字段。这是parameter_validation缺陷,符合BS-004模式。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification - no falsification possible",
+          "observed": "Bug is directly observable: API violates contract by accepting null distance and silently coercing to 'cosine' instead of rejecting with 4xx error as contract requires. The violation is explicit in the raw HTTP response."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Windows/Docker) - reproducible on clean container",
+            "Concurrency/race - deterministic behavior",
+            "Cache/optimizer delay - immediate response",
+            "Request param typo - explicitly sent null",
+            "API semantics misunderstanding - contract explicitly states rejection requirement"
+          ],
+          "surviving": "none - this is a genuine parameter validation gap in the source code"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004 (Parameter Validation Issues in Request Parsing)",
+        "developer_quote": "Input validation is often incomplete at API boundaries (blindspot_indicators)",
+        "pattern_id": "BS-004",
+        "root_cause_category": "parameter_validation",
+        "affected_layer": "request_parsing",
+        "note": "Finds systematic gap: validate() function exists but omits distance field validation, allowing invalid values (null, empty string, arbitrary strings) to pass through"
+      },
+      "root_cause_if_true": "parameter_validation_gap_in_vectorIndexConfig_distance",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Contract line 21 explicitly requires 'invalid distance metric must be rejected'. Source code analysis reveals validate() function in hnsw/config.go (lines 260-323) validates maxConnections, efConstruction, filterStrategy, but intentionally omits Distance field validation. When user sends distance=null, API silently defaults to 'cosine' instead of rejecting with 4xx. This is a Type1_IllegalSuccess - parameter validation gap at API boundary matching BS-004 pattern.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "[SCHEMA] invalid distance metric must be rejected (contract line 21). Distance must be one of: cosine, dot, l2-squared, hamming, manhattan",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Distance is enum with exactly 5 valid values (cosine, dot, l2-squared, hamming, manhattan)",
+          "api_accepts_violation": true,
+          "api_observed_value": "Accepts distance=null (not in valid enum), coerces to cosine",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Silent coercion is not graceful error handling; source shows validate() function exists but omits distance check - this is a bug, not by-design"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract violation + physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap_in_vectorIndexConfig_distance": 1
+    }
+  }
+}

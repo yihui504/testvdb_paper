@@ -1,0 +1,114 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_006",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_payload_filter/points/search with vector=[0.1,0.2,0.3,0.4], limit=10, with_payload=true, filter={must:[{key:color,match:{value:red}}]}",
+          "observed": "Response HTTP 200 with 4 points: [{id:4,score:1.0,payload:{color:red}},{id:10,score:1.0,payload:{color:red}},{id:8,score:1.0,payload:{color:red}},{id:2,score:1.0,payload:{color:red}}]. All returned points have valid payload.color=red. No violation visible when with_payload=true.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect conclusion likely depends on the response containing payload data (color field), but the raw request may have omitted with_payload parameter",
+            "If the defect claims 'missing payload' or 'None values in payload', this requires the response to actually include payload, which only happens when with_payload=true (or with_payload selector) is explicitly set"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "assertion_id: qdrant_behavioral_008 - 'Returns 200 with array of scored points (descending by score); returns 4XX on invalid params'",
+            "endpoint parameter: with_payload (type: object) - 'Payload inclusion. Default: true' per structured_contract.json API endpoint definition"
+          ],
+          "note": "Contract states with_payload default is true in API docs, but this contradicts source code implementation which defaults to false. This is a documentation bug, not a runtime defect."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ 1.18.1",
+          "grep_queries": ["DEFAULT_WITH_PAYLOAD", "with_payload", "WithPayloadInterface"],
+          "files_examined": [
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "src/common/inference/query_requests_rest.rs",
+            "lib/api/src/grpc/conversions.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/operations/universal_query/collection_query.rs lines 50-58\n\nimpl CollectionQueryRequest {\n    pub const DEFAULT_LIMIT: usize = 10;\n\n    pub const DEFAULT_GROUP_SIZE: usize = 3;\n\n    pub const DEFAULT_OFFSET: usize = 0;\n\n    pub const DEFAULT_WITH_VECTOR: WithVector = WithVector::Bool(false);\n\n    pub const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);\n}",
+          "call_chain_traced": "REST request parsing (query_requests_rest.rs:143) → with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD) → defaults to Bool(false) → response omits payload fields",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code接地发现: with_payload默认值是Bool(false)而非API文档声称的true。这是文档与实现不一致，但运行时行为符合源码逻辑。当请求未显式设置with_payload时，响应不包含payload字段。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4a: Repeated search WITHOUT with_payload parameter | Step 4b: Direct point retrieval GET /points/{id} with with_payload=true",
+          "observed": "Step 4a: POST /points/search (no with_payload) → Response: [{id:4,score:1.0},{id:10,score:1.0},{id:8,score:1.0},{id:2,score:1.0}] - NO payload fields present. | Step 4b: GET /points/2?with_payload=true → Result: {id:2,payload:{color:red},vector:[...]} - Confirms id=2真身确实有color=red。 | 证伪成立: 原响应缺失payload是因为请求未带with_payload参数，而非数据异常。所有返回点经主键直取验证均为合法red命中。",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}' && curl -s -X GET 'http://localhost:6333/collections/test_payload_filter/points/2?with_payload=true'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/platform) - ruled out by consistent reproducibility",
+            "Concurrency race - ruled out by deterministic filter behavior",
+            "Request parameter typo - IDENTIFIED as root cause",
+            "API semantic misunderstanding - IDENTIFIED as root cause"
+          ],
+          "surviving_explanation": "assertion_depends_on_unrequested_field",
+          "note": "The defect likely stemmed from an oracle script that inspected response payload without ensuring with_payload=true was set in the request. This is the classic #9255 pattern: assertion depends on a field that wasn't requested."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns。但属同类'依赖未请求响应字段'的oracle缺陷模式，与#9255同源。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "API endpoint parameter with_payload defined as object type with 'Default: true' in structured_contract.json, but source code shows DEFAULT_WITH_PAYLOAD = Bool(false)",
+          "source_implements_check": false,
+          "api_observed_value": "Request without with_payload parameter returns response without payload fields (consistent with source default Bool(false))",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract documentation claims default=true but source implements default=false. This is documentation inconsistency, not API violation. Runtime behavior follows source code."
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint on with_payload parameter - it's a boolean selector controlling response inclusion, not a value with mathematical bounds",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API gracefully handles missing with_payload parameter by using source-defined default (Bool(false)). Source code explicitly defines this default at collection_query.rs:58. This is by-design behavior, not a defect."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final_verdict=REFUTED (with by-design evidence in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "assertion_depends_on_unrequested_field",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原oracle缺陷依赖于检查响应中的payload字段(如color)，但触发请求时未显式设置with_payload=true参数。源码接地(collection_query.rs:58)确认with_payload默认值为Bool(false)，因此响应正确地省略了payload字段。经独立通道证伪(GET /points/{id}?with_payload=true)验证所有返回点(id=2,4,8,10)真身均为合法的color=red命中。该候选源于#9255同源的oracle缺陷模式：断言依赖了未请求的响应字段。无实际违规。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "assertion_depends_on_unrequested_field": 1
+    }
+  },
+  "session_metadata": {
+    "target": "qdrant",
+    "version": "1.18.1",
+    "candidate_ids": ["qdrant_006"],
+    "self_check": "PASSED",
+    "note": "Self-check against #9255 fixture passed: Correctly identified FALSE_POSITIVE when oracle defect depends on unrequested response field."
+  }
+}

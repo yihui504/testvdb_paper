@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_001",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with dynamicEfMin=500, dynamicEfMax=10 (inconsistent values where min > max)",
+          "observed": "HTTP 200 - collection created successfully accepting logically inconsistent dynamic EF parameters",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -d '{\"class\":\"TestEfBad\",\"vectorizer\":\"none\",\"vectorIndexConfig\":{\"dynamicEfMin\":500,\"dynamicEfMax\":10,\"dynamicEfFactor\":8}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_type_schema_create_001 (class field must be CamelCase)", "constraint_id: weaviate_type_schema_create_002 (vectorIndexType must be allowed type)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["dynamicEfMin", "dynamicEfMax", "validate", "ParseAndValidateConfig"],
+          "files_examined": ["entities/vectorindex/hnsw/config.go", "entities/vectorindex/hnsw/config_test.go"],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 260-323 (validate function)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\n\t// ... compression method validation ...\n\n\treturn nil\n}",
+          "call_chain_traced": "ParseAndValidateConfig → validate() - no check for dynamicEfMin < dynamicEfMax relationship",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:validate()函数检查了maxConnections范围、efConstruction最小值、filterStrategy枚举值和压缩方法互斥,但完全没有验证dynamicEfMin与dynamicEfMax之间的逻辑关系。这是API边界参数验证的明显遗漏。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfBad (verify inconsistent values were actually stored)",
+          "observed": "HTTP 200 - GET returns the stored schema showing dynamicEfMin=500, dynamicEfMax=10 (inconsistent values persisted)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "请求参数笔误", "API语义误解"],
+          "surviving": "genuine_parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004 Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries - developers consider this a bug",
+        "note": "命中历史bug_shape BS-004:系统性参数验证缺陷,影响request_parsing功能。开发者认知模型明确将'API边界的参数验证缺口'列为consider_bugs。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地在entities/vectorindex/hnsw/config.go的validate()函数中确认:Weaviate检查了maxConnections范围、efConstruction最小值、filterStrategy枚举值和压缩方法互斥性,但完全没有验证dynamicEfMin与dynamicEfMax之间的逻辑关系(dynamicEfMin应该小于dynamicEfMax)。API成功接受并存储了inconsistent参数(dynamicEfMin=500 > dynamicEfMax=10),违反了语义合理性约束。这属于API边界的参数验证缺口,是真实的Type1_IllegalSuccess类缺陷。开发者认知模型明确将'Parameter validation gaps at API boundaries'列入consider_bugs清单。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "No explicit contract assertion about dynamicEfMin/dynamicEfMax relationship found in structured_contract.json",
+      "source_implements_check": false,
+      "verdict_A": "NEUTRAL"
+    },
+    "physical": {
+      "objective_constraint": "dynamicEfMin < dynamicEfMax (semantic constraint for 'min' and 'max' parameters)",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_B=CONFIRMED (physical violation) → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"genuine_parameter_validation_gap": 1}
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-1",
+          "observed": "API accepts ef=-1 and returns it in response: \"ef\":-1",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestEfnegRepro\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: ef parameter must be positive (FALSE - ef=-1 is valid sentinel value)",
+            "Assumption: API should reject negative ef values (FALSE - negative values trigger dynamic EF calculation)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint in structured_contract.json requiring ef > 0",
+            "No assertion defining ef as positive-only integer"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "DefaultEF",
+            "efConstruction",
+            "searchTimeEF",
+            "autoEfFromK"
+          ],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "adapters/repos/db/vector/hnsw/index.go",
+            "adapters/repos/db/vector/hnsw/search.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 28-29\nDefaultEF = -1 // indicates \"let Weaviate pick\"\n\n// adapters/repos/db/vector/hnsw/search.go lines 44-58\nfunc (h *hnsw) searchTimeEF(k int) int {\n  ef := int(atomic.LoadInt64(&h.ef))\n  if ef < 1 {\n    return h.autoEfFromK(k)  // ef=-1 triggers dynamic calculation\n  }\n  if ef < k {\n    ef = k\n  }\n  return ef\n}",
+          "call_chain_traced": "ParseAndValidateConfig → uc.EF = v → index.ef = int64(uc.EF) → searchTimeEF checks ef < 1 → autoEfFromK",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code reveals ef=-1 is the DEFAULT value and a valid sentinel that triggers dynamic EF calculation. This is explicitly documented in code comments."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with ef=100 (positive) and ef=0 (also triggers dynamic)",
+          "observed": "Both ef=-1 and ef=0 accepted; ef=100 also accepted. All values stored correctly in response. System handles all cases gracefully: negative values trigger autoEfFromK, positive values used directly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise",
+            "Race condition",
+            "Request parameter typo"
+          ],
+          "surviving": "by_design_api_semantics",
+          "note": "ef=-1 is not a bug but a feature: it's the documented default that tells Weaviate to automatically calculate optimal search-time EF based on k value and configured dynamicEfMin/Max/Factor"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "If the behavior matches documented API specifications, it is considered correct",
+        "note": "While not explicitly in rejection_patterns, this aligns with developer cognition: the source code explicitly defines ef=-1 as DefaultEF with comment 'indicates let Weaviate pick', making it documented API behavior"
+      },
+      "root_cause_if_fp": "by_design_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint requires ef > 0",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - negative integers are valid values, used as sentinel for dynamic EF",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED (with by_design evidence) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "ef=-1 is not a parameter validation bug but the intentional DEFAULT value for Weaviate's HNSW vector index configuration. The source code (entities/vectorindex/hnsw/config.go:29) explicitly defines DefaultEF = -1 with comment 'indicates let Weaviate pick'. The searchTimeEF function (search.go:44-58) treats any ef < 1 as trigger for dynamic EF calculation via autoEfFromK(). This is a documented API feature allowing automatic tuning of search-time ef based on query parameters (k) and configured dynamicEfMin/Max/Factor. The claim that 'API should validate ef as positive' is incorrect - negative ef is a valid sentinel value that enables dynamic optimization."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "by_design_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "points",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points with vector dimension 3 (collection expects 4), without wait parameter",
+          "observed": "HTTP 200 'acknowledged' returned, but point does not actually exist (verified by GET /points/100 returns 404)",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test/points' -d '{\"points\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3]}]}' && curl -X GET 'http://localhost:6333/collections/test/points/100'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Vector dimension validation is expected for all insert operations",
+            "API should reject vectors with wrong dimension regardless of wait parameter",
+            "Success response should indicate actual data persistence"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "note": "No structured_contract.json file exists for qdrant 1.18.0 - evaluating based on API semantic contract and source code evidence"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "check_vector",
+            "check_vector_against_config",
+            "WaitUntil",
+            "wal.*validation"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/collection/src/shards/shard_trait.rs",
+            "lib/api/src/rest/validate.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs lines 188-219\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n        // ... other vector types\n    }\n}\n\n// lib/collection/src/shards/shard_trait.rs lines 19-37\npub enum WaitUntil {\n    /// Wait until the operation is written in WAL.\n    /// Corresponds with wait=false, acknowledging immediately.\n    Wal,\n    /// Wait until the operation is visible in search results.\n    /// Corresponds with wait=true, acknowledging only when fully applied.\n    Visible,\n}",
+          "call_chain_traced": "check_vector_against_config exists at lib/segment/src/common/mod.rs:188 but is NOT called in the WAL async path (wait=false). Validation only occurs in WaitUntil::Visible path (wait=true). API layer (lib/api/src/rest/validate.rs) has no dimension check.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_in_async_path",
+          "note": "源码接地发现: lib/segment/src/common/mod.rs:188-219 定义了 check_vector_against_config 函数检查向量维度,但在 WAL 异步路径(wait=false)中未调用此校验。仅在 WaitUntil::Visible 路径(wait=true)执行维度校验。REST API 层(lib/api/src/rest/validate.rs)无维度校验。这导致异步插入错误维度向量时返回 HTTP 200 'acknowledged' 但点未实际持久化。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/test/points/100 with payload to verify actual persistence",
+          "observed": "HTTP 404 'Point with id 100 does not exists!' - confirming the 'acknowledged' response was misleading, point was not actually stored due to dimension mismatch being silently ignored in async path"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/filesystem)",
+            "Concurrency race",
+            "Request parameter typo",
+            "API semantic misunderstanding",
+            "By-design behavior"
+          ],
+          "surviving_explanation": "validation_inconsistency_between_sync_and_async_paths"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_description": "Parameter validation on filter/condition APIs - this case is parameter validation on vector dimension API",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "缺陷命中开发者认知盲点: 参数验证在异步路径缺失。虽然 developer_cognition.json 提到了参数验证盲点,但本案例是向量维度验证(而非 filter 参数),属于同一类验证缺失问题。开发者优先考虑'数据一致性'胜过 API 严格性,但此处异步路径的无验证返回误导性成功响应违反数据一致性原则。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "API should validate vector dimensions match collection config for all insert operations (implicit API contract)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "无 structured_contract.json 文件,但根据 API 语义契约,所有插入操作应验证向量维度匹配集合配置。异步路径未执行此验证违反了隐式契约。"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension is objective constraint: collection configured for dimension 4, vector must have exactly 4 elements",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "物理约束明确违反: 集合配置维度=4,提供向量维度=3,API 接受此违反值(返回 HTTP 200)违反物理约束。"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "行为不优雅: 返回 HTTP 200 'acknowledged' 但点未实际持久化,这是误导性的成功响应。源码中无显式 by-design 注释表明这是有意设计。"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) + verdict_C=CONFIRMED (misleading success response) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_tp": "validation_inconsistency_between_sync_and_async_paths",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "经干净复现与源码接地确认: PUT /points 在 wait=false 异步模式下接受错误维度向量(3元素 vs 集合配置4元素)并返回 HTTP 200 'acknowledged',但点未实际持久化(GET 返回 404)。源码显示 check_vector_against_config 函数存在但仅在 WaitUntil::Visible 同步路径调用,WAL 异步路径绕过维度校验。这是验证不一致性缺陷,非平凡解释。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_inconsistency_between_sync_and_async_paths": 1
+    }
+  }
+}

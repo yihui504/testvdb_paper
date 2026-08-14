@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/dev_review_test/points?wait=false with empty vector [] (dimension error)",
+          "observed": "Returned 200 acknowledged with operation_id=0, but collection points_count=0 (point not actually inserted)",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/dev_review_test/points?wait=false' -d '{\"points\": [{\"id\": 999, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API should validate vector dimension in request parsing stage regardless of wait parameter",
+            "Validation error should return 4XX per contract qdrant_behavioral_005"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_005 - 'Returns 200 on success; returns 4XX on validation error'",
+            "defect_type_if_violated: Type1_IllegalSuccess"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "fn validate",
+            "update_from_client",
+            "wait.*bool"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/points.rs",
+            "lib/storage/src/content_manager/toc/point_ops.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/operations/mod.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/api/src/grpc/qdrant.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/collection/point_ops.rs line 133-140\npub async fn update_from_client(\n    &self,\n    operation: CollectionUpdateOperations,\n    wait: bool,\n    ordering: WriteOrdering,\n    shard_keys_selection: Option<ShardKey>,\n) -> CollectionResult<UpdateResult> {\n    operation.validate()?;  // <-- validator::Validate only checks structure (nested, length), NOT business logic like dimension\n\n    let update_lock = self.updates_lock.clone().read_owned().await;\n    let shard_holder = self.shards_holder.clone().read_owned().await;\n\n    let mut results = tokio::task::spawn(async move {\n        let _update_lock = update_lock;\n        // ... spawns async task, returns Acknowledged immediately if wait=false\n\n// lib/api/src/grpc/qdrant.rs line 3901-3910\n#[derive(validator::Validate)]\npub struct UpsertPoints {\n    #[prost(string, tag = \"1\")]\n    #[validate(length(min = 1, max = 255))]\n    pub collection_name: String,\n    #[prost(bool, optional, tag = \"2\")]\n    pub wait: Option<bool>,\n    #[prost(message, repeated, tag = \"3\")]\n    #[validate(nested)]  // <-- only validates struct nesting, NOT vector dimension\n    pub points: Vec<PointStruct>,\n\n// lib/segment/src/data_types/vectors.rs line 288-298\nlet dim = value[0].len();\nif let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {\n    Err(OperationError::WrongVectorDimension {  // <-- dimension check happens HERE in segment layer, not API validator\n        expected_dim: dim,\n        received_dim: bad_vec.len(),\n    })\n}",
+          "call_chain_traced": "API layer validator (ignores dimension) → update_from_client spawns async task → segment layer checks dimension (only when wait=true executes synchronously). With wait=false, async task queues and returns Acknowledged immediately, skipping dimension validation.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Root cause: Dimension validation is implemented in segment layer (WrongVectorDimension), but API layer's validator::Validate trait only checks structural constraints (nested, length). When wait=false, operation returns Acknowledged before segment validation runs."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/dev_review_test/points with ids=[999] to verify point insertion",
+          "observed": "result=[] (empty) - point 999 was NOT actually inserted despite 200 acknowledged response",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/dev_review_test/points' -d '{\"ids\": [999]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproduced consistently on qdrant 1.12.1)",
+            "Concurrency/race (single-threaded test)",
+            "Request parameter typo (wait=false is valid parameter)",
+            "API misunderstanding (contract clearly states 4XX on validation error)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any by_design_patterns. This is a genuine validation gap, not an accepted limitation."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_005: Returns 200 on success; returns 4XX on validation error",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension is a physical constraint (vectors must have size > 0 and match collection config)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "API accepts dimension-invalid vectors (empty vector []) when wait=false, returning 200 acknowledged instead of 4XX. Contract qdrant_behavioral_005 requires 4XX on validation error. Source analysis confirms: (1) API layer's validator::Validate trait only checks structural constraints, not business logic like dimension; (2) Dimension validation (WrongVectorDimension) is in segment layer; (3) When wait=false, update_from_client returns Acknowledged before segment validation runs. Wait=true correctly rejects with 400. Independent verification via GET /points confirms point was not inserted. This is a Type1_IllegalSuccess: invalid input succeeds with 200 instead of proper 4XX rejection."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

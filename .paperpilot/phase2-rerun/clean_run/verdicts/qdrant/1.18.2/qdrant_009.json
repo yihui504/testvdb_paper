@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with vectors={}, then insert point with vector data",
+          "observed": "HTTP 400 with error: 'Wrong input: Not existing vector name error: '",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_review_009/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' | python -m json.tool"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect report assumes that inserting a point with vector data into a collection created with vectors={} should succeed. However, this violates the implicit requirement that if a collection accepts vectors, it must have a defined vector configuration."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found, but the API behavior follows the logical constraint: vectors={} means 'no vector support', not 'unlimited vectors'"
+          ],
+          "note": "Collection with vectors={} is designed for payload-only collections (sparse vectors, filter-only use cases). The API correctly rejects insertion of unnamed dense vectors into such collections."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "vector name error",
+            "Not existing vector name",
+            "VectorNameNotExists",
+            "get_vector_config_or_error",
+            "DEFAULT_VECTOR_NAME"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "src/common/validate_vectors.rs",
+            "lib/segment/src/segment/vector_name_ops.rs",
+            "lib/storage/src/content_manager/toc/create_collection.rs"
+          ],
+          "source_excerpt": "/// lib/segment/src/common/mod.rs:162-170\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))\n}\n\n/// lib/segment/src/common/operation_error.rs:117-120\npub fn vector_name_not_exists(vector_name: impl Into<String>) -> Self {\n    Self::VectorNameNotExists {\n        received_name: vector_name.into(),\n    }\n}",
+          "call_chain_traced": "Point insert → validate_vector_dimensions (skip if no config) → segment.insert_vector → check_vector_name → get_vector_config_or_error → returns VectorNameNotExists error because vector_data.get(DEFAULT_VECTOR_NAME) returns None for vectors={}",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:当 collection 配置 vectors={} (empty map) 时，segment_config.vector_data 为空。insert 点时默认用 DEFAULT_VECTOR_NAME (空字符串) 查找配置，get_vector_config_or_error 返回 VectorNameNotExists。这是预期行为：vectors={} 表示 '不支持 dense vectors'，而非 '接受任意 vectors'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create collection with proper vector config (vectors: {size: 4, distance: Cosine}), then insert point with vector data",
+          "observed": "HTTP 200 with operation_id: 1, status: completed - point successfully inserted",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_with_vectors' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}' | python -m json.tool && curl -s -X PUT 'http://localhost:6333/collections/test_with_vectors/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' | python -m json.tool"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - Docker 容器正常响应",
+            "并发/race - 单线程操作",
+            "缓存/优化器延迟 - wait=true 强制同步",
+            "请求参数笔误 - 请求格式符合 REST 规范"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "这是一个平凡的 API 语义问题：vectors={} 是显式配置 '无 dense vector 支持'，insert 点带 vector data 是语义冲突，应该被拒绝。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "what_developers_prioritize",
+        "developer_quote": "Data consistency and persistence over API strictness",
+        "note": "维护者优先考虑数据一致性。允许 collection 配置为 vectors={} 后再插入 vector data 会破坏 schema 一致性。拒绝该操作是正确的维护者立场。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "该 '缺陷' 实际上是 Qdrant 的正确 API 语义设计。vectors={} 显式声明 '此 collection 不支持 dense vectors'，用于纯 payload/sparse vector 场景。尝试插入 dense vector 被拒绝是预期行为，不是 bug。源码显示 get_vector_config_or_error 在 segment_config.vector_data 中查找 DEFAULT_VECTOR_NAME 时返回 None，触发 VectorNameNotExists 错误，这是正常的 validation 逻辑。如果 collection 支持 dense vectors，创建时必须指定 vector configuration（如 {size: 4, distance: Cosine}）。证伪测试证明：有正确 vector config 的 collection 可以成功插入 point。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

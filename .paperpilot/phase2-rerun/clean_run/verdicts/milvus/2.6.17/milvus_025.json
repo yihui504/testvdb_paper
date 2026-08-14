@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (len(data)=101, exceeds claimed max of 100)",
+          "observed": "HTTP 200 with insertCount=101 and insertIds array containing all 101 IDs [0..100]",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_limit\",\"data\":[{\"id\":0,\"vector\":[0.1,0.2,0.3,0.4]},...{\"id\":100,\"vector\":[0.1,0.2,0.3,0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Raw request is complete - contains collectionName, data array with 101 entities, each with id and vector fields. No missing parameters that would explain acceptance of 101 entities."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_insert_001",
+            "assertion: len(data) <= 100",
+            "description: Max 100 entities per single insert call via REST API",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "len(data)",
+            "NumRows",
+            "restfulSizeMiddleware",
+            "Insert.*func"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go (line 1241-1313: insert function)",
+            "internal/distributed/proxy/httpserver/handler_v2.go (line 1267: req.NumRows assignment)"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1267\nreq.NumRows = uint32(len(httpReq.Data))\n\n// No validation check like:\n// if len(httpReq.Data) > 100 {\n//     return error\n// }\n// The data array length is directly assigned to NumRows without any limit check.\n\n// The insert handler (line 1241-1313) processes data through:\n// 1. checkAndSetData() - validates schema match, not count\n// 2. anyToColumns() - converts data to columns, not count\n// 3. wrapperProxyWithLimit() - applies timeout/auth middleware, not size limit\n// 4. h.proxy.Insert() - gRPC call to data node, passes NumRows\n\n// No middleware or handler enforces the len(data) <= 100 constraint claimed in contract.",
+          "call_chain_traced": "HTTP POST /entities/insert → restfulSizeMiddleware (metrics only, no validation) → insert() handler (line 1241) → req.NumRows = uint32(len(httpReq.Data)) (line 1267, no check) → anyToColumns() → wrapperProxyWithLimit() → h.proxy.Insert() gRPC",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code接地发现: insert handler at line 1241直接将len(httpReq.Data)赋值给req.NumRows(line 1267),没有任何检查len(data)是否超过100。contract声称的约束在源码中完全不存在。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "独立验证: 通过vector search查询实际插入的实体数量,验证insert响应的真实性",
+          "observed": "POST /entities/search with vector [0.1,0.2,0.3,0.4], limit=200 → 返回101个结果(IDs 0-100),确认所有101个实体均成功插入并持久化。insert响应的insertCount=101和insertIds数组完全准确,非API端虚假响应。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(Docker容器正常运行,Milvus 2.6.17响应正常)",
+            "并发/race(单线程顺序请求,无并发操作)",
+            "缓存/延迟(insert响应立即返回,后续search验证数据确实持久化)",
+            "请求参数错误(请求格式完全符合REST API规范,schema匹配)",
+            "API语义误解(REST insert文档和响应格式明确,insertCount表示成功插入的实体数)"
+          ],
+          "surviving": "none",
+          "note": "所有平凡解释已排除。这确实是真实的参数校验缺失bug。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "命中developer_cognition.json中的blindspot: REST v2 API数据类型校验问题频发(历史26个issue)。虽然本例是count而非type validation,但同属REST v2参数校验缺失的盲点区。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "len(data) <= 100 (constraint_id: milvus_range_entities_insert_001, assertion quoted verbatim from contract)",
+          "source_implements_check": false,
+          "api_observed_value": "insert 101 entities succeeded (HTTP 200, insertCount=101, insertIds=[0..100])",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Milvus gRPC InsertRequest.NumRows is uint32 (max 4,294,967,295), no mathematical lower bound >0 for insert count per request. REST layer claiming 100 limit is arbitrary, not a physical constraint.",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API优雅处理(返回200+完整结果),但源码无显式by-design注释或常量表示此为有意设计。"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=NEUTRAL + verdict_C=WEAK_REFUTED → final=CONFIRMED (contract violation压倒一切,行为优雅不能推翻契约违反)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API entities+insert端点声称约束len(data)<=100(contract milvus_range_entities_insert_001, confidence=1.0),但源码handler_v2.go:1267直接赋值req.NumRows=uint32(len(httpReq.Data))无任何校验。实测插入101实体成功(HTTP 200, insertCount=101),search验证所有101条数据均持久化(IDs 0-100)。contract明文要求被违反,源码确认无对应校验逻辑,非平凡解释可排除。属REST v2参数校验缺失的真bug,命中developer_cognition blindspot。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

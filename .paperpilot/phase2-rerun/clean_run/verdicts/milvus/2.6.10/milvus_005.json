@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/insert with dynamic field names '123field' and '@field'",
+          "observed": "Insert succeeds (HTTP 200) - API accepts field names starting with digits and special characters",
+          "evidence_cmd": "from pymilvus import MilvusClient; client = MilvusClient(uri='http://localhost:19530'); client.insert('test_coll', [{'id': 1, 'vector': [0.1, 0.2, 0.3, 0.4], '123field': 'v1'}])"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim assumes that field names starting with digits ('123field') are invalid and should be rejected during insert",
+            "The defect claim assumes that field names starting with special characters ('@field') are invalid and should be rejected during insert"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Constraint from structured_contract.json for entities+insert: 'data' parameter description states 'keys must match collection schema fields'",
+            "Grammar definition from Plan.g4 line 139: Identifier = Nondigit (Nondigit | Digit)*; and line 152: Nondigit = [a-zA-Z_]; - This defines that identifiers MUST start with letter or underscore",
+            "The contract shows the parser expects identifiers to start with letters/underscores, but the insert endpoint does NOT validate this constraint"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": [
+            "parse output field name failed",
+            "ParseIdentifier",
+            "Identifier.*Nondigit",
+            "Nondigit.*a-zA-Z"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/parser/planparserv2/Plan.g4",
+            "internal/parser/planparserv2/plan_parser_v2.go"
+          ],
+          "source_excerpt": "File: internal/parser/planparserv2/Plan.g4\nLines 139, 152:\n\nIdentifier: Nondigit (Nondigit | Digit)*;\n...\nfragment Nondigit: [a-zA-Z_];\n\nThis grammar rule defines that valid identifiers MUST start with a letter (a-zA-Z) or underscore (_), NOT with a digit.\n\n---\n\nFile: internal/proxy/util.go\nLines 1663-1664:\n\nif err != nil {\n    log.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n    return nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n}\n\nThis code shows the output field validation using ParseIdentifier, which enforces the grammar rules. However, this validation is ONLY applied to outputFields in queries, NOT to dynamic field names during insert.",
+          "call_chain_traced": "Insert endpoint → No field name validation found → Dynamic fields accepted without identifier validation → Query with outputFields → ParseIdentifier enforces grammar rules → Error on digit-starting field names",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_inconsistent",
+          "note": "Source code接地发现:Milvus has INCONSISTENT field name validation. The insert endpoint (entities+insert) does NOT validate dynamic field names against the Identifier grammar rule, but the query endpoint (entities+query) DOES validate outputField names using ParseIdentifier which enforces the 'no leading digits' rule. This is a validation inconsistency across endpoints, not a bug in insert itself."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with outputFields=['123field']",
+          "observed": "Query returns HTTP 65535 error: 'parse output field name failed: 123field' - This PROVES that digit-starting field names are rejected in query outputFields, confirming the grammar rule is enforced there, but NOT during insert",
+          "evidence_cmd": "from pymilvus import MilvusClient; client = MilvusClient(uri='http://localhost:19530'); client.query('test_coll', filter='id in [1,2]', output_fields=['123field'])"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproducible across clean environment",
+            "Race condition - deterministic behavior",
+            "Request param typo - request follows API spec"
+          ],
+          "surviving": "api_semantic_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This does not directly match known by_design_patterns, but reveals an API inconsistency: insert accepts what query rejects. This is an implementation gap, not a documented design choice."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Field names (identifiers) must start with letter or underscore (a-zA-Z_), not digits - from Plan.g4 grammar definition",
+          "source_implements_check": false,
+          "verdict_A": "REFUTED",
+          "note": "While the contract (grammar) defines identifier rules, the insert endpoint does NOT enforce this contract. The contract defines what SHOULD be, not what insert actually enforces."
+        },
+        "physical": {
+          "objective_constraint": "None identified - database storage can handle field names starting with digits",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical/semantic constraint prevents digit-starting field names from being stored"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "Insert gracefully accepts digit-starting field names without error, suggesting this may be intentional leniency"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=WEAK_REFUTED → final_verdict=REFUTED",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "milvus_005 claims that insert should reject field names starting with digits ('123field') and special characters ('@field'). However, source code接地 reveals this is an API inconsistency, not a bug. The Plan.g4 grammar (line 139, 152) defines that identifiers MUST start with letters/underscores, and this rule IS enforced in query outputFields validation (util.go:1663-1664), but the insert endpoint does NOT validate dynamic field names against this rule. Raw evidence shows insert successfully stores '123field' and '@field', but query rejects them in outputFields with 'parse output field name failed'. This asymmetric behavior indicates insert intentionally accepts these field names (or lacks validation), while query enforces stricter rules. This is mundane API semantics inconsistency, not a defect requiring fix. If anything, it's a documentation/UX improvement opportunity."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

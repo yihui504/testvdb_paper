@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "endpoint": "aliases+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/aliases/list with payload {\"collectionName\": \"\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with response {\"code\":0,\"data\":[]} - empty array returned, which is correct behavior when no aliases exist and no collection filter is specified",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/aliases/list' -H 'Content-Type: application/json' -d '{\"collectionName\": \"\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate likely assumes that empty collectionName should trigger a validation error, but the contract explicitly marks collectionName as optional (required: false)",
+            "Candidate misunderstands that empty collectionName means 'list all aliases' not 'invalid parameter'",
+            "The response of empty array [] is semantically correct for 'no aliases found' when no filter is applied"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: aliases_list_params_001 - collectionName is marked as 'required: false' with description 'Filter by collection'",
+            "constraint_id: aliases_list_params_002 - dbName is marked as 'required: false'",
+            "doc_quote: 'List aliases, optionally filtered by collection'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "ListAliasesTask",
+            "PreExecute.*ListAliases",
+            "collectionName.*validation",
+            "validateCollectionName"
+          ],
+          "files_examined": [
+            "internal/proxy/task_alias.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_alias.go lines 407-420\nfunc (a *ListAliasesTask) PreExecute(ctx context.Context) error {\n    if len(a.GetCollectionName()) > 0 {\n        if err := validateCollectionName(a.GetCollectionName()); err != nil {\n            return err\n        }\n        // Resolve CollectionName in case the user passed an alias instead of the real name.\n        // rootcoord filters by collection name in mt.names, so an alias would return no results.\n        dbName := a.GetDbName()\n        if resolved, err := resolveCollectionAlias(ctx, dbName, a.GetCollectionName()); err == nil {\n            a.CollectionName = resolved\n        }\n    }\n    return nil\n}",
+          "call_chain_traced": "HTTP handler (handler_v2.go:2863-2878) → ListAliasesTask.PreExecute (task_alias.go:407-420) → validation ONLY when len(collectionName) > 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_intentional",
+          "note": "源码接地发现:ListAliasesTask.PreExecute 明确只在 len(collectionName) > 0 时进行 validateCollectionName 校验;空字符串跳过校验直接返回 nil。这是故意设计 - 空 collectionName 表示不过滤,列出所有 aliases。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "测试确认:当 collectionName 为空时,API 返回空数组 [] 而非错误,符合 'list all' 语义;当有实际 alias 时应返回 alias 列表",
+          "observed": "POST /aliases/list with empty collectionName → HTTP 200, data=[] (正确:无 alias 时返回空列表);证明这不是 bug 而是正常的 'list all' 语义"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发/race",
+            "缓存/优化器延迟",
+            "请求参数笔误"
+          ],
+          "surviving": "contract_misread - 攻击者误将 'required: false' 的可选参数理解为必须提供有效值的必填参数"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior",
+        "note": "Matches rejection pattern RP-001: Issue rejected as expected system behavior. Empty collectionName on optional filter parameter is by-design to list all aliases."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码明确证实:ListAliasesTask.PreExecute(task_alias.go:407-420)仅在 len(collectionName) > 0 时触发 validateCollectionName;空字符串(长度为0)跳过所有校验,返回 nil。这是故意设计 —— 空 collectionName = 不过滤 = 列出所有 aliases。契约明确标注 collectionName 为 'required: false'。HTTP 200 + 空数组[]是 'no aliases found' 的正确响应,非 bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "self_check": "PASSED"
+}

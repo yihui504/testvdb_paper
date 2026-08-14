@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with score_threshold=2.0 and score_threshold=-0.5",
+          "observed": "Both HTTP 200 OK: threshold=2.0 returned empty result []; threshold=-0.5 returned point with score=1.0. API accepts invalid threshold values without 4xx error.",
+          "evidence_cmd": "curl -X POST \"http://localhost:6333/collections/test_score_threshold_bug/points/search\" -H \"Content-Type: application/json\" -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}' → HTTP 200; curl with \"score_threshold\": -0.5 → HTTP 200 with score=1.0"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes score_threshold should be validated to range [0.0, 1.0] for Cosine distance",
+            "Candidate assumes API returns 4xx for out-of-range threshold values",
+            "Raw request evidence shows API accepts score_threshold=2.0 (>1.0) and score_threshold=-0.5 (<0.0) with HTTP 200"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Parameter 'score_threshold' defined as Option<ScoreType> in lib/api/src/rest/schema.rs:573, 779, 1160, 1199, 1246",
+            "ScoreType defined as f32 in lib/common/common/src/types.rs:8",
+            "No range constraint found in contract: schema.rs shows no #[validate(range(...))] attribute on score_threshold fields (contrast with limit which has #[validate(range(min = 1))])"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ 1.18.0",
+          "grep_queries": ["score_threshold", "ScoreType", "validate.*range"],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "lib/common/common/src/types.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/collection/src/operations/conversions.rs",
+            "src/common/inference/query_requests_rest.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 573-579\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n/// Max number of points to return. Default is 10.\n#[validate(range(min = 1))]\npub limit: Option<usize>,\n\n// lib/common/common/src/types.rs line 8\npub type ScoreType = f32;\n\n// lib/collection/src/operations/types.rs line 698\n/// Define a minimal score threshold for the result.\n/// If defined, less similar results will not be returned.\n/// Score of the returned result might be higher or smaller than the threshold depending on the\n/// Distance function used. E.g. for cosine similarity only higher scores will be returned.\npub score_threshold: Option<ScoreType>,\n\n// lib/collection/src/operations/conversions.rs line 1070\nscore_threshold: *score_threshold,\n\n// No validation logic found - score_threshold passes through unchanged from REST request → internal search execution",
+          "call_chain_traced": "REST schema.rs (no validation) → CollectionQueryRequest/ScoredRequest (no validation) → search execution (direct pass-through). No range check anywhere in chain.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: score_threshold is an Option<f32> with no range validation. Contrast with 'limit' parameter which has #[validate(range(min = 1))]. The absence of validate attribute on score_threshold is by-design silence, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent channel verification: POST /points/{id} to get ground truth point state",
+          "observed": "Point id=1 exists with no payload. Search with score_threshold=1.0 returns empty []; search without threshold returns id=1 with score=1.0. Confirms id=1 is valid point with exact score=1.0. threshold=2.0 filters it out (correct behavior: 1.0 < 2.0). threshold=-0.5 includes it (correct: 1.0 > -0.5). API applies threshold mathematically, not by range validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (reproducible on clean Docker container)",
+            "Race condition (single-threaded sequential requests)",
+            "Request param typo (exact parameter name used)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match by_design_patterns (no HNSW approximation). The behavior is consistent with developer stance on API backward compatibility and宽松 validation philosophy (no strict validation unless explicitly required by contract)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码接地证实：score_threshold 在 REST schema、请求转换、执行整个链路中无任何 range 校验（lib/api/src/rest/schema.rs 显式无 validate attribute）。Qdrant 设计哲学是'参数宽松接受，由下游语义决定是否返回结果'。实测显示 threshold=2.0 作用于 Cosine 相似度时正确过滤掉 score=1.0 的点（因为 1.0 < 2.0），threshold=-0.5 正确包含它（因为 1.0 > -0.5）。API 按数学阈值过滤，而非报错 4xx。这不是 bug，是 by-design 的宽松参数处理。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

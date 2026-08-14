@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_011",
+      "endpoint": "entities+query",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/query with filter='', filter=null, and no filter field",
+          "observed": "All three variations return HTTP 200 with full dataset (2 records), treating empty/null as 'match all'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_coll\",\"filter\":\"\",\"outputFields\":[\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract constraint milvus_type_entities_query_001 assumes filter must be 'a valid boolean expression string'",
+            "Assumes empty string '' and null values would be rejected as invalid boolean expressions",
+            "Assumes filter field would be validated as required (vs optional as implemented)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_query_001",
+            "assertion: 'filter is a valid boolean expression'",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "QueryReqV2",
+            "Filter.*string",
+            "func.*query",
+            "Expr.*httpReq.Filter"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 288-298\ntype QueryReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionNames   []string               `json:\"partitionNames\"`\n\tOutputFields     []string               `json:\"outputFields\"`\n\tFilter           string                 `json:\"filter\"`\n\tLimit            int32                  `json:\"limit\"`\n\tOffset           int32                  `json:\"offset\"`\n\tExprParams       map[string]interface{} `json:\"exprParams\"`\n\tConsistencyLevel string                 `json:\"consistencyLevel\"`\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1066-1075\nfunc (h *HandlersV2) query(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*QueryReqV2)\n\treq := &milvuspb.QueryRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tExpr:           httpReq.Filter,  // Direct assignment without validation\n\t\tOutputFields:   httpReq.OutputFields,\n\t\tPartitionNames: httpReq.PartitionNames,\n\t\tQueryParams:    []*commonpb.KeyValuePair{},\n\t}",
+          "call_chain_traced": "REST v2 QueryReqV2.Filter (line 293, no binding:'required') → handler_v2.query (line 1071, direct Expr assignment) → proxy layer treats empty/null as match-all",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Filter field lacks binding:'required' tag (unlike CollectionFilterReq line 320 which has binding:'required'). Direct assignment to Expr without validation enables Type1_IllegalSuccess where empty/null filters succeed with semantic 'match all' behavior instead of being rejected as invalid boolean expressions."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/query with filter='' vs filter='color == \"red\"' on dataset with red+blue records",
+          "observed": "Empty filter returns BOTH records (id=1 red, id=2 blue) treating as 'match all'. Valid filter 'color == \"red\"' returns ONLY red record (id=1). Confirms empty/null is semantically treated as wildcard, not rejected.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_coll\",\"filter\":\"\",\"outputFields\":[\"id\",\"color\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment: Docker container stable, no platform-specific behavior",
+            "Concurrency: Single-threaded sequential requests, no race conditions",
+            "Request format: Standard JSON, no malformed data",
+            "By-design: No developer_cognition by_design_pattern for filter validation",
+            "API semantics: REST v2 validation issues match known bug_shape 'rest-v2-data-type-handling' (Type1_IllegalSuccess pattern)"
+          ],
+          "surviving": "contract_violation_with_type_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (known bug_shape, 26 instances)",
+        "note": "Matches REST_v2_data_type_handling bug_shape (Type1_IllegalSuccess) - API gateway layer validation gap. No by_design_pattern found for query filter validation. Developer cognition shows REST v2 validation as blindspot area."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_query_001: filter is a valid boolean expression string (constraint_id, confidence=1.0)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Empty string '' and null are not valid boolean expressions (syntactically and semantically invalid)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract violation + physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 /entities/query endpoint accepts invalid filter values (empty string '' and null) in violation of contract constraint milvus_type_entities_query_001. Source code shows QueryReqV2.Filter field lacks 'binding:required' validation tag (line 293 request_v2.go) and handler performs direct Expr assignment without validation (line 1071 handler_v2.go). Falsification confirms empty/null filters are semantically treated as 'match all' (returns all records) instead of being rejected with HTTP 400. Matches known bug_shape 'rest-v2-data-type-handling' pattern (Type1_IllegalSuccess, 26 historical instances). No by-design justification found in developer cognition. True bug: API gateway validation gap allows illegal success with semantic wildcard behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_violation_with_type_validation_gap": 1
+    }
+  }
+}

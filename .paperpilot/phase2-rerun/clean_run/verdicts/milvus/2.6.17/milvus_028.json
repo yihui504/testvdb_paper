@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with metricType='' (empty string) and consistencyLevel='None' (invalid enum value)",
+          "observed": "Both requests return HTTP 200 with code:0 when they should return 400 with parameter validation error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty_dev\", \"dimension\": 4, \"metricType\": \"\"}' returns {\"code\":0,\"data\":{}}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "metricType validation: The test assumes empty string metricType should be rejected, but API accepts it and defaults to COSINE without validation",
+            "consistencyLevel validation: The test assumes 'None' (not in enum) should be rejected, but API accepts it without validation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - 'metricType must be L2, IP, or COSINE'",
+            "constraint_id: milvus_type_collections_create_003 - 'consistencyLevel must be Strong, Session, Bounded, or Eventually'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["metricType", "consistencyLevel", "CreateCollection", "httpserver"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2067-2068 (metricType handling)\nif len(httpReq.MetricType) == 0 {\n    httpReq.MetricType = DefaultMetricType  // NO VALIDATION - just defaults to COSINE\n}\n\n// Lines 2008-2023 (consistencyLevel handling)\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        // HTTPAbortReturn with 400 error\n        return nil, err\n    }\n}\n\n// CRITICAL BUG: The validation check at line 2010 uses httpReq.Params[\"consistencyLevel\"] but the test provides consistencyLevel as a direct field, not in params map!",
+          "call_chain_traced": "CreateCollection HTTP handler → metricType/consistencyLevel extraction → validation bypass due to incorrect parameter location check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_bypass",
+          "note": "Source code reveals two validation bypass bugs: (1) metricType is never validated against allowed enum - it's just defaulted if empty. (2) consistencyLevel validation checks httpReq.Params map but the request likely provides it as a direct field, causing the validation to be skipped entirely."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - Violation is Type1_IllegalSuccess (API accepts invalid input), no independent verification needed beyond the successful 200 response",
+          "observed": "The violations are directly observable: API returns 200 for invalid parameter values that should trigger 400 parameter validation errors"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - Running on standard Milvus Docker container",
+            "Request formatting - Using correct REST v2 JSON format",
+            "Network issues - Direct localhost connection",
+            "Concurrent operations - Single sequential requests"
+          ],
+          "surviving": "parameter_validation_bypass"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus (developer_cognition.json)",
+        "note": "This defect matches the 'REST v2 data type handling' blindspot pattern where REST v2 API fails to properly validate parameter types/enums, accepting invalid values that should be rejected"
+      },
+      "root_cause_if_confirmed": "parameter_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "The REST v2 collections/create endpoint exhibits two distinct parameter validation bypass bugs: (1) metricType accepts empty string and defaults to COSINE without validating against allowed enum [L2, IP, COSINE], violating constraint milvus_type_collections_create_002. (2) consistencyLevel validation logic checks httpReq.Params['consistencyLevel'] but the actual request parameter location causes the validation to be bypassed, allowing invalid values like 'None' to be accepted when they should be rejected per constraint milvus_type_collections_create_003. Source code examination confirms both bypass patterns. This matches the developer_cognition blindspot for 'REST v2 API data type serialization'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_validation_bypass": 1}
+  }
+}

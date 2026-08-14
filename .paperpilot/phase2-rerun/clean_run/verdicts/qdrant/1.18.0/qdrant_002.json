@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_validation/points/search with params.hnsw_ef=0 and params.hnsw_ef=999999",
+          "observed": "API accepts both hnsw_ef=0 and hnsw_ef=999999 without validation error, returns HTTP 200 with search results",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_hnsw_validation/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}' && curl -s -X POST http://localhost:6333/collections/test_hnsw_validation/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 999999}}'",
+          "evidence_response": "Both requests return HTTP 200 with successful search results"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The candidate assumes that hnsw_ef must be >= 1 (positive integer constraint), but the structured_contract.json does NOT contain any assertion stating 'hnsw_ef >= 1'",
+            "The candidate treats hnsw_ef=0 as invalid, but no contract constraint defines the valid range for hnsw_ef values",
+            "The candidate assumes search_max_hnsw_ef config enforces validation, but this config is optional and defaults to null (disabled)"
+          ],
+          "assumptions_checked": [
+            "Claim: 'hnsw_ef=0 is invalid' → No contract assertion supports this",
+            "Claim: 'API should reject invalid hnsw_ef' → No constraint defines what 'invalid' means for hnsw_ef",
+            "Claim: 'search_max_hnsw_ef config enforces validation' → Config is optional, null by default, validation only occurs when explicitly set"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_search_points_006 (assertion: 'hnsw_ef parameter is applicable only when exact=false') - This is the ONLY contract constraint about hnsw_ef, and it only states WHEN it applies, not WHAT VALUES are valid",
+            "No contract constraint defines: 'hnsw_ef >= 1' or 'hnsw_ef > 0' or any numeric range validation",
+            "search_max_hnsw_ef parameter in strict_mode_config is optional (null by default) - not a validation requirement"
+          ],
+          "contract_assertions_found": [
+            "qdrant_range_search_points_006: 'hnsw_ef parameter is applicable only when exact=false' (descriptive, not prescriptive)"
+          ],
+          "contract_assertions_missing": [
+            "No constraint: 'hnsw_ef >= 1'",
+            "No constraint: 'hnsw_ef > 0'",
+            "No constraint: 'hnsw_ef must be a positive integer'",
+            "No constraint defining the valid numeric range for hnsw_ef"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "hnsw_ef",
+            "search_max_hnsw_ef",
+            "SearchParams",
+            "check_strict_mode",
+            "check_search_params"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs (lines 589-598: SearchParams struct definition)",
+            "lib/segment/src/types.rs (lines 1106-1108, 1264, 1345: search_max_hnsw_ef config field)",
+            "lib/segment/src/index/hnsw_index/hnsw.rs (lines 1049-1051: hnsw_ef usage in search)",
+            "lib/collection/src/operations/verification/query.rs (query verification logic)",
+            "lib/collection/src/operations/verification/mod.rs (lines 99-108: check_search_params trait method)",
+            "config/config.yaml (line 242: search_max_hnsw_ef configuration, commented out/null by default)"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs line 589-598\n#[serde(rename_all = \"snake_case\")]\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\n    /// Search without approximation. If set to true, search may run long but with exact results.\n    #[serde(default)]\n    pub exact: bool,\n\n// lib/segment/src/index/hnsw_index/hnsw.rs line 1049-1051 (actual usage)\nlet ef = params\n    .and_then(|params| params.hnsw_ef)\n    .unwrap_or(self.config.ef);\n\n// lib/collection/src/operations/verification/mod.rs line 99-108 (validation hook)\nasync fn check_search_params(\n    &self,\n    collection: &Collection,\n    strict_mode_config: &StrictModeConfig,\n) -> CollectionResult<()> {\n    if let Some(search_params) = self.request_search_params() {\n        Box::pin(search_params.check_strict_mode(collection, strict_mode_config)).await?;\n    }\n    Ok(())\n}\n\n// config/config.yaml line 242 (default configuration)\n#search_max_hnsw_ef: null",
+          "call_chain_traced": "SearchParams.hnsw_ef (definition in types.rs) → Used directly in hnsw.rs line 1050 (no validation) → Optional strict_mode check in verification/mod.rs → check_strict_mode only enforces IF search_max_hnsw_ef config is set (defaults to null, so disabled)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: hnsw_ef is defined as Option<usize> (accepts 0), used directly in hnsw.rs without range validation. The only validation point is check_search_params → check_strict_mode, but SearchParams.check_strict_mode implementation does NOT validate hnsw_ef numeric range. search_max_hnsw_ef is an optional strict_mode config (null by default in config.yaml), so validation is disabled unless explicitly enabled by admin."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test independent channel: direct point retrieval to verify search results are correct regardless of hnsw_ef value",
+          "observed": "POST /collections/test_hnsw_validation/points with ids=[1] returns point with vector [0.1,0.2,0.3,0.4] - matches search results at hnsw_ef=0 and hnsw_ef=999999. The search returns correct results even with 'invalid' hnsw_ef values, indicating the parameter is being used as-is without validation, but still produces correct output.",
+          "falsification_result": "The API behavior with hnsw_ef=0 and hnsw_ef=999999 produces correct search results (verified against ground truth). No 'bug' consequence (crashes, wrong results, data loss) is observable. The parameter simply passes through to the HNSW algorithm."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: Not applicable (consistent behavior across tests)",
+            "Concurrency/race: Not applicable (single-threaded test)",
+            "Request parameter typo: Not applicable (parameter is correctly named and formatted)",
+            "API semantics misunderstanding: This IS the root cause - treating an unvalidated parameter as a validation bug"
+          ],
+          "surviving_explanation": "mundane_api_semantics - The candidate misinterprets the lack of parameter validation as a defect. However: (1) No contract constraint requires hnsw_ef validation; (2) Source code shows hnsw_ef is intentionally passed through as usize with optional strict_mode enforcement; (3) API still functions correctly with extreme values; (4) This is by-design flexibility for performance tuning, not a validation bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match by_design_patterns in developer_cognition.json. This appears to be a pure oracle assumption error - the attack script assumed validation was required where none exists in contract or source code."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate claims 'hnsw_ef=0 is invalid and should be rejected' but the structured_contract.json contains NO assertion defining valid hnsw_ef ranges. The only contract constraint (qdrant_range_search_points_006) states 'hnsw_ef is applicable when exact=false' - a descriptive WHEN clause, not a prescriptive WHAT VALUES clause. Source code confirms hnsw_ef: Option<usize> is used directly without range validation in hnsw.rs line 1050. The search_max_hnsw_ef strict_mode config is optional (null by default) and only enforces validation when explicitly set by admin. Observed behavior: API accepts hnsw_ef=0 and 999999, returns correct search results (verified via independent channel - direct point retrieval). This is mundane_api_semantics: the parameter is intentionally unvalidated for performance tuning flexibility, not a bug. The oracle invented a validation requirement that doesn't exist in contract or code."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "self_check": "PASSED"
+}

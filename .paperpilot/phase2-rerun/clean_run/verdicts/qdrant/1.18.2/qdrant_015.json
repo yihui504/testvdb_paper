@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_015",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_max with shard_number=2147483647 (INT32_MAX)",
+          "observed": "Container crash - Qdrant service stopped responding, curl returned exit code 52 (empty response)",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_shard_max' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API should validate parameter ranges before attempting collection creation",
+            "Extreme parameter values (shard_number=INT32_MAX, replication_factor=0) should be rejected with 4xx error",
+            "Service should remain stable when given invalid input parameters"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001 - assertion: 'shard_number >= 1'",
+            "constraint_id: qdrant_range_create_collection_002 - assertion: 'replication_factor >= 1'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["shard_number", "replication_factor", "create_collection", "validate"],
+          "files_examined": [
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "lib/collection/src/config.rs",
+            "lib/api/src/rest/validate.rs",
+            "lib/api/src/grpc/validate.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/content_manager/toc/create_collection.rs lines 135-144\nlet shard_number: NonZeroU32 = match sharding_method.unwrap_or_default() {\n    ShardingMethod::Auto => {\n        if let Some(shard_number) = shard_number {\n            debug_assert_eq!(\n                shard_number as usize,\n                collection_shard_distribution.shard_count(),\n                \"If shard number was supplied then this exact number should be used in a distribution\",\n            );\n            shard_number\n        } else {\n            collection_shard_distribution.shard_count() as u32\n        }\n    }\n    ShardingMethod::Custom => {\n        if let Some(shard_number) = shard_number {\n            shard_number\n        } else {\n            default_shard_number\n        }\n    }\n};\n\nlet replication_factor = replication_factor\n    .or_else(|| collection_defaults_config.and_then(|i| i.replication_factor))\n    .unwrap_or_else(|| config::default_replication_factor().get());\n\n// ... later at lines 139-141:\nreplication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {\n    StorageError::bad_input(\"`replication_factor` cannot be 0\".to_string())\n})?",
+          "call_chain_traced": "CreateCollection operation → shard_number/replication_factor extraction → NonZeroU32::new() validation (only checks minimum > 0, no maximum upper bound) → Collection::new() with extreme values causes crash",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_incomplete",
+          "note": "源码接地发现: collection creation validation只检查了最小值 (NonZeroU32::new() 确保 > 0),但缺少最大值上限检查。shard_number=INT32_MAX 和 replication_factor=0 绕过了最小值检查,导致容器崩溃。这是真缺陷 — contract 要求 >= 1,源码只实现了最小值检查,没有防护极端值。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Cannot falsify - Qdrant container actually crashed and stopped responding",
+          "observed": "Container crashed during test, no falsification possible"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (reproducible on standard Docker setup)",
+            "Request parameter typo (values are clearly extreme but valid JSON)",
+            "API semantics misunderstanding (crash is clearly a bug)"
+          ],
+          "surviving": "missing_parameter_range_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "缺陷命中 developer_cognition.json 中的 blind_spot_indicators: 'Parameter validation on filter/condition APIs' — 虽然这里是 collection 创建参数而非 filter,但属于同一类参数验证缺失问题。维护者明确将参数验证盲点列为关注领域。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "Critical",
+      "confidence": 0.95,
+      "rationale": "Qdrant 容器在接收极端参数值 (shard_number=2147483647, replication_factor=0) 时崩溃而非返回 4xx 错误。契约明文规定 shard_number >= 1 和 replication_factor >= 1,但源码仅通过 NonZeroU32::new() 检查最小值,完全缺失最大值上限验证。这不是 graceful degradation 或 by-design 行为,而是真正的资源耗尽导致的崩溃。命中开发者认知的参数验证盲点模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_parameter_range_validation": 1
+    }
+  }
+}

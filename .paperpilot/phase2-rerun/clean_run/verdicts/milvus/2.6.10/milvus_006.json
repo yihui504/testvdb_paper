@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rest_006\", \"data\": [{\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"text_field\": 12345}]}'",
+          "observed": "REST v2 API accepted integer value 12345 for VARCHAR field text_field, returned HTTP 200 with insertCount=1",
+          "evidence_cmd": "Observed via curl - HTTP 200 response with insertCount:1, insertIds:[2]"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_entities_insert_001 - 'data must contain field values matching collection schema data types'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["VarChar", "checkAndSetData", "DataType_VarChar"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 581-582\ncase schemapb.DataType_VarChar:\n    reallyData[fieldName] = dataString\n\n// Line 331 - dataString comes from fieldValue.String() which converts any JSON value to string representation\ndataString := fieldValue.String()",
+          "call_chain_traced": "REST v2 Insert -> handler_v2.insert() -> checkAndSetData() -> case DataType_VarChar: stores dataString without type validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 checkAndSetData() 函数在处理 VarChar 字段时，直接使用 fieldValue.String() 获取的字符串值(行 331)，然后在 case DataType_VarChar 分支(行 581-582)直接赋值，未检查原始 JSON 值类型。对于数字类型 JSON 值(如 12345)，gjson.String() 会返回其字符串表示'12345'，导致类型静默转换被接受，无验证错误抛出。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query inserted entities with filter to verify stored values",
+          "observed": "Query returned id=2 with text_field=12345 (integer type in response), confirming the type-coerced value was stored and retrieved without error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issues", "Concurrency", "Request parameter typos", "API semantic misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - symptoms include 'Returns wrong values for large integers', 'Array fields in raw protobuf format'",
+        "note": "Confirmed as instance of bug_shape rest-v2-data-type-handling - REST v2 API data type serialization not validated"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API exhibits Type1_IllegalSuccess by accepting integer value (12345) for VARCHAR field text_field without type validation error. Contract milvus_type_entities_insert_001 explicitly requires 'data field types match collection schema'. Source code analysis confirms checkAndSetData() in utils.go converts any JSON value to string via fieldValue.String() then directly assigns to VarChar field without type checking. This is a genuine REST v2 type coercion bug matching the rest-v2-data-type-handling pattern where 'REST v2 API fails to properly serialize/deserialize complex data types'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

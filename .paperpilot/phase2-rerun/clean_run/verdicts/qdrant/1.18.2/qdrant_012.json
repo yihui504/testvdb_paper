@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "v1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points/query with filter={\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}",
+          "observed": "HTTP 200 OK, returned point id=2 (semantically correct result). API accepted malformed filter where must_not should be array but received single inline condition object.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_mustnot/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_validated": [
+            "API should enforce schema validation on Filter structures",
+            "must_not field must be array of Condition objects per Filter struct definition",
+            "REST API layer should validate nested structures before processing"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Filter struct definition at lib/segment/src/types.rs:3834-3866 derives Validate trait with #[validate(nested)] on must_not field",
+            "API specification: must_not is 'Option<Vec<Condition>>' - array of conditions, not single condition",
+            "Serde attribute: #[serde(default, with = \"MaybeOneOrMany\")] allows both array and single object during deserialization but should not bypass validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "pub struct Filter",
+            "must_not",
+            "validate.*filter",
+            "MaybeOneOrMany"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/segment/src/payload_storage/condition_checker.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/api/src/rest/conversions.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs:3830-3866\n#[derive(\n    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash,\n)]\n#[serde(deny_unknown_fields, rename_all = \"snake_case\")]\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,\n    /// ... (must, min_should similar)\n    /// All conditions must NOT match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must_not: Option<Vec<Condition>>,\n}\n\n// KEY FINDING: REST API layer (lib/api/src/rest/) does NOT call .validate() on Filter structs\n// The MaybeOneOrMany deserialization helper accepts both array and single object silently",
+          "call_chain_traced": "REST request JSON → serde deserialization (MaybeOneOrMany silently converts single object to array) → Filter struct created with Validate trait derived but NEVER invoked → query processing proceeds without validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Filter struct derives Validate with #[validate(nested)] attributes, but REST API handlers never call .validate() method. The MaybeOneOrMany deserialization helper allows both formats at parse time, masking the schema violation before any validation could occur."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test malformed vs correct filter formats for semantic equivalence",
+          "observed": "Malformed: {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}} → returns id=2. Correct: {\"must_not\": [{\"key\": \"tag\", \"match\": {\"value\": \"x\"}}]} → returns id=2. Both produce identical results, confirming API processes malformed input successfully without rejection.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_mustnot/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": [{\"key\": \"tag\", \"match\": {\"value\": \"x\"}}]}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean container)",
+            "Concurrent/race condition (deterministic behavior)",
+            "Request parameter typo (intentional malformed test)",
+            "API misunderstanding (schema clearly defines array type)",
+            "By-design behavior (no evidence this is intentional leniency)"
+          ],
+          "surviving": "validation_gap_in_rest_api_layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation issues where Numeric Boundary validation is missing",
+        "pattern_id": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "Matches bug_shapes.json pattern: 'Parameter Validation issues where validation is missing' (qdrant-parameter-validation-*). Though specific pattern mentions numeric boundary, this is struct validation gap on filter conditions - same category of missing validation enforcement at REST API layer."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Filter.must_not field type is Option<Vec<Condition>> (array of Condition objects) per struct definition at lib/segment/src/types.rs:3865",
+          "assertion_text_quoted": "pub must_not: Option<Vec<Condition>>",
+          "api_observed_value": "REST API accepts single Condition object in place of array, processes successfully with HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONTRACT_CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Type system constraint: Vec<T> requires array, not single T. Serde MaybeOneOrMany helper allows both at parse time but shouldn't bypass runtime validation.",
+          "api_accepts_violation": true,
+          "verdict_B": "PHYSICAL_CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API gracefully handles malformed input by auto-converting via MaybeOneOrMany, but this is NOT an explicit by-design choice - it's a side effect of deserialization helper. No source comments indicate this leniency is intentional for user convenience."
+        },
+        "aggregation_applied": "verdict_A=CONTRACT_CONFIRMED (schema violation) AND verdict_B=PHYSICAL_CONFIRMED (type constraint violated) → final=CONFIRMED. API violates explicit contract that must_not must be array, not single object. Graceful handling (C) cannot override contract violation (A).",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_api_validation_not_enforced",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST API accepts malformed filter structure where must_not should be array of Condition objects but single inline Condition object is accepted. Source code shows Filter derives Validate with #[validate(nested)] but REST layer never invokes validation. MaybeOneOrMany deserialization helper silently converts single object to array, masking schema violation before validation opportunity. This is a genuine validation gap, not by-design leniency - no evidence in code/comments that accepting malformed format is intentional. Contract explicitly defines must_not as Option<Vec<Condition>>, and physical type system requires array. API violates both."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_api_validation_not_enforced": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,95 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero_validation with shard_number=0",
+          "observed": "HTTP 422 with error: 'Validation error in JSON body: [shard_number: value 0 invalid, must be 1 or larger]'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_zero_validation' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API correctly validates shard_number parameter",
+            "Validation rejects shard_number=0 with clear error message",
+            "Validation rejects shard_number=-1 with format error (u32 type constraint)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001",
+            "assertion: shard_number >= 1",
+            "confidence: 1.0",
+            "evidence_tier: explicit"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": [
+            "CreateCollection",
+            "shard_number",
+            "validate(range",
+            "range(min = 1)"
+          ],
+          "files_examined": [
+            "lib/storage/src/content_manager/collection_meta_ops.rs",
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "lib/storage/src/content_manager/toc/collection_meta_ops.rs",
+            "lib/api/src/grpc/validate.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/content_manager/collection_meta_ops.rs line 109-126\n\n/// Operation for creating new collection and (optionally) specify index params\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]\n#[serde(rename_all = \"snake_case\")]\npub struct CreateCollection {\n    /// Vector data config.\n    /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.\n    #[serde(default)]\n    #[validate(nested)]\n    pub vectors: VectorsConfig,\n    /// For auto sharding:\n    /// Number of shards in collection.\n    ///  - Default is 1 for standalone, otherwise equal to the number of nodes\n    ///  - Minimum is 1\n    ///\n    /// For custom sharding:\n    /// Number of shards in collection per shard group.\n    ///  - Default is 1, meaning that each shard key will be mapped to a single shard\n    ///  - Minimum is 1\n    #[serde(default)]\n    #[validate(range(min = 1))]  // <-- VALIDATION PRESENT\n    pub shard_number: Option<u32>,",
+          "call_chain_traced": "CreateCollection.shard_number field → #[validate(range(min = 1))] derive macro → validator crate automatically rejects values < 1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:CreateCollection 结构体在 shard_number 字段上显式声明了 #[validate(range(min = 1))] 验证属性。这是 Rust validator 宏框架的声明式验证,编译期展开为运行时检查。实测证实该验证生效:shard_number=0 返回 HTTP 422 错误,错误消息明确指出 'must be 1 or larger'。契约约束 qdrant_range_create_collection_001 (shard_number >= 1) 已在源码层面强制执行。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test valid shard_number=1 to confirm validation only rejects invalid values",
+          "observed": "HTTP 200 OK with result=true, confirming validation allows valid values and only rejects boundary violations",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_one_validation' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 1}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container)",
+            "Concurrency/race condition",
+            "Cache/optimizer delay",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "none",
+          "determination": "所有平凡解释已排除。原始 oracle 可能误解了验证机制的存在或误读了响应代码。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": null,
+        "pattern_id": "qdrant-parameter-validation-numeric-boundary",
+        "note": "候选命中 bug_shapes.json 中的 'Parameter Validation issues where Numeric Boundary validation is missing' 模式,但源码证明该参数确实有数值边界验证,故为 FALSE_POSITIVE。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "该候选声称 shard_number 参数缺少边界验证,但源码接地发现 CreateCollection 结构体在 shard_number 字段上显式声明了 #[validate(range(min = 1))] 验证属性。实测证实:shard_number=0 返回 HTTP 422 + 明确错误消息 'must be 1 or larger';shard_number=-1 因 u32 类型约束在反序列化阶段被拒绝;shard_number=1 正常通过。契约约束 qdrant_range_create_collection_001 (shard_number >= 1) 已在源码层面通过 validator 宏框架强制执行。原始 oracle 可能因未发现 Rust Validate derive 宏的隐式验证逻辑而误判为缺少验证。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

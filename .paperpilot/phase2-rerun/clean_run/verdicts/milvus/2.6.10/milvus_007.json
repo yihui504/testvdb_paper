@@ -1,0 +1,101 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_007",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with data=[[]] (empty vector array)",
+          "observed": "HTTP 200 + error code 1801 in body: 'dimension: 8, but length of []float: 0: invalid parameter[expected=FloatVector][actual=[[]]]'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"repro_dev_review_milvus_007\",\"dbName\":\"default\",\"data\":[[]],\"limit\":3,\"outputFields\":[\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes HTTP 200 for errors is 'illegal success'",
+            "Defect assumes REST v2 should return 4xx/5xx status codes for parameter validation failures",
+            "Defect misinterprets Milvus REST v2 design pattern where all responses return HTTP 200 with errors in 'code' field"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No structured_contract.json available for this version. Analysis based on source code and API behavior evidence."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": [
+            "dimension.*but length.*float",
+            "serializeFloatVectors",
+            "HTTPReturn.*http.StatusOK",
+            "HTTPAbortReturn"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 1221-1237\nfunc serializeFloatVectors(vectorStr string, dataType schemapb.DataType, dimension, bytesLen int64, fpArrayToBytesFunc func([]float32) []byte) ([][]byte, error) {\n\tvar fp32Values [][]float32\n\terr := json.Unmarshal([]byte(vectorStr), &fp32Values)\n\tif err != nil {\n\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr, err.Error())\n\t}\n\tvalues := make([][]byte, 0, len(fp32Values))\n\tfor _, vectorArray := range fp32Values {\n\t\tif int64(len(vectorArray)) != dimension {  // VALIDATION CHECK IS PRESENT\n\t\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr,\n\t\t\t\tfmt.Sprintf(\"dimension: %d, but length of []float: %d\", dimension, len(vectorArray)))\n\t\t}\n\t\tvectorBytes := fpArrayToBytesFunc(vectorArray)\n\t\tvalues = append(values, vectorBytes)\n\t}\n\treturn values, nil\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 55-80\nfunc HTTPReturn(c *gin.Context, code int, result gin.H) {\n\tc.Set(HTTPReturnCode, result[HTTPReturnCode])\n\tif errorMsg, ok := result[HTTPReturnMessage]; ok {\n\t\tc.Set(HTTPReturnMessage, errorMsg)\n\t}\n\tc.JSON(code, result)  // Uses provided HTTP status code\n}\n\nfunc HTTPAbortReturn(c *gin.Context, code int, result gin.H) {\n\tc.Set(HTTPReturnCode, result[HTTPReturnCode])\n\tif errorMsg, ok := result[HTTPReturnMessage]; ok {\n\t\tc.Set(HTTPReturnMessage, errorMsg)\n\t}\n\tc.AbortWithStatusJSON(code, result)  // Uses provided HTTP status code\n}",
+          "call_chain_traced": "SearchRequest → handler_v2.go:search() → utils.go:serializeFloatOrByteVectors() → utils.go:serializeFloatVectors() → dimension validation at line 1229 → returns error via HTTPReturn(c, http.StatusOK, ...) pattern throughout handler_v2.go",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms: (1) Dimension validation EXISTS at line 1229, correctly catching empty vectors [[]]; (2) REST v2 API by design returns HTTP 200 for ALL responses (success + error), with errors in 'code' field; (3) HTTPAbortReturn consistently called with http.StatusOK even for parameter validation errors throughout handler_v2.go lines 338, 343, 348, 502, 535, 503, 535, 853, 879, etc."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Three independent tests: (1) Valid vector → HTTP 200 + code 0, (2) Empty vector [[]] → HTTP 200 + code 1801 error, (3) Non-existent collection → HTTP 200 + code 100 error",
+          "observed": "ALL responses return HTTP 200 regardless of outcome. Errors are communicated via 'code' field (0=success, non-zero=error). This is consistent REST v2 design, not a bug. The empty vector IS properly rejected with clear error message.",
+          "evidence_cmd": "Test sequence executed in Step 4 confirms HTTP 200 pattern for both success and all error scenarios"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "mundane_api_semantics",
+          "note": "This is a mundane API semantics misunderstanding: REST v2 uses HTTP 200 + error code pattern (common in RPC-over-HTTP designs). The defect report incorrectly expects RESTful 4xx/5xx status codes for parameter errors, but Milvus v2.6.10 REST v2 is not designed that way."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No direct match with developer_cognition.json patterns. However, the finding aligns with REST v2 API data type handling blindspot mentioned in bug_shapes.json (shape: rest-v2-data-type-handling). The issue is not the validation logic (which works), but the HTTP status code design pattern."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The defect claims milvus_007 is a Type1_IllegalSuccess (HTTP 200 for invalid empty vector [[]]), but source code analysis proves this is by-design: (1) Dimension validation EXISTS and works correctly (utils.go:1229), (2) REST v2 API systematically returns HTTP 200 for ALL responses with errors in 'code' field (handler_v2.go pattern throughout), (3) Empty vector IS rejected with error code 1801 and clear message. The defect misunderstands REST v2's RPC-over-HTTP design where HTTP status is always 200 and business logic errors are in the response body. This is mundane API semantics, not a bug."
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "None found - no contract assertion requiring 4xx/5xx for parameter errors",
+      "source_implements_check": true,
+      "verdict_A": "REFUTED"
+    },
+    "physical": {
+      "objective_constraint": "None - dimension validation works correctly",
+      "api_accepts_violation": false,
+      "verdict_B": "REFUTED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": true,
+      "verdict_C": "REFUTED"
+    },
+    "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED → final=FALSE_POSITIVE (mundane API semantics, not a bug)",
+    "final_verdict": "FALSE_POSITIVE"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

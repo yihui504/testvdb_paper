@@ -1,0 +1,100 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={'nprobe': 0}",
+          "observed": "HTTP 200 with successful results. REQ 5 and REQ 11 both show nprobe=0 accepted with code:0, returning search results successfully",
+          "evidence_cmd": "Refer to output_milvus_009.log REQ 5 (lines 30-34) and REQ 11 (lines 73-77): status 200, body {\"code\":0,\"cost\":0,\"data\":[{\"distance\":24.3,\"id\":0},...]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Conclusion depends on API accepting nprobe=0 as valid - VERIFIED: raw requests show nprobe=0 accepted with HTTP 200",
+            "Conclusion assumes nprobe has lower bound constraint - VERIFIED: official documentation states nprobe ∈ [1, nlist]"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: No explicit constraint in structured_contract.json for nprobe range",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md - searchParams described as 'Search parameters including metricType, radius, range_filter' but no nprobe range specified"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["nprobe", "searchParams", "IVF.*nprobe"],
+          "files_examined": [
+            "docs/developer_guides/chap02_schema.md",
+            "tests/python_client/common/common_params.py",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/core/src/segcore"
+          ],
+          "source_excerpt": "// docs/developer_guides/chap02_schema.md lines 109-111\n# IVF_FLAT\n{\n    \"topk\": top_k,\n    \"query\": queries,\n    \"metric_type\": \"L2\",  # one of L2, IP\n\n    #Special for IVF_FLAT\n    \"nprobe\": 8       # int. 1~nlist(cpu), 1~min[2048, nlist](gpu)\n}\n\n// tests/python_client/common/common_params.py lines 421-428\n@staticmethod\ndef IVF_FLAT(metric_type=MetricType.L2, nprobe: int = 32, inside_params: SearchInsidePrams = None, **kwargs):\n    inside_params_dict = {\"nprobe\": nprobe}\n    if inside_params is not None:\n        inside_params_dict.update(inside_params.to_dict)\n\n    sp = SearchPrams(params=inside_params_dict, metric_type=metric_type).to_dict\n    sp.update(kwargs)\n    return sp\n\n// internal/distributed/proxy/httpserver/request_v2.go line 352\ntype SearchReqV2 struct {\n    ...\n    SearchParams     map[string]interface{} `json:\"searchParams\"`\n    ...\n}",
+          "call_chain_traced": "SearchReqV2.SearchParams (map[string]interface{}) → No validation found in httpserver layer → Passed directly to search execution → nprobe=0 accepted",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:官方文档chap02_schema.md明文规定nprobe ∈ [1, nlist](CPU)或[1, min(2048, nlist)](GPU)。但REST API层(request_v2.go)把SearchParams定义为map[string]interface{},无任何范围校验。proxy层直接透传给底层执行,导致nprobe=0被非法接受。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证nprobe=0确实是非法值,而非合法的默认行为",
+          "observed": "官方文档明确要求nprobe >= 1。IVF索引语义是'nprobe个最近的单元',0个单元无意义。对比: REQ 6/12中limit=0被正确拒绝(code 65535),说明参数校验机制存在,但对nprobe缺失。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 两次独立测试(REQ 5和11)均复现,排除环境噪声",
+            "并发竞争 - 单线程顺序执行,无并发",
+            "缓存延迟 - 即时请求,无缓存",
+            "请求参数笔误 - nprobe=0是故意测试值,非笔误",
+            "API语义误解 - 文档明确定义nprobe范围为正整数"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. Pattern: search parameter validation缺失,允许非法值通过",
+        "note": "命中developer_cognition.json中blindspot_indicators第2项:'REST v2 API data type serialization - 8 issues in corpus'。nprobe作为searchParams被定义为map[string]interface{},缺乏类型约束,符合该盲点模式。"
+      },
+      "root_cause_if_confirmed": "param_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus官方文档(docs/developer_guides/chap02_schema.md)明文规定IVF索引的nprobe参数范围:1~nlist(CPU)或1~min[2048, nlist](GPU)。REST API层把SearchParams定义为无类型约束的map[string]interface{},且proxy层未做校验直接透传,导致nprobe=0这种明显非法值被接受并返回成功响应。这是典型的参数校验缺失漏洞。参考REQ 6/12可见Milvus有能力进行参数校验(limit=0被拒绝),但nprobe校验缺失。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "nprobe ∈ [1, nlist] for IVF indexes per official documentation",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "nprobe represents number of IVF cells to probe, semantically requires nprobe ≥ 1 (cannot probe 0 cells)",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED (contract requires nprobe≥1, API accepts 0) + verdict_B=CONFIRMED (physical constraint violated) → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"param_validation_missing": 1}
+  }
+}

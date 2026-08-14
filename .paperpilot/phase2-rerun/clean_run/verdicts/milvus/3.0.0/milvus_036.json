@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupSize=0 and groupSize=-1",
+          "observed": "Both groupSize=0 and groupSize=-1 accepted with HTTP 200, returning normal search results",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_review\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "API should reject non-positive groupSize values (0, -1) as invalid",
+            "groupSize parameter represents a count/grouping size and must be >= 1",
+            "Validation should occur at parameter parsing time"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for groupSize parameter (parameter validation gap)",
+            "REST v2 API accepts groupSize in groupParams object without documented range constraints"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "groupSize",
+            "GroupSize > 0",
+            "groupSize <= 0",
+            "parseGroupSizeWithCheck"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/search_reduce_util.go",
+            "internal/proxy/search_pipeline.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1929-1931\nif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n}\n\n// internal/proxy/search_util.go line 932-935 (validation code that NEVER runs for groupSize<=0)\nif groupSize <= 0 {\n    return nil, merr.WrapErrParameterInvalidMsg(\n        fmt.Sprintf(\"input group size:%d is negative, failed to do search_groupby\", groupSize))\n}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:1929) only passes groupSize to searchParams when GroupSize > 0 → Invalid values (0, -1) are filtered out BEFORE reaching validation (search_util.go:932) → Validation never runs → Request proceeds with HTTP 200",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals the bug: REST v2 layer pre-filters groupSize with 'GroupSize > 0' check, preventing invalid values from reaching the actual validation logic. This creates a parameter validation bypass."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Query all entities to verify database state and search behavior",
+          "observed": "Database contains 10 entities across 3 groups (cat=0: 4 items, cat=1: 3 items, cat=2: 3 items). Search with invalid groupSize returns results without error, confirming the API accepts and processes requests with invalid parameters.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_review\", \"filter\": \"cat in [0, 1, 2]\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (standard Docker container)",
+            "Concurrency/race (single-threaded test)",
+            "Request parameter typo (explicitly set invalid values)",
+            "API semantic misunderstanding (groupSize is clearly a count parameter)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format",
+        "note": "This defect matches the historical pattern of REST v2 parameter validation gaps. Developer cognition shows REST v2 has systematic issues with data type handling and parameter validation (26 instances in corpus). This is another REST v2 parameter validation bypass."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED: Source code接地揭示缺陷根因. REST v2 handler (handler_v2.go:1929) 用 'if httpReq.GroupByField != \"\" && httpReq.GroupSize > 0' 过滤,仅当GroupSize>0时才把参数传给下层searchParams. 这导致 groupSize=0 和 groupSize=-1 这两个非法值根本不会到达实际的校验逻辑(search_util.go:932的 'if groupSize <= 0' 检查). 结果API接受非法参数值并返回HTTP 200成功响应,构成Type1_IllegalSuccess缺陷. 这不是by_design而是代码缺陷:验证逻辑存在于源码但被上层条件绕过. 匹配历史bug shape 'rest-v2-data-type-handling' (26个案例,高置信度0.95),属于REST v2参数验证系统性问题."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_bypass": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_002",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with flatSearchCutoff=-100",
+          "observed": "HTTP 200 returned, response shows flatSearchCutoff=-100 stored in vectorIndexConfig",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestFCReview\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"flatSearchCutoff\": -100}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": []
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["flatSearchCutoff", "OptionalIntFromMap"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/common/config.go",
+            "adapters/repos/db/vector/hnsw/search.go",
+            "adapters/repos/db/vector/hnsw/index.go",
+            "adapters/repos/db/vector/hnsw/config_update.go",
+            "adapters/repos/db/vector/hfresh/search.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go line 201-205\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/common/config.go line 45-76\nfunc OptionalIntFromMap(in map[string]interface{}, name string,\n\tsetFn func(v int),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tvar asInt64 int64\n\tvar err error\n\n\tswitch typed := value.(type) {\n\tcase json.Number:\n\t\tasInt64, err = typed.Int64()\n\tcase float64:\n\t\tasInt64 = int64(typed)\n\t}\n\tif err != nil {\n\t\tif errors.Is(err, strconv.ErrRange) {\n\t\t\tsetFn(int(math.MaxInt64))\n\t\t\treturn nil\n\t\t}\n\t\treturn errors.Wrapf(err, \"json.Number to int64 for %q\", name)\n\t}\n\n\tsetFn(int(asInt64))\n\treturn nil\n}\n\n// adapters/repos/db/vector/hnsw/search.go line 85-88\nflatSearchCutoff := int(atomic.LoadInt64(&h.flatSearchCutoff))\nif allowList != nil && !h.forbidFlat && allowList.Len() < flatSearchCutoff {\n\thelpers.AnnotateSlowQueryLog(ctx, \"hnsw_flat_search\", true)\n\treturn h.flatSearch(ctx, vector, k, h.searchTimeEF(k), allowList)\n}\n\n// adapters/repos/db/vector/hfresh/search.go line 28 (comparison - positive default)\nflatSearchCutoff      = 5_000",
+          "call_chain_traced": "POST /schema → vectorIndexCommon.OptionalIntFromMap('flatSearchCutoff') → uc.FlatSearchCutoff set WITHOUT validation → atomic.StoreInt64(&h.flatSearchCutoff) → used in comparison allowList.Len() < flatSearchCutoff",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:flatSearchCutoff 参数通过 OptionalIntFromMap 解析时完全没有范围校验,直接接受任意整数值(包括负数)。实际使用时该值用于 allowList.Len() < flatSearchCutoff 条件判断,负值会导致逻辑异常。对比 hfresh/index.go 使用常量 flatSearchCutoff = 5_000(正值),说明该参数应该为正数。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Not applicable - clean repro already confirmed violation",
+          "observed": "API accepts negative value without error, violating semantic constraint"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 正常运行环境",
+            "并发竞争 - 独立请求",
+            "请求参数笔误 - 参数名正确",
+            "API 语义误解 - flatSearchCutoff 语义为阈值,应为非负"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation issues in request parsing - Accepting invalid parameter values on write endpoints",
+        "note": "该候选命中 bug_shapes.json 中的 BS-004 模式:Parameter Validation Issues in Request Processing,属于系统性参数验证缺陷"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None in structured_contract.json for flatSearchCutoff",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "flatSearchCutoff represents a count/threshold for comparison with allowList.Len(), semantically requires flatSearchCutoff >= 0",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical + behavioral violation confirmed, no contract to violate)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema 接受 flatSearchCutoff=-100 并返回 HTTP 200,违反物理约束。源码显示 OptionalIntFromMap 对该参数未做任何范围校验,直接存储负值。实际使用中 allowList.Len() < flatSearchCutoff 的条件判断会因负值导致逻辑错误(如永远不触发 flat search)。对比 hfresh/search.go 使用常量 5000,说明该参数语义上应为非负整数。这是典型的参数验证边界缺失漏洞。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

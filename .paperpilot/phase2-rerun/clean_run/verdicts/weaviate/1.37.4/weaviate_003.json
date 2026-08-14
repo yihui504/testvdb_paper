@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_003",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with class=TestRep2, replicationConfig={factor:-1}",
+          "observed": "HTTP 200 success, but response body shows replicationConfig.factor=1 (silently changed from -1)",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\":\"TestRep2\",\"vectorizer\":\"none\",\"replicationConfig\":{\"factor\":-1},\"properties\":[{\"name\":\"text\",\"dataType\":[\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "User intended to set replication factor to -1 (invalid value)",
+            "API should reject invalid replication factor values (< 1) with error code",
+            "Response should contain error message explaining invalid parameter"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_range_schema_replication_001",
+            "assertion: 'replicationConfig.factor >= 1'",
+            "source: structured_contract.json line 2820-2821"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "replication.*factor",
+            "validateReplication",
+            "Factor.*[<>=]"
+          ],
+          "files_examined": [
+            "usecases/schema/class.go",
+            "entities/schema/collection.go",
+            "adapters/handlers/rest/handlers_schema.go"
+          ],
+          "source_excerpt": "// usecases/schema/class.go lines 513-515\nif class.ReplicationConfig.Factor < 1 {\n    class.ReplicationConfig.Factor = int64(globalCfg.MinimumFactor)\n}",
+          "call_chain_traced": "POST /schema → handlers_schema.go.addClass() → schema_manager.AddClass() → class.setClassDefaults() → silent correction at line 513-515",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: 第513-515行存在 silent correction 逻辑，当 factor < 1 时直接修正为 MinimumFactor(=1)，并未抛出错误。这是 parameter validation gap。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestRep2 verify stored value",
+          "observed": "Stored factor=1 (confirming silent correction happened server-side)",
+          "evidence_cmd": "curl -s -X GET http://localhost:18080/v1/schema/TestRep2 | grep -o '\"factor\":[0-9]*'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on clean Weaviate 1.37.4 container)",
+            "Race condition (single request, no concurrent ops)",
+            "Request parameter typo (factor=-1 is clearly intentional invalid input)",
+            "API semantic misunderstanding (contract explicitly states factor >= 1)"
+          ],
+          "surviving": "parameter_validation_deficiency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004 Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_id": "BS-004",
+        "note": "候选命中历史缺陷模式 BS-004 (parameter_validation)，属于同类边界校验缺失问题"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "replicationConfig.factor >= 1 (constraint_id: weaviate_range_schema_replication_001)",
+          "assertion_text_quoted": "replicationConfig.factor >= 1",
+          "api_observed_value": "factor=-1 in request body, API returned HTTP 200 with response showing factor=1 (silent correction)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "replication factor represents number of replicas; physically must be >= 1",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "behavior_description": "Silent correction without error message violates API contract principles",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Weaviate POST /schema 接受 replicationConfig.factor=-1 (负数) 并返回 HTTP 200，但将值静默修正为 1。契约明文规定 factor >= 1 (weaviate_range_schema_replication_001)，源码在 usecases/schema/class.go:513-515 确认存在 silent correction 逻辑而非抛出错误。这属于 Parameter Validation Gap (BS-004)，违反了 API 契约的明确要求。正确的做法应返回 422 UnprocessableEntity 并提示 'invalid replication factor: must be >= 1'。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_deficiency": 1
+    }
+  }
+}

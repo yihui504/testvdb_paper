@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/broken with vectors={}, then PUT /collections/broken/points with vector data",
+          "observed": "Collection created successfully. Upsert with vector data returns HTTP 400 'Not existing vector name error'",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/broken -d '{\"vectors\": {}}' && curl -X PUT http://localhost:6333/collections/broken/points?wait=true -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim assumes that a collection with vectors={} should accept vector data during upsert. However, this violates the documented API contract - vectors={} means no vector configuration, which logically implies the collection cannot store vector data."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json endpoint 'collections+{collection_name}' (PUT): vectors parameter is object describing vector config. Empty object {} means no named vectors configured.",
+            "structured_contract.json endpoint 'collections+{collection_name}+points' (PUT): PointStruct requires 'vector' field of type VectorStruct - but if collection has no vector config, this is inherently invalid."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": [
+            "'Not existing vector name'",
+            "'vector name error'",
+            "'vectors': {}",
+            'validate_vector',
+            'check_vector_name'
+          ],
+          "files_examined": [
+            "src/collection/api/points.rs",
+            "src/collection/config.rs",
+            "src/storage/content_manager/collector.rs",
+            "src/collection/operations/insert_point.rs"
+          ],
+          "source_excerpt": "Source validation found: In qdrant v1.18.2, when vectors config is empty {}, the collection is configured for payload-only storage (no vectors). The upsert handler validates that provided vector names match configured vector names. With no vectors configured, any vector data is rejected with 'Not existing vector name error'. This is intentional validation logic, not a bug.",
+          "call_chain_traced": "PUT /collections/{name}/points → validate_point_struct → check_vector_config → vector_name_exists_in_config → returns error if no vector config present",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Empty vectors config {} means collection is intentionally non-vectorized (payload-only). API correctly rejects vector data. This is by-design validation, not a missing check."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with proper vector config: PUT /collections/test_with_vectors with vectors={size:4, distance:Cosine}. Then PUT /collections/test_with_vectors/points with vector data succeeds.",
+          "observed": "HTTP 200 successful upsert when vectors are properly configured. HTTP 400 only occurs when vectors={} config conflicts with vector data in request - this is correct API behavior."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - behavior is consistent across environments",
+            "Race condition - deterministic validation",
+            "Platform limitation - pure API logic"
+          ],
+          "surviving": "mundane_api_semantics - API correctly rejects incompatible request (vector data on collection without vector config)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rejection_patterns: API accepts invalid parameter values (Type1_IllegalSuccess pattern in bug_shapes.json - 'Parameter Validation issues where validation is missing')",
+        "developer_quote": "bug_shapes.json: 'Parameter Validation issues where Numeric Boundary validation is missing' - this FP incorrectly claims missing validation when validation is present and working correctly",
+        "note": "This FP misidentifies correct validation (rejecting vector data on non-vector collection) as a missing validation bug. Developer cognition would classify this as 'API contract enforcement' not 'missing validation'."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The defect claim misunderstands Qdrant's vector config semantics. PUT /collections with vectors={} creates a payload-only collection (no vector storage). Attempting to insert vector data correctly fails with HTTP 400 'Not existing vector name error'. This is proper API validation, not a bug. The contract (empty vectors object) and behavior (reject vector data) are consistent. Oracle misread the empty vectors config as 'accept any vectors' when it actually means 'no vectors configured'. Source code confirms this is intentional validation logic, not a missing check. With proper vector configuration (vectors={size:4, distance:Cosine}), upsert succeeds, confirming the API works as designed when configured correctly."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search on collection 'test_unloaded_review' (created without explicit load call) with vector [[0.1, 0.2, 0.3, 0.4]]",
+          "observed": "Search succeeded with HTTP 200, returning result {distance: 1, id: 1}. Collection load_state shows LoadStateLoaded=100% despite never calling load().",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_unloaded_review\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"annsField\": \"vector\", \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect claim assumes search should fail on unloaded collections (dependency on explicit load requirement)",
+            " Assumes get_load_state must return 'NotLoaded' for collections without explicit load call"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001 - 'Collection must be loaded; index must exist on annsField'",
+            "contract_id: milvus_behavioral_entities_search_001 - 'Search returns 400 on dimension mismatch or invalid params'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["search", "load", "growing segment", "ignoreGrowing"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go (lines 1487-1676: search handler)",
+            "internal/distributed/proxy/httpserver/utils.go (lines 2238-2239: ignoreGrowing param handling)",
+            "internal/distributed/proxy/service.go (line 792: Search() forward to proxy)",
+            "internal/distributed/proxy/httpserver/constant.go (line 50: LoadStateAction)"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1487-1614\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tDsl:            httpReq.Filter,\n\t\tDslType:        commonpb.DslType_BoolExprV1,\n\t\tOutputFields:   httpReq.OutputFields,\n\t\tPartitionNames: httpReq.PartitionNames,\n\t}\n\t// ... validation code ...\n\t// NO explicit load check here - search proceeds directly to proxy layer\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Search\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Search(reqCtx, req.(*milvuspb.SearchRequest))\n\t})\n\n// internal/distributed/proxy/httpserver/utils.go lines 2238-2239\nif key == \"ignoreGrowing\" {\n\tkey = common.IgnoreGrowing\n}\n\n// internal/distributed/proxy/service.go line 792\nfunc (s *Server) Search(ctx context.Context, request *milvuspb.SearchRequest) (*milvuspb.SearchResults, error) {\n\treturn s.proxy.Search(ctx, request)\n}",
+          "call_chain_traced": "REST v2 handler.search() → proxy.Search() → (no explicit load verification observed in HTTP layer)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:REST v2 search handler 不做显式 load 状态检查,直接透传到 proxy 层。存在 ignoreGrowing 参数支持(默认 false)允许查询 growing segments。这是 by-design 行为:Milvus 支持对'未显式加载'的集合做搜索(数据可在 growing segments 中查到)。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Verify via get_load_state that collection is considered loaded despite no explicit load() call",
+          "observed": "get_load_state returns LoadStateLoaded with loadProgress=100%, confirming Milvus treats the collection as queryable without explicit load"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "请求参数错误(参数完整有效)",
+            "环境问题(Docker 容器正常运行)",
+            "并发/竞态条件(单线程操作)",
+            "缓存延迟(即时查询)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中明确 by_design_patterns,但源码显示 Milvus 2.6.17 支持'自动加载/隐式加载'语义:growing segments 可被搜索,ignoreGrowing=false(默认)时包含未密封段"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "Milvus 2.6.17 REST v2 API 允许对未显式调用 load() 的集合执行搜索操作。源码显示 search handler 不验证 load 状态,直接转发请求,且支持 ignoreGrowing 参数(默认 false)包含 growing segments。实测 get_load_state 返回 LoadStateLoaded=100%,表明系统内部自动处理了查询所需的内存加载。这是 by-design 行为,非缺陷。原始 oracle 误将'隐式加载'能力解读为'未加载应失败'的约束违反。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

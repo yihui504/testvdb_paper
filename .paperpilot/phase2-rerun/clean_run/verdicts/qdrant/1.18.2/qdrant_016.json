@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_016",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from.collection=nonexistent_collection_xyz",
+          "observed": "API returns HTTP 200 OK with points from source collection instead of 404 error for nonexistent lookup collection",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_lookup_source/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}' | jq '.status, .result.points[0].id'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API contract implies lookup_from.collection must exist - testing with nonexistent collection should return error not success",
+            "Expected behavior: Collection not found error when lookup_from.collection does not exist",
+            "Observed: API silently ignores invalid lookup_from and returns results from source collection"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_002 - DELETE/GET returns 404 if collection not found",
+            "contract_id: qdrant_behavioral_delete_query_invisibility - After delete, collection should not exist (404 on GET)",
+            "API schema: lookup_from is object with 'collection' and 'vector' properties (optional parameter)"
+          ],
+          "note": "No explicit contract constraint for lookup_from.collection validation, but by analogy with other collection references, nonexistent collections should return 404 error"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "lookup_from",
+            "collection_by_name",
+            "resolve_referenced_vectors_batch",
+            "CollectionError::not_found"
+          ],
+          "files_examined": [
+            "lib/collection/src/common/fetch_vectors.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/collection/src/collection/query.rs",
+            "src/actix/api/query_api.rs",
+            "src/actix/helpers.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/common/fetch_vectors.rs lines 249-266\n                Some(name) => {\n                    let other_collection = collection_by_name(name.clone()).await;\n                    match other_collection {\n                        Some(other_collection) => {\n                            vector_retrieves.push(retrieve_points_with_locked_collection(\n                                CollectionRefHolder::Arc(other_collection),\n                                points,\n                                vector_names,\n                                read_consistency,\n                                &shard_selector,\n                                timeout,\n                                hw_measurement_acc.clone(),\n                            ))\n                        }\n                        None => {\n                            return Err(CollectionError::not_found(format!(\"Collection {name}\")));\n                        }\n                    }\n                }\n            }",
+          "call_chain_traced": "query_points (API) → dispatcher.query_batch → Collection.query_batch → resolve_referenced_vectors_batch → ReferencedPoints.fetch_vectors → collection_by_name(name.clone()).await → Err(CollectionError::not_found) if None",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：fetch_vectors.rs 第264行确实有 collection 不存在时返回 not_found 错误的逻辑，但实际 API 返回 200 OK。错误处理路径存在但未生效。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify the error exists in source code but is silently ignored in API layer",
+          "observed": "Source code clearly shows CollectionError::not_found is returned when lookup collection not found (line 264), but HTTP response is 200 OK with points. The error exists in code but is not propagated to HTTP response layer."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue - tested on clean Docker container",
+            "Race condition - reproducible 100% on repeated attempts",
+            "Request parameter error - query is valid except for nonexistent collection name"
+          ],
+          "surviving": "error_propagation_failure"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - Cross-collection lookup parameter validation gap",
+        "note": "命中开发者认知盲点：跨 collection lookup 参数验证不完整。虽然源码中有校验逻辑，但在实际请求流程中未正确触发或被静默吞掉。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码显示 lookup_from.collection 不存在时应该返回 CollectionError::not_found（fetch_vectors.rs:264），但实际 API 返回 200 OK 并返回 source collection 的结果。这说明错误要么被某层静默吞掉，要么 lookup_from 验证逻辑在某些条件下未被触发。这是真正的 Type1_IllegalSuccess - 应该返回 4xx 错误却返回了 200 成功。根据 SOP 第 3 步源码接地，虽然源码中存在验证逻辑，但实际行为违反了该逻辑，构成真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "error_propagation_failure": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with collectionName=test_dev_review, data=[[0.1,0.1,0.1,0.1]], limit=16384, offset=1",
+          "observed": "API correctly returns error: 'offset+topk [16385] is invalid, it should be in range [1, 16384], but got 16385'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1]], \"limit\": 16384, \"offset\": 1, \"outputFields\": [\"*\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate assumes API should accept limit + offset > 16384 without error", "Candidate claims this is a defect when the API correctly enforces documented constraints"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_entities_search_002 - 'limit + offset must be < 16384' (assertion: limit + offset < 16384, confidence: 1.0)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": ["validateMaxQueryResultWindow", "offset.*limit.*range", "16384"],
+          "files_examined": ["internal/proxy/util.go", "internal/proxy/search_util.go", "internal/proxy/task_search.go", "internal/proxy/task_query.go"],
+          "source_excerpt": "// File: internal/proxy/util.go, lines 180-194\nfunc validateMaxQueryResultWindow(offset int64, limit int64) error {\n\tif offset < 0 {\n\t\treturn fmt.Errorf(\"%s [%d] is invalid, should be gte than 0\", OffsetKey, offset)\n\t}\n\tif limit <= 0 {\n\t\treturn fmt.Errorf(\"%s [%d] is invalid, should be greater than 0\", LimitKey, limit)\n\t}\n\n\tdepth := offset + limit\n\tmaxQueryResultWindow := Params.QuotaConfig.MaxQueryResultWindow.GetAsInt64()\n\tif depth <= 0 || depth > maxQueryResultWindow {\n\t\treturn fmt.Errorf(\"(offset+limit) should be in range [1, %d], but got %d\", maxQueryResultWindow, depth)\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "SearchRequest → parseSearchParams → parseRankParams → validateMaxQueryResultWindow (line 602 in search_util.go) → validates offset+limit depth against MaxQueryResultWindow",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: validateMaxQueryResultWindow 函数在 internal/proxy/util.go:180-194 中显式验证 offset+limit 的和必须在 [1, MaxQueryResultWindow] 范围内(默认16384)。违反时返回清晰的错误消息。这正是契约中 milvus_range_entities_search_002 约束的实现。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested search with limit=16384,offset=1 (sum=16385) - API rejected with proper error message. Tested with limit=16384,offset=0 (sum=16384) - API accepted.",
+          "observed": "API behavior matches contract specification exactly - no bug exists. The validation is working as designed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["This is expected API behavior enforcing documented constraints", "The candidate's claim of a defect is based on misunderstanding of valid parameter ranges"],
+          "surviving": "contract_misread"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定的 by_design 或 rejection 模式，但属于对契约约束的误解"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus entities+search API 有明确的契约约束 milvus_range_entities_search_002 规定 'limit + offset < 16384'。源码中 validateMaxQueryResultWindow 函数(internal/proxy/util.go:180-194)正确实现了这个验证，当 offset+limit 超过 MaxQueryResultWindow(默认16384)时会返回清晰的错误消息。实测验证:limit=16384,offset=1(和16385)被正确拒绝，limit=16384,offset=0(和16384)被正确接受。这是契约明文规定的约束，不是缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}
