@@ -1,0 +1,182 @@
+[
+  {
+    "case": "qdrant_9017",
+    "group": "A",
+    "issue_claim": "search 接受 params.hnsw_ef=0 返回 200 带结果, 应校验拒绝(400/422)",
+    "probe_what": "POST /points/search 带 hnsw_ef=0, 看是否 200 返回结果",
+    "stage2_endpoint": "points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9027",
+    "group": "C",
+    "issue_claim": "score_threshold 越界(2.0/-0.5)被接受返回 200, 应拒绝",
+    "probe_what": "POST /points/search 带 threshold=2.0 与 -0.5, 看状态与结果数",
+    "stage2_endpoint": "points",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9039",
+    "group": "A",
+    "issue_claim": "async(wait 缺省) upsert 静默丢弃维度不符向量, 返回 200 无提示; wait=true 则 400",
+    "probe_what": "async 3-dim→4-dim upsert 看 status+count_after, 对照 wait=true 400",
+    "stage2_endpoint": "points",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9045",
+    "group": "A",
+    "issue_claim": "空向量[] upsert wait=false 返回 200, 可触发 server panic(crash)",
+    "probe_what": "async 空向量 upsert 看 status+count, 加 GET / 健康检查确认存活",
+    "stage2_endpoint": "points",
+    "stage2_defect_type": "crash",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9149",
+    "group": "A",
+    "issue_claim": "collection 创建接受 shard_number=0 与负值(-1), 应 400 拒绝",
+    "probe_what": "PUT /collections 带 shard_number=0/-1, 看是否 200",
+    "stage2_endpoint": "collections+{collection_name}",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9255",
+    "group": "C",
+    "issue_claim": "payload 过滤 color=red 返回 payload 缺失(color=None)的 point, 滤波错误",
+    "probe_what": "POST /points/search 过滤 color=red, 统计 missing_payload_ids",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9371",
+    "group": "C",
+    "issue_claim": "batch 混合合法/非法 ops 返回 400 却仍部分写入, count 增加(非原子)",
+    "probe_what": "POST /points/batch 混合 3 点(含 1 维度不符), 对比 count before/after",
+    "stage2_endpoint": "collections+{collection_name}+points+batch",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9373",
+    "group": "C",
+    "issue_claim": "keyword payload 索引 wait:true 后过滤查询只回 2/25 匹配点, 严重不全",
+    "probe_what": "creates keyword index on category_id 后 POST /points/scroll 过滤 cat_a, 数收集数 vs 25",
+    "stage2_endpoint": "collections+{collection_name}+points+count",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "stage2 endpoint 标签 points+count(即 count 端点)与 issue 缺陷不符: issue body 原句 'Filter cat_a via indexed field: 2 points (expected 25)' 声称的是『索引化过滤检索结果严重不全』, 非 count 端点基数; probe_qdrant_9373.py 实际走 `http('POST', BASE + '/collections/' + COL + '/points/scroll', {...filter...})` 即 filtered scroll 验证收绳, 未用 count。stage2 的 points+count 端点标签既不匹配 issue 缺陷、也不匹配探针实际操作。"
+  },
+  {
+    "case": "qdrant_9416",
+    "group": "C",
+    "issue_claim": "collection 创建接受 vectors={}, 生成无向量配置的不可用 collection, 后续 upsert 报错",
+    "probe_what": "PUT /collections 带 vectors={} 看存在性, 再 upsert 确认不可用",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9417",
+    "group": "C",
+    "issue_claim": "collection 创建缺 vectors 字段被接受(200), 生成不可用 collection, 向量操作失败",
+    "probe_what": "PUT /collections 带 shard_number:1 无 vectors, 看存在性, 再 upsert",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9418",
+    "group": "C",
+    "issue_claim": "query 带 filter.should=null 静默接受并忽略, 返回全部点, 应 400",
+    "probe_what": "POST /points/query 带 filter.should=None, 看是否返回 2 点(被忽略)",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9419",
+    "group": "C",
+    "issue_claim": "query 带 filter.must_not 传 object(应为 array)类型不符被静默忽略, 应 400",
+    "probe_what": "POST /points/query 带 must_not 为 object, 看是否返回 2 点(忽略)",
+    "stage2_endpoint": "points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9420",
+    "group": "C",
+    "issue_claim": "query=null 静默接受并返回全部点(按 ID 序), 应 400",
+    "probe_what": "POST /points/query 带 query=None, 看是否返回 3 点",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9421",
+    "group": "A",
+    "issue_claim": "standalone 模式 POST /cluster/recover 返回 500, 应 4xx",
+    "probe_what": "GET /cluster 确认 standalone, POST /cluster/recover 看是否 500",
+    "stage2_endpoint": "cluster+recover",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9520",
+    "group": "A",
+    "issue_claim": "collection 创建 shard_number=INT_MAX(2^31-1) 致 server 挂起/连接关闭/crash, 缺上界校验",
+    "probe_what": "PUT /collections 带 shard_number=2147483647(timeout=40) 看挂起, 再 GET / 健康, 对照 replication_factor=0",
+    "stage2_endpoint": "collections+{collection_name}",
+    "stage2_defect_type": "crash",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9522",
+    "group": "A",
+    "issue_claim": "query 带 lookup_from 引用不存在的 collection 静默返回 200 带结果, 应 400/404",
+    "probe_what": "POST /points/query 带 lookup_from=不存在 coll(c1) 与合法 coll(c2 对照)",
+    "stage2_endpoint": "collections+{collection_name}+points+query",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_9523",
+    "group": "C",
+    "issue_claim": "search 用 offset 分页(0/10/20)跨页返回重复 point ID, 违反分页契约",
+    "probe_what": "POST /points/search offset=0/10/20 计算跨页 overlap, 另 scroll 对照",
+    "stage2_endpoint": "collections+{collection_name}+points",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "qdrant_10120",
+    "group": "A",
+    "issue_claim": "count exact=false 配 is_empty 在稳态稳定少算 ~35%; 同字段 is_null 正确",
+    "probe_what": "POST /points/count: c1 exact=true is_empty 基准, c2 exact=false is_empty(缺陷), c3 exact=false is_null 对照",
+    "stage2_endpoint": "points+count",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  }
+]

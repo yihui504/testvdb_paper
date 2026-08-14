@@ -1,0 +1,212 @@
+[
+  {
+    "case": "milvus_50322",
+    "group": "C",
+    "issue_claim": "Drop 不存在的 collection 返回 code=0 而非文档 code=4(CollectionNotExists)",
+    "probe_what": "POST collections/drop 删不存在的集合并记录返回 code, 声称应 code=4",
+    "stage2_endpoint": "collections+drop",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50323",
+    "group": "B",
+    "issue_claim": "entities/delete 静默接受互斥的 filter 与 ids 参数(应报校验错)",
+    "probe_what": "entities/delete 同时传 filter='id>0' 与 ids=[1,2,3], 缺陷若 code=0 无校验错误",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "issue 与探针 probe_milvus_50323.py 均针对 entities/delete(delete 同时给 filter+ids): 探针 `http('POST', BASE + '/v2/vectordb/entities/delete', {...filter:'id > 0', ids:[1,2,3]})`; 但 stage2 endpoint 标签为 entities+insert, 与 issue 声称缺陷操作 delete 不一致"
+  },
+  {
+    "case": "milvus_50324",
+    "group": "C",
+    "issue_claim": "entities/insert 单次接受 101 个实体并返回 insertCount=101, 超文档 100 限制",
+    "probe_what": "entities/insert 插入 101 实体, 报告 insertCount, 声称 100 限制未强制",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50325",
+    "group": "C",
+    "issue_claim": "以下划线开头的 collection 命名被接受(code=0), 违反 [a-zA-Z][a-zA-Z0-9_]* 命名规则",
+    "probe_what": "collections/create 用 _test_collection 创建, 测首字符下划线命名校验",
+    "stage2_endpoint": "collections+list",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "issue 与探针 probe_milvus_50325.py 针对 collections/create 的名称校验 (探针 `_create('_test_collection', dimension=128, metricType='COSINE')` 即 POST collections/create); 但 stage2 endpoint 标签为 collections+list, 与 issue 声称缺陷操作 create 不一致"
+  },
+  {
+    "case": "milvus_50351",
+    "group": "C",
+    "issue_claim": "collections/create 接受越界 shardsNum 0/-1/65535 并返回 HTTP 200+code 200",
+    "probe_what": "collections/create 依次传 shardsNum=0,-1,65535, 缺陷若 HTTP 200 且 code 200",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50352",
+    "group": "C",
+    "issue_claim": "collections/create 静默接受 metricType=\"\" 与 consistencyLevel=\"None\" 等非法参数",
+    "probe_what": "collections/create 传 metricType='', consistencyLevel='None', dimension=32769, 缺陷若成功",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50353",
+    "group": "B",
+    "issue_claim": "entities/search 对 limit=0/-1 与维度不符返回 HTTP 200 而非 4xx",
+    "probe_what": "entities/search 传 limit=0 及 64 维向量(dim=4 集合), 缺陷若错误只在 body 而 HTTP 200",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50354",
+    "group": "B",
+    "issue_claim": "users/create 不强制执行密码复杂度, 全小写 abcdefgh 被接受(缺 4 选 3 校验)",
+    "probe_what": "users/create 测 abcdefgh(缺陷), ValidP@ss1(对照), 'a'(长度), 缺陷若复杂度未强制",
+    "stage2_endpoint": "users+create",
+    "stage2_defect_type": "doc_mismatch",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50355",
+    "group": "A",
+    "issue_claim": "upsert 在 autoID=true 集合上失败, 与文档声称 autoID 应自动生成主键矛盾",
+    "probe_what": "创建 autoID collection 后 upsert(不带 PK), 声称应自动生成 id 但失败 code=1100; 对照 insert 不带 PK 成功",
+    "stage2_endpoint": "entities+upsert",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_51084",
+    "group": "A",
+    "issue_claim": "collections/create 静默把非法 consistencyLevel 枚举替换为默认 Bounded 而不拒绝",
+    "probe_what": "collections/create 传 consistencyLevel='Invalid', 缺陷若 code 0 后静默成 Bounded; describe 复验",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_51085",
+    "group": "A",
+    "issue_claim": "collections/create 静默把非法 vectorFieldType 枚举替换为默认 FloatVector 而不拒绝",
+    "probe_what": "collections/create 传 vectorFieldType='InvalidVectorType', 缺陷若 code 0 静默成 FloatVector; describe 复验",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "semantics",
+    "mismatch": true,
+    "evidence": "issue 与探针 probe_milvus_51085.py 针对 collections/create (探针 `_create('audit5', ..., vectorFieldType='InvalidVectorType')` = POST collections/create); 但 stage2 endpoint 标签为 entities+insert, 与 issue 声称缺陷操作 create 不一致"
+  },
+  {
+    "case": "milvus_52307",
+    "group": "A",
+    "issue_claim": "entities/upsert 对 JSON 字段传纯字符串会覆盖合法 JSON, REST/gRPC 存储格式不一且 gRPC 读不回",
+    "probe_what": "entities/upsert 对 JSON 字段写 bare 字符串 invalid_json, 缺陷若被接受并覆盖 JSON; gRPC get/upsert 复验",
+    "stage2_endpoint": "entities+upsert",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52308",
+    "group": "B",
+    "issue_claim": "entities/insert 静默把字符串数值强转为 Int64 主键(gRPC 拒绝)",
+    "probe_what": "entities/insert 传 id='123'(Int64 PK), 缺陷若被接受; query/gRPC insert 复验",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52309",
+    "group": "A",
+    "issue_claim": "entities/search 接受 group_size=0/-1 且不校验(gRPC 拒绝为 negative)",
+    "probe_what": "entities/search groupParams groupByField=cat, groupSize=0 与 -1, 缺陷若被接受即应拒绝; gRPC 对照",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "issue 与探针 probe_milvus_52309.py 针对 entities/search (探针 `_search('test_gs', ..., groupParams={'groupByField':'cat','groupSize':0})` = POST entities/search); 但 stage2 endpoint 标签为 entities+insert, 与 issue 声称缺陷操作 search 不一致"
+  },
+  {
+    "case": "milvus_52310",
+    "group": "B",
+    "issue_claim": "entities/insert 静默强转标量类型 string→Int64/int→VarChar/string→Bool 等",
+    "probe_what": "entities/insert 传 string 123 进 INT64, int 123 进 VarChar, string true 进 Bool, 缺陷若被接受",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52311",
+    "group": "A",
+    "issue_claim": "entities/search 静默接受 group_by_field=vector 字段并忽略分组(gRPC 拒 unsupported)",
+    "probe_what": "entities/search groupParams groupByField='vector', 缺陷若被接受且分组被静默忽略; gRPC 对照",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52312",
+    "group": "B",
+    "issue_claim": "entities/upsert 静默把字符串数值强转为 Int64 主键并覆盖已有记录(gRPC 拒绝)",
+    "probe_what": "entities/upsert 传 id='100' 覆盖既有 id=100 记录, 缺陷若被接受; query/gRPC upsert 复验",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": true,
+    "evidence": "issue 与探针 probe_milvus_52312.py 针对 entities/upsert (探针 `_upsert('test_upsert_pk', [{'id':'100', ...}])` = POST entities/upsert); 但 stage2 endpoint 标签为 entities+insert, 与 issue 声称缺陷操作 upsert 不一致"
+  },
+  {
+    "case": "milvus_52313",
+    "group": "A",
+    "issue_claim": "entities/insert 对 JSON 字段写纯字符串在 REST/gRPC 存储格式不一且 gRPC 读不回(round-trip 失败)",
+    "probe_what": "entities/insert 对 JSON 字段写 plain_string, 缺陷若被接受; gRPC insert/get/query 复验 round-trip",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52314",
+    "group": "B",
+    "issue_claim": "entities/upsert 静默强转标量类型 string→DOUBLE/string→BOOL/int→BOOL/string→INT16",
+    "probe_what": "entities/upsert 传 string 3.14159 进 DOUBLE, string/int 进 BOOL, string 42 进 INT16, 缺陷若被接受",
+    "stage2_endpoint": "entities+upsert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52315",
+    "group": "A",
+    "issue_claim": "entities/insert 接受字符串编码的向量值(gRPC 拒绝 should be float_vector)",
+    "probe_what": "entities/insert 传 vector='[0.1,0.2,0.3,0.4]'(字符串), 缺陷若被接受并解析为 float vector; search/gRPC 复验",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_52325",
+    "group": "A",
+    "issue_claim": "entities/search 静默忽略 strictGroupSize, 结果不受其影响(gRPC 会 honor)",
+    "probe_what": "entities/search 带 strictGroupSize=true 应封顶 5x2=10, 缺陷若返回 15(groupSize 未生效); gRPC 对照",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "semantics",
+    "mismatch": false,
+    "evidence": ""
+  }
+]

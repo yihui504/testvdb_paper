@@ -1,0 +1,222 @@
+[
+  {
+    "case": "milvus_47635",
+    "group": "A",
+    "issue_claim": "load() 成功后立即 search 以 code=0 'collection not loaded' 失败(竞态)",
+    "probe_what": "每attempt新建collection, load后无sleep立即search, 20轮检测 code=0/not loaded",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47729",
+    "group": "B",
+    "issue_claim": "IVF 索引 search 接受 nprobe=0, 缺少正整数校验",
+    "probe_what": "创建 IVF_FLAT 索引后以 nprobe=0 做 search, 观察是否被接受返回结果",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47752",
+    "group": "B",
+    "issue_claim": "HNSW 索引 search 接受 ef=0, 缺少正整数校验",
+    "probe_what": "创建 HNSW 索引后以 ef=0 做 search, 观察是否被接受返回结果",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47755",
+    "group": "B",
+    "issue_claim": "filter 表达式校验过宽, 接受降序/空 IN 范围等语义错误",
+    "probe_what": "search 用 filter 'age in [10,5]' 与 'age in []', 观察是否被接受",
+    "stage2_endpoint": "entities+delete",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47763",
+    "group": "A",
+    "issue_claim": "接受非法字段名(数字开头/@)导致数据不可查询; 应校验字段命名规则",
+    "probe_what": "insert 动态字段 123field/@field 后 query 该字段, 观察是否被接受/可查",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "doc_mismatch",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47766",
+    "group": "B",
+    "issue_claim": "动态字段先为 VARCHAR, 后续插入整数被接受(类型不一致)",
+    "probe_what": "已建 VARCHAR 动态字段后再 insert 整数值 12345, 观察是否被接受",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_47767",
+    "group": "C",
+    "issue_claim": "search 接受空查询向量 [] 而无校验错误",
+    "probe_what": "以空向量 [[]] 做 search, 观察是否返回结果(应报向量不能为空)",
+    "stage2_endpoint": "databases+drop",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "probe_milvus_47767.py line 41 用 mc.search(..., [[]]) 测空向量; issue body 明言 'Empty query vector accepted in search'; 但 stage2 endpoint=databases+drop, 与 issue/probe 的 search 缺陷操作不符"
+  },
+  {
+    "case": "milvus_49059",
+    "group": "B",
+    "issue_claim": "COSINE 对相同向量返回 distance>1.0(浮点精度溢出, 应为<=1.0)",
+    "probe_what": "批量检索100个自相同归一化向量, 统计 distance>1.0 的数量",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "crash",
+    "mismatch": true,
+    "evidence": "probe_milvus_49059.py 观察 max_distance/n_over_one(数值错); issue body 是精度溢出返回 distance=1.0000001192 而非崩溃; stage2 defect_type=crash 与 issue 声称的数值错误不符"
+  },
+  {
+    "case": "milvus_49823",
+    "group": "B",
+    "issue_claim": "REST search 接受 nprobe=0 而 topk=0 却被拒绝",
+    "probe_what": "entities/search 以 searchParams nprobe=0 请求(control limit=0), 观察是否 code 0 返回结果",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_milvus_49823.py main 对 entities/search 发 nprobe=0; issue 'REST API v2 accepts nprobe=0 in search requests'; stage2 endpoint=entities+insert 与 issue/probe 的 search 缺陷不符"
+  },
+  {
+    "case": "milvus_49843",
+    "group": "A",
+    "issue_claim": "collections/create 静默丢弃负值 collection.ttl.seconds(alter 才正确拒绝)",
+    "probe_what": "create 带 -100 TTL(c1)+describe 校验+alter 负TTL control(c2 应报1100)",
+    "stage2_endpoint": "collections+alter",
+    "stage2_defect_type": "semantics",
+    "mismatch": true,
+    "evidence": "probe_milvus_49843.py c1 测 collections/create 负TTL(主缺陷); issue headline 'silently drops negative TTL on collection create'; stage2 endpoint=collections+alter 指向的是正确拒绝的 control 路径而非缺陷的 create"
+  },
+  {
+    "case": "milvus_49844",
+    "group": "C",
+    "issue_claim": "entities/query 接受 null/缺失 filter 并返回全部(data泄漏风险)",
+    "probe_what": "entities/query 分别 filter=null、filter 缺失、filter 空串(control), 观察是否全量返回",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "semantics",
+    "mismatch": true,
+    "evidence": "probe_milvus_49844.py 全部打 v2/vectordb/entities/query; issue 'query accepts null/missing filter'; stage2 endpoint=entities+insert 与 issue/probe 的 query 缺陷不符"
+  },
+  {
+    "case": "milvus_49889",
+    "group": "B",
+    "issue_claim": "collections/list 与 describe 接受空串 dbName(默认到 default db)",
+    "probe_what": "collections/list 带 dbName=''(c1)+ query 空filter control(c2)",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_milvus_49889.py c1 测 collections/list dbName=''; issue 声称 list/describe 接受空 dbName; stage2 endpoint=collections+create 与 issue/probe 的 list 缺陷不符"
+  },
+  {
+    "case": "milvus_49890",
+    "group": "A",
+    "issue_claim": "REST 接受非整数 Request-Timeout header(应 integer)",
+    "probe_what": "collections/list 带 Request-Timeout=3.5/abc/10(control) header, 观察是否 code 0",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_milvus_49890.py _hdr 对 collections/list 发非整 header; issue 'accepts non-integer Request-Timeout header values'(collections/list); stage2 endpoint=entities+insert 与 issue/probe 的 list 缺陷不符"
+  },
+  {
+    "case": "milvus_49928",
+    "group": "C",
+    "issue_claim": "默认 maxDimension=32768 过宽, dim=32768 可建(DoS 风险), 32769 拒",
+    "probe_what": "create 分别建 dim=32768(c1 期望接受缺陷)与 dim=32769(control 期望拒)",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_49929",
+    "group": "C",
+    "issue_claim": "REST 建集无索引, SDK 自动 AUTOINDEX, create_index 行为不一致",
+    "probe_what": "REST create 后 create_index(c1); SDK quick-create 后 create_index(c2) 对比分歧",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "probe_milvus_49929.py c1 用 /v2/vectordb/indexes/create, c2 用 SDK create_index; issue 'inconsistent default index creation behavior'(create_index); stage2 endpoint=entities+insert 与 issue/probe 的 create_index 缺陷不符"
+  },
+  {
+    "case": "milvus_49930",
+    "group": "B",
+    "issue_claim": "REST search 接受非法 searchParams(ef=0/-1, nprobe=0/-1)无校验",
+    "probe_what": "HNSW search 用 ef=-1/ef=0, IVF search 用 nprobe=0, 观察 code 0 返回结果",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_milvus_49930.py c1/c2/c3 全部打 entities/search; issue 'accepts invalid searchParams ... without validation'(search); stage2 endpoint=collections+create 与 issue/probe 的 search 缺陷不符"
+  },
+  {
+    "case": "milvus_50018",
+    "group": "B",
+    "issue_claim": "aliases/list 接受空 collectionName 返回 code0(其余端返回1802)",
+    "probe_what": "aliases/list 带 collectionName='' 期望缺陷; control collections/describe 空名期望1802",
+    "stage2_endpoint": "aliases+list",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50192",
+    "group": "C",
+    "issue_claim": "并发 rename+create 同一目标名两者都成功, 状态违反",
+    "probe_what": "线程并发 rename(src->dst)与 create(dst), 观察是否都 code0",
+    "stage2_endpoint": "collections+rename",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50193",
+    "group": "C",
+    "issue_claim": "insert+load 后 get_stats 返回 rowCount=0 而 query 见 5 行",
+    "probe_what": "insert 5 行+load 后调 get_stats(c1) 与 query(c1_q) 对比 rowCount",
+    "stage2_endpoint": "collections+load",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "probe_milvus_50193.py c1 调 /v2/vectordb/collections/get_stats; issue 'get_stats returns rowCount=0 after successful insert and load'; stage2 endpoint=collections+load 是前置操作, 而非缺陷的 get_stats 端点"
+  },
+  {
+    "case": "milvus_50194",
+    "group": "C",
+    "issue_claim": "并发 delete+search 返回已删的 stale 数据",
+    "probe_what": "线程并发 delete(id in 1-5)与 search, 统计过期 id 是否仍在结果",
+    "stage2_endpoint": "entities+insert",
+    "stage2_defect_type": "behavior",
+    "mismatch": true,
+    "evidence": "probe_milvus_50194.py deleter 打 entities/delete + searcher 打 entities/search; issue 'Concurrent delete and search returns stale/deleted data'; stage2 endpoint=entities+insert 与 issue/probe 的 delete+search 缺陷不符"
+  },
+  {
+    "case": "milvus_50319",
+    "group": "C",
+    "issue_claim": "从未 load 的 collection 上 search 返回 code0 有效结果, 应报 not loaded",
+    "probe_what": "create+insert 后不 load 直接 entities/search, 观察 code / loaded 错误",
+    "stage2_endpoint": "entities+search",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "milvus_50321",
+    "group": "C",
+    "issue_claim": "同名重复 create 返回 code0 而非 'already exists' 错误",
+    "probe_what": "create 同名 collection 两次(c1 首次/c1b 重复), 观察第二次是否 code0",
+    "stage2_endpoint": "collections+create",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  }
+]

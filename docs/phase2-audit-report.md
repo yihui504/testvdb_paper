@@ -65,6 +65,7 @@ run1 的 0.822 = 初判 0.644 + 三轮清洗救回 8 FN。救回动作按性质�
 
 ## 6. 后续待办（未在本轮完成）
 
-- [ ] A 组 28 个 TP_FIXED_PR 的 fix-PR 合入版本 vs 实验 tag 版本系统核查（消除 post-fix 风险；9149 已实证 1 例）。
+- [x] ~~A 组 28 个 TP_FIXED_PR 的 fix-PR 合入版本 vs 实验 tag 版本系统核查~~ → **已完成 2026-08-14**，见 [phase2-audit-todo1-version-check.md](phase2-audit-todo1-version-check.md)。结论：28/28 无 post-fix 风险；新发现 8 个 case 的 fix PR 从未合并（GT 标签存疑，列为待办 3）。
 - [ ] 干净流程复跑 25 case（或 71）验证无污染 κ。
-- [ ] probe↔issue 错配的剩余排查（50355/9373/49928 已查，其余 case 的探针内容 vs issue 声称缺陷未全量比对）。
+- [x] ~~probe↔issue 错配的剩余排查~~ → **已完成 2026-08-14**，见 [phase2-audit-todo2-probe-match.md](phase2-audit-todo2-probe-match.md)。结论：probe↔issue 实质错配 0；stage2 标签错配 19 个已修正落地三树 + v2 包。注：§1 坑 7 所称 50355 错配在排雷阶段已修，该描述过时。
+- [x] ~~**待办 3（新）**：8 个 GT 存疑 case 重审~~ → **已重审落地 2026-08-14**：8 个全部降级（47763→TP_ACK_CLOSED_NOFIX；11399/11400/11401/11730/11732/11741/9520→TP_ACK_OPEN；A=28→20、B=17→25，recall 分母与三轮指标不变）。9520 经行为实测定论：v1.18.3（#9594 之后）复现 INT_MAX shard 无校验挂起，与 v1.18.2 一致——#9594 未修复。详见 [phase2-audit-todo1-version-check.md](phase2-audit-todo1-version-check.md) §3.1。

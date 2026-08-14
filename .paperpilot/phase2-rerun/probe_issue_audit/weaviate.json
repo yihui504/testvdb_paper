@@ -1,0 +1,102 @@
+[
+  {
+    "case": "weaviate_11399",
+    "group": "A",
+    "issue_claim": "dynamicEfMin>dynamicEfMax 在创建 collection 时被 200 接受而无参数校验",
+    "probe_what": "POST /schema dynamicEfMin=500>max=10，再 GET 校验存储的 efMin/efMax",
+    "stage2_endpoint": "GET /schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_weaviate_11399.py 行12-27：POST /schema 带 dynamicEfMin=500,dynamicEfMax=10，emit obs='POST schema ... got HTTP S; stored min/max'。issue body 声称缺陷在 collection 创建(POST /v1/schema 应 422 拒收)即 POST /schema creation；而 stage2_aggregation.confirmed 标注 endpoint=GET /schema——GET 只是读取存储值的验证端点，并非缺陷所在端点(POST creation)，故 Q3 不一致。"
+  },
+  {
+    "case": "weaviate_11400",
+    "group": "A",
+    "issue_claim": "flatSearchCutoff 接受负值 -100，创建被 200 接受无校验",
+    "probe_what": "POST /schema flatSearchCutoff=-100，再 GET 校验存储的 cutoff 值",
+    "stage2_endpoint": "GET /schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": true,
+    "evidence": "probe_weaviate_11400.py 行12-26：POST /schema 带 flatSearchCutoff=-100，emit obs='...got HTTP S; stored cutoff'。issue body 声称缺陷在 POST /v1/schema 创建时接受负 flatSearchCutoff 应 422；而 stage2 标注 endpoint=GET /schema——同 11399，缺陷发生在 POST creation 而非 GET，Q3 不一致。"
+  },
+  {
+    "case": "weaviate_11401",
+    "group": "A",
+    "issue_claim": "replicationFactor=-1 被 200 接受并静默规整为 1，无校验",
+    "probe_what": "POST /schema replicationConfig.factor=-1，再 GET 校验存储 factor",
+    "stage2_endpoint": "/schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11436",
+    "group": "C",
+    "issue_claim": "HNSW ef=-1 在 vectorIndexConfig 被 200 接受无校验",
+    "probe_what": "POST /schema 带 ef=-1，仅记录 http_status 是否 200",
+    "stage2_endpoint": "/schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11729",
+    "group": "A",
+    "issue_claim": "shardingConfig.desiredCount 接受负值 -1 却拒绝 0，不一致",
+    "probe_what": "控制组 POST desiredCount=0 期望 422；缺陷组 desiredCount=-1 期望 422",
+    "stage2_endpoint": "POST /schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11730",
+    "group": "A",
+    "issue_claim": "tokenization 空串 '' 被 200 接受，违反 OpenAPI enum 约束",
+    "probe_what": "POST /schema 属性 tokenization=''，记录 http_status",
+    "stage2_endpoint": "POST /schema",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11732",
+    "group": "A",
+    "issue_claim": "vectorIndexConfig.distance 为 null 被静默接受并默认成 cosine",
+    "probe_what": "POST /schema distance=null，再 GET 读出存储 distance 验证默认 cosine",
+    "stage2_endpoint": "/schema",
+    "stage2_defect_type": "type_coercion",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11741",
+    "group": "A",
+    "issue_claim": "tenant 创建接受空串 activityStatus=''（枚举应拒收）",
+    "probe_what": "POST schema(多租户)+控制组 ACTIVE tenant+缺陷组 activityStatus='' 记录 http_status",
+    "stage2_endpoint": "/schema/{className}/tenants",
+    "stage2_defect_type": "param_validation",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_11981",
+    "group": "C",
+    "issue_claim": "batch/objects 接受空 vector[] 且逐条报 SUCCESS（单条 422）",
+    "probe_what": "控制组单条 POST vector=[] 期望 422；缺陷组混批空 vector 检查 status/逐条",
+    "stage2_endpoint": "POST /batch/objects",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  },
+  {
+    "case": "weaviate_12041",
+    "group": "A",
+    "issue_claim": "batch delete 缺 match.where/class 返回 500 而非 422",
+    "probe_what": "Case A 缺 where + Case B 空 match{} 的 DELETE /batch/objects 记录 http_status",
+    "stage2_endpoint": "DELETE /batch/objects",
+    "stage2_defect_type": "behavior",
+    "mismatch": false,
+    "evidence": ""
+  }
+]
