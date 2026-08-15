@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete with both filter and ids parameters",
+          "observed": "HTTP 200 success, deleteCount: 1 (API accepts both but ignores ids)",
+          "evidence_cmd": "python -c \"requests.post('http://localhost:19530/v2/vectordb/entities/delete', json={'collectionName': 'test_del', 'dbName': 'default', 'filter': 'id > 0', 'ids': [1, 2, 3]})\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumes providing 'ids' parameter restricts deletion to specified IDs",
+            "Assumes API should reject request when both 'filter' and 'ids' provided",
+            "Assumes 'ids' is a valid parameter for delete endpoint"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - filter must be valid boolean expression",
+            "endpoint definition: entities+delete only defines 'filter' as required, no 'ids' parameter"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["CollectionFilterReq", "ids.*delete", "delete.*handler"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// request_v2.go line 317-323\ntype CollectionFilterReq struct {\n\tDbName         string                 `json:\"dbName\"`\n\tCollectionName string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                 `json:\"partitionName\"`\n\tFilter         string                 `json:\"filter\" binding:\"required\"`\n\tExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n\n// handler_v2.go line 1202-1213\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,  // Only uses Filter, no ids field\n\t}",
+          "call_chain_traced": "HTTP request → CollectionFilterReq (no ids field) → DeleteRequest.Expr (only filter) → proxy.Delete",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms CollectionFilterReq struct does NOT have an 'ids' field. The delete handler only uses Filter field. Any 'ids' in JSON is silently ignored by Go's JSON unmarshaling - it's not an error, just ignored."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with ids only (no filter) returns error 1802 requiring filter",
+          "observed": "HTTP 200 with error code 1802: 'missing required parameters, error: Key: CollectionFilterReq.Filter Error:Field validation for Filter failed on the required tag'",
+          "evidence_cmd": "python -c \"requests.post('http://localhost:19530/v2/vectordb/entities/delete', json={'collectionName': 'test_del', 'ids': [1, 2, 3]})\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Concurrency race",
+            "Request parameter typo (the request intentionally included both to test)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match documented by_design patterns. This is a case of the fuzzer passing an undefined parameter that gets silently ignored."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The 'ids' parameter is NOT defined in the entities+delete endpoint contract or source code (CollectionFilterReq struct). When both 'filter' and 'ids' are provided, the API correctly executes the filter-based delete and silently ignores the undefined 'ids' parameter - this is standard JSON unmarshaling behavior. The fuzzer's assertion assumed 'ids' would restrict the deletion or cause an error, but 'ids' is simply not a valid parameter for this endpoint. Test with 'ids' only correctly returns error 1802 requiring 'filter'. No defect - this is mundane API semantics where undefined request parameters are ignored."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

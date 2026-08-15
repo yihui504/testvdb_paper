@@ -1,0 +1,122 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search 在未完全加载的 collection 上执行 search",
+          "observed": "成功返回 HTTP 200，结果包含 id=1 的匹配项，但 collection 处于 LoadStateLoading 状态（loadProgress=0）",
+          "evidence_cmd": "curl -s POST /entities/search → 返回 {code:0, data:[{distance:1, id:1}], topks:[1]}",
+          "note": "复现成功：违反 state constraint，collection 未完全加载就允许 search"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "候选违规结论依赖前提：'collection must be loaded' 是硬性要求",
+            "验证：get_load_state 返回 LoadStateLoading（loadProgress=0），证明未完全加载",
+            "证伪测试：手动 release 后 search 返回 'collection not loaded' 错误，证明系统确实期望 collection 加载"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "constraint_id": "milvus_state_entities_search_001",
+          "assertion_text_quoted": "collection is loaded AND index exists on annsField",
+          "api_observed_value": "collection 处于 LoadStateLoading（loadProgress=0），search 成功返回结果",
+          "api_violates_assertion": true,
+          "note": "契约明文要求 collection 必须加载，API 实测违反"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "func.*Search",
+            "validateSearch",
+            "searchTaskValidator",
+            "loadState",
+            "collection.*load"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task_validator.go",
+            "internal/proxy/util.go",
+            "internal/distributed/proxy/service.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_validator.go line 37-52\nfunc (v *searchTaskValidator) validateSearch(search *searchTask) error {\n\tmaxResultEntries := paramtable.Get().ProxyCfg.MaxResultEntries.GetAsInt64()\n\tif maxResultEntries <= 0 {\n\t\treturn nil\n\t}\n\t// check if number of result entries is too large\n\tnEntries := search.GetNq() * search.GetTopk()\n\t// if there is group size, multiply it\n\tif search.GetGroupSize() > 0 {\n\t\tnEntries *= search.GroupSize\n\t}\n\tif nEntries > maxResultEntries {\n\t\treturn fmt.Errorf(\"number of result entries is too large\")\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:1487) → proxy.Search (impl.go:2923) → searchTask validation (task_validator.go:54) → 仅检查 result count，无 load state check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：searchTask validator 只检查 result entries 数量，完全缺失 collection load state 验证。这是真缺陷。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "手动 release collection 后执行 search",
+          "observed": "返回 HTTP 101, message='failed to search: collection not loaded[collection=468387964769165420]'",
+          "evidence_cmd": "POST /collections/release → POST /entities/search → 返回错误",
+          "note": "证伪失败：当 collection 真正未加载时，search 确实会失败。这证明原始违规是真实的状态机漏洞，而非误解。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（标准 Docker 环境）",
+            "并发/race（单线程顺序执行）",
+            "缓存延迟（立即查询）",
+            "参数笔误（参数完整正确）",
+            "API 语义误解（契约明文要求 + 源码支持）",
+            "by-design（release 后返回明确错误，说明不是设计如此）"
+          ],
+          "surviving": "无，所有平凡解释已排除"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的 by_design 或 rejection_patterns。此违规是真正的状态机漏洞。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "constraint_id": "milvus_state_entities_search_001",
+          "explicit_requirement": "collection is loaded AND index exists on annsField (constraint_id: milvus_state_entities_search_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "api_observed_value": "collection 处于 LoadStateLoading（loadProgress=0），search 成功返回结果",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "向量数据库的基本约束：collection 必须加载到内存才能执行搜索（否则无法访问向量索引）",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "源码中无显式 by-design 注释；release 后返回错误证明这不是预期行为"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (契约违反) → final=CONFIRMED (C 不能推翻 A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "state_constraint_missing_in_search_validator",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "这是一个真正的状态机漏洞。REST v2 search 接口允许在 collection 未完全加载（LoadStateLoading）时执行搜索，违反了契约中 'collection must be loaded' 的明文要求。源码接地确认：searchTask validator 只检查 result entries 数量（task_validator.go:37-52），完全缺失 collection load state 验证。证伪测试（release 后 search 返回 'collection not loaded'）证明这不是自动加载行为，而是真正的验证缺失。此违规可能导致数据不一致或搜索结果不完整，是 High severity 缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "state_constraint_missing_in_search_validator": 1
+    }
+  },
+  "self_check": "PASSED"
+}

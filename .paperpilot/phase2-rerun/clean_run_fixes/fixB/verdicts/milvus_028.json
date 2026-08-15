@@ -1,0 +1,129 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with metricType='' (empty string) and consistencyLevel='None' (invalid enum)",
+          "observed": "HTTP 200 with code 0 returned for both metricType='' and consistencyLevel='None'. API accepts invalid values without error.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate metricType is one of [L2, IP, COSINE]",
+            "API should validate consistencyLevel is one of [Strong, Session, Bounded, Eventually]",
+            "Empty string should not be accepted as valid metricType",
+            "Invalid enum value 'None' should not be accepted for consistencyLevel"
+          ],
+          "all_assumptions_met": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - metricType must be L2, IP, or COSINE",
+            "constraint_id: milvus_type_collections_create_003 - consistencyLevel must be Strong, Session, Bounded, or Eventually",
+            "assertion_id: milvus_behavioral_collections_create_002 - Create collection returns 400 on invalid parameters"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "metricType.*validation",
+            "consistencyLevel.*validation",
+            "CreateCollection.*metricType",
+            "handler_v2.go.*createCollection"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/request_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go, Lines 2008-2023\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel\n\n// Lines 2067-2068 - metricType handling\nif len(httpReq.MetricType) == 0 {\n    httpReq.MetricType = DefaultMetricType\n}",
+          "call_chain_traced": "CreateCollectionReq -> handler_v2.createCollection() -> consistencyLevel validation (line 2008-2023) -> metricType default fallback (line 2067-2068)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：1) metricType 验证缺失 - 空字符串时直接使用默认值(DefaultMetricType)，无显式错误返回；2) consistencyLevel 验证存在但不完整 - 'None'不在允许列表但未触发400错误；源码显示验证逻辑(line 2010-2021)要求在enum值列表中，但'None'作为无效值未被捕获。根据contract要求，两参数均应返回400错误，但实际均返回200成功。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证创建的集合确实使用了默认值而非报错",
+          "observed": "使用describe确认集合创建成功且使用了默认metricType和consistencyLevel，证明API接受了无效参数但未返回预期的400错误"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 容器运行正常",
+            "并发问题 - 单次顺序请求",
+            "缓存问题 - 直接API调用",
+            "请求参数错误 - 参数显式提供"
+          ],
+          "surviving": "none - 所有平凡解释已排除"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 issues in corpus, including incorrect parameter validation",
+        "note": "命中 blindspot_indicators: REST v2 API data type serialization not validated - 8 issues in corpus.开发者明确将 REST v2 参数验证问题视为高优先级缺陷类型。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "通过源码接地与实际请求复现，确认 milvus_028 为真缺陷。REST v2 API 在 collections+create 端点存在两处参数验证缺失：(1) metricType 接受空字符串 ''，源码显示直接fallback到默认值而未返回400错误 (handler_v2.go:2067-2068)，违反约束 milvus_type_collections_create_002；(2) consistencyLevel 接受无效枚举值 'None'，源码显示验证逻辑存在但未正确捕获此无效值 (handler_v2.go:2008-2023)，违反约束 milvus_type_collections_create_003。命中开发者认知模型 blindspot 'REST v2 data type serialization' (26个历史案例)，且开发者已将此类问题标记为需修复缺陷。复现证实API返回HTTP 200而非预期的400，符合 behavioral assertion milvus_behavioral_collections_create_002 违规特征。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] (constraint_id: milvus_type_collections_create_002) AND consistencyLevel in [Strong, Session, Bounded, Eventually] (constraint_id: milvus_type_collections_create_003)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "metricType must be non-empty string from fixed enum set; consistencyLevel must be valid protobuf enum value",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "validated_constraints": [
+        "milvus_type_collections_create_002",
+        "milvus_type_collections_create_003"
+      ],
+      "violated_assertions": [
+        "milvus_behavioral_collections_create_002"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_missing": 1
+    },
+    "severity_distribution": {
+      "High": 1
+    },
+    "confidence_distribution": {
+      "0.90-0.95": 1
+    }
+  },
+  "metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "review_timestamp": "2025-08-14T12:00:00Z",
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+    "milvus_version": "2.6.17",
+    "review_protocol": "6-step SOP with source grounding"
+  }
+}

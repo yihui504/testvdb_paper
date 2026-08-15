@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "endpoint": "aliases+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/aliases/create with parameter alias vs aliasName",
+          "observed": "Request with parameter 'alias' returns validation error: 'Key: 'AliasCollectionReq.AliasName' Error:Field validation for 'AliasName' failed on the 'required' tag'. Request with parameter 'aliasName' succeeds (HTTP 200, code 0).",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/aliases/create' -d '{\"collectionName\": \"test_aliases_devreview\", \"alias\": \"test\"}' -> code 1802 error; curl -X POST ... -d '{\"collectionName\": \"test_aliases_devreview\", \"aliasName\": \"test\"}' -> code 0 success"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion depends on the alias creation request being valid and properly formatted",
+            "The original defect claim assumes the parameter name should be 'alias', but the actual API specification requires 'aliasName'",
+            "Validation of the API contract shows 'aliasName' is the documented required parameter, not 'alias'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: aliases+create endpoint requires 'aliasName' parameter",
+            "structured_contract.json specifies: 'name': 'aliasName', 'required': true",
+            "Source code AliasCollectionReq struct defines: AliasName string `json:\"aliasName\" binding:\"required\"`"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "aliasName|AliasName",
+            "AliasCollectionReq"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 672-686\ntype AliasCollectionReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\" binding:\"required\"`\n\tAliasName      string `json:\"aliasName\" binding:\"required\"`\n}\n\nfunc (req *AliasCollectionReq) GetAliasName() string {\n\treturn req.AliasName\n}",
+          "call_chain_traced": "POST /aliases/create -> handler_v2.go createAlias() -> AliasCollectionReq struct -> Go struct validation expects 'aliasName' JSON field",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:AliasCollectionReq结构体明确定义JSON字段名为'aliasName'且标记为required,与测试中使用的'alias'参数不符。验证逻辑正确工作,拒绝了错误的参数名。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Created alias with correct parameter 'aliasName' and verified it exists via list operation",
+          "observed": "Alias created successfully with aliasName parameter. List aliases returned ['test_alias_correct'], confirming the API works correctly when proper parameter names are used."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Request parameter typo - using 'alias' instead of documented 'aliasName'",
+            "Not a bug in parameter validation, but correct validation rejecting wrong parameter name"
+          ],
+          "surviving": "request_param_typo"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定的by_design模式。这不是一个by-design的行为选择,而是一个简单的请求参数命名错误。API正确验证并拒绝了不符合规范的参数名。"
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原缺陷报告声称aliases+create端点存在参数验证问题。但源码分析显示,API正确实现了参数验证:AliasCollectionReq结构体明确定义JSON字段名为'aliasName'(required),而测试请求使用了错误的参数名'alias'。Go的struct binding正确拒绝了不符合规范的参数。使用正确的'aliasName'参数请求成功返回200。这是请求参数拼写错误导致的误报,而非API缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_param_typo": 1
+    }
+  }
+}

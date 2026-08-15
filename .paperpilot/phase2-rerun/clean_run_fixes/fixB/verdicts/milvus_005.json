@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}] → Query with outputFields=[\"123field\",\"@field\"]",
+          "observed": "Insert succeeded (HTTP 200, insertCount=2). Query with invalid field names in outputFields returned HTTP 200 with code=65535, message='parse output field name failed: 123field'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\":\"test_devreview_milvus005\",\"schema\":{\"autoID\":false,\"enableDynamicField\":true,\"fields\":[{\"fieldName\":\"id\",\"dataType\":\"Int64\",\"isPrimary\":true},{\"fieldName\":\"vector\",\"dataType\":\"FloatVector\",\"elementTypeParams\":{\"dim\":4}}]}}' && curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_devreview_milvus005\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_devreview_milvus005\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"123field\",\"@field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - insert accepts invalid field names, query fails when requesting them in outputFields. The inconsistency is real."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_field_name_validation (implicit from util.go:356-388 validateFieldName function)",
+            "Field names must: start with underscore/letter, contain only letters/numbers/underscores, not be keywords (validateFieldName enforces: firstChar != '_' && !isAlpha, c != '_' && !isAlpha(c) && !isNumber(c))"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "validateFieldName",
+            "parse output field name failed",
+            "translateOutputFields",
+            "ParseIdentifier"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/parser/planparserv2/plan_parser_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 356-388\nfunc validateFieldName(fieldName string) error {\n\tfieldName = strings.TrimSpace(fieldName)\n\n\tif fieldName == \"\" {\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, \"field name should not be empty\")\n\t}\n\n\tinvalidMsg := \"Invalid field name: \" + fieldName + \". \"\n\tif len(fieldName) > Params.ProxyCfg.MaxNameLength.GetAsInt() {\n\t\tmsg := invalidMsg + \"The length of a field name must be less than \" + Params.ProxyCfg.MaxNameLength.GetValue() + \" characters.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\n\tfirstChar := fieldName[0]\n\tif firstChar != '_' && !isAlpha(firstChar) {\n\t\tmsg := invalidMsg + \"The first character of a field name must be an underscore or letter.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\n\tfieldNameSize := len(fieldName)\n\tfor i := 1; i < fieldNameSize; i++ {\n\t\tc := fieldName[i]\n\t\tif c != '_' && !isAlpha(c) && !isNumber(c) {\n\t\t\tmsg := invalidMsg + \"Field name can only contain numbers, letters, and underscores.\"\n\t\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t\t}\n\t}\n\tif _, ok := common.FieldNameKeywords[fieldName]; ok {\n\t\tmsg := invalidMsg + fmt.Sprintf(\"%s is keyword in milvus.\", fieldName)\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\treturn nil\n}\n\n// internal/proxy/util.go line 1640-1664 (translateOutputFields dynamic field parsing)\n\t\t\t\tif schema.EnableDynamicField {\n\t\t\t\t\tdynamicNestedPath := outputFieldName\n\t\t\t\t\terr := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n\t\t\t\t\t\tcolumnInfo := expr.GetColumnExpr().GetInfo()\n\t\t\t\t\t\t// there must be no error here\n\t\t\t\t\t\tdynamicField, _ := schema.schemaHelper.GetDynamicField()\n\t\t\t\t\t\t// only $meta[\"xxx\"] is allowed for now\n\t\t\t\t\t\tif dynamicField.GetFieldID() != columnInfo.GetFieldId() {\n\t\t\t\t\t\t\treturn errors.New(\"not support getting subkeys of json field yet\")\n\t\t\t\t\t\t}\n\t\t\t\t\t\tnestedPaths := columnInfo.GetNestedPath()\n\t\t\t\t\t\t// $meta[\"A\"][\"B\"] not allowed for now\n\t\t\t\t\t\tif len(nestedPaths) != 1 {\n\t\t\t\t\t\t\treturn errors.New(\"not support getting multiple level of dynamic field for now\")\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// $meta[\"dyn_field\"], output field name could be:\n\t\t\t\t\t\t// 1. \"dyn_field\", outputFieldName == nestedPath\n\t\t\t\t\t\t// 2. `$meta[\"dyn_field\"]` explicit form\n\t\t\t\t\t\tif nestedPaths[0] != outputFieldName {\n\t\t\t\t\t\t\t// use \"dyn_field\" as userDynamicFieldsMap when outputField = `$meta[\"dyn_field\"]`\n\t\t\t\t\t\t\tdynamicNestedPath = nestedPaths[0]\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn nil\n\t\t\t\t\t})\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\tlog.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n\t\t\t\t\t\treturn nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n\t\t\t\t\t}",
+          "call_chain_traced": "insert request → entities/insert endpoint → NO field name validation at insert time (accepts '123field', '@field') → query request → entities/query endpoint → translateOutputFields → planparserv2.ParseIdentifier → fails for field names starting with digits or special chars",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: insert 路径(entities+insert)对 dynamic field data 不做 field name 校验,直接接受;query 路径(entities+query)在 translateOutputFields 调用 ParseIdentifier 做动态字段名解析时强制校验(通过 planparserv2 的 identifier 语法),导致同一批数据在不同操作间行为不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert valid field name and verify query works",
+          "observed": "Insert with field='valid_field' succeeded, query with outputFields=['valid_field'] returns HTTP 200 with data → validates that query path itself works, only fails on invalid field names",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_devreview_milvus005\",\"data\":[{\"id\":3,\"vector\":[0.3,0.2,0.3,0.4],\"valid_field\":\"ok\"}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_devreview_milvus005\",\"filter\":\"id==3\",\"outputFields\":[\"valid_field\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean container)",
+            "Race condition (deterministic, single-threaded)",
+            "Cache delay (immediate query)",
+            "Request parameter typo (tested both invalid and valid names)",
+            "API semantics misunderstanding (insert accepts what query rejects - inconsistency)"
+          ],
+          "surviving": "validation_asymmetry"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "Candidate hits BSI-006: cross-path validation asymmetry (insert accepts, query rejects). Milvus maintainers explicitly consider this a defect per developer_cognition.json."
+      },
+      "root_cause_if_true": "validation_asymmetry_insert_query",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Field names must start with underscore/letter and contain only letters/numbers/underscores (validateFieldName in util.go:356-388)",
+          "source_implements_check": false,
+          "note": "Contract assertion exists (validateFieldName function) but is NOT enforced on insert path for dynamic fields",
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Field names are identifiers - must be valid identifiers per language grammar (first char letter/underscore, rest alphanumeric/underscore)",
+          "api_accepts_violation": true,
+          "note": "Insert accepts '123field' (starts with digit) and '@field' (starts with special char) - both violate identifier rules",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "Query fails hard (throws error) rather than gracefully handling invalid field names. No by-design comments in source for this asymmetry.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Validation asymmetry confirmed: entities+insert accepts invalid field names ('123field', '@field') in dynamic field data without calling validateFieldName, while entities+query calls planparserv2.ParseIdentifier via translateOutputFields which enforces identifier grammar and fails. This is a true Type1_IllegalSuccess defect (insert should reject, not accept). Source grounding confirms insert path lacks validation call, query path has it. Hits developer cognition blindspot BSI-006 (cross-channel inconsistency)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_asymmetry_insert_query": 1
+    }
+  }
+}

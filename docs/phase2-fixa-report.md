@@ -65,3 +65,23 @@ by-design；+018/50192 为 HTTP 200 包装类反向翻——三例同属"同现�
 - 判词：`clean_run_fixes/fixA/verdicts/`（42）+ `VERDICTS_ALL.json`（clean/fixA 全 71 对照）
 - 修改：`fix_intel_blindspot.py`、MATERIAL_FIXES 第 169 条、v2+intel 源两处
 - 材料：判词移出后材料树零残留；容器全清
+
+## 6. fixB 试验（第二条锚点，已回滚）
+
+锚点："Validation asymmetry within the system: the same constraint enforced by one endpoint or
+client but not another indicates an accidental validation gap"（杠杆 1 的推广，满足锚点三条件）。
+
+| case | 类别 | fixA | fixB | 结果 |
+|------|------|------|------|------|
+| 005 (47763) | C 类端点间不对称 | FP | **CONFIRMED** | 翻正 ✓ |
+| 017 (50018) | C 类 | FP | FP | 未翻 |
+| 024 (50323) | C 类 SDK 不对称 | FP | FP | 未翻 |
+| 021 (50319) | 对照组（loading 期可搜，GT=BY_DESIGN） | FP ✓ | **CONFIRMED** | 劣化 ✗ |
+| 028 (50352) | 对照组（默认值回退，GT=BY_DESIGN） | FP ✓ | **CONFIRMED** | 劣化 ✗ |
+
+**1 翻正 : 2 劣化**——"不对称"语义宽于"通道一致性"，把默认值回退、loading 语义卷入 CONFIRMED
+方向，净效果为负。按预设判据回滚（MATERIAL_FIXES 171），fixB 判词留档 `clean_run_fixes/fixB/`。
+
+**最终保留配置 = fixA**（单条通道一致性锚点）：recall 0.622 / fp_supp 0.692 / prec 0.778 /
+acc 0.648。"锚点数 vs 指标"两个数据点（0.533 → 0.622 → 若计 fixB 单独效果则回撤）证实：
+可辩护锚点接近穷尽，剩余分歧锁定在"同现象 GT 态度分裂"灰区（任务固有上限）。
