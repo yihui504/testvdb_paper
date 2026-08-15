@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points/query with filter {must_not: {key: tag, match: {value: x}}}",
+          "observed": "Returns [{id: 2, version: 1, score: 1.0}] - correctly excludes point with tag=x",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_mustnot/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect claim assumes the filter should fail or return incorrect results",
+            "The assertion may have expected strict array-only validation for must_not field"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Filter.must_not defined as Option<Vec<Condition>> in types.rs:3865",
+            "REST API schema defines filter as Option<Filter> in schema.rs:582"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["check_must_not", "must_not.*filter", "Filter.*struct"],
+          "files_examined": [
+            "lib/segment/src/payload_storage/query_checker.rs",
+            "lib/segment/src/index/query_optimization/optimized_filter.rs",
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/payload_storage/query_checker.rs lines 94-103\nfn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool\nwhere\n    F: Fn(&Condition) -> bool,\n{\n    let check = |x| !check_condition(checker, x);\n    match must {\n        None => true,\n        Some(conditions) => conditions.iter().all(check),\n    }\n}\n\n// lib/segment/src/types.rs lines 3857-3865\n/// All conditions must NOT match\n#[validate(nested)]\n#[serde(\n    default,\n    with = \"MaybeOneOrMany\",\n    skip_serializing_if = \"Option::is_none\"\n)]\n#[schemars(with = \"MaybeOneOrMany<Condition>\")]\npub must_not: Option<Vec<Condition>>",
+          "call_chain_traced": "Filter.must_not (types.rs) -> check_must_not (query_checker.rs) -> check_condition with negation (!check_condition)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code shows correct must_not implementation using !check_condition to negate each condition. The serde attribute 'with = MaybeOneOrMany' explains the API's lenient behavior - it accepts both single objects and arrays, deserializing both to Vec<Condition>."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points with ids [1, 2] and with_payload=true",
+          "observed": "Returns [{id: 1, payload: {tag: x}}, {id: 2, payload: {tag: y}}] - confirms ground truth data",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_mustnot/points -H 'Content-Type: application/json' -d '{\"ids\": [1, 2], \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "API leniency in accepting both object and array formats for must_not field is by-design via MaybeOneOrMany deserializer",
+            "Filter logic correctly implements must_not semantics (negate all conditions)",
+            "Test data shows correct filtering behavior (excludes tag=x, includes tag=y)"
+          ],
+          "surviving": "oracle_assertion_incorrect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any by_design_pattern. The API's lenient deserialization is documented via MaybeOneOrMany attribute but not listed as a formal rejection pattern."
+      },
+      "root_cause_if_fp": "oracle_assertion_incorrect",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The original defect claim appears to be based on a misunderstanding of Qdrant's API design. The filter format {must_not: {key: tag, match: {value: x}}} (single object) is accepted due to the MaybeOneOrMany deserializer attribute in types.rs, which converts both single objects and arrays into Vec<Condition>. The actual filter logic correctly implements must_not semantics (negating all conditions via !check_condition), and empirical testing shows the query returns correct results (id=2 with tag=y, correctly excluding id=1 with tag=x). This is API leniency by design, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"oracle_assertion_incorrect": 1}
+  }
+}

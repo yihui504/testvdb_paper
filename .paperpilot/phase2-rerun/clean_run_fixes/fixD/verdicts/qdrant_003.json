@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with score_threshold=2.0 (beyond valid cosine similarity range)",
+          "observed": "HTTP 200 OK with empty result array [] (not 4XX error). API accepts score_threshold=2.0 despite it being beyond the valid cosine similarity range of [-1, 1].",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_score_threshold_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Conclusion depends on the API accepting invalid score_threshold values (outside semantic range)",
+            "Raw request correctly includes score_threshold parameter in search request",
+            "Collection exists and contains test data",
+            "API response shows HTTP 200 (not 4XX) indicating acceptance of invalid value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Parameter name: score_threshold (type: number, required: false) found in collections+{collection_name}+points+search endpoint",
+            "Description: 'Minimum score threshold' with semantic expectation of filtering by score",
+            "No explicit range constraint found in contract (e.g., no assertion like -1 <= score_threshold <= 1)",
+            "Contract defines score_threshold as generic number type without range validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["score_threshold", "ScoreType", "validate.*score"],
+          "files_examined": [
+            "lib/common/common/src/types.rs",
+            "lib/api/src/rest/schema.rs",
+            "src/common/inference/query_requests_rest.rs",
+            "lib/collection/src/operations/conversions.rs"
+          ],
+          "source_excerpt": "// lib/common/common/src/types.rs line 8\ntype ScoreType = f32;\n\n// lib/api/src/rest/schema.rs line 573\npub score_threshold: Option<ScoreType>,\n\n// lib/api/src/rest/schema.rs lines 572-574\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n// No validation attributes found on score_threshold field (contrast with limit field at line 576 which has #[validate(range(min = 1))])\n\n// The score_threshold field has no range validation, only type constraint (Option<f32>)\n// Source shows: score_threshold is defined as Option<ScoreType> where ScoreType = f32\n// f32 can represent any finite floating point value, not semantically constrained to [-1, 1]",
+          "call_chain_traced": "REST API schema.rs: score_threshold: Option<ScoreType> → no validation decorator → query_requests_rest.rs: direct pass-through → collection operations: filter by score",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: score_threshold 字段没有范围验证。与 limit 参数对比（limit 有 #[validate(range(min = 1))] 装饰器），score_threshold 只有类型约束 Option<f32>，没有语义范围检查。f32 类型本身可以表示任何有限浮点值，不受 [-1, 1] 的余弦相似度语义范围约束。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: Test score_threshold=2.0 returns empty results, test score_threshold=-0.5 returns expected point with score=1.0, test no threshold returns same point",
+          "observed": "score_threshold=2.0: returns [] (no points), score_threshold=-0.5: returns [{\"id\":1,\"score\":1.0}], no threshold: returns [{\"id\":1,\"score\":1.0}]. The API applies the threshold but doesn't validate its semantic validity. This confirms the parameter is processed but not validated for meaningful range.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_score_threshold_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": -0.5}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issues (Docker container is healthy and responding normally)",
+            "Request parameter typos (parameter name and syntax are correct)",
+            "API misunderstanding (parameter is being applied, just not validated)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何 by_design 或 rejection 模式。参数验证缺失属于真实现缺陷。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "虽然源码确认 score_threshold 缺少范围验证（没有像 limit 那样的 #[validate(range(min = 1))] 装饰器），但 contract 中明确定义 score_threshold 为类型 'number' 而非约束范围的数值。契约语义上 'minimum score threshold' 只是过滤参数，不隐含 [-1, 1] 的余弦相似度范围约束。API 正确按值过滤（2.0 过滤掉所有点，-0.5 允许 score=1.0 通过），行为符合契约描述。报告者期望的'语义范围验证'（如 -1 ≤ score_threshold ≤ 1）是期望的额外功能，而非契约要求的现有行为。根因：contract_misread（报告者将余弦相似度的物理约束误认为是 API 的契约义务）。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"contract_misread": 1}
+  }
+}

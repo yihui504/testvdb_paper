@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_010",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Created collection with vectors:{} (empty vector config), then attempted PUT /collections/test_review_qdrant/points with vector array payload. Observed HTTP 400 with error 'Wrong input: Not existing vector name error: '.",
+          "observed": "Reproduced the error exactly as in raw log - collection created with shard_number=1 (empty vectors config), point insertion with vector data returns 400 error 'Not existing vector name error: '. Verified that collection config shows 'vectors': {} (empty object).",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_review_qdrant' -d '{\"shard_number\": 1}' -> 200 OK; curl -X PUT 'http://localhost:6333/collections/test_review_qdrant/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' -> 400 'Not existing vector name error: '"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: 'API should reject vector insertion into collection without vector config at collection creation time, not at point insertion time'",
+            "Assumption: 'Collection creation with empty vectors config should be treated as configuration error'",
+            "Assumption: 'Vector validation should happen when collection is created, not when points are inserted'"
+          ],
+          "root_assumption_violation": "The defect assumes that Qdrant should validate vector configuration at collection creation time, rejecting collections with empty vectors config. However, the actual behavior is that payload-only collections are intentionally supported - vectors:{} is a valid configuration representing a collection designed for payload-only operations. The error at point insertion time is the EXPECTED behavior per the maintainer's design: 'not an unusable collection, it allows payload-only collection; named-vector CRUD added on top'."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract constraint found requiring vectors config to be non-empty at collection creation time",
+            "Constraint qdrant_type_create_collection_001 confirms collection_name is string type, but no constraint on vectors content",
+            "API templates show 'vectors' parameter is optional (required: false) with description 'Vector params config (single or multi-vector mode)'"
+          ],
+          "gap_analysis": "The contract does not state that vectors must be non-empty. The vectors parameter is optional, and when provided as empty object {}, it represents a valid payload-only collection configuration. There is no contract assertion violated by accepting vectors:{} at collection creation time."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "Not existing vector name",
+            "VectorNameNotExists",
+            "get_vector_config_or_error",
+            "check_vector_name"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/segment/tests/integration/segment_tests.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 27-28\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\n// lib/segment/src/common/mod.rs line 142-157\n/// Check that the given vector name is part of the segment config.\npub fn check_vector_name(\n    vector_name: &VectorName,\n    segment_config: &SegmentConfig,\n) -> OperationResult<()> {\n    // TODO(sparse) it's a wrong error check. We use the fact,\n    // that get_vector_config_or_error can return only one type of error - VectorNameNotExists\n    if get_vector_config_or_error(vector_name, segment_config).is_err() {\n        get_sparse_vector_config_or_error(vector_name, segment_config)?;\n    }\n    Ok(())\n}\n\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))\n}",
+          "call_chain_traced": "Point insertion with vector → Collection operations handler → check_vector_name() → get_vector_config_or_error() → VectorNameNotExists error when vector_data HashMap is empty (vectors:{}). The source shows this is INTENTIONAL validation at point insertion time, not a bug - it's the designed behavior for payload-only collections.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code validation logic confirms that vector name checking happens at point insertion time, not collection creation time. The check_vector_name() function is designed to return VectorNameNotExists when segment_config.vector_data is empty (vectors:{}). This is the INTENDED behavior for payload-only collections per maintainer stance in developer_cognition.json: 'creating a collection without vector configuration is a supported use case, errors surface on first vector use (maintainers: \"not an unusable collection, it allows payload-only collection\")'."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4: Created test_proper_config collection with vectors:{size: 4, distance: Cosine} (non-empty vector config). Successfully inserted point with vector data, receiving HTTP 200 with operation_id: 1. This confirms that vector insertion works correctly when collection is properly configured with vector params.",
+          "observed": "The 'Not existing vector name error' only occurs when vectors config is empty ({}). When vectors config contains valid vector parameters (size, distance), point insertion succeeds. This demonstrates that the error is a CORRECT validation response to improper collection-vector configuration mismatch, not a bug.",
+          "falsification_result": "The bug claim is falsified: the error message correctly identifies that the collection has no vector configuration to accept the inserted vector data. This is proper defensive validation, not a defect."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (tested on standard Qdrant Docker container)",
+            "Race conditions (single-threaded sequential operations)",
+            "Request parameter typos (used exact format from API templates)",
+            "Cache/optimizer delays (used wait=true parameter)"
+          ],
+          "surviving_explanation": "mundane_api_semantics",
+          "by_design_pattern_match": "This matches developer_cognition.json pattern: 'Payload-only collections: creating a collection without vector configuration is a supported use case, errors surface on first vector use (maintainers: \"not an unusable collection, it allows payload-only collection\")'. The defect incorrectly treats intentional by-design behavior as a bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Payload-only collections: creating a collection without vector configuration is a supported use case",
+        "developer_quote": "not an unusable collection, it allows payload-only collection; named-vector CRUD added on top",
+        "pattern_id": "BDP-001",
+        "note": "Defect directly hits by_design_pattern BDP-001 in developer_cognition.json. Maintainers explicitly accept that collections with empty vectors config are valid and should surface errors only on first vector use, not at collection creation time."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint requiring vectors config to be non-empty at collection creation time. The vectors parameter is optional (required: false) and can be empty object {} for payload-only collections.",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "rationale": "Contract does not assert that vectors must be non-empty. The API accepts vectors:{} as valid collection config. No contract violation."
+        },
+        "physical": {
+          "objective_constraint": "No physical or mathematical constraint requiring collections to have vector configuration. Payload-only collections are logically valid - they store structured data without vector search capability.",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "rationale": "There's no physical law violation. A collection can exist with only payload fields and no vectors. The API correctly accepts this configuration."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "rationale": "Source code shows INTENTIONAL validation at point insertion time. Developer cognition explicitly states payload-only collections are supported. The error message 'Not existing vector name error: ' is graceful handling - it prevents data corruption by rejecting vector insertion into a collection not configured for vectors, while allowing the collection to exist for payload-only operations."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED (by_design_in_source) → final_verdict=FALSE_POSITIVE (per aggregation rule: when A and B are NEUTRAL and C is REFUTED with by_design source evidence, final is REFUTED/FALSE_POSITIVE)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "This defect claims that Qdrant should reject collection creation when vectors config is empty ({}), but the actual behavior is BY-DESIGN. Payload-only collections are explicitly supported: collections can be created with empty vectors config for payload-only use cases, and validation correctly occurs at point insertion time (not collection creation). Source code confirms get_vector_config_or_error() is designed to return VectorNameNotExists when vector_data HashMap is empty, which is intentional defensive validation. Developer cognition explicitly states: 'creating a collection without vector configuration is a supported use case, errors surface on first vector use (maintainers: \"not an unusable collection, it allows payload-only collection\")'. The 'Not existing vector name error: ' is CORRECT behavior - it prevents inserting vector data into a collection not configured for vectors, while allowing the collection to exist for payload-only operations. This is mundane_api_semantics, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_dev_review_007/points/batch with operations: [{upsert: point 10 valid}, {upsert: point 11 invalid 3-dim vector}]",
+          "observed": "Batch returned HTTP 400 error 'Vector dimension error: expected dim: 4, got 3', but point 10 was successfully added to collection (count went from 3 to 4, scroll confirmed point 10 exists)",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_dev_review_007/points/batch -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 10, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}}, {\"upsert\": {\"points\": [{\"id\": 11, \"vector\": [0.5, 0.6, 0.7]}]}}]}' && curl -X POST http://localhost:6333/collections/test_dev_review_007/points/scroll -d '{\"limit\": 20}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_state_batch_update_007", "assertion: 'Batch update operations are executed atomically.'", "confidence: 1.0", "evidence_tier: explicit"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["update_batch", "for op in operations", "results.push", "atomic"],
+          "files_examined": ["src/tonic/api/update_common.rs", "src/common/update.rs", "src/actix/api/update_api.rs"],
+          "source_excerpt": "// src/tonic/api/update_common.rs lines 451-682\n    for op in operations {\n        let operation = op\n            .operation\n            .ok_or_else(|| Status::invalid_argument(\"Operation is missing\"))?;\n        let collection_name = collection_name.clone();\n        let mut result = match operation {\n            points_update_operation::Operation::Upsert(PointStructList { points, shard_key_selector, update_filter, update_mode }) => {\n                upsert(...).await\n            }\n            // ... other operation types ...\n        }?;\n        total_inference_usage.merge_opt(result.get_mut().inference_usage.take());\n        results.push(result);\n    }\n    Ok(Response::new(UpdateBatchResponse { result: results... }))\n\n// The critical issue: operations are executed sequentially in a for loop\n// Each operation is applied immediately to the database\n// If a later operation fails, earlier operations are NOT rolled back\n// The `} ?;` at line 682 only stops further execution on error\n// It does NOT provide transactional atomicity",
+          "call_chain_traced": "POST /points/batch → update_batch() → for op in operations loop → individual upsert/delete calls (each writes to WAL) → error on later op → return error WITHOUT rollback of earlier successful ops",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "no_atomicity_implementation",
+          "note": "源码接地发现：batch 操作实现为顺序 for 循环，每个操作立即写入数据库。错误时仅停止后续操作，不回滚已成功执行的操作。契约明确声张 'executed atomically'，但源码显示这是 fail-fast 而非 transactional atomicity。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "After batch failure, scroll verified point 10 exists. Count increased from 3 to 4 despite HTTP 400 error response.",
+          "observed": "Partial application confirmed: first operation (point 10) succeeded and persisted, second operation (point 11) failed on validation, overall batch returned error but no rollback of point 10 occurred."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue (Docker platform)", "request parameter typo (vectors were deliberately malformed)", "concurrency race (sequential test)", "eventual consistency (wait=true used)"],
+          "surviving": "contract_semantics_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Batch operations are not promised to be atomic",
+        "developer_quote": "maintainers: 'batch operations are not promissed to be atomic'; users must assume partial application and retry (idempotent write design)",
+        "note": "候选命中 developer_cognition.json 的 blindspot_indicator: 'Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)'。维护者明确态度：batch 不保证原子性，但契约（qdrant_state_batch_update_007）声张相反语义。这是 contract 文档与实际实现的严重不一致。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "确认真缺陷。Step 1 复现成功：batch 返回 HTTP 400 错误但第一个操作（point 10）成功持久化（count 3→4，scroll 验证存在）。Step 3 契约对照：constraint_id qdrant_state_batch_update_007 明确声张 'Batch update operations are executed atomically'（confidence 1.0, explicit）。Step 3.5 源码接地：C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2/src/tonic/api/update_common.rs 显示 batch 实现为 for op in operations 顺序循环，每个操作立即执行（写入 WAL），错误时仅 `}?` 停止后续操作，无事务回滚机制。Step 4 证伪：scroll 独立通道确认 point 10 真实存在，排除'响应字段遗漏'平凡解释。Step 5 认知匹配：命中 developer_cognition blindspot_indicator，维护者已知此问题但契约未同步。聚合：视角 A（契约）= CONFIRMED（API 违反 explicit assertion），视角 B（物理）= NEUTRAL（无客观物理约束违反），视角 C（行为）= CONFIRMED（行为不优雅，部分应用+错误响应），final_verdict = CONFIRMED（契约违反压倒一切）。这是文档声张原子性但实现为 fail-fast 的经典 contract-implementation gap。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "constraint_id": "qdrant_state_batch_update_007",
+      "assertion_text_quoted": "Batch update operations are executed atomically.",
+      "api_observed_value": "Batch accepted first op (upsert point 10), applied it to database, then failed on second op (upsert point 11 with invalid vector), returned HTTP 400 error but point 10 remained in database",
+      "api_violates_assertion": true,
+      "verdict_A": "CONFIRMED",
+      "agent_suspects_contract_wrong": false,
+      "source_evidence_if_suspect": null
+    },
+    "physical": {
+      "objective_constraint": "N/A - no physical constraint violation",
+      "api_accepts_violation": false,
+      "verdict_B": "NEUTRAL"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED (C cannot override contract violation)",
+    "final_verdict": "CONFIRMED"
+  }
+}

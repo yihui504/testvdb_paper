@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_011",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_filter_null_dev_review/points/query with {\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}",
+          "observed": "API returned HTTP 200 with points [{\"id\":2,\"version\":1,\"score\":1.0},{\"id\":1,\"version\":1,\"score\":1.0}]",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_filter_null_dev_review/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"should\": null}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim assumes 'API should reject null in filter condition fields' - but developer cognition model explicitly states: 'Lenient filter parsing: null / single-object / array forms are all accepted by design for filter condition fields (maintainers: This is fine and expected... it would be a breaking change; source supports all three forms)'",
+            "Defect claim assumes 'should field requires an array of conditions' - but contract specifies type: array, required: false, with no explicit null prohibition",
+            "Defect claim assumes 'null represents invalid/meaningless filter' - but source code shows MaybeOneOrMany deserializer explicitly designed to accept null as 'no filter' semantic"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: none - No explicit contract assertion requires rejecting null in filter.should field. Contract only specifies: {\"name\": \"should\", \"type\": \"array\", \"required\": false}"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "pub struct Filter",
+            "MaybeOneOrMany",
+            "should: Option",
+            "UntaggedEnumVisitor"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/segment/src/common/utils.rs",
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs line 3834-3866\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,\n    ...\n}\n\n// lib/segment/src/common/utils.rs line 86-111\n/// Use via `#[serde(with = \"MaybeOneOrMany\")]` and `#[schemars(with=\"MaybeOneOrMany<T>\")]` field attributes\npub struct MaybeOneOrMany<T>(pub Option<Vec<T>>);\n\nimpl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {\n    pub fn deserialize<D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>\n    where\n        D: serde::Deserializer<'de>,\n    {\n        use serde_untagged::UntaggedEnumVisitor;\n\n        UntaggedEnumVisitor::new()\n            .unit(|| Ok(None))           // <-- ACCEPTS null/unit\n            .seq(|x| x.deserialize().map(Some))  // <-- ACCEPTS array\n            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))  // <-- ACCEPTS single object\n            .deserialize(deserializer)\n    }\n}",
+          "call_chain_traced": "Filter.should (Option<Vec<Condition>>) + MaybeOneOrMany deserializer → UntaggedEnumVisitor.unit().seq().map() → explicitly designed to accept null/array/single-object forms for backward compatibility and lenient parsing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms intentional lenient parsing: MaybeOneOrMany deserializer at lib/segment/src/common/utils.rs:86-111 explicitly implements UntaggedEnumVisitor that accepts three forms (unit/null, seq/array, map/single-object). Test at line 161-167 validates null is accepted. This is not a validation gap but intentional design for API backward compatibility and user convenience."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compared behavior: (1) query without filter, (2) query with empty filter {}, (3) query with {should: null}",
+          "observed": "All three forms return identical results: HTTP 200 with both points. This confirms {should: null} is semantically equivalent to 'no filter', not a malformed request. The API gracefully interprets null as 'no filtering applied'."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [],
+          "surviving": "mundane_api_semantics - The defect claim misinterprets intentional lenient parsing as a validation gap. Developer cognition model explicitly states: 'Lenient filter parsing: null / single-object / array forms are all accepted by design for filter condition fields (maintainers: This is fine and expected... it would be a breaking change)'. Source code confirms MaybeOneOrMany deserializer designed to accept multiple forms. This is by-design behavior, not a bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns - Lenient filter parsing",
+        "developer_quote": "Lenient filter parsing: null / single-object / array forms are all accepted by design for filter condition fields (maintainers: 'This is fine and expected... it would be a breaking change'; source supports all three forms)",
+        "note": "Defect directly contradicts explicit developer stance on lenient filter parsing. Maintainers have documented this as accepted design for backward compatibility."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "This defect claim misinterprets intentional lenient parsing as a validation gap. Source code confirms Filter.should uses MaybeOneOrMany deserializer (lib/segment/src/common/utils.rs:86-111) which explicitly implements UntaggedEnumVisitor.unit().seq().map() to accept three forms: null/unit, array, and single-object. Test at line 161-167 validates null acceptance. Developer cognition model explicitly documents this as 'Lenient filter parsing... accepted by design... would be a breaking change' to change. Falsification testing shows {should: null} behaves identically to no filter (returns all points). This is graceful handling of null as 'no filter' semantic, not a bug. The defect claim's assumption that 'API should reject null in filter fields' is directly contradicted by source code design and developer documentation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug/points/search {\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}",
+          "observed": "HTTP 200 OK with result [{\"id\":1,\"version\":1,\"score\":1.0}]. API accepted hnsw_ef=0 without returning 4xx error.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_hnsw_bug/points/search\" -H \"Content-Type: application/json\" -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Raw request explicitly contains params.hnsw_ef=0 field",
+            "API response is HTTP 200 (not 4xx), indicating acceptance of the parameter value",
+            "Search operation completes successfully despite hnsw_ef=0 being mathematically invalid for HNSW algorithm"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_search_points_006 - 'hnsw_ef parameter is applicable only when exact=false'",
+            "Source code shows SearchParams.hnsw_ef is Option<usize> with no explicit lower-bound validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["hnsw_ef", "SearchParams", "check_limit_opt", "search_max_hnsw_ef"],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/collection/src/operations/verification/mod.rs",
+            "lib/api/src/grpc/conversions.rs",
+            "lib/segment/src/index/hnsw_index/hnsw.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs line 584-594:\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\n// lib/collection/src/operations/verification/mod.rs line 297-313:\npub(crate) fn check_limit_opt<T: PartialOrd + Display>(\n    value: Option<T>,\n    limit: Option<T>,\n    name: &str,\n) -> CollectionResult<()> {\n    let (Some(limit), Some(value)) = (limit, value) else {\n        return Ok(());\n    };\n\n    if value > limit {\n        return Err(CollectionError::strict_mode(...));\n    }\n    Ok(())\n}\n\n// lib/segment/src/index/hnsw_index/hnsw.rs line 1049-1051:\nlet ef = params\n    .and_then(|params| params.hnsw_ef)\n    .unwrap_or(self.config.ef);",
+          "call_chain_traced": "SearchParams.hnsw_ef (Option<usize>) → check_limit_opt (upper bound only) → HNSW search uses ef directly without validation that ef >= 1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:hnsw_ef 参数定义为 Option<usize>，但严格模式验证函数 check_limit_opt 仅检查上界(> limit)，不检查下界(>= 1)。HNSW 算法要求 ef >= 1，但源码直接使用 unwrap_or(self.config.ef) 传递给搜索，无下界校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple test values: hnsw_ef=-1 (rejected at JSON parsing), hnsw_ef=0 (HTTP 200 accepted), hnsw_ef=1 (HTTP 200 accepted)",
+          "observed": "API accepts hnsw_ef=0 and processes search successfully. This violates HNSW algorithm constraint that ef (beam size) must be >= 1 for valid search results. The search should either reject hnsw_ef=0 with 4xx or handle it as an invalid parameter."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproducible on clean Qdrant 1.18.0 container",
+            "Race condition - single sequential request",
+            "Cache/optimizer delay - immediate request",
+            "Request parameter typo - params.hnsw_ef explicitly set to 0"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Matches blindspot indicator: developers explicitly acknowledge parameter validation gaps on filter/condition APIs. hnsw_ef is a search parameter with similar validation gap (missing lower bound check)."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实:hnsw_ef 参数定义为 Option<usize>，严格模式仅检查上界(search_max_hnsw_ef)，完全缺失下界验证(ef >= 1)。HNSW 算法数学上要求 beam size >= 1，ef=0 会导致搜索行为未定义或退化。API 接受 ef=0 返回 HTTP 200，违反参数契约，属于 Type1_IllegalSuccess(参数校验缺失)缺陷。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "hnsw_ef parameter applicable when exact=false (constraint_id: qdrant_range_search_points_006). Implicit: HNSW algorithm requires ef >= 1 for valid beam search.",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "HNSW algorithm parameter ef (beam size) must satisfy ef >= 1 for valid search behavior. ef=0 is mathematically invalid.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (C cannot override A/B violations)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_missing_lower_bound": 1
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/query with {\"query\": null, \"limit\": 5}",
+          "observed": "API returned HTTP 200 with result containing 3 points (ids: 1, 5, 10) all with score=1.0",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_qnull/points/query' -H 'Content-Type: application/json' -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate conclusion assumes that 'query=null' should be rejected as invalid (Type1_IllegalSuccess expectation)",
+            "Oracle likely expected HTTP 4xx error for null query parameter",
+            "No evidence in raw output that this was intended to be an error condition"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_create_collection_001 - collection_name is string (type constraint)",
+            "constraint_id: qdrant_range_query_points_008 - limit default=10 (range constraint)",
+            "endpoint: collections+{collection_name}+points+query - query parameter is optional (type: object, required: false)"
+          ],
+          "note": "Contract explicitly marks 'query' as 'required: false' with type 'object'. The contract does NOT state that query must be non-null."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "query.is_none",
+            "ScrollOrder",
+            "leaf_source_from_scoring_query",
+            "QueryScrollRequestInternal"
+          ],
+          "files_examined": [
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/collection/src/operations/universal_query/shard_query.rs",
+            "lib/shard/src/query/planned_query.rs",
+            "lib/shard/src/query/scroll.rs",
+            "lib/shard/src/query/mod.rs",
+            "src/common/inference/query_requests_rest.rs"
+          ],
+          "source_excerpt": "// lib/shard/src/query/planned_query.rs lines 459-472\n        None => {\n            let scroll = QueryScrollRequestInternal {\n                scroll_order: Default::default(),\n                filter,\n                with_vector: WithVector::from(false),\n                with_payload: WithPayloadInterface::from(false),\n                limit,\n            };\n\n            let idx = scrolls.len();\n            scrolls.push(scroll);\n\n            Source::ScrollsIdx(idx)\n        }\n    };\n\n    Ok(source)\n}\n\n// lib/shard/src/query/scroll.rs lines 35-41\n#[derive(Clone, Debug, Default, PartialEq)]\npub enum ScrollOrder {\n    #[default]\n    ById,\n    ByField(OrderBy),\n    Random,\n}\n\n// lib/collection/src/operations/universal_query/shard_query.rs lines 39-43\n        None => {\n            // Order by ID\n            Some(Order::SmallBetter)\n        }",
+          "call_chain_traced": "REST request (query=null) → CollectionQueryRequest (query: Option<Query>=None) → ShardQueryRequest (query: Option<ScoringQuery>=None) → leaf_source_from_scoring_query (match None) → QueryScrollRequestInternal (scroll_order: Default=ById) → scroll by ID order → returns all points ordered by ID",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code reveals that query=null is an INTENTIONAL design pattern. When query is None, the system explicitly creates a scroll request with ScrollOrder::ById default, returning all points in ID order. This is documented behavior, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/query with {\"query\": null, \"limit\": 5} vs POST /collections/test_qnull/points/scroll",
+          "observed": "Both endpoints return the same 3 points (ids: 1, 5, 10) confirming that query with null behaves identically to scroll API (which is the designed fallback behavior)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_qnull/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 5}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/platform issues)",
+            "Concurrency race conditions",
+            "Request parameter typos",
+            "Eventual consistency issues"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "The behavior is consistent with by-design API semantics: query parameter is optional, and when omitted/null, the API defaults to scroll behavior (return all points in ID order)"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This candidate does not match any explicit by_design_patterns from developer_cognition.json, but source code analysis confirms it is intentional behavior (query=null → scroll by ID)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate claims that 'query=null' should be rejected as invalid (Type1_IllegalSuccess), but source code analysis reveals this is intentional by-design behavior. When query is None/null, Qdrant explicitly falls back to scroll semantics (returning all points ordered by ID). The contract explicitly marks 'query' as 'required: false', and the source code at lib/shard/src/query/planned_query.rs:459-472 shows the explicit handling: 'None => { let scroll = QueryScrollRequestInternal { scroll_order: Default::default(), ... } }'. The ScrollOrder default is ById (lib/shard/src/query/scroll.rs:38), confirming this returns all points in ID order. Step 4 falsification confirms query=null behaves identically to the scroll API. This is mundane API semantics, not a defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "query parameter is optional (required: false) - contract does NOT require query to be non-null",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not assert that query must be non-null. It marks query as optional with no validation requirement."
+        },
+        "physical": {
+          "objective_constraint": "None - query is an optional parameter with no physical constraints",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical constraints violated. query=null is accepted by design."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code explicitly handles query=None by falling back to scroll behavior (QueryScrollRequestInternal with ScrollOrder::ById default). This is intentional, documented fallback logic, not a bug."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final_verdict=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

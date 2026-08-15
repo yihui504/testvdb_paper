@@ -1,0 +1,121 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points with vector=[0.1,0.2,0.3] (3-dim) on collection expecting 4-dim vectors",
+          "observed": "REQ3 (wait=false): HTTP 200 with operation_id=1, status=acknowledged - ASYNC ACCEPTANCE",
+          "evidence_cmd": "curl -s -X PUT http://localhost:6333/collections/test/points -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 2, \"vector\": [0.1, 0.2, 0.3]}]}' → HTTP 200 acknowledged",
+          "followup": "REQ5 (wait=true): HTTP 400 'Wrong input: Vector dimension error: expected dim: 4, got 3' - VALIDATION OCCURS",
+          "evidence_cmd_sync": "curl -s -X PUT 'http://localhost:6333/collections/test/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}' → HTTP 400 error"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API contract (qdrant_behavioral_005) states: '200 on success; 4XX on validation error'",
+            "Expected: All validation errors should return 4XX immediately",
+            "Actual: Vector dimension validation returns 200 (async) when wait=false, but 400 when wait=true",
+            "Root assumption violated: Validation error → 4XX response. Async path violates this."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "qdrant_behavioral_005: 'Returns 200 on success; returns 4XX on validation error'",
+            "qdrant_type_upsert_points_003: 'vector type is array of floats'",
+            "API behavior is inconsistent with contract - async upsert bypasses validation error response"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "Vector dimension error",
+            "WrongVectorDimension",
+            "do_upsert_points",
+            "wait.*Option.*bool",
+            "async.*upsert"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/update.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs lines 22-26\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\n// lib/segment/src/data_types/vectors.rs lines 309-313\nif let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {\n    return Err(OperationError::WrongVectorDimension {\n        expected_dim: dim,\n        received_dim: bad_vec.len(),\n    });\n}\n\n// src/actix/api/update_api.rs lines 34-42 (HTTP handler)\nasync fn upsert_points(\n    dispatcher: web::Data<Dispatcher>,\n    collection: Path<CollectionPath>,\n    operation: Json<PointInsertOperations>,\n    params: Query<UpdateParams>,  // Contains wait: Option<bool>\n    ...\n) -> impl Responder {\n    let result_with_usage = do_upsert_points(...).await;\n    process_response_with_inference_usage(res, ...)\n}",
+          "call_chain_traced": "HTTP handler (upsert_points) → do_upsert_points → async operation queue → segment layer validation (vectors.rs:310) → WrongVectorDimension error. When wait=false, operation queued immediately returns HTTP 200 before validation. When wait=true, waits for validation result and returns HTTP 400.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_in_async_path",
+          "note": "Source confirms: Validation only occurs during segment processing, not at HTTP layer. Async path (wait=false) bypasses validation check before HTTP response."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/test/points/2 (retrieve the async-accepted point)",
+          "observed": "HTTP 404 'Point with id 2 does not exists!' - Point was never stored despite HTTP 200 acknowledgment",
+          "evidence_cmd": "curl -s http://localhost:6333/collections/test/points/2 → HTTP 404 Not Found",
+          "conclusion": "Async acceptance violated contract - client received 200 but operation failed (point not stored). Validation error was silenced."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment: Clean Docker container, no filesystem issues",
+            "Concurrency: Single-threaded sequential test, no race conditions",
+            "Request format: Valid JSON, correct endpoint usage",
+            "Parameter defaults: wait parameter behavior is by-design (async vs sync), but error reporting inconsistency is the bug"
+          ],
+          "surviving": "type_coercion_validation_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "pattern_id": "blindspot_indicators[0]",
+        "note": "Candidate matches developer-acknowledged blindspot: parameter validation gaps. Vector dimension validation is a parameter validation bug surface."
+      },
+      "root_cause_if_confirmed": "async_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_005: 'Returns 200 on success; returns 4XX on validation error'",
+          "source_implements_check": false,
+          "api_observed_value": "PUT /points with invalid vector (3-dim) returns HTTP 200 when wait=false, but HTTP 400 when wait=true",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension must match collection configuration (expected_dim: 4)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API acknowledges async operation (200 with operation_id), but validation error is lost. Not graceful - silent failure."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Vector dimension validation inconsistency confirmed: HTTP contract (qdrant_behavioral_005) requires 4XX on validation error, but async upsert (wait=false) returns 200 despite invalid vector dimension. Source confirms validation occurs in segment layer after HTTP response. Synchronous upsert (wait=true) correctly returns 400. This is a Type1_IllegalSuccess - API accepts invalid input (200) but operation fails silently (point not stored, confirmed by GET returning 404). Matches developer blindspot pattern for parameter validation gaps. Not by-design - error reporting inconsistency violates API contract."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "async_validation_bypass": 1
+    }
+  }
+}

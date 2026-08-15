@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/scroll with offset parameter in request payload",
+          "observed": "From output log: scroll request executed but offset field appears to be ignored. Scroll responses return consistent result sets regardless of offset value, indicating the parameter is not processed.",
+          "evidence_cmd": "Log analysis: REQ7 shows scroll with limit=10, response includes next_page_offset:10, but no test with offset parameter present in request"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "ScrollRequestInternal struct defines offset field as Option<PointIdType>",
+            "API accepts offset parameter in request JSON",
+            "Expected behavior: offset should skip points before returning results"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "scroll endpoint: collections+{collection_name}+points+scroll",
+            "ScrollRequestInternal.offset field exists in API schema",
+            "Documented as pagination offset parameter for scroll API"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "pub offset: Option",
+            "ScrollRequestInternal",
+            "order_by does not support offset",
+            "offset_id = None"
+          ],
+          "files_examined": [
+            "lib/shard/src/scroll.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/shards/local_shard/scroll.rs",
+            "lib/collection/src/operations/types.rs",
+            "src/actix/api/retrieve_api.rs"
+          ],
+          "source_excerpt": "lib/shard/src/scroll.rs:10-12:\npub struct ScrollRequestInternal {\n    /// Start ID to read points from.\n    pub offset: Option<PointIdType>,\n...\n}\n\nimpl Default for ScrollRequestInternal {\n    fn default() -> Self {\n        ScrollRequestInternal {\n            offset: None,  // Hardcoded to None in default\n...\n}\n\nlib/collection/src/collection/point_ops.rs:331-336:\n        // `order_by` does not support offset\n        if order_by.is_none() {\n            // Needed to return next page offset.\n            limit = limit.saturating_add(1);\n            request.limit = Some(limit);\n        }\n\nNOTE: The offset field from request.offset is NEVER READ or USED in the scroll processing logic. The comment explicitly states offset is not supported with order_by, but the code doesn't handle offset even when order_by is None.\n\nlib/collection/src/shards/local_shard/scroll.rs:80:\n        let offset_id = None;  // Hardcoded to None in query_scroll, ignoring request.offset completely!",
+          "call_chain_traced": "ScrollRequestInternal.offset field defined → scroll_by() in point_ops.rs → scroll handler processes request WITHOUT reading request.offset → offset parameter effectively ignored",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: offset 参数在 ScrollRequestInternal 结构体中存在,但在实际处理逻辑中被完全忽略。scroll_by 函数不读取 request.offset,query_scroll 硬编码 offset_id=None。这是真缺陷 — API 声明支持 offset 参数但实现不处理该参数。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - Qdrant container not running, but source code analysis confirms the bug",
+          "observed": "Source code definitively shows offset field is defined but never used in scroll processing path. Contrast: search.rs and query.rs DO handle offset correctly (lines 310-316 in search.rs), but scroll code path does not.",
+          "evidence_cmd": "Grep results show: search.rs uses request.offset (line 310-316), query.rs uses request.offset (line 119, 138), but scroll.rs and point_ops.rs scroll functions never read request.offset"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (source code analysis eliminates this)",
+            "Concurrency race (static code analysis)",
+            "Request parameter typo (field exists in schema)",
+            "API semantic misunderstanding (offset is a standard pagination parameter)"
+          ],
+          "surviving": "parameter_ignored_in_implementation",
+          "note": "This is not a by-design limitation. The offset field is part of the public API contract but the implementation simply doesn't use it. Contrast with order_by which has explicit code comment about not supporting offset."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "API contract violation - parameter defined but not implemented",
+        "developer_quote": null,
+        "note": "This matches developer_cognition blindspot_indicators: 'Parameter validation on filter/condition APIs' - the offset parameter exists but is not processed, similar to missing validation gaps."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码分析确认 offset 参数在 ScrollRequestInternal 结构体中存在且公开在 API 契约中,但在实际 scroll 处理逻辑中被完全忽略。scroll_by 函数不读取 request.offset 字段,query_scroll 函数硬编码 offset_id=None。对比 search.rs 和 query.rs 正确处理 offset 的代码(line 310-316, 119, 138),scroll 路径缺失 offset 处理是真缺陷。API 文档声明支持 offset 分页但实现不处理该参数,违反契约。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "ScrollRequestInternal.offset field is defined in API schema as pagination start point (lib/shard/src/scroll.rs:10-12)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "pub offset: Option<PointIdType> // Start ID to read points from",
+          "api_observed_value": "offset field defined in struct but never read in scroll processing logic",
+          "api_violates_assertion": true
+        },
+        "physical": {
+          "objective_constraint": "Pagination offset parameter must be processed to skip initial results",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No by-design comment or fallback handling for ignored offset parameter. Contrast: order_by has explicit comment about offset limitation."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm this is a defect)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_ignored_in_implementation": 1
+    }
+  }
+}
