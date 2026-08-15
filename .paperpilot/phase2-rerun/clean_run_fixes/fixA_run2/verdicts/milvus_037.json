@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_037",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with invalid types: (1) string '123' for INT64 field, (2) number 123 for VARCHAR field, (3) string 'true' for BOOL field",
+          "observed": "All three requests returned HTTP 200 with insertCount=1 and insertIds assigned. No type validation errors returned.",
+          "evidence_cmd": "Raw evidence from output_milvus_037.log lines 1-84 shows successful inserts for: {\"int64_f\": \"123\"}, {\"varchar_f\": 123}, {\"bool_f\": \"true\"}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["milvus_type_int64_001 - INT64 scalar data type", "milvus_type_varchar_001 - VARCHAR scalar data type", "milvus_type_bool_001 - BOOL scalar data type"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkAndSetData", "anyToColumns", "DataType_Int64", "DataType_VarChar", "DataType_Bool"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 639-644 (INT64 handling)\n\t\tcase schemapb.DataType_Int64:\n\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\tif err != nil {\n\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t}\n\t\t\treallyData[fieldName] = result\n\n// internal/distributed/proxy/httpserver/utils.go line 615-620 (BOOL handling)\n\t\tcase schemapb.DataType_Bool:\n\t\t\tresult, err := cast.ToBoolE(dataString)\n\t\t\tif err != nil {\n\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t}\n\t\t\treallyData[fieldName] = result\n\n// internal/distributed/proxy/httpserver/utils.go line 778-779 (VARCHAR handling)\n\t\t\tcase schemapb.DataType_VarChar:\n\t\t\t\treallyData[fieldName] = dataString",
+          "call_chain_traced": "REST v2 insert → handler_v2.go:1563 insert() → utils.go:466 checkAndSetData() → switch fieldType (lines 542-784) → type coercion via cast.*E() and json.Number",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: INT64/BOOL 使用 cast.ToInt64E()/cast.ToBoolE() 进行类型转换(接受字符串输入),VARCHAR 直接取 dataString 无类型检查。这三个 case 都会自动 coerce JSON 类型而非拒绝非法类型。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Cannot falsify - the violation is acceptance of wrong types, not rejection of correct ones. Raw logs show HTTP 200 responses for clearly malformed data.",
+          "observed": "The defect is Type1_IllegalSuccess: API accepts invalid data that should be rejected with type error. Falsification not applicable - the bug is that validation is missing, not that it's over-strict."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "type_coercion_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "命中 developer_cognition.json blindspot_indicators: 'REST v2 API data type serialization - 8 issues in corpus'。这是维护者已知的盲点区域。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 insert endpoint accepts type mismatches without validation: (1) string '123' stored in INT64 field via cast.ToInt64E(), (2) number 123 stored in VARCHAR field via dataString, (3) string 'true' stored in BOOL field via cast.ToBoolE(). Source code shows utils.go lines 615-644, 778-779 implement automatic type coercion instead of strict type checking. Contract requires INT64/VARCHAR/BOOL data types (milvus_type_int64_001, milvus_type_varchar_001, milvus_type_bool_001) but API performs silent coercion. This matches developer_cognition blindspot 'REST v2 API data type serialization'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

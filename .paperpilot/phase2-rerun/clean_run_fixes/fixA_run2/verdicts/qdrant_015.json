@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_015",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_max with shard_number=2147483647 (max i32)",
+          "observed": "Service becomes unresponsive (HTTP 000 connection failed). GET / health check fails after request. Qdrant container crashed.",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_shard_max -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}' # Service crash confirmed via subsequent health check returning HTTP 000"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Bug is straightforward: extreme shard_number value causes service crash. No hidden assumptions about response field presence."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001 - assertion: shard_number >= 1",
+            "constraint_id: qdrant_range_create_collection_002 - assertion: replication_factor >= 1"
+          ],
+          "note": "Contract specifies minimum bounds (>= 1) for both parameters but does not specify maximum bounds, allowing unlimited shard_number values that cause crash."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "shard_number",
+            "replication_factor",
+            "NonZeroU32",
+            "CollectionParams"
+          ],
+          "files_examined": [
+            "lib/collection/src/config.rs",
+            "lib/api/src/grpc/validate.rs",
+            "lib/collection/src/operations/validation.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/config.rs lines 87-114\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]\n#[serde(rename_all = \"snake_case\")]\npub struct CollectionParams {\n    /// Configuration of the vector storage\n    #[validate(nested)]\n    #[serde(default)]\n    pub vectors: VectorsConfig,\n    /// Number of shards the collection has\n    #[serde(default = \"default_shard_number\")]\n    #[anonymize(false)]\n    pub shard_number: NonZeroU32,  // Only enforces >= 1 via type, NO MAXIMUM VALIDATION\n    /// Number of replicas for each shard\n    #[serde(default = \"default_replication_factor\")]\n    #[anonymize(false)]\n    pub replication_factor: NonZeroU32,  // Only enforces >= 1 via type, NO MAXIMUM VALIDATION\n    ...\n}\n\n// lib/api/src/grpc/validate.rs lines 163-167 (for CreateShardKey)\nimpl Validate for grpc::CreateShardKey {\n    fn validate(&self) -> Result<(), ValidationErrors> {\n        if self.replication_factor == Some(0) {  // Explicit zero check exists\n            let mut errors = ValidationErrors::new();\n            errors.add(\n                \"replication_factor\",\n                ValidationError::new(\"Replication factor must be greater than 0\"),\n            );\n            return Err(errors);\n        }\n    }\n}",
+          "call_chain_traced": "CollectionParams.shard_number (NonZeroU32) → No upper bound validation in derive(Validate) → Direct use in collection creation → Shard allocation loops → Integer overflow/memory exhaustion causes crash",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionParams 使用 NonZeroU32 类型确保最低值 >= 1，但对 shard_number 缺少上界验证。允许传入 i32::MAX (2147483647) 导致服务尝试分配天文数字数量的 shard 时崩溃。replication_factor 有显式零值检查（CreateShardKey），CreateCollection 同样缺少上界验证，但实测显示 replication_factor=0 返回 422 验证错误（正确），故此缺陷仅针对 shard_number 上界缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "PUT /collections/test_rep0 with replication_factor=0",
+          "observed": "HTTP 422 with proper error: 'Validation error in JSON body: [replication_factor: value 0 invalid, must be 1 or larger]'. Service remains responsive. Confirms replication_factor validation works correctly.",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_rep0 -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"replication_factor\": 0}' # Returns 422, service stable"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment/Platform issue (crash is deterministic on any platform)",
+            "Concurrent race condition (single request causes crash)",
+            "Request parameter typo (syntax valid, value extreme)",
+            "API semantic misunderstanding (crash is unambiguous)",
+            "Docker limitation (native Qdrant code issue)"
+          ],
+          "surviving": "none",
+          "note": "Crash is directly reproducible with single extreme value. No mundane explanation applies."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns。此缺陷属参数验证缺失，非维护者已知的设计限制。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shard_number >= 1 (constraint_id: qdrant_range_create_collection_001) - 案契约仅规定下界，但允许任意上界导致崩溃",
+          "source_implements_check": false,
+          "api_observed_value": "shard_number=2147483647 导致服务崩溃（HTTP 000，健康检查失败）",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "契约仅规定 >= 1，未违反。但 crash 表明实际需要上界约束，契约不完整。"
+        },
+        "physical": {
+          "objective_constraint": "shard_number 存在合理上界（受内存/CPU限制），实际物理约束远低于 i32::MAX",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "接受极端值导致物理资源耗尽崩溃，违反物理约束。"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "服务崩溃而非优雅降级，无源码证据显示这是有意设计。"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical violation + ungraceful behavior)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Qdrant PUT /collections/{name} 接受 shard_number=2147483647 导致服务崩溃。源码显示 CollectionParams.shard_number 使用 NonZeroU32 类型确保 >= 1，但缺少上界验证。契约仅规定下界（>= 1），未限制上界，允许传入极端值触发资源耗尽崩溃。实测 replication_factor=0 正确返回 422 验证错误（非崩溃），故缺陷仅针对 shard_number 上界验证缺失。此非环境、并发或参数笔误等平凡解释，属真实参数验证缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_missing_upper_bound": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,44 @@
+{
+  "judge": "dev-reviewer",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "steps": {
+        "step1_clean_reproduction": {
+          "execution": "Reproduced search on both loaded and unloaded collections using pymilvus client against localhost:19530. Test sequence: create_collection -> insert -> release_collection -> search. Expected error on unloaded collection.",
+          "outcome": "FAILED (defect claim falsified). Search on unloaded collection raises MilvusException(code=101, message='collection not loaded') as expected. Search on loaded collection succeeds with results.",
+          "evidence": "pymilvus output shows: 'MilvusException: (code=101, message=failed to search: collection not loaded[collection=468394923039025820])' when searching on unloaded collection."
+        },
+        "step2_premise_audit": {
+          "premise": "Defect claims search on 'unloaded' collection returns HTTP 200 with results (Type1_IllegalSuccess).",
+          "audit_result": "REJECTED. Raw evidence shows search succeeded, but this is because collection was NOT actually unloaded. The test never called release_collection/load_collection. Collection name 'test_unloaded' is misleading but collection was in LOADED state.",
+          "contract_check": "Contract v2.6.17.json entities+search endpoint does not specify load state requirements, but runtime behavior enforces it correctly via ErrCollectionNotLoaded."
+        },
+        "step3_source_grounding": {
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/proxy/impl.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/querynodev2/services.go"
+          ],
+          "source_excerpt": "File: internal/querynodev2/services.go:760\nCode: err := merr.WrapErrCollectionNotLoaded(req.GetReq().GetCollectionID())\n\nFile: internal/proxy/impl.go:2059-2061\nCode: if errors.Is(err, merr.ErrCollectionNotLoaded) {\n    successResponse.State = commonpb.LoadState_LoadStateNotLoad\n    return successResponse, nil\n}\n\nFile: internal/proxy/shardclient/lb_policy.go:309\nCode: return merr.WrapErrCollectionNotLoaded(workload.CollectionID)\n\nImplementation shows proper error handling for collection load state validation across multiple layers (QueryNode, Proxy, ShardClient)."
+        },
+        "step4_falsification": {
+          "test_result": "Search on ACTUALLY unloaded collection FAILS with error code 101 'collection not loaded'. This proves the defect claim is false - system correctly enforces load requirements.",
+          "minimized_reproduction": "create_collection -> insert -> release_collection -> search yields proper error. No Type1_IllegalSuccess occurs."
+        },
+        "step5_trivial_exclusion": {
+          "analysis": "Defect report uses misleading collection name 'test_unloaded' but never actually unloaded the collection. Search success is correct behavior for LOADED collection. This is not a defect - it's a test naming confusion.",
+          "root_cause": "Test sequence in output_milvus_021.log lacks release_collection call before search. Collection remained in LOADED state, making search success EXPECTED behavior."
+        },
+        "step6_perspective_analysis": {
+          "contract_perspective": "PASS. Contract doesn't require load check in REST layer (enforced downstream), but system correctly validates at runtime.",
+          "source_perspective": "PASS. Source code shows comprehensive load state enforcement across QueryNode (services.go:760,836,920,985), Proxy (impl.go:2059), and load balancer (lb_policy.go:309). ErrCollectionNotLoaded properly propagated.",
+          "behavior_perspective": "PASS. Actual runtime behavior confirms unloaded collections ARE rejected with error code 101. No Type1_IllegalSuccess occurs.",
+          "aggregation_rule": "SOP requires all three perspectives CONFIRM defect for CONFIRMED verdict. Here all three perspectives AGREE this is FALSE_POSITIVE. Final verdict: FALSE_POSITIVE."
+        }
+      }
+    }
+  ]
+}

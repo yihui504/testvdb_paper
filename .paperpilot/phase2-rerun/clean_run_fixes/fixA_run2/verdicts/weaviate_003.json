@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_003",
+      "endpoint": "/schema POST",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with class=TestRep2, replicationConfig.factor=-1",
+          "observed": "HTTP 200 with response showing replicationConfig.factor=1 (silent correction from -1 to 1)",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestRep2\", \"vectorizer\": \"none\", \"replicationConfig\": {\"factor\": -1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["None - all assumptions about API behavior were valid"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_range_schema_replication_001", "assertion: replicationConfig.factor >= 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["replicationConfig", "factor < 1", "ValidateConfig"],
+          "files_examined": ["usecases/replica/config.go", "entities/models/replication_config.go", "usecases/schema/class.go"],
+          "source_excerpt": "// usecases/replica/config.go lines 44-46:\nif class.ReplicationConfig.Factor < 1 {\n    class.ReplicationConfig.Factor = int64(globalCfg.MinimumFactor)\n}\n\n// This code silently auto-corrects invalid replication factors (<1) to the minimum\n// without returning a validation error. It accepts negative values and mutates them to 1.\n// The function ValidateConfig() returns nil (success) after this silent correction.",
+          "call_chain_traced": "POST /schema → usecases/replica.ValidateConfig() → lines 44-46 auto-correction → HTTP 200",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: ValidateConfig 函数在 factor < 1 时静默修正为 MinimumFactor(默认1),不返回错误.这违反了参数校验原则 - 应拒绝无效输入而非静默修改. contract 要求 factor >= 1 但源码无 enforce 逻辑."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestRep2 to read back created collection",
+          "observed": "Response shows replicationConfig.factor=1, confirming silent auto-correction occurred (input -1 became stored 1)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "Hits BS-004 Parameter Validation Issues in Request Patterns.源码显示 API 边界确实缺少对 replication factor 的校验,静默接受并修正非法值."
+      },
+      "root_cause_if_confirmed": "param_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema accepts replicationConfig.factor=-1 (negative value) and returns HTTP 200, silently correcting it to factor=1. 源码 usecases/replica/config.go lines 44-46 显示 ValidateConfig() 在 factor < 1 时静默赋值修正,不返回错误.这违反了 contract requirement (replicationConfig.factor >= 1) 和 parameter validation best practices.用户发送非法参数应收到 422 error 而非静默修正后的成功响应."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"param_validation_gap": 1}
+  }
+}

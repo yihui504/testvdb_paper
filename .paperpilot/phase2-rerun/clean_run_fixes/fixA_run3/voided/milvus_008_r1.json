@@ -1,0 +1,99 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search {\"collectionName\": \"test_dev_review_008\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1]], \"limit\": 3}",
+          "observed": "HTTP 200 with search results: [{\"distance\":1,\"id\":0},{\"distance\":1,\"id\":1},{\"distance\":1,\"id\":2}]",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_dev_review_008\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1]], \"limit\": 3}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论声称 'REST v2 API 不验证 annsField 参数的存在性' 依赖 'annsField 在契约中标记为 required' 这一前提",
+            "原 Oracle 断言 'search 应该拒绝缺少 annsField 的请求' 依赖 'REST v2 实现与契约一致' 的前提"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001: 'annsField must be a vector field' (标记为 required)",
+            "constraint_id: milvus_state_entities_search_001: 'index must exist on annsField' (状态要求)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": ["annsField", "generatePlaceholderGroup", "search"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task_search.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1579-1591\n        } else {\n            // Search by vectors (existing logic)\n            searchParams = append(searchParams, &commonpb.KeyValuePair{Key: proxy.AnnsFieldKey, Value: httpReq.AnnsField})\n            body, _ := c.Get(gin.BodyBytesKey)\n            placeholderGroup, err := generatePlaceholderGroup(ctx, string(body.([]byte)), collSchema, httpReq.AnnsField)\n            if err != nil {\n                log.Ctx(ctx).Warn(\"high level restful api, search with vector invalid\", zap.Error(err))\n                HTTPAbortReturn(c, http.StatusOK, gin.H{\n                    HTTPReturnCode:    merr.Code(err),\n                    HTTPReturnMessage: merr.ErrIncorrectParameterFormat.Error() + \", error: \" + err.Error(),\n                })\n                return nil, err\n            }\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 1420-1444 (generatePlaceholderGroup)\nfunc generatePlaceholderGroup(ctx context.Context, body string, collSchema *schemapb.CollectionSchema, fieldName string) ([]byte, error) {\n    var err error\n    var vectorField *schemapb.FieldSchema\n    if len(fieldName) == 0 {\n        for _, field := range collSchema.Fields {\n            if typeutil.IsVectorType(field.DataType) {\n                if len(fieldName) == 0 {\n                    fieldName = field.Name\n                    vectorField = field\n                } else {\n                    return nil, errors.New(\"search without annsField, but already found multiple vector fields: [\" + fieldName + \", \" + field.Name + \",,,]\")\n                }\n            }\n        }\n    }",
+          "call_chain_traced": "SearchReqV2.AnsField (可为空) → generatePlaceholderGroup (自动推断第一个向量字段) → 无 validation 报错",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：REST v2 的 search 实现在 generatePlaceholderGroup 函数中，当 annsField 为空时，自动查找并使用 schema 中的第一个向量字段。没有任何代码路径对缺失的 annsField 返回错误。这与契约中 annsField 标记为 required 以及状态约束 'index must exist on annsField' 直接矛盾。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search 完全不提供 annsField 参数",
+          "observed": "HTTP 200 成功返回结果，证明 REST v2 实现接受无 annsField 的请求"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（Docker 容器正常）",
+            "并发问题（单线程测试）",
+            "请求参数笔误（完全遵循契约格式）",
+            "API 语义误解（REST v2 文档明确 annsField required）"
+          ],
+          "surviving": "contract_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 issues in corpus",
+        "note": "命中 blindspot: REST v2 API data type serialization，REST v2 与 gRPC 通道验证逻辑不一致"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认真缺陷：REST v2 的 search 实现（handler_v2.go 1579-1591行）在 annsField 缺失时不会报错，而是自动使用 schema 中的第一个向量字段（generatePlaceholderGroup 1423-1433行）。这直接违反契约约束 milvus_type_entities_search_001（annsField required）与 milvus_state_entities_search_001（index must exist on annsField）。实测证实：完全不提供 annsField 参数的搜索请求返回 HTTP 200 成功结果。这是 REST v2 层缺少 required 参数验证的经典 Type1_IllegalSuccess 缺陷，与历史 bug shape rest-v2-data-type-handling 高度吻合（26 个历史案例）。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "annsField must be a vector field (constraint_id: milvus_type_entities_search_001) AND index must exist on annsField (constraint_id: milvus_state_entities_search_001)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "REST v2 API endpoint required parameter missing (annsField)",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override A/B)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

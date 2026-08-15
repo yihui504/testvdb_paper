@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel='None' at top level",
+          "observed": "API returns HTTP 200 with code 0 (success), collection created despite invalid enum value",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_cl_none\", \"dimension\": 4, \"metricType\": \"L2\", \"consistencyLevel\": \"None\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_enum_consistencyLevel_001 - enum values: ['Strong', 'Session', 'Bounded', 'Eventually']"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["ConsistencyLevel", "consistencyLevel", "CollectionReq struct"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 683-696\ntype CollectionReq struct {\n    DbName           string                 `json:\"dbName\"`\n    CollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n    Dimension        int32                  `json:\"dimension\"`\n    IDType           string                 `json:\"idType\"`\n    AutoID           bool                   `json:\"autoID\"`\n    MetricType       string                 `json:\"metricType\"`\n    PrimaryFieldName string                 `json:\"primaryFieldName\"`\n    VectorFieldName  string                 `json:\"vectorFieldName\"`\n    Schema           CollectionSchema       `json:\"schema\"`\n    IndexParams      []IndexParam           `json:\"indexParams\"`\n    Params           map[string]interface{} `json:\"params\"`\n    Description      string                 `json:\"description\"`\n    // NOTE: ConsistencyLevel field is MISSING from this struct!\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 2008-2023\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CollectionReq struct (missing ConsistencyLevel field) → JSON unmarshaling ignores consistencyLevel → handler_v2.go only checks httpReq.Params['consistencyLevel'] → top-level consistencyLevel field never validated",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionReq 结构体缺少 ConsistencyLevel 字段,导致顶层 consistencyLevel 参数完全未被验证。其他请求类型(QueryReqV2, CollectionIDReq)都有 ConsistencyLevel 字段,唯独 CollectionReq 缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent testing shows both valid and invalid consistencyLevel values at top level are ignored",
+          "observed": "Test 1: consistencyLevel='None' (invalid) → returns success, defaults to 'Bounded'\nTest 2: consistencyLevel='Strong' (valid) → returns success, but still defaults to 'Bounded'\nTest 3: consistencyLevel='None' in params → correctly rejected with error 1100\nConclusion: Top-level consistencyLevel field is completely ignored by validation logic"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Race condition",
+            "Caching",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "param_validation_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 issues in corpus",
+        "note": "This defect matches the REST v2 data type handling pattern where parameters are not properly validated or deserialized."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "consistencyLevel must be one of [Strong, Session, Bounded, Eventually, Customized] (enum constraint)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is an enum parameter with fixed valid values",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API collections/create endpoint accepts invalid consistencyLevel enum value 'None' at the top level without validation. Source code analysis reveals CollectionReq struct is missing the ConsistencyLevel field present in other request types (QueryReqV2, CollectionIDReq), causing the parameter to be completely ignored during JSON unmarshaling. Validation logic in handler_v2.go only checks for consistencyLevel in the Params map, not as a top-level field. Testing confirms: (1) Invalid value 'None' at top level → accepted with default 'Bounded'; (2) Valid value 'Strong' at top level → ignored, still defaults to 'Bounded'; (3) Invalid value in params → correctly rejected with error 1100. This is a clear parameter validation bug violating the documented enum constraint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_bug": 1
+    }
+  }
+}

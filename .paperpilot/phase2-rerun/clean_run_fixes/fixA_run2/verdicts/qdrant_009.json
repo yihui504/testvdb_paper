@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/broken/points?wait=true with payload {\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]} into collection with vectors={}",
+          "observed": "HTTP 400 with body {\"status\":{\"error\":\"Wrong input: Not existing vector name error: \"},\"time\":0.004890318}",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_repro/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - 'vector type is array of floats or object of named vectors'",
+            "constraint_id: qdrant_state_upsert_points_004 - 'Batch upsert is atomic: all points are inserted or none'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "check_vector_name",
+            "vector_name_not_exists",
+            "get_vector_config_or_error",
+            "only_default_vector"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/data_types/vectors.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs lines 27-37\npub fn check_vector_name(\n    vector_name: &VectorName,\n    segment_config: &SegmentConfig,\n) -> OperationResult<()> {\n    // TODO(sparse) it's a wrong error check. We use the fact,\n    // that get_vector_config_or_error can return only one type of error - VectorNameNotExists\n    if get_vector_config_or_error(vector_name, segment_config).is_err() {\n        get_sparse_vector_config_or_error(vector_name, segment_config)?;\n    }\n    Ok(())\n}\n\n// lib/segment/src/common/mod.rs lines 162-170\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))\n}\n\n// lib/segment/src/common/operation_error.rs lines 27-28, 117-121\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\npub fn vector_name_not_exists(vector_name: impl Into<String>) -> Self {\n    Self::VectorNameNotExists {\n        received_name: vector_name.into(),\n    }\n}\n\n// lib/segment/src/data_types/vectors.rs lines 538-540, 770-774\npub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors<'_> {\n    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(vec))\n}\n\n// When named_vectors.is_empty() in BatchVectorStructInternal::into_all_vectors:\nif named_vectors.is_empty() {\n    vec![NamedVectors::default(); num_records]\n}",
+          "call_chain_traced": "upsert request -> unnamed vector array -> only_default_vector converts to DEFAULT_VECTOR_NAME -> check_vector_name -> get_vector_config_or_error -> vector_data.get(DEFAULT_VECTOR_NAME) fails on empty vectors config -> vector_name_not_exists error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: 当 collection 的 vectors 配置为空 {} 时，upsert 传入无名向量数组会被内部转换为 DEFAULT_VECTOR_NAME，但 check_vector_name 在 vector_data HashMap 中找不到该 key，导致抛出 VectorNameNotExists 错误。contract 声明 'vector type is array of floats or object of named vectors' 但未明确说明空 vectors 配置下无名向量应被拒绝还是自动推断维度。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Repeated upsert with wait=true consistently returns HTTP 400 'Not existing vector name error: '; without wait=true returns HTTP 200 'acknowledged' but point is never stored (points_count=0, retrieval returns 'Point with id 1 does not exists!')",
+          "observed": "Error is deterministic and reproducible. Async upsert (wait=false) silently fails without storing the point, masking the validation error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 复现一致性高",
+            "并发/race - 单线程操作可复现",
+            "缓存/延迟 - wait=true 立即返回错误",
+            "参数笔误 - 请求符合文档格式"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - blindspot_indicators",
+        "note": "命中 developer_cognition.blindspot_indicators 中的 'Parameter validation on filter/condition APIs' 模式。虽然这是 vector 而非 filter 参数，但同属 request parsing 层的参数校验盲点。"
+      },
+      "root_cause_if_tp": "missing_vector_config_validation",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码接地证实：upsert API 允许传入无名向量数组（符合 contract 'array of floats'），但在 collection 的 vectors 配置为空 {} 时，内部将其转换为 DEFAULT_VECTOR_NAME 后无法通过 check_vector_name 校验，抛出 'Not existing vector name error: '。这是真实的参数验证缺失：API 应在更早的请求解析阶段明确拒绝无法匹配到 vector config 的请求，而非在深层 segment 校验阶段失败。contract 声明支持无名向量但未说明其在空 vectors 配置下的预期行为，属于契约模糊 + 实现不一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_vector_config_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

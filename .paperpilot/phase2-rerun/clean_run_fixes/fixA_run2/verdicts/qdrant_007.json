@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_atomic/points/batch with operations: [valid upsert id=2, invalid upsert id=3 (3D vector)]",
+          "observed": "HTTP 400 with error 'Vector dimension error: expected dim: 4, got 3', but collection count increased from 1 to 2 points - first operation was applied despite batch failure",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_atomic/points/batch' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 2, \"vector\": [0.5, 0.6, 0.7, 0.8]}]}}, {\"upsert\": {\"points\": [{\"id\": 3, \"vector\": [0.1, 0.2, 0.3]}]}}]}' && curl -X POST 'http://localhost:6333/collections/test_atomic/points/count' -d '{\"exact\": true}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Defect claim depends on batch operations being atomic (all-or-nothing) per constraint qdrant_state_batch_update_007"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_state_batch_update_007", "assertion: 'Batch update operations are executed atomically.'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["do_batch_update_points", "batch.*atomic", "operations.*for"],
+          "files_examined": ["src/common/update.rs", "src/actix/api/update_api.rs", "tests/openapi/test_batch_update.py"],
+          "source_excerpt": "// src/common/update.rs lines 803-914\nfor operation in operations {\n    let current_update_result = match operation {\n        UpdateOperation::Upsert(operation) => {\n            let (result, usage) = do_upsert_points(\n                toc_provider.clone(),\n                collection_name.clone(),\n                operation.upsert,\n                internal_params,\n                params,\n                auth.clone(),\n                inference_params.clone(),\n                hw_measurement_acc.clone(),\n            )\n            .await?;\n\n            inference_usage.merge_opt(usage);\n            result\n        }\n        // ... other operation types ...\n    };\n\n    results.push(current_update_result);\n}\n\nOk((results, inference_usage.into_non_empty()))",
+          "call_chain_traced": "update_batch (actix) → do_batch_update_points (common/update.rs:772) → sequential for loop over operations → each operation executed independently, errors accumulated but not rolled back",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source grounding: batch uses sequential execution (for operation in operations), each operation independently calls do_upsert_points/do_delete_points, no transaction wrapper or rollback. Line 811 .await? returns early but previously executed ops are not rolled back."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test: batch with [valid upsert id=2, invalid upsert id=3]. Expected: if atomic, count should stay 1. Observed: count became 2.",
+          "observed": "POST /batch returned HTTP 400 error, but POST /count returned {\"count\":2}. First operation (id=2) was successfully applied despite batch failure. Direct GET /points confirmed id=2 exists in collection."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "cache delay", "request parameter typo"],
+          "surviving": "contract_violation_in_source"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No match in developer_cognition.json by_design_patterns, but source code clearly shows sequential processing mode, non-transactional implementation"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_state_batch_update_007: 'Batch update operations are executed atomically'",
+          "source_implements_check": false,
+          "api_observed_value": "batch with mixed valid/invalid ops: HTTP 400 but partial execution observed (count increased from 1 to 2)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "atomic batch operations: all-or-nothing execution semantics",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (contract violation + physical constraint violation, C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "sequential_batch_processing_no_transaction",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Constraint qdrant_state_batch_update_007 explicitly states batch atomicity, but source implementation is sequential (for loop, each operation independently awaited), no transaction rollback. Empirical proof: batch with [valid upsert, invalid upsert] returns HTTP 400 but first operation already applied (count increased from 1 to 2). This is a genuine contract-violation bug, mundane explanations excluded."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"sequential_batch_processing_no_transaction": 1}
+  }
+}

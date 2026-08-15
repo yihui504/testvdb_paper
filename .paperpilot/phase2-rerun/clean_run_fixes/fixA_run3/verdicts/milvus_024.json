@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete with {\"collectionName\": \"test_del\", \"dbName\": \"default\", \"filter\": \"id > 0\", \"ids\": [1, 2, 3]}",
+          "observed": "API returns HTTP 200 with deleteCount=1, successfully processing request despite presence of both 'filter' and 'ids' parameters",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/delete -d '{\"collectionName\": \"test_del\", \"dbName\": \"default\", \"filter\": \"id > 0\", \"ids\": [1, 2, 3]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes 'ids' parameter should be processed by delete endpoint",
+            "Conclusion depends on 'ids' field being functional, but source code shows 'ids' is not part of CollectionFilterReq struct"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - 'filter must be a valid boolean expression'",
+            "endpoint_registry shows: '/v2/vectordb/entities/delete' maps to 'Delete' handler with HTTP 200 on success, 400 on invalid filter expression"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["CollectionFilterReq", "delete.*handler", "filter.*ids", "entities.*delete"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 317-323\ntype CollectionFilterReq struct {\n\tDbName         string                 `json:\"dbName\"`\n\tCollectionName string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                 `json:\"partitionName\"`\n\tFilter         string                 `json:\"filter\" binding:\"required\"`\n\tExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1202-1213\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,\n\t}",
+          "call_chain_traced": "HTTP POST /entities/delete → gin router → delete() handler → CollectionFilterReq struct → only has 'Filter' field, no 'ids' field → DeleteRequest with Expr=Filter",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionFilterReq 结构体只包含 Filter 字段(标记为 required),完全没有 ids 字段。HTTP 请求中的 ids 参数被 JSON 解析器忽略,未触发任何错误。source_url 指向常量定义文件 constant.go,但实际处理逻辑在 handler_v2.go 和 request_v2.go 中。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with only 'ids' parameter (no 'filter'): POST /entities/delete {\"collectionName\": \"test_del\", \"dbName\": \"default\", \"ids\": [1, 2, 3]}",
+          "observed": "HTTP 200 with code 1802 error: 'missing required parameters, error: Key: 'CollectionFilterReq.Filter' Error:Field validation for 'Filter' failed on the 'required' tag'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/delete -d '{\"collectionName\": \"test_del\", \"dbName\": \"default\", \"ids\": [1, 2, 3]}'",
+          "conclusion": "API rejects requests without 'filter', confirming 'filter' is mandatory. 'ids' field is silently ignored when present with 'filter', proving the bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (tested on clean Docker container)",
+            "Request parameter typo (intentionally tested both filter and ids present)",
+            "API semantic misunderstanding (source code confirms struct definition)"
+          ],
+          "surviving": "parameter_ignored_field"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "缺陷命中开发者认知盲点: REST v2 API 参数处理不一致。源码显示 delete 端点只接受 filter 参数,但实际 HTTP 请求中的 ids 字段被静默忽略,未触发错误或警告。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "通过源码接地确认: CollectionFilterReq 结构体只定义了 Filter 字段(标记为 required),没有 ids 字段。实测证明: 带 filter+ids 的请求返回 HTTP 200 成功,仅 ids 的请求返回 400 参数缺失错误。这证明 ids 字段被 JSON 解析器忽略,API 只处理 filter 参数。用户可能误以为可以通过 ids 参数删除,实际该参数无效,符合 Type1_IllegalSuccess(接受非法输入并返回成功)的定义。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

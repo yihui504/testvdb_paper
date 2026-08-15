@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create → insert 10 entities → POST /v2/vectordb/entities/search with data=[[0.1,0.1,0.1,0.1]], limit=3, outputFields=[\"*\"]",
+          "observed": "Search returned HTTP 200 with 3 results: [{\"distance\":1,\"id\":0,\"vector\":[0.1,0.1,0.1,0.1]},{\"distance\":1,\"id\":1,\"vector\":[0.1,0.1,0.1,0.1]},{\"distance\":1,\"id\":2,\"vector\":[0.1,0.1,0.1,0.1]}]",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"repro_devreview_milvus008\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"outputFields\": [\"*\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Search request included outputFields=[\"*\"] which requests all fields including vectors. This satisfied the assumption that search should return vector data when explicitly requested."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 - 'data must be array of float arrays, annsField must be a vector field, limit must be positive integer'",
+            "constraint_id: milvus_range_entities_search_002 - 'limit + offset must be < 16384'",
+            "assertion_id: milvus_behavioral_entities_search_001 - 'Search returns 400 on vector dimension mismatch'",
+            "state_constraint: milvus_state_entities_search_001 - 'Collection must be loaded; index must exist on annsField'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": ["creating multiple indexes on same field", "CanCreateIndex", "canCreateIndex", "CreateIndex failed"],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12/tests/python_client/testcases/test_index.py",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12/tests/go_client/testcases/index_test.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12/internal/datacoord/index_meta.go"
+          ],
+          "source_excerpt": "// internal/datacoord/index_meta.go line 390-405\nif req.FieldID == index.FieldID {\n    if isJson {\n        // Skip error handling since json path existence is guaranteed in CreateIndex\n        jsonPath1, _ := getIndexParam(index.IndexParams, common.JSONPathKey)\n        jsonPath2, _ := getIndexParam(req.GetIndexParams(), common.JSONPathKey)\n\n        if jsonPath1 != jsonPath2 {\n            // if json path is not same, create index is allowed\n            continue\n        }\n    }\n    // creating multiple indexes on same field is not supported\n    errMsg := \"CreateIndex failed: creating multiple indexes on same field is not supported\"\n    log.Warn(errMsg)\n    return 0, errors.New(errMsg)\n}",
+          "call_chain_traced": "CreateIndexRequest → indexMeta.canCreateIndex() → loops through existing indexes → checks if req.FieldID matches any existing index.FieldID → returns error if match found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows explicit check that rejects creating multiple indexes on the same field. This is intentional design, not a bug. The error in the original log (REQ 3) was correctly triggered because the system detected a condition it interprets as duplicate index creation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Reconstructed the exact scenario: create collection → insert data → load collection → search with outputFields=['*']",
+          "observed": "Search succeeded (HTTP 200) and returned proper results with vectors. The alleged 'search defect' cannot be reproduced - search works correctly when collection is properly loaded and index exists (implicit FLAT index from quick-setup mode)."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker container is healthy and responsive)",
+            "Concurrent race condition (single-threaded sequential execution)",
+            "Request parameter typo (all parameters correctly formatted)",
+            "API semantics misunderstanding (search syntax is correct)"
+          ],
+          "surviving": "original_oracle_defect",
+          "note": "The original test log shows REQ 3 (create index) failed with 'multiple indexes not supported', but the actual defect candidate was classified under 'entities+search' endpoint. The real issue appears to be that the original attack oracle may have been testing the wrong endpoint or misinterpreted the quick-setup mode behavior (which creates implicit indexes)."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "pattern_id": "RP-001",
+        "note": "The 'multiple indexes on same field not supported' behavior is documented in tests (test_index.py line 591, index_test.go line 1091) and explicitly coded in index_meta.go. This is expected behavior, not a defect."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "The candidate defect milvus_008 is classified as FALSE_POSITIVE. The original log shows an index creation error (REQ 3: 'creating multiple indexes on same field is not supported'), but the defect was filed against 'entities+search'. Clean reproduction of the search endpoint shows it works correctly (HTTP 200, returns proper vector results). Source code grounding reveals that the index-creation rejection is intentional design (index_meta.go lines 401-404), not a bug. The most likely explanation is that the original attack oracle either (a) filed the defect against the wrong endpoint, or (b) misunderstood that Milvus quick-setup mode creates implicit indexes, and attempting to create a second index on the same field correctly fails with expected error message. The search functionality itself has no defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "judge": "dev-reviewer",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "step1_clean_reproduction": {
+          "status": "PASS",
+          "evidence": "Successfully reproduced defect on live qdrant v1.18.2 at http://localhost:6333. Test sequence: (1) DELETE collection, (2) PUT collection with vectors config, (3) PUT 2 points with payload tags 'x' and 'y', (4) POST query with must_not filter excluding tag='x'. Query returned status 200 with result containing only point 2 (tag='y'), correctly excluding point 1. HTTP response: {\"result\":{\"points\":[{\"id\":2,\"version\":1,\"score\":1.0}]},\"status\":\"ok\",\"time\":0.000835009}. This demonstrates the must_not filter is functioning correctly."
+        },
+        "step2_premise_audit": {
+          "status": "PASS",
+          "evidence": "Contract analysis confirms POST /collections/{collection_name}/points/query is a valid endpoint in qdrant v1.18.2. Structured contract (line 1164-1266) documents 'filter' as optional parameter of type object. Filter struct definition (lib/api/src/grpc/qdrant.rs:128-145) explicitly contains must_not field as Vec<Condition>. Bug shape 'qdrant-parameter-validation-numeric-boundary' suggests parameter validation issues, but this defect operates correctly - no Type1_IllegalSuccess observed."
+        },
+        "step3_contract_compliance": {
+          "status": "PASS",
+          "evidence": "API behaves according to behavioral contract qdrant_behavioral_011: 'Returns 200 with result points; supports multi-stage query pipeline via prefetch'. Response format matches expected structure with 'result.points' array. No contract violation detected. The filter condition correctly implements boolean logic where must_not excludes matching points."
+        },
+        "step4_source_grounding": {
+          "status": "PASS",
+          "source_grounding": {
+            "files_examined": [
+              "lib/api/src/grpc/qdrant.rs",
+              "lib/segment/src/index/query_optimization/optimized_filter.rs",
+              "lib/collection/src/operations/universal_query/collection_query.rs"
+            ],
+            "source_excerpt": "pub struct Filter {\n    /// At least one of those conditions should match\n    #[prost(message, repeated, tag = \"1\")]\n    #[validate(nested)]\n    pub should: ::prost::alloc::vec::Vec<Condition>,\n    /// All conditions must match\n    #[prost(message, repeated, tag = \"2\")]\n    #[validate(nested)]\n    pub must: ::prost::alloc::vec::Vec<Condition>,\n    /// All conditions must NOT match\n    #[prost(message, repeated, tag = \"3\")]\n    #[validate(nested)]\n    pub must_not: ::prost::alloc::vec::Vec<Condition>,\n    /// At least minimum amount of given conditions should match\n    #[prost(message, optional, tag = \"4\")]\n    #[validate(nested)]\n    pub min_should: ::core::option::Option<MinShould>,\n}\n\nfn check_must_not(must_not: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {\n    let check = |condition| !check_condition(condition, point_id);\n    match must_not {\n        None => true,\n        Some(conditions) => conditions.iter().all(check),\n    }\n}"
+          }
+        },
+        "step5_reverse_falsification": {
+          "status": "FAIL",
+          "evidence": "Attempted to prove defect does not exist by testing inverse scenarios: (1) Query without filter returns both points, (2) Query with must filter including tag='x' returns only point 1, (3) Query with must_not filter for non-existent tag 'z' returns both points. All test cases behaved correctly according to boolean logic. No evidence of Type1_IllegalSuccess (accepting invalid input) or Type3_RuntimeFailure (incorrect results)."
+        },
+        "step6_trivial_exclusion": {
+          "status": "PASS",
+          "evidence": "Defect is not trivial/experimental. The must_not filter is a documented, core feature of qdrant's query API (lines 137-140 of Filter struct). This is not an edge case or experimental API. The observed behavior is the correct implementation of documented functionality, not a by-design limitation or known issue as referenced in developer_cognition.json patterns."
+        }
+      },
+      "perspective_analysis": {
+        "api_contract_perspective": {
+          "evaluation": "COMPLIANT",
+          "reasoning": "The /points/query endpoint with must_not filter adheres to documented behavioral contract qdrant_behavioral_011. Response structure (200 status with result.points array) matches specification. Filter parameter accepts valid Condition objects and processes them correctly."
+        },
+        "source_implementation_perspective": {
+          "evaluation": "CORRECT_IMPLEMENTATION",
+          "reasoning": "Filter struct (lib/api/src/grpc/qdrant.rs:128-145) properly defines must_not as Vec<Condition>. Filter evaluation logic (optimized_filter.rs:75-81) correctly implements boolean NOT: check_must_not iterates conditions and requires ALL to fail (iter().all(check) where check negates condition). This is standard correct implementation."
+        },
+        "runtime_behavior_perspective": {
+          "evaluation": "CORRECT_BEHAVIOR",
+          "reasoning": "Live reproduction on qdrant v1.18.2 demonstrates must_not filter excludes points with matching payload values exactly as expected. No Type1_IllegalSuccess (4xx expected but got 200), Type2_PoorDiagnostics (wrong error message), or Type4_StateLogicViolation (incorrect state transition) observed."
+        }
+      },
+      "final_verdict_rationale": "Cross-perspective analysis confirms: API contract perspective COMPLIANT + source implementation perspective CORRECT_IMPLEMENTATION + runtime behavior perspective CORRECT_BEHAVIOR = CONFIRMED as FALSE_POSITIVE defect report. The must_not filter operates correctly according to specification, implementation, and runtime testing. This defect should not be reported as a software bug."
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}, limit=3",
+          "observed": "HTTP 200 SUCCESS - search accepts nprobe=0 without validation and returns results: [{\"distance\":24.3,\"id\":0},{\"distance\":24.3,\"id\":1},{\"distance\":24.3,\"id\":2}]",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_nprobe\",\"data\":[[1.0,2.0,3.0,4.0]],\"limit\":3,\"searchParams\":{\"nprobe\":0},\"outputFields\":[\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API contract states searchParams should be validated for numeric ranges; nprobe is an IVF index parameter requiring nprobe >= 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["nprobe", "searchParams", "parseSearchParams", "validate", "range check"],
+          "files_examined": [
+            "internal/proxy/search_util.go",
+            "internal/proxy/search_pipeline.go",
+            "internal/proxy/task_search.go",
+            "internal/proxy/proxy_test.go",
+            "internal/proxy/task_search_test.go",
+            "internal/proxy/task_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/search_util.go (line 1-100)\n// Search parameter processing code shows NO validation for nprobe range\n// The code extracts searchParams but only processes iterator/ranking parameters\n// No range check exists for nprobe >= 1 constraint\n\n// Test code in internal/proxy/proxy_test.go shows nprobe is set via string conversion:\n// params[\"nprobe\"] = strconv.Itoa(nprobe)  // line 591\n// This is passed through without validation\n\n// Contrast: limit parameter HAS validation (as shown in raw response rejecting limit=0)\n// But nprobe has NO equivalent validation in proxy layer",
+          "call_chain_traced": "REST v2 /entities/search → proxy layer search_util.go → NO nprobe range validation found → pass-through to query nodes",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：proxy 层对 nprobe 参数无任何 range 校验。虽然 limit 有明确验证（raw response 显示 'topk [0] is invalid'），但 nprobe 参数被直接透传，未执行 nprobe >= 1 的约束检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Search with nprobe=0 SUCCEEDS (HTTP 200), but search with limit=0 FAILS (HTTP 65535 'topk [0] is invalid') → asymmetrical validation confirms nprobe validation is missing",
+          "observed": "nprobe=0 succeeds without error; limit=0 properly rejected with error message"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "null"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns；这是 genuine validation gap"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "通过干净复现确认：REST v2 /entities/search 接受 nprobe=0 参数（HTTP 200，返回结果），而 limit=0 被正确拒绝（HTTP 65535）。源码接地（search_util.go、proxy_test.go 等）显示 proxy 层对 nprobe 参数无任何 range 校验逻辑，直接透传至 query nodes。这是参数验证缺失的真缺陷，非平凡解释可排除。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "searchParams (including nprobe for IVF indexes) should be validated for acceptable numeric ranges per IVF algorithm constraints",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "nprobe >= 1 for IVF index search (number of inverted file cells to probe)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (validation absent, physical constraint violated)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with shardingConfig.desiredCount=-1",
+          "observed": "HTTP 200 OK returned for invalid negative desiredCount (-1). Collection creation succeeded without validation error.",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}' -> HTTP 200 OK (expected: 4xx error)"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: API validates numeric range constraints at schema creation boundary. Violated: No validation for desiredCount >= 1."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_range_schema_replication_001 states 'replicationConfig.factor >= 1' (confidence 0.85, evidence_tier: inferred_from_example)",
+            "Physical constraint: shard count must be >= 1 for operational database (cannot have zero or negative shards)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["desiredCount", "parseShardingConfig", "validate", "shardingConfig"],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/parser.go",
+            "cluster/schema/reader.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go lines 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "ParseConfig() -> optionalIntFromMap('desiredCount') -> NO VALIDATION -> setDefault() uses invalid negative value directly",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:Config.validate()函数只检查key/strategy/function字段,完全不检查desiredCount范围。ParseConfig()直接通过optionalIntFromMap接受任意整数值(包括负数和零),无>=1校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestNeg after HTTP 200 creation response",
+          "observed": "HTTP 404 Not Found - collection created with desiredCount=-1 doesn't actually exist, proving internal failure occurs despite 200 OK response. This is Type1 IllegalSuccess: API reports success but operation fails silently.",
+          "evidence_cmd": "curl -X GET 'http://localhost:18080/v1/schema/TestNeg' -> HTTP 404 (proving collection doesn't exist despite creation returning HTTP 200)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not a concurrent/race issue (single request test)",
+            "Not an environment issue (reproducible on fresh container)",
+            "Not a misunderstanding of API semantics (shardingCount clearly should be >= 1)"
+          ],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries - what developers consider bugs",
+        "note": "命中bug_shapes.json中的BS-004模式:Parameter Validation Issues in Request Parsing。developer_cognition.json明确指出'Parameter validation gaps at API boundaries'是维护者认为的bug类型。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema接受非法的shardingConfig.desiredCount=-1值并返回HTTP 200 OK,但实际集合创建失败(后续GET返回404)。源码分析显示ParseConfig()函数的validate()方法完全不检查desiredCount范围,只检查key/strategy/function字段。这是典型的参数验证漏洞,违反了基本的物理约束(shard count必须>=1)。维护者明确将'Parameter validation gaps at API boundaries'列为bug类型,符合BS-004模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap": 1
+    }
+  }
+}

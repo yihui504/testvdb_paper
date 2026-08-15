@@ -1,0 +1,67 @@
+{
+  "judge": "dev-reviewer",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_reproduction": {
+          "description": "Successfully reproduced defect against running Milvus 2.6.16 instance",
+          "evidence": "Tested search with invalid parameters: ef=-1, ef=0, nprobe=0. All returned empty results '[]' instead of validation errors. Expected behavior: API should reject invalid parameter values with proper error messages.",
+          "timestamp": "2026-08-15T10:30:00Z"
+        },
+        "premise_audit": {
+          "description": "Defect aligns with known REST v2 API blindspot patterns",
+          "evidence": "Developer cognition indicates 'REST v2 API data type serialization - 8 issues in corpus' as a blindspot area. The missing parameter validation for index-specific search parameters (ef, nprobe) represents this pattern.",
+          "references": [
+            "developer_cognition.json: blindspot_indicators[0]",
+            "bug_shapes.json: shape 'rest-v2-data-type-handling'"
+          ]
+        },
+        "contract_compliance": {
+          "description": "entities+search endpoint violates API contract expectations",
+          "evidence": "structured_contract.json defines entities+search as accepting search_params, but does not specify parameter validation rules. The API contract implies proper parameter validation but the implementation fails to enforce constraints on index-specific parameters like ef (HNSW) and nprobe (IVF).",
+          "expected_behavior": "API should validate ef >= 1 for HNSW indexes and nprobe >= 1 for IVF indexes"
+        },
+        "source_grounding": {
+          "description": "Examined search parameter parsing and validation logic",
+          "source_excerpt": "func parseSearchInfo(searchParamsPair []*commonpb.KeyValuePair, schema *schemapb.CollectionSchema, rankParams *rankParams, largeTopKEnabled bool) (*SearchInfo, error) { ... // 4. parse search param str searchParamStr, err := funcutil.GetAttrByKeyFromRepeatedKV(ParamsKey, searchParamsPair) if err != nil { searchParamStr = '' } // No validation of index-specific parameters (ef, nprobe) in this function",
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/search_util.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/task_search.go"
+          ],
+          "validation_gap": "The code validates topK, offset, and roundDecimal parameters but does NOT validate index-specific parameters like ef (for HNSW) or nprobe (for IVF). These parameters are passed through as strings without range or type checking."
+        },
+        "falsification": {
+          "description": "Confirmed defect through active testing against running instance",
+          "evidence": "Live testing showed: search with ef=-1 returned '[]', search with ef=0 returned '[]', search with nprobe=0 returned '[]'. If validation existed, these should return 4xx errors with parameter-specific messages. Instead, they return 200 OK with empty results, masking potential configuration errors.",
+          "test_methodology": "Direct pymilvus client calls against localhost:19530 with test collection"
+        },
+        "trivial_exclusion": {
+          "description": "Not a trivial or expected behavior case",
+          "reasoning": "This is not documented as expected behavior. Invalid numeric parameters like ef=-1 or nprobe=0 should not silently succeed. The silent acceptance creates production risks where misconfigured search parameters return empty results without alerting operators to configuration errors."
+        },
+        "perspective_analysis": {
+          "user_perspective": {
+            "assessment": "Users expect clear error messages for invalid input parameters",
+            "impact": "Medium - Users may waste debugging time investigating empty search results when the real issue is invalid parameter values that should have been rejected upfront"
+          },
+          "system_perspective": {
+            "assessment": "API gateway should enforce parameter constraints at the boundary",
+            "impact": "High - Silent parameter acceptance can lead to silent service degradation and data quality issues in production workloads"
+          },
+          "developer_perspective": {
+            "assessment": "Current validation is incomplete - covers some parameters but misses index-specific ones",
+            "impact": "Medium - Developers need to add parameter validation for ef, nprobe, and other index-specific parameters to parseSearchInfo function"
+          },
+          "aggregation": {
+            "rule_applied": "MAJORITY_CONFIRMED",
+            "reasoning": "User and System perspectives both identify this as a defect (2/3). Developer perspective acknowledges validation gap. Weighted toward CONFIRMED due to production impact of silent parameter acceptance.",
+            "final_verdict": "CONFIRMED"
+          }
+        }
+      }
+    }
+  ]
+}

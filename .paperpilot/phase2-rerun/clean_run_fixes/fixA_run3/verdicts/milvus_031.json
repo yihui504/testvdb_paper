@@ -1,0 +1,101 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/entities/upsert with payload: {\"collectionName\": \"test_upsert_autoid\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}",
+          "observed": "Status: 200, Response: {\"code\": 1804, \"message\": \"fail to deal the insert data, error: row 0 does not has field id\"}",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_autoid\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original log claimed error was 'has pass more field without dynamic schema' but actual current behavior is 'row 0 does not has field id'",
+            "The original defect report depended on the collection being created with autoID=true, which means PK field should be auto-generated, not provided in data",
+            "Upsert with autoID enabled requires explicit PK provision (different from insert behavior)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_upsert_001 - 'Primary key field must be specified in data for upsert'",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "has pass more field without dynamic schema",
+            "upsert",
+            "checkAndSetData"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 692\nreturn nil, nil, merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\")\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1341\nhttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, httpReq.PartialUpdate)\n\nThe source code at utils.go:692 shows the 'has pass more field' error is thrown when: 1) collection does NOT have EnableDynamicField=true AND 2) data contains fields NOT in schema. However, current actual behavior (error: 'row 0 does not has field id') shows that upsert is failing at a different validation layer - it's checking for required PK field presence before dynamic field validation runs.",
+          "call_chain_traced": "POST /entities/upsert -> handler_v2.go -> checkAndSetData() -> utils.go checkAndSetData() -> validation order: required fields check (missing 'id') -> dynamic field check ('color' not in schema)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wrong_layer",
+          "note": "Source code shows both validations exist, but current runtime behavior indicates PK requirement check runs before dynamic schema check. The original defect report observed a different error message, suggesting either: (a) code path changed between versions, or (b) original test hit different validation order. The key finding: upsert with autoID=true still requires explicit PK in data, which violates the expected autoID semantics."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Test upsert with explicit PK provided: {\"collectionName\": \"test_upsert_autoid\", \"data\": [{\"id\": 468395212009638309, \"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}",
+          "observed": "UPSERT succeeded with upsert_count: 1, demonstrating that when PK is explicitly provided, extra 'color' field is accepted without dynamic schema validation error. This proves the 'color' field itself is not the problem - the missing 'id' field is."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not a dynamic schema violation (original error message misleading)",
+            "Not a data type mismatch (vector field is valid)",
+            "Not a schema definition issue (schema is correctly defined with autoID=true)"
+          ],
+          "surviving": "upsert_auto_id_requirement_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This behavior (upsert requiring explicit PK despite autoID=true) is not documented in developer_cognition.json as a known by-design pattern or rejection pattern. It appears to be a genuine inconsistency between insert and upsert behavior when autoID is enabled."
+      },
+      "root_cause_if_fp": "upsert_auto_id_requirement_mismatch",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_upsert_001: 'Primary key field must be specified in data for upsert'",
+          "source_implements_check": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "upsert requires explicit PK field in data, regardless of autoID setting",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract requires PK) BUT original defect was about dynamic schema error, not PK requirement. The observed 'has pass more field' error in original log is NOT reproducible - current code throws 'missing id' first. The defect report is FALSE_POSITIVE because it misidentified the root cause (claimed it was about extra 'color' field violating schema, but actual issue is missing PK field).",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Original defect milvus_031 claimed upsert rejected data due to 'has pass more field without dynamic schema' error when collection had autoID=true and data contained extra 'color' field. However, clean reproduction shows: (1) Current actual error is 'row 0 does not has field id' - a completely different validation failure, (2) When PK field IS explicitly provided, upsert succeeds despite extra 'color' field being present, (3) Source code shows both validations exist but PK check runs first, (4) The contract milvus_type_entities_upsert_001 explicitly states 'Primary key field must be specified in data for upsert'. The defect report was based on a misleading error message and failed to identify the true requirement (PK must be provided for upsert even with autoID=true). Root cause: upsert_auto_id_requirement_mismatch - an API semantics inconsistency rather than a schema validation bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"upsert_auto_id_requirement_mismatch": 1}
+  }
+}

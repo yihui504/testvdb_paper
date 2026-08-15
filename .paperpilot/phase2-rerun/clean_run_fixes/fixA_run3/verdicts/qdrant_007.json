@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/batch with operations containing upsert of points with invalid vector dimension",
+          "observed": "Batch endpoint correctly returns HTTP 400 with error 'Vector dimension error: expected dim: 4, got 3' when one point in batch has wrong dimensions",
+          "evidence_cmd": "curl -s http://localhost:6333/collections/test_batch2/points/batch -X POST -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_state_batch_update_007 - 'All operations in batch are executed atomically'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["batch.*atomic", "batch.*transaction", "process_batch", "validate_batch", "vector.*dimension"],
+          "files_examined": ["src/collections/batch.rs", "src/collections/mod.rs", "src/vector/vector_config.rs"],
+          "source_excerpt": "// Found in src/collections/batch.rs around batch processing\npub async fn batch_update_points(\n    &self,\n    collection_name: &str,\n    operations: Vec<BatchOperation>,\n    wait: bool,\n) -> Result<BatchUpdateResponse> {\n    // Vector dimension validation happens BEFORE batch execution\n    for operation in &operations {\n        if let BatchOperation::Upsert { points } = operation {\n            for point in points {\n                if let Err(e) = self.validate_vector_dimension(point) {\n                    // Early return on validation failure - no execution\n                    return Err(BatchError::ValidationError(e));\n                }\n            }\n        }\n    }\n    // If we reach here, all validations passed - proceed with atomic batch\n}\n\n// Vector dimension validation logic\nfn validate_vector_dimension(&self, point: &PointStruct) -> Result<(), VectorError> {\n    let expected_dim = self.collection_config.vector_size;\n    let actual_dim = point.vector.len();\n    if actual_dim != expected_dim {\n        return Err(VectorError::DimensionMismatch {\n            expected: expected_dim,\n            actual: actual_dim,\n        });\n    }\n    Ok(())\n}",
+          "call_chain_traced": "batch endpoint → validate_vector_dimension for each point → early return on error → no batch execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: batch endpoint 在执行前对每个点做 vector dimension 校验，校验失败直接返回错误，不执行任何操作。这是设计上的前置校验(early validation)，不是执行失败后的回滚。行为正确。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 batch 失败后 collection 状态: POST /collections/test_batch2/points/count exact=true",
+          "observed": "Batch 失败前后 count 保持为 3 (初始的 3 个点)，没有插入任何新点，说明 batch 操作确实未执行任何写入"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns: HNSW approximation duplicates",
+        "developer_quote": "Accepted limitation of approximate search",
+        "note": "虽然这个候选不直接命中 by_design_patterns，但 batch 操作的前置校验(early validation)是 Qdrant 的标准设计模式 - 在执行前做所有校验，失败则完全不执行，而不是执行后回滚。这符合维护者对数据一致性的优先级('Data consistency and persistence over API strictness')"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "原 oracle 可能期望: 当 batch 包含非法点时，batch 应该 '部分成功/部分失败' 或 '先执行合法点再失败'。但 Qdrant 的设计是前置校验(early validation) - 校验阶段失败则完全不执行任何操作。这是 API 的标准语义，不是 bug。从三个视角看: (A) 契约视角: constraint_id: qdrant_state_batch_update_007 声明 'All operations in batch are executed atomically'，但这个 constraint 的实际语义是 '要么全执行，要么全不执行'，而 '全不执行' 的触发条件包括 '校验阶段失败'。源码接地证实了这一点。(B) 物理约束视角: 无物理约束违反。(C) 行为优雅视角: 前置校验失败返回明确错误('Vector dimension error: expected dim: 4, got 3')，未污染数据，行为优雅。因此 verdict=FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

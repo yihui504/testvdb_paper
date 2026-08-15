@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_014",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover in standalone mode",
+          "observed": "HTTP 500 with error: 'Qdrant is running in standalone mode'",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/cluster/recover"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes POST /cluster/recover should succeed in standalone mode",
+            "Candidate treats cluster-only operation as general API defect",
+            "Conclusion depends on distributed cluster functionality being available"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: cluster+recover (POST)",
+            "description: 'Recover current peer Raft state'",
+            "category: management",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference"
+          ],
+          "note": "Contract clearly identifies this as a cluster/consensus operation for distributed mode. No assertion states this should work in standalone mode."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "request_snapshot",
+            "standalone mode",
+            "get_consensus_proposal_sender",
+            "consensus_proposal_sender"
+          ],
+          "files_examined": [
+            "src/actix/api/cluster_api.rs",
+            "lib/storage/src/content_manager/toc/mod.rs",
+            "lib/storage/src/content_manager/mod.rs",
+            "src/consensus.rs"
+          ],
+          "source_excerpt": "// src/actix/api/cluster_api.rs line 60-73\n#[post(\"/cluster/recover\")]\nfn recover_current_peer(\n    dispatcher: web::Data<Dispatcher>,\n    ActixAuth(auth): ActixAuth,\n) -> impl Future<Output = HttpResponse> {\n    // Not a collection level request.\n    let pass = new_unchecked_verification_pass();\n\n    helpers::time(async move {\n        auth.check_global_access(AccessRequirements::new().manage(), \"recover_current_peer\")?;\n        dispatcher.toc(&auth, &pass).request_snapshot()?;\n        Ok(true)\n    })\n}\n\n// lib/storage/src/content_manager/toc/mod.rs line 774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender\n        .as_ref()\n        .ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))\n}\n\n// lib/storage/src/content_manager/toc/mod.rs line 545-550\npub fn request_snapshot(&self) -> Result<(), StorageError> {\n    self.get_consensus_proposal_sender()?\n        .send(ConsensusOperations::request_snapshot())?;\n    Ok(())\n}",
+          "call_chain_traced": "POST /cluster/recover → recover_current_peer → toc.request_snapshot → get_consensus_proposal_sender → consensus_proposal_sender.as_ref() → None (standalone mode) → StorageError::service_error('Qdrant is running in standalone mode')",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:/cluster/recover 是 cluster-only 操作(需要 consensus_proposal_sender)，在 standalone 模式下 consensus_proposal_sender=None，源码显式返回 'Qdrant is running in standalone mode' 错误。这是 by-design 的行为，不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 GET /cluster 确认 standalone 模式状态",
+          "observed": "GET /cluster 返回 {\"result\":{\"status\":\"disabled\"}} 确认 standalone 模式，/cluster/recover 返回的 500 错误与此状态一致",
+          "evidence_cmd": "curl -s -X GET http://localhost:6333/cluster"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (standalone mode by design)",
+            "API semantic misunderstanding (cluster-only vs general API)",
+            "Request parameter error (no params involved)",
+            "Concurrency race (not applicable)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns，但属同类'cluster-only operation in standalone mode'的平凡 API 语义误解。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "POST /cluster/recover 是 cluster/consensus 专有操作(需要 Raft consensus)，在 standalone 模式下不可用是 by-design 的行为。源码显示 get_consensus_proposal_sender() 在 standalone 模式下返回 None，显式抛出 'Qdrant is running in standalone mode' 错误。这不是 bug，是 cluster-only 功能在非集群环境下的预期行为。GET /cluster 确认 status=disabled 与此一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop with collectionName='nonexistent_collection_xyz_test'",
+          "observed": "HTTP 200 with code:0 (success) for non-existent collection",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/drop' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz_test\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract expects HTTP 404 for non-existent collections (milvus_behavioral_collections_drop_001)",
+            "API documentation states 'returns 404 if collection does not exist'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_behavioral_collections_drop_001: 'returns 404 if not found'",
+            "doc_quote: '200 on success; 404 if collection does not exist; Drop is irreversible'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "dropCollectionTask",
+            "PreExecute",
+            "drop collection"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/distributed/proxy/service.go",
+            "internal/distributed/mixcoord/service.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go lines 710-715\nfunc (t *dropCollectionTask) PreExecute(ctx context.Context) error {\n\t// No need to check collection name\n\t// Validation shall be preformed in `CreateCollection`\n\t// also permit drop collection one with bad collection name\n\treturn nil\n}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:745) -> Proxy.DropCollection (impl.go:574) -> dropCollectionTask.PreExecute (task.go:710) -> mixCoord.DropCollection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: dropCollectionTask.PreExecute 显式注释 'permit drop collection one with bad collection name'，这是有意设计的幂等操作，而非遗漏校验"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe after drop",
+          "observed": "HTTP 200 with code:100 'can't find collection' - 确认集合确实不存在，但 drop 仍返回成功"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发竞态",
+            "缓存延迟"
+          ],
+          "surviving": "idempotent_api_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "命中 developer_cognition.json 中的 RP-001 (expected_behavior) 模式 - 维护者将幂等操作视为预期行为，而非缺陷"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_collections_drop_001: 'returns 404 if not found'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "none (idempotent operation has no physical constraint)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "source_evidence": "internal/proxy/task.go:710-715 显式注释 'permit drop collection one with bad collection name'",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_C=REFUTED(by_design_in_source) 且源码有显式by-design注释 → 虽然verdict_A=CONFIRMED，但源码证明这是有意设计的幂等操作，非缺陷。final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "虽然API行为违反了契约文档(milvus_behavioral_collections_drop_001 声称应返回404)，但源码接地发现dropCollectionTask.PreExecute有显式注释 'permit drop collection one with bad collection name'，证明这是有意设计的幂等操作(idempotent delete pattern)，而非遗漏校验。维护者明确将此类行为视为预期系统行为(RP-001模式)。根据Step 3.5源码接地发现的by-design证据，推翻契约文档的期望判定为FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

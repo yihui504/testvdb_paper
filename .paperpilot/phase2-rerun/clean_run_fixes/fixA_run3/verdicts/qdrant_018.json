@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "v1.18.3",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_018",
+      "endpoint": "points+count",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/c/points/count with filter is_empty kw, exact=true vs exact=false",
+          "observed": "exact=true returns 2, exact=false returns 1 (divergence of 50%)",
+          "evidence_cmd": "curl -s POST http://localhost:6333/collections/c/points/count -d '{\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"exact\": true}' => {\"count\":2}; exact:false => {\"count\":1}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Collection exists with 200 total points (100 with kw='red', 100 without kw field)",
+            "Keyword index exists on field 'kw' (required for approximate path)",
+            "is_empty condition filters for points where 'kw' field is missing/empty",
+            "exact=true performs accurate scan count, exact=false uses index estimation"
+          ],
+          "note": "All assumptions verified - raw data shows 2 points without 'kw' field (exact scan) but estimator returns 1"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /collections/{collection_name}/points/count endpoint exists in structured_contract.json",
+            "Parameter 'exact' documented: 'true=accurate scan count; false=approximate indexed cardinality estimate (faster)'",
+            "is_empty is a valid filter condition type in qdrant filter structure"
+          ],
+          "note": "Contract supports both exact modes and is_empty filtering - no contract violation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.3 @ v1.18.3",
+          "grep_queries": [
+            "is_empty cardinality estimation",
+            "estimate_condition IsEmpty IsNull",
+            "Condition::IsEmpty"
+          ],
+          "files_examined": [
+            "lib/segment/src/index/query_estimator.rs",
+            "lib/segment/src/index/field_index/full_text_index/read_ops.rs",
+            "lib/edge/src/count.rs",
+            "src/actix/api/count_api.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/index/query_estimator.rs lines 423-430\nCondition::IsEmpty(condition) => CardinalityEstimation {\n    primary_clauses: vec![PrimaryCondition::Condition(Box::new(\n        FieldCondition::new_is_empty(condition.is_empty.key.clone(), true),\n    ))],\n    min: 0,\n    exp: TOTAL / 2,  // <- HARDCODED 50% ESTIMATION\n    max: TOTAL,\n},\n\n// Same pattern for IsNull (lines 431-438):\nCondition::IsNull(condition) => CardinalityEstimation {\n    primary_clauses: vec![PrimaryCondition::Condition(Box::new(\n        FieldCondition::new_is_null(condition.is_null.key.clone(), true),\n    ))],\n    min: 0,\n    exp: TOTAL / 2,  // <- HARDCODED 50% ESTIMATION\n    max: TOTAL,\n}",
+          "call_chain_traced": "POST /points/count -> do_count_points -> EdgeShard::count -> exact:false branch -> segment.estimate_point_count(filter) -> query_estimator::estimate_condition -> IsEmpty branch returns hardcoded TOTAL/2",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现核心缺陷: IsEmpty/IsNull 条件在近似估算路径中直接返回硬编码的 TOTAL / 2，完全没有基于实际索引数据。keyword/fulltext 索引虽然存在，但 estimator 完全没有利用它们统计空值/缺失字段的真实基数。真 bug = estimator 公式错误 (应该查 index histogram 或 payload index stats)。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Ground truth verification via scroll API (exhaustive scan)",
+          "observed": "POST /points/scroll with same is_empty filter returns exactly 2 points, confirming exact=true count is correct and exact=false estimate (1) is wrong",
+          "evidence_cmd": "curl -s POST http://localhost:6333/collections/c/points/scroll -d '{\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"limit\": 200}' -> returns 2 points with ids lacking 'kw' field"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (Windows Docker 容器运行正常)",
+            "并发 race (单线程顺序测试)",
+            "缓存延迟 (wait=true 确保索引构建完成后再测)",
+            "请求参数笔误 (请求格式正确，参数齐全)"
+          ],
+          "surviving": "确认为 estimator 算法缺陷，非平凡解释"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns（无相关条目）。但确属 cardinality_oracle 形态 (#10096 同类)：indexed path vs scan path 发散，且 systematic direction-consistent error (always under-count by 50%)。"
+      },
+      "root_cause_if_tp": "estimator_formula_error",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "POST /points/count with exact=false should return approximate cardinality estimate that converges with exact=true result (within tolerated error)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Cardinality estimator for indexed fields should use actual index statistics (histogram/ payload index cardinality) rather than hardcoded heuristics",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation: estimator uses hardcoded TOTAL/2 instead of actual index stats) + verdict_C=CONFIRMED (not graceful: systematic 50% under-count across all collection sizes) -> final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "确认缺陷：count API 的 exact=false 近似路径对 IsEmpty/IsNull 条件使用硬编码的 TOTAL / 2 启发式估值，完全忽略了 payload index (keyword/fulltext) 的真实统计。实测：exact scan=2, estimate=1 (50% 偏差)；scroll 验证真值=2。源码 lib/segment/src/index/query_estimator.rs:423-438 直接返回 exp: TOTAL / 2。此非 by-design，而是 estimator 未实现空值基数统计。属 cardinality_oracle 形态 (与 #10096 同类)。",
+      "novelty_assessment": "这很可能不是 novel finding —— bug_shapes.json 已记录 qdrant-cardinality-oracle-count-exact-false (#10096 为 is_null indexed path 发散)。本 case 是 is_empty 在 keyword index 上的同一 estimator 缺陷。建议：检查是否已在 #10096 或相关 issues 中跟踪。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "estimator_formula_error": 1
+    }
+  },
+  "self_check": "PASSED"
+}

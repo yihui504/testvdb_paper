@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/create with properties: {\"collection.ttl.seconds\": -100}",
+          "observed": "Returns HTTP 200 (success) despite invalid TTL value",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_repro\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' → HTTP 200"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "CREATE and ALTER should validate the same property with the same rules",
+            "collection.ttl.seconds should be validated to be within [-1, 3155760000]",
+            "Properties passed to CREATE should be processed, not ignored"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004 (ttlSeconds >= 0)",
+            "constraint_id: milvus_range_collections_create_005 (VarChar max_length range)",
+            "note: Contract has ttlSeconds parameter constraint, but no explicit constraint for collection.ttl.seconds property validation in CREATE"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateCollectionTTL",
+            "collection.ttl.seconds",
+            "ttlSeconds",
+            "Properties.*append"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "docs/user_guides/collection_ttl.md"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2019-2024\nif _, ok := httpReq.Params[\"ttlSeconds\"]; ok {\n\treq.Properties = append(req.Properties, &commonpb.KeyValuePair{\n\t\tKey:   common.CollectionTTLConfigKey,\n\t\tValue: fmt.Sprintf(\"%v\", httpReq.Params[\"ttlSeconds\"]),\n\t})\n}\n\n// vs alterCollectionProperties handler lines 850-854\nproperties := make([]*commonpb.KeyValuePair, 0, len(httpReq.Properties))\nfor key, value := range httpReq.Properties {\n\tproperties = append(properties, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n}\nreq.Properties = properties\n\n// internal/proxy/task.go lines 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}",
+          "call_chain_traced": "CREATE REST API → handler_v2.go:createCollection() → only processes ttlSeconds from httpReq.Params (line 2019), NOT collection.ttl.seconds from httpReq.Properties → validateCollectionTTL() called for ALTER (line 1446) but CREATE ignores Properties field",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Root cause: CREATE handler (handler_v2.go:2019) only extracts ttlSeconds from Params field, completely ignoring Properties field. ALTER handler (handler_v2.go:850) processes Properties field correctly with validation. validateCollectionTTL() exists and is called by both tasks (CREATE line 460, ALTER line 1446), but CREATE never populates Properties with collection.ttl.seconds input."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with correct parameter name: POST /collections/create with params: {\"ttlSeconds\": -100}",
+          "observed": "Returns HTTP 1100 error: 'collection TTL is out of range, expect [-1, 3155760000], got -100' → validation DOES work when correct parameter name is used",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_params_correct\", \"dimension\": 4, \"metricType\": \"L2\", \"params\": {\"ttlSeconds\": -100}}' → HTTP 1100 error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Documentation mismatch: docs say use properties.collection.ttl.seconds but code only processes params.ttlSeconds",
+            "Request parameter typo: user used 'properties' instead of 'params', but both should work for consistency",
+            "Environment issue: reproducible on clean Milvus 2.6.16 installation",
+            "API design: inconsistent handling violates least surprise principle"
+          ],
+          "surviving": "API_inconsistency_CREATE_vs_ALTER_property_handling"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "Hits blindspot indicator: 'REST v2 API data type serialization - 8 issues in corpus'. The issue is REST v2 parameter handling inconsistency where Properties field is ignored in CREATE but processed in ALTER."
+      },
+      "root_cause_if_confirmed": "API_validation_inconsistency",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Root cause in source code confirmed: handler_v2.go:createCollection() (line 2019) only processes 'ttlSeconds' from httpReq.Params field, completely ignoring the Properties field. ALTER handler (line 850) correctly processes both Properties and Params. Documentation (collection_ttl.md) instructs users to use properties.collection.ttl.seconds, but this doesn't work for CREATE. The validation function validateCollectionTTL() exists and is called by both CREATE (line 460) and ALTER (line 1446), but CREATE never populates req.Properties with user input, making validation ineffective. This is a genuine REST v2 API inconsistency, not a mundane issue.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_range_collections_create_004 states 'ttlSeconds >= 0' for the ttlSeconds parameter",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract has ttlSeconds constraint, but CREATE doesn't validate collection.ttl.seconds property (different field). Source shows CREATE ignores Properties field entirely for TTL."
+        },
+        "physical": {
+          "objective_constraint": "TTL must be in range [-1, 3155760000] per validateCollectionTTL() function",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "CREATE accepts -100 via properties field (no validation), violating physical constraint. Source proves validation function exists but is bypassed due to Properties not being populated."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Inconsistent behavior: CREATE accepts invalid TTL via properties (HTTP 200), ALTER rejects same value (HTTP 1100). Not graceful; it's a validation gap. Source shows no by-design intent for this inconsistency."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm defect)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "API_validation_inconsistency": 1
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (ids 0-100, vector [0.1,0.2,0.3,0.4])",
+          "observed": "API returned HTTP 200 with insertCount=101, accepting 101 entities despite contract assertion len(data) <= 100",
+          "evidence_cmd": "python -c \"import requests; data=[{'id':i,'vector':[0.1,0.2,0.3,0.4]} for i in range(101)]; requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName':'test_limit_dev_review','data':data}).json()\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Raw request explicitly sent 101 entities (ids 0-100)",
+            "API response returned insertCount=101 confirming acceptance",
+            "Contract assertion 'len(data) <= 100' exists in structured_contract.json (constraint_id: milvus_range_entities_insert_001)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_insert_001",
+            "assertion: len(data) <= 100",
+            "description: Max 100 entities per single insert call via REST API",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "func.*insert",
+            "len(httpReq.Data)",
+            "len(data)",
+            "checkAndSetData",
+            "NumRows"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 872-930\nfunc (h *HandlersV2) insert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionDataReq)\n\treq := &milvuspb.InsertRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t}\n\tc.Set(ContextRequest, req)\n\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tbody, _ := c.Get(gin.BodyBytesKey)\n\tvar validDataMap map[string][]bool\n\thttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, false)\n\tif err != nil {\n\t\t// error handling...\n\t}\n\n\treq.NumRows = uint32(len(httpReq.Data))  // NO VALIDATION: len(httpReq.Data) assigned directly without checking <= 100\n\treq.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)\n\tif err != nil {\n\t\t// error handling...\n\t}\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Insert\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Insert(reqCtx, req.(*milvuspb.InsertRequest))\n\t})\n\t// ... response handling ...\n}",
+          "call_chain_traced": "REST v2 /entities/insert → HandlersV2.insert() → req.NumRows = uint32(len(httpReq.Data)) [NO RANGE CHECK] → proxy.Insert() → MutationResult",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: insert函数直接将len(httpReq.Data)赋值给req.NumRows,未执行任何<= 100的校验。contract明确要求len(data) <= 100但源码未实现该约束,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 1 already provided falsification: API accepting 101 entities directly contradicts contract assertion. No alternative channel needed - the violation is in the primary insert response itself.",
+          "observed": "insertCount=101 in response confirms API accepted 101 entities, violating the contract constraint"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker container running properly)",
+            "Request parameter typo (101 entities intentionally sent, not accidental)",
+            "Approximate search (not applicable to insert endpoint)",
+            "Concurrent race (single-threaded sequential test)",
+            "By-design behavior (no source code comment or constant indicates 100+ entities is intentional)"
+          ],
+          "surviving_explanations": "None - this is a genuine validation gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; returns wrong values for large integers; Array fields in raw protobuf format; AutoId not working for Int64 PK",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "候选命中developer_cognition.json中定义的blind_spot: REST v2 API数据类型/边界校验缺失(26个历史实例,confidence=0.95)。当前缺陷(insert未校验data长度<=100)属同一根因模式:REST v2网关层参数校验不完整。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "len(data) <= 100 (constraint_id: milvus_range_entities_insert_001, confidence=1.0)",
+          "source_implements_check": false,
+          "api_observed_value": "insert 101 entities succeeded (HTTP 200, insertCount=101)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint on batch size - purely a documented API contract limit",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (契约违反压倒一切, 行为优雅不能推翻)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "contract_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实: REST v2 insert endpoint(handlers_v2.go:insert函数)未实现contract约束len(data) <= 100。实测验证API接受101个entity并返回insertCount=101,直接违反契约。developer_cognition显示REST v2参数校验缺失是已知盲区(26个历史案例)。此为真缺陷,非误报。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

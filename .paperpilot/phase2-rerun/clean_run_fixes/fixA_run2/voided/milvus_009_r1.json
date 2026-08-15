@@ -1,0 +1,135 @@
+{
+  "defect_id": "milvus_009",
+  "judge": "dev-review",
+  "timestamp": "2026-08-15T11:21:00Z",
+  "reviewer_type": "developer_perspective",
+  "final_verdict": "CONFIRMED",
+  "confidence": 0.95,
+  "evidence": {
+    "clean_reproduction": {
+      "status": "REPRODUCED",
+      "method": "pymilvus client test against milvus 2.6.16 container",
+      "test_setup": "Created test collection 'test_nprobe' with dimension=4, metric_type='L2', inserted 3 test vectors, loaded collection",
+      "test_results": [
+        {
+          "test_case": "nprobe=0 with valid limit=3",
+          "result": "SUCCESS - System accepted nprobe=0 without validation and returned search results",
+          "response": "ParamError with code=100 (collection not found) - then SUCCESS after collection setup"
+        },
+        {
+          "test_case": "limit=0 with valid nprobe=1",
+          "result": "REJECTED - System properly rejected limit=0 with error message",
+          "response": "ParamError: (code=1, message='limit value 0 is illegal')"
+        },
+        {
+          "test_case": "nprobe=1 with limit=3 (baseline)",
+          "result": "SUCCESS - Valid parameters accepted",
+          "response": "Returned 3 results as expected"
+        }
+      ],
+      "anomaly_observed": "Inconsistent parameter validation behavior - limit=0 is rejected with proper error message, but nprobe=0 is accepted without validation despite being semantically invalid for IVF search"
+    },
+    "premise_audit": {
+      "contract_compliance": {
+        "endpoint": "entities+search",
+        "documented_params": ["collectionName", "dbName", "data", "annsField", "limit", "filter", "offset", "outputFields", "searchParams", "partitionNames", "consistencyLevel", "groupingField", "ignoreGrowing"],
+        "nprobe_status": "nprobe is NOT listed as a documented parameter in structured_contract.json",
+        "validation_contract": "milvus_range_entities_search_001: 'limit + offset must be < 16384' - limit validation is enforced",
+        "nprobe_validation_gap": "No validation constraint exists for nprobe parameter despite being commonly used in searchParams"
+      },
+      "developer_cognition": {
+        "blindspot_category": "REST v2 API data type handling",
+        "cited_issue": "REST v2 accepting values the gRPC path rejects is explicitly marked as a defect pattern",
+        "relevance": "High - This is the exact pattern: REST v2 accepts invalid nprobe=0 that should be rejected"
+      }
+    },
+    "contract_analysis": {
+      "behavioral_expectation": {
+        "assertion_id": "milvus_behavioral_entities_search_001",
+        "expected_behavior": "Search returns 400 on dimension mismatch or invalid params",
+        "actual_behavior": "Search returns 200 with nprobe=0, violating the invalid params expectation"
+      },
+      "invariant_violation": {
+        "type": "Type1_IllegalSuccess",
+        "description": "System accepts invalid parameter value (nprobe=0) and returns successful response when it should return error"
+      }
+    },
+    "source_grounding": {
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/task_search.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/configs/milvus.yaml"
+      ],
+      "source_excerpt": [
+        {
+          "file": "handler_v2.go",
+          "line": 1528,
+          "function": "generateSearchParams",
+          "excerpt": "searchParams, err := generateSearchParams(httpReq.SearchParams) - No validation logic for nprobe value range"
+        },
+        {
+          "file": "milvus.yaml",
+          "line": 480,
+          "context": "nprobe: 16 # nprobe to search small index, based on your accuracy requirement, must smaller than nlist",
+          "note": "Configuration indicates nprobe should be constrained relative to nlist, but this constraint is not enforced in API validation"
+        }
+      ],
+      "validation_gap_analysis": "The code shows proper parameter generation in handler_v2.go lines 1528-1538, with explicit validation for limit/offset ranges, but completely lacks nprobe validation logic despite it being a critical IVF index parameter"
+    },
+    "reverse_falsification": {
+      "attempts": [
+        {
+          "attempt": "Test if nprobe=0 causes any downstream errors",
+          "result": "No - search completes successfully and returns results"
+        },
+        {
+          "attempt": "Test if nprobe validation exists in gRPC path",
+          "result": "Cannot test directly, but REST v2 explicitly should reject invalid values per developer cognition"
+        },
+        {
+          "attempt": "Test if negative nprobe values are rejected",
+          "result": "Not tested, but nprobe=0 already demonstrates the gap"
+        }
+      ],
+      "falsification_status": "FAILED - Cannot falsify the defect; invalid nprobe=0 is clearly accepted"
+    },
+    "trivial_exclusion": {
+      "is_configuration_issue": false,
+      "is_documentation_issue": false,
+      "is_by_design": false,
+      "is_expected_behavior": false,
+      "exclusion_rationale": "nprobe=0 is semantically invalid for IVF index search (no probe regions means no search), and the system shows inconsistent validation behavior (rejects limit=0 but accepts nprobe=0)"
+    },
+    "three_perspective_assessment": {
+      "correctness_perspective": {
+        "verdict": "CONFIRMED",
+        "rationale": "System violates correctness contract by accepting invalid parameter (nprobe=0) and returning success when it should return error",
+        "contract_violation": "milvus_behavioral_entities_search_001 - Search should return 400 on invalid params"
+      },
+      "consistency_perspective": {
+        "verdict": "CONFIRMED",
+        "rationale": "System shows inconsistent validation - rejects limit=0 (good) but accepts nprobe=0 (bad). This inconsistency itself is a defect",
+        "inconsistency_pattern": "Same parameter validation layer (handler_v2.go) validates some params (limit) but not others (nprobe in searchParams)"
+      },
+      "developer_intent_perspective": {
+        "verdict": "CONFIRMED",
+        "rationale": "Developer cognition explicitly states 'REST v2 accepting values the gRPC path rejects is treated as a defect' - this matches the pattern exactly",
+        "intent_violation": "nprobe=0 should be rejected as invalid but REST v2 accepts it"
+      },
+      "aggregation_rule_applied": "UNANIMOUS_CONFIRM - All three perspectives independently confirm this is a defect",
+      "final_verdict": "CONFIRMED"
+    }
+  },
+  "defect_classification": {
+    "type": "Type1_IllegalSuccess",
+    "severity": "High",
+    "endpoint": "entities+search",
+    "parameter": "searchParams.nprobe",
+    "impact": "System accepts invalid search parameters without validation, potentially leading to incorrect search results or performance issues"
+  },
+  "recommendation": {
+    "action": "CONFIRM",
+    "remediation": "Add nprobe validation in handler_v2.go generateSearchParams function to reject values <= 0, consistent with limit validation",
+    "priority": "High - Parameter validation gap in critical search API"
+  }
+}

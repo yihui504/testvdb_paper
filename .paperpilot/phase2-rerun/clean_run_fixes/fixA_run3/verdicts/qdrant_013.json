@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/query {\"query\": null, \"limit\": 5}",
+          "observed": "HTTP 200, returned 3 points (id=1,5,10) with score=1.0 each",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_qnull/points/query' -H 'Content-Type: application/json' -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: 'query: null' should be rejected as invalid (Type1_IllegalSuccess violation). This assumes query parameter is required and must be non-null object.",
+            "Reality: The query parameter is explicitly optional (type: object, required: false per structured_contract.json), and null is valid for optional types in JSON.",
+            "The defect claim assumes the API should validate query != null, but this assumption lacks contract support."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Parameter definition from structured_contract.json: 'name': 'query', 'type': 'object', 'required': false (lines 1202-1206)",
+            "Range constraint qdrant_range_query_points_008: 'limit default=10 for query endpoint' (no assertion about query being required)",
+            "State constraint qdrant_state_query_points_010: 'prefetch queries execute first, then final query runs on combined results' (describes pipeline, not query requirement)",
+            "Behavioral assertion qdrant_behavioral_011: 'Returns 200 with array of scored points' (expects 200, not 4XX)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "query.*None",
+            "leaf_source_from_scoring_query",
+            "QueryScrollRequestInternal"
+          ],
+          "files_examined": [
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/shard/src/query/planned_query.rs",
+            "lib/shard/src/query/tests.rs",
+            "src/common/inference/query_requests_rest.rs"
+          ],
+          "source_excerpt": "File: lib/shard/src/query/planned_query.rs, lines 459-471:\n\n        None => {\n            let scroll = QueryScrollRequestInternal {\n                scroll_order: Default::default(),\n                filter,\n                with_vector: WithVector::from(false),\n                with_payload: WithPayloadInterface::from(false),\n                limit,\n            };\n\n            let idx = scrolls.len();\n            scrolls.push(scroll);\n\n            Source::ScrollsIdx(idx)\n        }\n\nThis explicit pattern match on 'None' shows that null query is handled by converting to a scroll operation, not rejected.",
+          "call_chain_traced": "CollectionQueryRequest.query (Option<Query>) -> leaf_source_from_scoring_query -> match query { None => create QueryScrollRequestInternal } -> scrolls vector -> executed as scroll operation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows explicit handling of None query by converting to scroll. This is not a missing validation - it's designed behavior where query=null degrades to scroll-filter-only operation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/scroll {\"limit\": 5}",
+          "observed": "HTTP 200, returned same 3 points (id=1,5,10) as query:null, confirming semantic equivalence",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_qnull/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 5}'",
+          "conclusion": "query:null behaves identically to scroll endpoint, confirming it's a feature (query degradation to scroll) not a bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Windows/Docker): Not applicable, same behavior on standard Qdrant container",
+            "Concurrency/race: Not applicable, single-threaded repro",
+            "Request parameter typo: query:null is valid JSON syntax, not a typo",
+            "Cache/optimizer delay: Not applicable, immediate query after data insertion"
+          ],
+          "surviving": "mundane_api_semantics - The 'violation' is simply misunderstood API semantics. Optional parameters can be null in JSON, and Qdrant's query endpoint is designed to degrade gracefully from vector search (query present) to scroll-filter (query null)."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This case doesn't match any documented by_design_pattern or rejection_pattern from developer_cognition.json. However, the source code evidence explicitly shows this is by-design behavior (None query -> scroll conversion)."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The defect claim 'query: null should be rejected' is based on incorrect API semantics assumptions. Source code (lib/shard/src/query/planned_query.rs:459-471) explicitly handles None query by converting it to a scroll operation, demonstrating this is designed behavior, not missing validation. The query parameter is optional per contract (required: false), and null is valid for optional JSON types. Step 4 falsification confirmed query:null returns identical results to the scroll endpoint, proving semantic equivalence. This is a graceful degradation feature where queryless requests become filter-only scroll operations, not a param_validation bug.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract assertion requires query to be non-null. Parameter definition: 'name': 'query', 'type': 'object', 'required': false (structured_contract.json lines 1202-1206). qdrant_behavioral_011 expects '200 with array of scored points' not 4XX on invalid params.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - query parameter has no physical/semantic constraints (no range boundary, no enum restriction) beyond being optional object type.",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by_design_in_source) -> final=REFUTED per SOP aggregation rule: if A=NEUTRAL and B=NEUTRAL and C=REFUTED, final_verdict = REFUTED (truly by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

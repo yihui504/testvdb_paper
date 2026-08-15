@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "endpoint": "aliases+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /aliases/list with collectionName='' (empty string) returns 200 with data array",
+          "observed": "API accepts empty string collectionName and returns all aliases (same behavior as omitting the field)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/aliases/list' -H 'Content-Type: application/json' -d '{\"collectionName\": \"\", \"dbName\": \"default\"}' returns {\"code\":0,\"data\":[\"test_alias\"]}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes empty string collectionName should be rejected with validation error",
+            "Candidate assumes aliases+list should validate collectionName like aliases+describe validates aliasName (binding:\"required\")",
+            "Conclusion depends on treating empty string as invalid input rather than 'no filter' signal"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_aliases_list_001 - collectionName parameter is optional (required: false)",
+            "api_templates.md: 'List aliases, optionally filtered by collection'",
+            "source: internal/distributed/proxy/httpserver/request_v2.go line 145-148 defines OptionalCollectionNameReq struct with no validation tags"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "OptionalCollectionNameReq",
+            "listAlias",
+            "binding.*required",
+            "aliases.*list"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 145-156\ntype OptionalCollectionNameReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\"`\n}\n\nfunc (req *OptionalCollectionNameReq) GetCollectionName() string {\n\treturn req.CollectionName\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 299\nrouter.POST(AliasCategory+ListAction, timeoutMiddleware(wrapperPost(func() any { return &OptionalCollectionNameReq{} }, wrapperTraceLog(h.listAlias))))\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 2863-2877\nfunc (h *HandlersV2) listAlias(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\tcollectionGetter, _ := anyReq.(requestutil.CollectionNameGetter)\n\treq := &milvuspb.ListAliasesRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: collectionGetter.GetCollectionName(),\n\t}\n\tc.Set(ContextRequest, req)\n\n\tresp, err := wrapperProxy(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/ListAliases\", func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.ListAliases(reqCtx, req.(*milvuspb.ListAliasesRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnList(resp.(*milvuspb.ListAliasesResponse).Aliases))\n\t}\n\treturn resp, err\n}",
+          "call_chain_traced": "OptionalCollectionNameReq.GetCollectionName() → ListAliasesRequest.CollectionName → proxy.ListAliases() - no validation layer checks for empty string",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: aliases+list 使用 OptionalCollectionNameReq 结构体,collectionName 字段没有 binding:\"required\" 或 binding:\"nonzero\" 验证标签。与 aliases+describe 使用的 AliasReq 结构体(aliasName 字段有 binding:\"required\") 形成对比。空字符串被视为有效的 'no filter' 语义,不是参数验证缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare aliases+list (empty string accepted) vs aliases+describe (empty string rejected with code 1802)",
+          "observed": "aliases/describe with aliasName='' returns code:1802 'Field validation for 'AliasName' failed on the 'required' tag' - different validation rules by design"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - reproducible on clean Milvus 2.6.16 instance",
+            "Race condition - behavior is deterministic",
+            "API semantic confusion - contract clearly states collectionName is optional"
+          ],
+          "surviving": "by_design_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - List aliases with optional filter; empty/missing collectionName means 'list all'",
+        "note": "命中 rejection_pattern RP-001 (expected_behavior)。aliases+list 的 collectionName 是可选过滤参数,空字符串等同于未提供过滤条件,返回所有别名符合设计预期。这与 aliases+describe 的 aliasName(required)不同。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "Original oracle assumed empty string collectionName should be rejected with validation error. However, 1) Contract specifies collectionName is optional (required:false), 2) Source code uses OptionalCollectionNameReq struct without binding:\"required\" validation, 3) API semantics: empty/missing collectionName = 'no filter, list all aliases', 4) Verified by clean repro: empty string behaves identically to omitting the field, 5) Contrast with aliases+describe which correctly validates required aliasName with binding:\"required\". This is by-design API behavior for an optional filter parameter, not a parameter validation defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

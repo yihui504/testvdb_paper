@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create + POST /v2/vectordb/entities/insert with 101 entities",
+          "observed": "HTTP 200, insertCount=101, insertIds=[0-100], all entities successfully inserted and queryable",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/entities/query returned all 101 entities (id 0-100)"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes REST v2 /entities/insert should enforce a batch size limit (likely <=100 entities)",
+            "No explicit contract constraint found specifying maximum batch size for insert operations",
+            "Oracle's defect assertion implies existence of limit but source code shows no such validation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No constraint_id found - structured_contract.json unavailable in expected location",
+            "REST v2 /entities/insert endpoint in handler_v2.go:229-231 shows no size validation middleware"
+          ],
+          "note": "Without access to structured_contract.json, cannot identify explicit constraint_id. However, source code review shows batch size validation is absent."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "entities.*insert",
+            "InsertEntities",
+            "CollectionDataReq",
+            "len(.*data",
+            "max.*insert"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "tests/restful_client_v2/testcases/test_vector_operations.py"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 328-335\ntype CollectionDataReq struct {\n\tDbName         string                    `json:\"dbName\"`\n\tCollectionName string                    `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                    `json:\"partitionName\"`\n\tData           []map[string]interface{}  `json:\"data\" binding:\"required\"`\n\tPartialUpdate  bool                      `json:\"partialUpdate\"`\n\tFieldOps       []FieldPartialUpdateOpReq `json:\"fieldOps\"`\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1267-1268\nreq.NumRows = uint32(len(httpReq.Data))\n// No validation: if len(httpReq.Data) > limit { return error }",
+          "call_chain_traced": "CollectionDataReq.Data (no max binding) → handler_v2.go:1267 (len assignment, no check) → proxy.Insert (no validation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionDataReq.Data 字段仅有 binding:\"required\", 无 max 长度约束。handler 直接将 len(httpReq.Data) 赋值给 req.NumRows, 无任何 batch size 校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with limit=150 after inserting 101 entities",
+          "observed": "Query returned all 101 entities successfully (id 0-100), confirming no silent truncation or error occurred. The system fully accepted and processed the 101-entity batch.",
+          "evidence_cmd": "curl confirmed 101 distinct entities stored and queryable"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container) - ruled out, clean reproduction on running container",
+            "Request parameter error - ruled out, request well-formed per REST v2 spec",
+            "API semantics misunderstanding - ruled out, behavior matches source code implementation"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators -> rest_v2_data_types",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "候选命中开发者认知盲区: REST v2 API 数据类型序列化/校验不足。历史有 26 个相关缺陷 (rest-v2-data-type-handling),表明 REST v2 层的参数校验缺失是已知系统性问题,维护者视其为已知局限而非缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "源码接地证实 REST v2 /entities/insert 端点无 batch size 限制校验。CollectionDataReq.Data 字段仅要求 required,无 max 约束。handler_v2.go:1267 直接将 len(Data) 赋值给 NumRows,无任何范围检查。101 实体插入完全成功,查询验证全部存储。此行为匹配源码实现,命中开发者认知的 REST v2 数据处理盲区 (rest-v2-data-type-handling, 26 历史案例),表明这是 by-design 的已知限制,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

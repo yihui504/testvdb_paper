@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_007",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with data=[[]] (empty vector)",
+          "observed": "HTTP 200 with code=1801, message='can only accept json format request, error: dimension: 8, but length of []float: 0: invalid parameter[expected=FloatVector][actual=[[]]]'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_007\", \"data\": [[]], \"limit\": 3, \"annsField\": \"vector\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "API should return HTTP 400 for invalid parameters (empty vector), not HTTP 200 with error code"
+          ],
+          "note": "Request contains empty vector array [[]], which violates the constraint that vectors must match collection dimension"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001",
+            "assertion: 'data is array[array[float]] AND annsField is a vector field AND limit > 0'",
+            "endpoint_registry doc_quote: '200 on success with ranked results; 400 on dimension mismatch or invalid params'"
+          ],
+          "contract_violated": true,
+          "note": "Contract explicitly documents HTTP 400 for invalid params, but API returns HTTP 200"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": [
+            "dimension.*but length of.*float",
+            "HTTPAbortReturn.*http.StatusOK",
+            "serializeFloatVectors"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go:535\nHTTPAbortReturn(ginCtx, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n\ninternal/distributed/proxy/httpserver/utils.go:1221-1236\nfunc serializeFloatVectors(vectorStr string, dataType schemapb.DataType, dimension, bytesLen int64, fpArrayToBytesFunc func([]float32) []byte) ([][]byte, error) {\n\tvar fp32Values [][]float32\n\terr := json.Unmarshal([]byte(vectorStr), &fp32Values)\n\tif err != nil {\n\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr, err.Error())\n\t}\n\tvalues := make([][]byte, 0, len(fp32Values))\n\tfor _, vectorArray := range fp32Values {\n\t\tif int64(len(vectorArray)) != dimension {\n\t\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr,\n\t\t\t\tfmt.Sprintf(\"dimension: %d, but length of []float: %d\", dimension, len(vectorArray)))\n\t\t}\n\t\tvectorBytes := fpArrayToBytesFunc(vectorArray)\n\t\tvalues = append(values, vectorBytes)\n\t}\n\treturn values, nil\n}",
+          "call_chain_traced": "serializeFloatVectors validates dimension -> returns error via merr.WrapErrParameterInvalid -> handler calls HTTPAbortReturn with http.StatusOK",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly implements HTTP 200 for ALL responses (success and errors), using error codes in response body instead of HTTP status codes. This is intentional REST v2 design pattern, but contradicts published contract."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test valid 8-dim vector search vs invalid 2-dim vector search",
+          "observed": "Valid vector: HTTP 200 code=0 with results. Invalid vector: HTTP 200 code=1801. Pattern consistent: ALL responses use HTTP 200 with error codes.",
+          "note": "API consistently uses HTTP 200 for all cases, confirming this is by-design behavior, not a bug in error handling."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment noise - reproduction is clean and consistent",
+            "Race condition - same result on repeated tests",
+            "Request parameter typo - tested with both valid and invalid vectors"
+          ],
+          "surviving": "REST v2 API design mismatch - source code implements HTTP 200 error pattern while contract documents HTTP 400",
+          "note": "Developer cognition shows 'REST v2 issues persist' and 25 REST v2 API issues with 'Data type serialization not validated' pattern, indicating known design inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_category": "REST v2 API data type handling issues"
+      },
+      "root_cause_if_confirmed": "contract_documentation_mismatch",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Contract explicitly documents '400 on dimension mismatch or invalid params' but source code implements HTTP 200 for all responses. While source code shows this is by-design for REST v2 API pattern, it contradicts published API documentation. This creates confusion for API consumers who expect standard HTTP status codes. Developer cognition confirms REST v2 has known issues with data type validation and cross-channel inconsistencies. The defect is the mismatch between documented contract (HTTP 400) and implementation (HTTP 200 + error code), not the error handling itself which works correctly."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_documentation_mismatch": 1
+    }
+  },
+  "self_check": "PASSED"
+}

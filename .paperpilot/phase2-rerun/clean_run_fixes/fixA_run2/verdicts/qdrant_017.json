@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/search with vector [0.5,0.5,0.5,0.5], limit=10, offset=[0,10,20]",
+          "observed": "Page 1: IDs [0,1,2,3,4,5,6,7,8,9] (10 unique). Page 2: IDs [10,11,12,13,14,15,16,17,18,19] (10 unique). Page 3: IDs [20,21,22,23,24] (5 unique). Total 25 points, 25 unique, 0 duplicates.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_pagination_dedup/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.5, 0.5, 0.5, 0.5], \"limit\": 10, \"offset\": 0, \"with_payload\": true}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "Assumption: Pagination should return duplicate points across pages",
+            "Verification: Manual verification shows 25 unique points with zero duplicates across all 3 pages"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_scroll_points_005 - limit default=10 for scroll endpoint",
+            "API contract: POST /collections/{collection_name}/points/search supports offset parameter for pagination"
+          ],
+          "no_duplicate_requirement": "No constraint requires or expects duplicate points across paginated results"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["offset", "skip.*offset", "pagination"],
+          "files_examined": [
+            "lib/collection/src/collection/search.rs",
+            "lib/collection/src/collection_manager/segments_searcher.rs",
+            "lib/collection/src/collection/query.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/collection/search.rs lines 310-317\nlet top_res = if is_client_request && request.offset > 0 {\n    merged_iter\n        .skip(request.offset)\n        .take(request.limit)\n        .collect()\n} else {\n    merged_iter.take(request.offset + request.limit).collect()\n};\n\n// lib/collection/src/collection_manager/segments_searcher.rs line 647\ntop: search_query.limit + search_query.offset,\n\n// lib/collection/src/collection/query.rs line 437\nlet result: Vec<ScoredPoint> = result.into_iter().skip(*offset).take(*limit).collect();",
+          "call_chain_traced": "SearchRequest.offset → merged_iter.skip(offset).take(limit) → proper pagination without duplicates",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code shows proper offset implementation using standard .skip().take() pattern, ensuring no duplicates across paginated results"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Cross-page duplicate analysis: Collect all IDs from offset=0/10/20 pages, verify uniqueness",
+          "observed": "All 25 points (IDs 0-24) returned exactly once across 3 pages. 0 duplicates confirmed via set analysis: |all_ids|=25, |unique_ids|=25, duplicates=0"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "HNSW approximation duplicates - normal behavior",
+            "Pagination offset mechanics - working as designed"
+          ],
+          "surviving": "none",
+          "by_design_pattern": "developer_cognition.json lists 'HNSW approximation duplicates in pagination' as by_design_pattern with developer_stance='Accepted limitation of approximate search' and should_report=false"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "HNSW approximation duplicates in pagination",
+        "developer_quote": "Accepted limitation of approximate search",
+        "pattern_id": "by_design_patterns[0]",
+        "should_report": false,
+        "note": "This defect directly matches the by_design_pattern in developer_cognition.json, indicating developers explicitly accept HNSW approximation behavior in pagination as a known limitation"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The defect claim appears to be about pagination behavior (collections+{collection_name}+points endpoint with search/scroll), but Step 1 clean reproduction and Step 4 falsification both confirm proper pagination with zero duplicates across all pages. The source code analysis (Step 3.5) reveals correct offset handling using .skip().take() pattern. Most critically, the developer cognition explicitly lists 'HNSW approximation duplicates in pagination' as a by_design_pattern that should NOT be reported (should_report=false). This indicates the claimed behavior, if it existed, would be a known accepted limitation rather than a defect. However, actual testing shows no duplicate behavior exists - pagination works correctly with 25 unique points returned across 3 pages."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

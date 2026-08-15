@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_qdrant_001_devreview/points with vector=[] (empty array), wait=false (default)",
+          "observed": "HTTP 200 OK with {'result': {'operation_id': 0, 'status': 'acknowledged'}}",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_qdrant_001_devreview/points' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": []}]}'",
+          "note": "Control test with wait=true: HTTP 400 with 'Vector dimension error: expected dim: 4, got 0'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Vector dimension should be validated regardless of wait parameter",
+            "Empty vector [] is invalid input (dimension 0 vs required 4)",
+            "wait=false should not bypass input validation"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API contract implicit: vectors must match collection dimension config (size: 4)",
+            "REST API validation layer: BatchVectorStruct::Single returns Ok(()) with no validation (lib/api/src/rest/validate.rs:36)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ 1.12.1",
+          "grep_queries": [
+            "BatchVectorStruct::Single",
+            "check_vector_against_config",
+            "WrongVectorDimension",
+            "wait.unwrap_or",
+            "upsert_point"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/validate.rs",
+            "lib/api/src/rest/update_api.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/shards/replica_set/update.rs",
+            "lib/segment/src/segment/entry.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/validate.rs line 36 - NO dimension validation at REST layer:\nimpl Validate for BatchVectorStruct {\n    fn validate(&self) -> Result<(), validator::ValidationErrors> {\n        match self {\n            BatchVectorStruct::Single(_) => Ok(()),  // <-- BUG: returns Ok without checking dimension\n            BatchVectorStruct::MultiDense(vectors) => { ... }\n        }\n    }\n}\n\n// lib/segment/src/common/mod.rs lines 174-188 - ACTUAL validation (only runs in segment layer):\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n        ... }\n}\n\n// lib/api/src/rest/update_api.rs line 49 - wait defaults to FALSE:\nlet wait = params.wait.unwrap_or(false);\n\n// lib/collection/src/collection/point_ops.rs line 140 - operation.validate() called BEFORE queue:\noperation.validate()?;  // But this only validates schema, not dimensions!\n\n// lib/collection/src/shards/replica_set/update.rs line 241 - wait passed to async execution:\nlocal.get().update(operation, local_wait).await  // Dimension check happens INSIDE here, only if wait=true",
+          "call_chain_traced": "REST API (update_api.rs:49 wait=false) → do_upsert_points → toc.update → Collection.update_from_client (line 140: operation.validate() only checks schema) → shard.update_with_consistency → shard.update → Segment.upsert_point (entry.rs:93: check_named_vectors) → check_vector_against_config (mod.rs:181) where dimension validation ACTUALLY happens",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Root cause: REST layer validate() (line 36) returns Ok(()) for Single vectors without checking dimension. The actual dimension validation only happens deep in the segment layer (check_vector_against_config). When wait=false, operation is queued and returns 200 BEFORE segment validation runs. When wait=true, segment validation runs synchronously and returns 400. This is a clear validation bypass bug."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "GET /collections/test_qdrant_001_devreview to check if point was actually inserted",
+          "observed": "Collection shows points_count=0, indexed_vectors_count=0 - empty vector was silently discarded, not inserted",
+          "note": "Falsification failed - the bug is confirmed. API accepted invalid input, returned success, but silently discarded the data."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment-specific (reproduced on Windows)",
+            "Concurrency race (single-threaded test)",
+            "Request parameter error (exact same request used)",
+            "API semantic misunderstanding (wait should control timing, not validation bypass)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": null,
+        "note": "Matches bug_shape 'qdrant-parameter-validation-numeric-boundary' - Parameter Validation issues where Numeric Boundary validation is missing. The vector dimension is a numeric boundary that should be validated at API entry point."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Collection config vectors.size=4 requires all vectors to have dimension 4. This is enforced when wait=true (returns 400 'Vector dimension error: expected dim: 4, got 0')",
+          "source_implements_check": false,
+          "note": "REST layer validate() returns Ok(()) for Single vectors without dimension check (validate.rs:36). Actual check only in segment layer (mod.rs:181).",
+          "assertion_text_quoted": "Vectors must match collection dimension config (implicit contract, proven by wait=true behavior)",
+          "api_observed_value": "Empty vector [] (dim 0) accepted with HTTP 200 when wait=false",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimensions must be positive integers matching collection config (dim > 0 and dim == config.size)",
+          "note": "Dimension 0 is physically invalid - a vector with 0 elements cannot exist in mathematical space. Collection configured for dim=4.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "note": "API returns 200 'acknowledged' but silently discards invalid data. This is NOT graceful degradation - it's silent data loss with success response. No error message, no warning.",
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation: dimension requirement exists but not enforced when wait=false) AND verdict_B=CONFIRMED (physical constraint: dim=0 is invalid) AND verdict_C=CONFIRMED (silent data loss) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "validation_bypass_in_async_path",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Clear validation bypass bug: REST API accepts empty vector (dim 0) when wait=false, returning HTTP 200, but silently discards the data. When wait=true, same request correctly returns 400 with dimension error. Root cause: validate() at REST layer (validate.rs:36) returns Ok(()) for Single vectors without checking dimension. Actual dimension validation only happens deep in segment layer (mod.rs:181 check_vector_against_config), which executes asynchronously when wait=false. This violates the contract that vectors must match collection dimension (proven by wait=true behavior) and creates silent data loss. Matches bug_shape 'parameter_validation-numeric-boundary'. Not a mundane explanation, not by-design, not environment-specific. True bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_bypass_in_async_path": 1
+    }
+  },
+  "self_check": "PASSED - #9255 regression test: Fixture with missing with_payload would be detected via falsification step (scroll/GET would reveal truth). This case is different - it's a validation bypass bug confirmed by source code analysis."
+}

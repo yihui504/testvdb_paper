@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_020",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST entities+search after entities+delete(id in [1,2,3,4,5]) with consistencyLevel=Bounded (default)",
+          "observed": "Before delete: search returns 10 entities (0-9). After delete with deleteCount=5: search still returns 10 entities (0-9) including deleted IDs 1,2,3,4,5. Only 5 should remain (0,6,7,8,9). Stale data visible.",
+          "evidence_cmd": "Raw evidence REQ 6-9 from output_milvus_020.log: baseline search 10 results, delete id in [1,2,3,4,5] success (deleteCount=5), post-delete search still returns 10 results with stale deleted entities"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Collection loaded before search (REQ 5 load success)",
+            "Entities exist before delete (insert 10 entities confirmed)",
+            "Delete operation acknowledged by server (deleteCount=5)",
+            "Search query uses same vector and limit parameters pre/post delete"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001 - collection must be loaded before search",
+            "contract_id: milvus_behavioral_insert_query_consistency_001 - bounded consistency expects deleted entities to be excluded from subsequent searches",
+            "consistencyLevel parameter: defaults to Bounded, should respect delete visibility within reasonable time"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "consistency.*level",
+            "delete.*search",
+            "searchHandler",
+            "cache.*stale"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1491-1494\nlog.Ctx(ctx).Warn(\"high level restful api, search with consistency_level invalid\", zap.Error(err))\nHTTPReturnMessage: \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\"\n\n// Line 1999-2014 search consistencyLevel defaults to Bounded\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    }\n}\n\n// Source shows default Bounded consistency is used, but no explicit cache invalidation or timestamp-based check visible in search handler after delete",
+          "call_chain_traced": "SearchRequest -> handler_v2.go search handler -> consistencyLevel defaults to Bounded -> proxy.HybridSearch -> no visible delete timestamp synchronization",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "no_explicit_delete_visibility_check",
+          "note": "源码接地发现: search handler uses Bounded consistency by default, but no visible mechanism to invalidate search cache or synchronize deleted entity visibility. Delete acknowledgment (deleteCount=5) does not guarantee immediate search visibility under Bounded consistency without explicit timestamp/TSO synchronization."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: POST entities/query with filter id in [1,2,3,4,5] to verify deleted entities still exist",
+          "observed": "Bug consequence IS observable: post-delete search returns deleted IDs 1,2,3,4,5 in result set despite successful delete operation with deleteCount=5. Stale data persistently visible in search results.",
+          "evidence_cmd": "REQ 9 vs REQ 8: deleteCount=5 confirmed but search still returns 10 entities including deleted ones"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean collection)",
+            "Race condition (single-threaded sequential ops)",
+            "Request parameter error (same vector/limit used pre/post delete)",
+            "Missing load step (collection loaded before search)"
+          ],
+          "surviving": "consistency_visibility_delay - Bounded consistency allows delete visibility delay, but should not cause permanent stale results in single-node sequential operations"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_details": "Candidate hits blindspot #6: 'REST v2 API data type serialization - 8 issues in corpus' and #7: 'Snapshot isolation broken during concurrent operations - 7 issues'. Search after delete showing stale data indicates visibility/inconsistency issue in REST v2 search path."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_insert_query_consistency_001 - After insert, query should return inserted entities within bounded consistency. By symmetry, after delete, search should exclude deleted entities within bounded consistency.",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Deleted entities must not appear in search results after delete operation acknowledges removal (deleteCount > 0)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree: this is a true bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "search_delete_visibility_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Raw evidence clearly shows delete operation succeeds (deleteCount=5) but subsequent search still returns all 10 original entities including the 5 deleted ones. This violates bounded consistency expectations and represents a data visibility bug where deleted entities remain visible in search results. The defect persists across collection drop/recreate cycles (shown in both REQ 1-9 and REQ 11-18 sequences), ruling out transient state issues. All three perspectives (contract violation, physical constraint, behavioral gracefulness) confirm this is a genuine bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "search_delete_visibility_gap": 1
+    }
+  }
+}

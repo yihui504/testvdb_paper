@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_004",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete with filter='age in [10, 5]'",
+          "observed": "HTTP 200 with deleteCount=1 (only age=10 exists; age=5 not in data)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/delete' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_devreview\", \"dbName\": \"default\", \"filter\": \"age in [10, 5]\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumed both values [10, 5] exist in dataset",
+            "Oracle expected deleteCount=2 without verifying data state"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 (filter must be valid boolean expression)",
+            "assertion_id: milvus_behavioral_entities_delete_001 (delete returns deleteCount matching actual deletions)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["deleteRunner", "Delete.*MutationResult", "deleteCount"],
+          "files_examined": [
+            "internal/distributed/proxy/service.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task_delete.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/impl.go line 2581-2680\nfunc (node *Proxy) Delete(ctx context.Context, request *milvuspb.DeleteRequest) (*milvuspb.MutationResult, error) {\n\tctx, sp := otel.Tracer(typeutil.ProxyRole).Start(ctx, \"Proxy-Delete\")\n\tdefer sp.End()\n\tlog := log.Ctx(ctx).With(\n\t\tzap.String(\"role\", typeutil.ProxyRole),\n\t\tzap.String(\"db\", request.DbName),\n\t\tzap.String(\"collection\", request.CollectionName),\n\t\tzap.String(\"partition\", request.PartitionName),\n\t\tzap.String(\"expr\", request.Expr),\n\t)\n\t...\n\tsuccessCnt := dr.result.GetDeleteCnt()\n\t...\n\treturn dr.result, nil\n}\n\n// internal/proxy/task_delete.go line 266-365\nfunc (dr *deleteRunner) Init(ctx context.Context) error {\n\t...\n\tvisitorArgs := &planparserv2.ParserVisitorArgs{Timezone: colTimezone}\n\tdr.plan, err = planparserv2.CreateRetrievePlanArgs(dr.schema.schemaHelper, dr.req.GetExpr(), dr.req.GetExprTemplateValues(), visitorArgs)\n\tif err != nil {\n\t\treturn merr.WrapErrAsInputError(merr.WrapErrParameterInvalidMsg(\"failed to create delete plan: %v\", err))\n\t}\n\tif planparserv2.IsAlwaysTruePlan(dr.plan) {\n\t\treturn merr.WrapErrAsInputError(merr.WrapErrParameterInvalidMsg(\"delete plan can't be empty or always true : %s\", dr.req.GetExpr()))\n\t}\n\t...\n}",
+          "call_chain_traced": "DeleteRequest → Proxy.Delete → deleteRunner.Init (parse expression) → deleteRunner.Run → returns MutationResult with DeleteCnt",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: deleteRunner 正确解析表达式 'age in [10, 5]' 并返回实际删除行数。表达式语法有效，执行符合预期。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter 'age in [0,10,20,30,40]' after delete",
+          "observed": "返回 4 条记录 [id=0,2,3,4]，id=1 (age=10) 已删除，deleteCount=1 正确反映实际删除数量",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_devreview\", \"dbName\": \"default\", \"filter\": \"age in [0,10,20,30,40]\", \"outputFields\": [\"id\", \"age\"], \"limit\": 10}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 无",
+            "并发问题 - 无",
+            "请求参数错误 - 无，表达式语法正确"
+          ],
+          "surviving": "oracle_assumption_error"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式。这属于 oracle 断言错误：期望删除不存在的数据。"
+      },
+      "root_cause_if_fp": "oracle_assumption_error",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "原始料显示 delete with filter='age in [10, 5]' 返回 deleteCount=1，但 oracle 期望 deleteCount=2。通过独立证伪(query 验证剩余数据)确认只有 age=10 存在并被删除，age=5 从未存在于数据集中。源码接地确认 delete 正确解析表达式并返回实际删除行数。无违规行为。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"oracle_assumption_error": 1}
+  }
+}

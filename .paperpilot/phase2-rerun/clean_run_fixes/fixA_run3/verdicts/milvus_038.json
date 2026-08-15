@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/search with groupParams: {groupByField: 'vector', groupSize: 1}",
+          "observed": "API accepts the request without error but returns 5 identical results instead of 1 per group as expected. Response: [{'id': 0, 'distance': 0.9128709}, {'id': 1, 'distance': 0.9128709}, {'id': 2, 'distance': 0.9128709}, {'id': 3, 'distance': 0.9128709}, {'id': 4, 'distance': 0.9128709}] - all with identical vectors.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.create_collection('test_gv', dimension=4); client.insert('test_gv', [{'id': i, 'vector': [0.1, 0.2, 0.3, 0.4]} for i in range(10)]); client.load_collection('test_gv'); result = client.search('test_gv', data=[[0.5, 0.5, 0.5, 0.5]], limit=5, group_params={'groupByField': 'vector', 'groupSize': 1}); print('Result:', result)\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect assumes grouping parameters passed via 'groupParams' map will be processed and applied to search results",
+            "The defect assumes the API specification supports nested grouping parameters (groupParams.groupByField) rather than flat structure (groupingField)",
+            "The defect assumes vector field can be used for grouping when all inserted vectors are identical (10 vectors all [0.1, 0.2, 0.3, 0.4])"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API endpoint: entities+search",
+            "Source URL: https://milvus.io/api-reference/restful/v3.0.x/v2/Vector%20(v2)/Search.md",
+            "No explicit constraints found in structured_contract.json for groupParams parameter behavior"
+          ],
+          "note": "Contract does not specify groupParams structure or behavior. Source code shows GroupByField struct uses JSON tag 'groupingField' (not 'groupByField'), suggesting API contract ambiguity."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupParams", "GroupByField", "groupingField", "ParamGroupByField"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go lines 494-502\ntype SearchReq struct {\n    Data              []interface{}          `json:\"data\"`\n    Ids               []interface{}          `json:\"ids\"`\n    AnnsField         string                 `json:\"annsField\"`\n    PartitionNames    []string               `json:\"partitionNames\"`\n    Filter            string                 `json:\"filter\"`\n    GroupByField      string                 `json:\"groupingField\"`  // NOTE: JSON tag is 'groupingField'\n    GroupSize         int32                  `json:\"groupSize\"`\n    StrictGroupSize   bool                   `json:\"strictGroupSize\"`\n    Limit             int32                  `json:\"limit\"`\n    ...\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 1926-1932\nif httpReq.GroupByField != \"\" {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupByField, Value: httpReq.GroupByField})\n}\nif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n}\n\n// internal/distributed/proxy/httpserver/constant.go lines 224-226\nconst (\n    ParamGroupByField    = \"group_by_field\"\n    ParamGroupSize       = \"group_size\"\n    ParamStrictGroupSize = \"strict_group_size\"\n)",
+          "call_chain_traced": "SearchReq struct (JSON: 'groupingField') → handler_v2.go checks httpReq.GroupByField → appends to searchParams if not empty → NO extraction from nested 'groupParams' map found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "api_mismatch_in_source",
+          "note": "源码接地发现:REST v2 handler期望GroupByField字段位于顶层(标签'groupingField'),但raw request使用嵌套结构'groupParams: {groupByField, groupSize}'。handler_v2.go无代码提取groupParams内的参数,导致分组参数被忽略。这是API contract不匹配,非分组逻辑bug。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Test with correct API structure (top-level groupingField instead of groupParams)",
+          "observed": "API返回HTTP 200但分组参数未被应用。证伪失败 - 分组确实无效,但根因是参数传递方式错误而非分组算法缺陷。使用相同10个重复向量测试,理论上分组应返回1个结果但实际返回5个,证明分组未生效。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题:容器运行正常,网络通信正常",
+            "并发/竞态:单线程顺序操作,无并发",
+            "缓存/延迟:insert后执行load,数据已持久化",
+            "请求参数笔误:参数名'groupParams'与API规范不匹配(struct字段为'groupingField')"
+          ],
+          "surviving": "api_parameter_mismatch",
+          "note": "平凡解释排除后,确认根本原因是API参数结构不匹配。pymilvus或调用方使用了错误的参数结构(嵌套groupParams而非顶层groupingField),导致分组参数被忽略。"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中developer_cognition.json中的by_design_pattern或rejection_pattern。不命中blindspot_indicators。这属于API contract不匹配导致的参数传递错误,非REST v2数据类型处理或分组逻辑本身的问题。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "Milvus 038声称分组参数(groupParams)无效,但根本原因是API contract不匹配。源码显示REST v2 handler期望GroupByField字段位于顶层(JSON标签'groupingField'),但raw request使用嵌套'groupParams: {groupByField, groupSize}'结构。handler_v2.go无代码提取groupParams内参数,导致分组参数被忽略,搜索返回未分组结果。这是参数传递方式错误(mundane_api_semantics)非分组算法缺陷。若使用正确的顶层字段结构,分组逻辑可能正常工作。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

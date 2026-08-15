@@ -1,0 +1,69 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "v1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with objects array containing item with empty vector=[]",
+          "observed": "Both objects returned HTTP 200 with status=SUCCESS, including object with empty vector",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/batch/objects -H 'Content-Type: application/json' -d '{\"objects\": [{\"class\": \"BatchVectorBugRepro\", \"id\": \"99999999-9999-4999-8999-999999999999\", \"properties\": {\"name\": \"test-valid\"}, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"class\": \"BatchVectorBugRepro\", \"id\": \"88888888-8888-4888-8888-888888888888\", \"properties\": {\"name\": \"test-empty-vector\"}, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Conclusion assumes batch should validate vector length, but validation only checks vector type/presence, not emptiness"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_type_object_vector_001 - 'vector must be array of floats' (no length constraint specified)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": ["vector.*validation", "empty.*vector", "batch.*objects", "validateVector"],
+          "files_examined": [
+            "usecases/objects/validation/vector_validation.go",
+            "usecases/objects/batch_add.go",
+            "adapters/handlers/rest/operations/batch/batch_objects_create.go"
+          ],
+          "source_excerpt": "// usecases/objects/validation/vector_validation.go line 36-54:\nif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n    // if there is only one named vector we can assume that the single vector\n    if len(class.VectorConfig) == 1 {\n        namedVectorName := \"\"\n        for key := range class.VectorConfig {\n            namedVectorName = key\n        }\n        var vector []float32\n        if len(incomingObject.Vector) > 0 {\n            vector = make([]float32, len(incomingObject.Vector))\n            copy(vector, incomingObject.Vector)\n        }\n        incomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n        incomingObject.Vector = nil\n        return nil\n    }\n    return fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n}\n// Key finding: The validation function only checks len(incomingObject.Vector) > 0 for routing logic\n// It does NOT validate that vectors must be non-empty when provided",
+          "call_chain_traced": "BatchManager.AddObjects → validateAndGetVector → validation.vector → no empty vector check found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:vector_validation.go 只检查向量类型和存在性,不验证空向量。batch_add.go 直接调用该验证,无额外空向量校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /objects/BatchVectorBugRepro/88888888-8888-4888-8888-888888888888",
+          "observed": "Object stored successfully with vectorWeights:null, confirming empty vector was accepted and stored without error",
+          "evidence_cmd": "curl -X GET 'http://localhost:18080/v1/objects/BatchVectorBugRepro/88888888-8888-4888-8888-888888888888'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue (Docker/container)", "Concurrency race", "Request parameter typo"],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation issues in request parsing - Accepting invalid parameter values on write endpoints",
+        "note": "Hits BS-004 (Parameter Validation Issues) pattern: batch endpoint accepts empty vectors which are technically invalid but succeed"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码接地证实:POST /batch/objects 接受空向量 vector=[] 并返回 SUCCESS。validation/vector_validation.go 只检查向量类型([]float32)和命名向量路由,未验证向量长度必须>0。单独POST /objects测试显示空向量同样被接受(见output_weaviate_009.log REQ3/RESP3)。此非平凡解释——属参数验证缺陷,按开发者认知模型BS-004归类为真缺陷。复现与证伪双证:API实际接受空向量且对象被存储(vectorWeights=null)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/upsert with JSON field containing primitive string instead of JSON object",
+          "observed": "HTTP 200 success with upsertCount=1, API accepted invalid data without validation",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -d '{\"collectionName\": \"test_json_dev_review\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"meta\": \"string_instead_of_json\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Conclusion assumes JSON fields should accept only valid JSON objects/arrays, not primitive strings", "API should validate field types against schema during upsert"],
+          "note": "Raw evidence confirms assumption violation - schema declares dataType=JSON but upsert accepts string primitive"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_json_001 - dataType == JSON", "milvus_type_json_041 - Valid dataType value: JSON"],
+          "note": "Contract defines JSON as a distinct data type but lacks explicit validation requirement assertion"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "checkAndSetData", "upsert.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/task_upsert_test.go",
+            "internal/storage/insert_data.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 760-761\n case schemapb.DataType_JSON:\n     reallyData[fieldName] = []byte(dataString)",
+          "call_chain_traced": "upsert handler (handler_v2.go:1683) → checkAndSetData (utils.go:466) → DataType_JSON case (utils.go:760-761) → NO VALIDATION - raw string converted to bytes",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals the root cause: JSON data type handler blindly converts raw string to []byte without JSON validation. No error path exists for invalid JSON."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/query after load to verify stored data integrity",
+          "observed": "Query returns {\"meta\":\"string_instead_of_json\"} - invalid primitive string was persisted, confirming data corruption occurred",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\": \"test_json_dev_review\", \"filter\": \"id == 0\", \"outputFields\": [\"id\", \"vector\", \"meta\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issues (Docker/container)", "Concurrent race conditions", "Request parameter typos - exact primitive string sent intentionally", "API misunderstanding - JSON is a defined data type"],
+          "surviving": "Type1_IllegalSuccess: Missing validation in REST v2 API data type enforcement",
+          "note": "Not a mundane issue - this is a fundamental gap in REST v2 data validation layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_types divergence",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "blindspot_indicator_line_19",
+        "note": "Direct match to known blindspot: REST v2 API lacks validation present in other paths"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dataType == JSON (constraint_id: milvus_type_json_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract defines JSON type but source code shows no enforcement. API accepts invalid data violating schema type contract."
+        },
+        "physical": {
+          "objective_constraint": "JSON field must contain valid JSON object/array structure, not arbitrary string primitives",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical data model constraint violated - JSON type allows primitive strings which break data integrity"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No by-design evidence. Source code shows raw conversion without validation, indicates missing safety check rather than intentional behavior"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (Contract+Physical violation, no graceful handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus REST v2 /entities/upsert endpoint accepts invalid JSON field values (primitive strings) without validation when schema declares dataType: JSON. Source code confirms missing validation: checkAndSetData() blindly converts raw string to bytes for JSON type. Query verification proves data corruption - invalid primitive stored instead of rejection. Matches known blindspot 'REST v2 and gRPC divergent validation'. True Type1_IllegalSuccess - schema contract violated with HTTP 200 success response."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_REST_v2_validation": 1
+    }
+  }
+}

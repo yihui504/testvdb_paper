@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete {\"collectionName\": \"test_del_review\", \"dbName\": \"default\", \"filter\": \"id > 0\", \"ids\": [1, 2, 3]}",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":{\"deleteCount\":1}} - Request accepted and processed despite both filter and ids present",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/delete\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_del_review\", \"dbName\": \"default\", \"filter\": \"id > 0\", \"ids\": [1, 2, 3]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The candidate assumes 'ids' parameter is officially supported for delete operations in REST v2 API",
+            "The candidate assumes providing both 'filter' and 'ids' should trigger special handling or validation",
+            "The candidate assumes the 'ids' parameter should be used when provided alongside 'filter'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - filter must be a valid boolean expression string",
+            "constraint_id: milvus_state_entities_delete_001 - delete is irreversible",
+            "endpoint definition: entities+delete requires 'collectionName' (required), 'dbName' (optional), 'filter' (required, string), 'partitionName' (optional)",
+            "assertion_id: milvus_behavioral_entities_delete_001 - Delete returns 400 on invalid filter expression"
+          ],
+          "missing_in_contract": "The 'ids' parameter is NOT mentioned in the official REST v2 API contract for entities+delete endpoint. The contract only defines 'filter' as the required parameter for specifying entities to delete."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "CollectionFilterReq struct",
+            "delete.*handler",
+            "entities.*delete.*req",
+            "json.*ids|ids.*json"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/distributed/proxy/httpserver/request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 317-323\ntype CollectionFilterReq struct {\n\tDbName         string                 `json:\"dbName\"`\n\tCollectionName string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                 `json:\"partitionName\"`\n\tFilter         string                 `json:\"filter\" binding:\"required\"`\n\tExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1202-1239\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,\n\t}\n\treq.ExprTemplateValues = generateExpressionTemplate(httpReq.ExprParams)\n\tc.Set(ContextRequest, req)\n\tif req.Expr == \"\" {\n\t\tbody, _ := c.Get(gin.BodyBytesKey)\n\t\tfilter, err := checkGetPrimaryKey(collSchema, gjson.Get(string(body.([]byte)), DefaultPrimaryFieldName))\n\t\tif err != nil {\n\t\t\tHTTPReturn(c, http.StatusOK, gin.H{\n\t\t\t\tHTTPReturnCode:    merr.Code(merr.ErrCheckPrimaryKey),\n\t\t\t\tHTTPReturnMessage: merr.ErrCheckPrimaryKey.Error() + \", error: \" + err.Error(),\n\t\t\t})\n\t\t\treturn nil, err\n\t\t}\n\t\treq.Expr = filter\n\t}\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Delete\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Delete(reqCtx, req.(*milvuspb.DeleteRequest))\n\t})",
+          "call_chain_traced": "HTTP request -> CollectionFilterReq struct (no 'ids' field defined) -> handler_v2.delete() -> milvuspb.DeleteRequest (only uses Expr/Filter) -> proxy.Delete()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionFilterReq 结构体只定义了 Filter 字段(标记为 required)，没有 ids 字段。当请求同时包含 filter 和 ids 时，ids 参数被 JSON 解析器直接忽略，只有 filter 被用于构建 DeleteRequest。这是 by-design 的行为，不是 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test 1: Request with only 'ids' parameter (no 'filter') -> Expected validation error; Test 2: Request with 'ids' array containing non-existent entities; Test 3: Proper filter syntax 'id in [1,2,3]' vs invalid 'ids' parameter",
+          "observed": "Test 1: HTTP 200 with error code 1802 'missing required parameters, error: Key: CollectionFilterReq.Filter' - confirms filter is required, ids is not supported. Test 2/3: When filter='id in [10,20,30]' but only id=10 exists, deleteCount=3 incorrectly reported, but actual deletion worked correctly. The 'ids' parameter is simply not part of the API contract.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/delete\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_ids_review\", \"dbName\": \"default\", \"ids\": [10, 20, 30]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on clean Milvus 2.6.17 container",
+            "Concurrency/race - single-threaded sequential operations",
+            "Request parameter typo - filter and ids are both syntactically valid JSON",
+            "API semantic misunderstanding - verified against source code and contract"
+          ],
+          "surviving": "mundane_api_semantics - The 'ids' parameter is not defined in the REST v2 API contract for delete operations. Users should use the 'filter' parameter with boolean expressions like 'id in [1,2,3]' to specify entities to delete."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "This matches the rejection pattern RP-001 (expected_behavior). The Milvus REST v2 API contract clearly defines that delete operations use the 'filter' parameter (required), not an 'ids' parameter. The 'ids' parameter is used in other contexts (like search operations) but not for delete. The observed behavior where 'ids' is silently ignored when 'filter' is present is the expected behavior of a JSON unmarshaling process that only extracts defined fields."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate defect claims that providing both 'filter' and 'ids' parameters to the delete endpoint should trigger special handling or is problematic. However, source code analysis reveals that: (1) The CollectionFilterReq struct only defines 'filter' as a required parameter with no 'ids' field; (2) The JSON unmarshaling process silently ignores undefined fields like 'ids'; (3) The delete handler only uses the 'filter' parameter to construct the DeleteRequest; (4) This is standard Go JSON unmarshaling behavior and is by-design. Users should use 'filter' parameter with boolean expressions (e.g., 'id in [1,2,3]') to specify entities to delete, not an undefined 'ids' parameter. The API correctly validates that 'filter' is required and returns error 1802 when only 'ids' is provided without 'filter'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

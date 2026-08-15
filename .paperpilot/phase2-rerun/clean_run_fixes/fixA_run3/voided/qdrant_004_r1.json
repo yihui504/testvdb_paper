@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "PUT /collections/test-dev-review/points?wait=true with vector [0.1, 0.2, 0.3] (3 dim) into collection configured for 4-dimensional vectors",
+          "observed": "HTTP 400 with error: 'Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test-dev-review/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Raw request contains vector with 3 dimensions",
+            "Collection was configured for 4-dimensional vectors",
+            "API response indicates dimension validation occurred"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_005 - '200 on success; 4XX on validation error'",
+            "constraint_id: qdrant_type_upsert_points_003 - 'id type is integer (uint64) or UUID string; vector type is array of floats or object of named vectors'",
+            "assertion_id: qdrant_behavioral_005 - 'Returns 200 on success; returns 4XX on validation error'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "check_vector_dimension",
+            "validate_vector",
+            "dimension.*error"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 22-26\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\n// lib/segment/src/common/mod.rs line 188-218\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }",
+          "call_chain_traced": "PUT /collections/{name}/points → check_named_vectors → check_vector → check_vector_against_config → WrongVectorDimension error raised",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现：Qdrant 在 lib/segment/src/common/mod.rs 的 check_vector_against_config 函数中实现了严格的维度校验。当插入点的向量维度与集合配置的向量维度不匹配时，会返回 WrongVectorDimension 错误，包含 expected_dim 和 received_dim 字段。这是显式的维度验证逻辑，不是 Type Coercion 缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 1 already falsified - API correctly rejects dimension mismatch with HTTP 400",
+          "observed": "API behavior demonstrates proper dimension validation, not a type coercion defect"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发竞态",
+            "缓存延迟",
+            "请求参数笔误",
+            "API 语义误解"
+          ],
+          "surviving": "proper_dimension_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "候选击中 bug_shapes.json 中的 qdrant-parameter-validation-numeric-boundary 模式，但实际审查发现：Qdrant 在源码层面确实实现了数值边界验证（维度校验）。这不是一个参数验证缺失的缺陷，而是一个正确实现的参数验证功能。"
+      },
+      "root_cause_if_fp": "proper_validation_implemented",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "第 1 步干净复现失败：API 正确返回 HTTP 400 错误 'Vector dimension error: expected dim: 4, got 3'，证明 Qdrant 实现了维度验证。第 3.5 步源码接地确认：lib/segment/src/common/mod.rs 中存在显式的 check_vector_against_config 函数，当 vector.len() != vector_config.size 时返回 WrongVectorDimension 错误。这符合契约 qdrant_behavioral_005 ('200 on success; 4XX on validation error') 的预期行为。候选被错误地归类为 type_coercion 缺陷，实际上是正确的参数验证实现。无违规。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_005: 'Returns 200 on success; returns 4XX on validation error'",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension must match collection configuration",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED → final=REFUTED",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "proper_validation_implemented": 1
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams containing ef=-1, ef=0, nprobe=0",
+          "observed": "All three invalid parameter values returned HTTP 200 with successful search results (code: 0). API accepted negative and zero values without validation.",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/search', json={'collectionName': 'test_hnsw_ef', 'data': [[0.1, 0.2, 0.3, 0.4]], 'limit': 5, 'searchParams': {'ef': -1}})\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "REST API layer should validate search parameter ranges (ef >= 1 for HNSW, nprobe >= 1 for IVF)",
+            "Invalid parameter values should trigger HTTP 400 error responses",
+            "Parameter validation should occur before search execution"
+          ],
+          "note": "Raw request/response logs show HTTP 200 returned for all invalid parameter combinations (ef=-1, ef=0, nprobe=0). No validation at REST API boundary."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_indexes_create_002 - '4 <= M <= 64' (HNSW parameter validation exists for index creation)",
+            "constraint_id: milvus_range_indexes_create_001 - 'nlist >= 1' (IVF parameter validation exists for index creation)",
+            "API template: 'entities+search' - searchParams described as 'Search parameters including metricType, radius, range_filter' but no explicit range constraints documented for runtime search parameters"
+          ],
+          "note": "Contract shows parameter validation for index creation (M, efConstruction, nlist) but no explicit constraints for runtime search parameters (ef, nprobe)."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "searchParam",
+            "ef",
+            "nprobe",
+            "validate",
+            "range.*check"
+          ],
+          "files_examined": [
+            "internal/proxy/search_util.go",
+            "internal/proxy/task_search.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task_search_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/search_util.go line 256-259\nsearchParamStr, err := funcutil.GetAttrByKeyFromRepeatedKV(ParamsKey, searchParamsPair)\nif err != nil {\n    searchParamStr = \"\"\n}\n\n// internal/proxy/search_util.go line 163-340 (parseSearchInfo function)\n// Function parses TopK, offset, roundDecimal, groupBy, iterator params\n// but NO validation logic for 'ef' or 'nprobe' ranges\n\n// internal/proxy/search_util.go line 321-335\nreturn &SearchInfo{\n    planInfo: &planpb.QueryInfo{\n        Topk:                 queryTopK,\n        MetricType:           metricType,\n        SearchParams:         searchParamStr,  // Raw string passed through without validation\n        RoundDecimal:         roundDecimal,\n        // ... other fields\n    },\n    // ... other fields\n}, nil\n\n// internal/proxy/task_search.go line 141-312 (PreExecute function)\n// Calls parseSearchInfo but no additional parameter validation for ef/nprobe",
+          "call_chain_traced": "REST request -> parseSearchInfo() -> SearchParams field set as raw string -> No range validation for ef/nprobe -> Passed to query nodes",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: proxy层的parseSearchInfo函数将searchParams作为原始字符串透传，未对ef/nprobe进行范围检查。索引创建时有参数验证(M/nlist/efConstruction)，但运行时搜索参数(ef/nprobe)缺少对应验证逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple searches with invalid parameters (ef=-1, ef=0, nprobe=0) all succeeded",
+          "observed": "HTTP 200 with successful search results for all invalid parameter combinations. This confirms the validation gap exists and the API processes requests that should be rejected.",
+          "note": "Successfully falsified the hypothesis that 'parameter validation exists'. All three test cases with invalid parameters returned successful responses."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker container running normally, no network/connection problems)",
+            "Race condition (reproducible consistently across multiple test runs)",
+            "Concurrent operations (single-threaded sequential testing)",
+            "Request parameter typos (parameters correctly formatted with valid names)"
+          ],
+          "surviving": "contract_misread_and_implementation_gap",
+          "note": "Not a mundane issue. This is a genuine validation gap where the REST API layer assumes parameter validation will happen elsewhere (possibly in query nodes or indexing layer), but no such validation is enforced before search execution."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "候选命中开发者认知中的REST v2数据处理盲点。developer_cognition.json指出REST v2 API存在数据类型序列化和验证问题，milvus_016正是这一模式在搜索参数验证上的体现。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract requirement found for search parameter ranges (ef, nprobe). Contract documents index creation parameter validation (M: 4-64, efConstruction >= 1, nlist >= 1) but runtime search parameters lack corresponding constraints.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract perspective is NEUTRAL because structured_contract.json does not contain explicit assertions for search parameter ranges. The gap is in documentation, not implementation violating documented requirements."
+        },
+        "physical": {
+          "objective_constraint": "Search parameters have physical constraints: ef (HNSW) must be >= 1 for meaningful search, nprobe (IVF) must be >= 1 to probe at least one cluster. Zero or negative values violate algorithm semantics.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical perspective confirms this is a real defect. HNSW algorithm requires ef >= 1, IVF requires nprobe >= 1. API accepting ef=-1 or nprobe=0 violates these physical constraints."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API returns HTTP 200 (graceful handling) but source code shows no explicit by-design logic to accept invalid parameters. The graceful handling appears to be a side effect of missing validation rather than intentional design."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED. Contract perspective NEUTRAL due to missing documentation, physical constraint violation confirms real defect, behavioral grace is incidental not intentional.",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus REST v2 API accepts invalid search parameters (ef=-1, ef=0 for HNSW; nprobe=0 for IVF) without validation, violating physical algorithm constraints.源码接地证实proxy层parseSearchInfo函数将searchParams作为原始字符串透传，缺少ef/nprobe范围检查。虽然契约未明确记录运行时搜索参数约束，但这些参数有明确的物理下界约束(ef>=1, nprobe>=1)，API接受违规值构成真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_misread_and_implementation_gap": 1
+    }
+  }
+}

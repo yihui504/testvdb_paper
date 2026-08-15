@@ -1,0 +1,99 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_032",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel as top-level field (not in params)",
+          "observed": "API returned HTTP 200 and created collection successfully. Invalid consistencyLevel value 'Invalid' was silently ignored, and default value 'Bounded' was used instead.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review_032\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"consistencyLevel\": \"Invalid\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original request passed consistencyLevel as a top-level JSON field, not within the params object",
+            "API handler only checks consistencyLevel when it is in httpReq.Params[\"consistencyLevel\"], not as a top-level field",
+            "Invalid value was silently dropped and replaced with default 'Bounded', which is graceful fallback behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003 - consistencyLevel must be Strong, Session, Bounded, or Eventually",
+            "constraint_id: milvus_behavioral_collections_create_001 - Returns 400 on invalid parameters"
+          ],
+          "contract_finding": "Contract explicitly requires consistencyLevel validation. However, source inspection reveals validation only occurs when parameter is passed via params object, not as top-level field."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "consistencyLevel",
+            "ConsistencyLevel",
+            "convertConsistencyLevel",
+            "createCollection",
+            "CollectionReq struct"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/common/common.go",
+            "tests/restful_client_v2/testcases/test_collection_operations.py"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2042-2057\n\tconsistencyLevel := commonpb.ConsistencyLevel_Bounded\n\tif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n\t\tif level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n\t\t\tconsistencyLevel = commonpb.ConsistencyLevel(level)\n\t\t} else {\n\t\t\terr := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n\t\t\t\t\"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n\t\t\tlog.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n\t\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\t\tHTTPReturnCode:    merr.Code(err),\n\t\t\t\tHTTPReturnMessage: err.Error(),\n\t\t\t})\n\t\t\treturn nil, err\n\t\t}\n\t}\n\treq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CollectionReq struct (request_v2.go:690-703) - no ConsistencyLevel field → createCollection handler checks httpReq.Params['consistencyLevel'] (handler_v2.go:2043-2056) → only validates if in params object",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_for_toplevel_field",
+          "note": "源码接地发现：CollectionReq 结构体没有 ConsistencyLevel 字段。validation 只在 httpReq.Params['consistencyLevel'] 存在时触发。顶级字段被忽略，触发默认 fallback 到 Bounded。这是 API 参数绑定设计限制，不是真正的 validation 绕过 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with consistencyLevel correctly placed in params object",
+          "observed": "When consistencyLevel is placed inside params object with value 'Invalid', API correctly rejects it with error 1100: 'consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized]'. This proves validation logic works correctly when parameter is in expected location.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_correct_032\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"params\": {\"consistencyLevel\": \"Invalid\"}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 在标准 Docker 容器中复现",
+            "并发问题 - 单个顺序请求",
+            "请求参数笔误 - 这是一个参数传递位置问题"
+          ],
+          "surviving": "api_parameter_binding_mismatch",
+          "explanation": "The 'defect' stems from inconsistency in how REST v2 API binds consistencyLevel parameter. When passed as top-level field, it's not recognized by CollectionReq struct (which lacks this field) and gets ignored. The API then uses default Bounded. This is a parameter binding design limitation, not a security vulnerability or validation bypass."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Candidate matches historical REST v2 parameter handling pattern (bug shape #52232, #52230, #52229). Maintainers explicitly treat REST v2 validation inconsistencies as defects."
+      },
+      "root_cause_if_fp": "api_parameter_binding_mismatch",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "This is NOT a true validation bypass. The API validates consistencyLevel correctly when the parameter is passed in the expected location (inside params object). When passed as a top-level field (which the CollectionReq struct doesn't support), it's silently ignored and the default value Bounded is used. This is graceful fallback behavior for an unrecognized parameter, not a security vulnerability. The underlying issue is a REST v2 parameter binding design limitation, not an exploitable bug. If this were reported to maintainers, they would likely classify it as 'parameter must be passed via params object' documentation issue, not a critical security defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "api_parameter_binding_mismatch": 1
+    }
+  },
+  "session_metadata": {
+    "reviewed_at": "2025-08-15T00:00:00Z",
+    "source_clone_version": "v2.6.19",
+    "source_clone_path": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19"
+  }
+}

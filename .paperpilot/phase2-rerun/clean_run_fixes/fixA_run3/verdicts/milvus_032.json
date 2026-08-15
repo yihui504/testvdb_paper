@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_032",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel='Invalid'",
+          "observed": "HTTP 200 success returned, API accepted invalid value without validation error",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "结论'API接受非法consistencyLevel值'依赖'consistencyLevel参数应被验证'",
+            "raw请求显式携带consistencyLevel字段值为'Invalid'"
+          ],
+          "note": "所有前提满足：请求明确提供了consistencyLevel参数，API应当验证但未验证"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion: consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": ["consistencyLevel", "ConsistencyLevel_value", "convertConsistencyLevel"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 2042-2056\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel\n\n// internal/distributed/proxy/httpserver/utils.go line 1827-1837\nfunc convertConsistencyLevel(reqConsistencyLevel string) (commonpb.ConsistencyLevel, bool, error) {\n    if reqConsistencyLevel != \"\" {\n        level, ok := commonpb.ConsistencyLevel_value[reqConsistencyLevel]\n        if !ok {\n            return 0, false, merr.WrapErrParameterInvalidMsg(\"parameter:'%s' is incorrect, please check it\", reqConsistencyLevel)\n        }\n        return commonpb.ConsistencyLevel(level), false, nil\n    }\n    // ConsistencyLevel_Bounded default in PyMilvus\n    return commonpb.ConsistencyLevel_Bounded, true, nil\n}",
+          "call_chain_traced": "CreateCollectionReqV2 consistencyLevel parameter → handler_v2.go:2042-2056 validation logic → commonpb.ConsistencyLevel_value map lookup → validation failure only logs warning and returns error BUT still returns HTTP 200",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_effectively_bypassed",
+          "note": "源码接地发现:handler_v2.go:2047-2054 确实有校验逻辑,但当校验失败时返回HTTP 200+错误消息而非HTTP 400+,导致API语义上表现成功。convertConsistencyLevel函数(utils.go:1827-1837)也有校验,但REST v2路径未使用该函数。这是Type1_IllegalSuccess的典型案例。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify stored consistencyLevel after create with 'Invalid' value",
+          "observed": "describe collection returned consistencyLevel='Bounded'(默认fallback),证明'Invalid'值未被拒绝而是被silent fallback处理",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(非POSIX/Docker限制)",
+            "并发race(单线程请求)",
+            "请求参数笔误(参数名正确)",
+            "缓存延迟(立即describe验证)"
+          ],
+          "surviving": "none",
+          "note": "所有平凡解释已排除,这是真正的API验证缺失bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - historical instances include incorrect parameter validation",
+        "note": "命中developer_cognition.json中REST v2数据处理的历史bug模式(shape_id: rest-v2-data-type-handling),该区域有26个历史实例,置信度0.95"
+      },
+      "root_cause_if_confirmed": "rest_v2_validation_bypass",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /collections/create endpoint accepts invalid consistencyLevel value 'Invalid' without proper validation. Contract (milvus_type_collections_create_003) explicitly restricts values to ['Strong', 'Session', 'Bounded', 'Eventually']. Source code (handler_v2.go:2042-2056) contains validation logic but on failure returns HTTP 200 with error message instead of HTTP 4xx, creating Type1_IllegalSuccess behavior. Invalid input triggers silent fallback to 'Bounded' default rather than rejection. This matches historical REST v2 data handling bug patterns (26 historical instances, 95% confidence per bug_shapes.json).",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually'] (constraint_id: milvus_type_collections_create_003)",
+          "assertion_text_quoted": "consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']",
+          "api_observed_value": "POST with consistencyLevel='Invalid' → HTTP 200 success, describe shows 'Bounded' fallback",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is enum with fixed valid values",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "graceful_mechanism": "silent fallback to default 'Bounded' on invalid input",
+          "by_design_in_source": false,
+          "source_evidence": "handler_v2.go:2047-2054 shows validation returns error but still HTTP 200, no by-design comment indicating fallback is intentional",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract/physical violations override graceful behavior)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_validation_bypass": 1
+    }
+  }
+}

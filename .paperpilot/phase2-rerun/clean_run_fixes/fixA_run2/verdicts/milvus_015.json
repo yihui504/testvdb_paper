@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_015",
+      "endpoint": "indexes+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/indexes/create on non-existent collection 'nonexistent_collection'",
+          "observed": "HTTP 200 with error code 100: 'collection not found[database=default][collection=nonexistent_collection]'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/indexes/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLATT\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "note": "No structured_contract.json available in results directory, but standard API semantics validate that index creation requires existing collection"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["collection not found", "GetCollectionID", "createIndexTask", "PreExecute"],
+          "files_examined": [
+            "internal/proxy/task_index.go",
+            "internal/proxy/meta_cache.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "pkg/util/merr/errors.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_index.go lines 670-676\nfunc (cit *createIndexTask) PreExecute(ctx context.Context) error {\n    collName := cit.req.GetCollectionName()\n\n    collID, err := globalMetaCache.GetCollectionID(ctx, cit.req.GetDbName(), collName)\n    if err != nil {\n        return err  // Returns error code 100 for non-existent collections\n    }\n    cit.collectionID = collID\n\n// pkg/util/merr/errors.go line 65\nErrCollectionNotFound = newMilvusError(\"collection not found\", 100, false)",
+          "call_chain_traced": "REST v2 /indexes/create → handler_v2.go createIndex handler → Proxy.CreateIndex → createIndexTask.PreExecute → globalMetaCache.GetCollectionID → returns ErrCollectionNotFound (code 100)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: Proxy 层在 createIndexTask.PreExecute 阶段通过 globalMetaCache.GetCollectionID 验证 collection 存在性,不存在则返回 error code 100。系统正确实现了前置校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified system properly rejects index creation on non-existent collections with appropriate error code 100",
+          "observed": "Confirmed through curl testing that 'collection not found' error is properly returned, not a silent failure or incorrect success response"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "mundane_api_semantics",
+          "note": "This is correct API behavior - index creation should fail on non-existent collections"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式。但系统正确实现了 collection 存在性校验,属于预期的 API 语义"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "系统正确实现了 index 创建的 collection 存在性校验。源码显示在 createIndexTask.PreExecute 阶段通过 globalMetaCache.GetCollectionID 验证 collection 存在,不存在则返回 error code 100 (ErrCollectionNotFound)。实测证实系统正确返回 'collection not found' 错误,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

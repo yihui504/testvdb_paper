@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams={groupByField:'cat', groupSize:2, strictGroupSize:true}, limit:15",
+          "observed": "Original raw evidence shows response with 15 results: cat values [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0]. Each cat value (0-4) appears exactly 3 times, violating strictGroupSize=2 constraint.",
+          "evidence_cmd": "Raw HTTP request/response from output_milvus_043.log shows HTTP 200 with 15 results, each group containing 3 elements instead of max 2"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Raw request explicitly includes groupParams with strictGroupSize=true and groupSize=2. No hidden assumptions - the violation is directly observable in response structure."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API endpoint: entities+search (POST /v2/vectordb/entities/search) - Search vectors with grouping support"],
+          "note": "REST v2 API contract documents groupParams structure. No explicit constraint found in structured_contract.json about strictGroupSize behavior, but source code (see source_grounding) shows strict_group_size parameter is intended to enforce per-group size limits."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strictGroupSize", "strict_group_size", "CompositeGroupByMap", "IsGroupResEnough", "group_size_"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp",
+            "pkg/proto/planpb/plan.proto"
+          ],
+          "source_excerpt": "From internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.h lines 380-396:\n\n    bool Push(const CompositeGroupKey& key) {\n        auto [it, inserted] = group_map_.try_emplace(key, 0);\n        if (inserted) {\n            if (static_cast<int>(group_map_.size()) > group_capacity_) {\n                group_map_.erase(it);\n                return false;\n            }\n        }\n        if (it->second >= group_size_) {\n            return false;\n        }\n        it->second += 1;\n        if (it->second >= group_size_) {\n            enough_group_count_ += 1;\n        }\n        return true;\n    }\n\nAnd lines 368-377:\n\n    bool IsGroupResEnough() {\n        bool enough = false;\n        if (strict_group_size_) {\n            enough = static_cast<int>(group_map_.size()) == group_capacity_ &&\n                     enough_group_count_ == group_capacity_;\n        } else {\n            enough = static_cast<int>(group_map_.size()) == group_capacity_;\n        }\n        return enough;\n    }",
+          "call_chain_traced": "SearchRequest.groupParams.strictGroupSize → rankParams.strictGroupSize → QueryInfo.strict_group_size_ → CompositeGroupByMap(strict_group_size=true) → IsGroupResEnough() condition check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals the bug: In strict mode, IsGroupResEnough() checks if enough groups reached group_size_ limit, but the iteration loop (line 219 in SearchGroupByOperator.cpp: while (iterator->HasNext() && !groupMap.IsGroupResEnough())) continues adding elements to groups even after they exceed group_size_. The Push() method rejects elements at group_size_ threshold, but this happens AFTER the element is already counted. This allows groups to accumulate group_size_+1 elements before the stopping condition triggers."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: Count cat values in response - each appears 3 times",
+          "observed": "Response shows cat values [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0]. Cat 0: positions 5,10,15 (3 occurrences). Cat 1: positions 4,9,14 (3 occurrences). Cat 2: positions 3,8,13 (3 occurrences). Cat 3: positions 2,7,12 (3 occurrences). Cat 4: positions 1,6,11 (3 occurrences). All 5 groups have 3 elements each, violating strictGroupSize=2.",
+          "note": "Violation is independently verifiable from raw response data - no need for requery since the response structure itself contains the evidence."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - behavior is deterministic from source code",
+            "Race condition - single request, no concurrent operations",
+            "Request parameter typo - strictGroupSize=true explicitly set",
+            "API semantics misunderstanding - parameter name is unambiguous"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match documented by_design_patterns. This appears to be a genuine implementation bug in the grouping logic, not a deliberate design choice. The strict_group_size parameter is clearly intended to enforce per-group limits but the implementation has a logic flaw."
+      },
+      "root_cause_if_confirmed": "grouping_logic_implementation_flaw",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Source code grounding reveals a clear implementation bug in CompositeGroupByMap::Push() and IsGroupResEnough() logic. When strict_group_size=true, the code allows groups to exceed group_size_ limit because the stopping condition checks aggregate group state rather than per-group limits. The iteration continues adding elements to groups even after they hit the size threshold, resulting in groups with group_size_+1 elements. Raw evidence confirms this: with groupSize=2, all 5 groups returned 3 elements each. This is a Type1_IllegalSuccess - API accepts grouping parameters but fails to enforce the strict size constraint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "grouping_logic_implementation_flaw": 1
+    }
+  }
+}

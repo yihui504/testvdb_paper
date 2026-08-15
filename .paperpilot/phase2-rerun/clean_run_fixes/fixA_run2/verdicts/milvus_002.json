@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_002",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams.nprobe=0",
+          "observed": "API returns HTTP 200 with valid search results, accepting nprobe=0 without error",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_test\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"annsField\": \"vector\", \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API endpoint exists and is accessible",
+            "Collection exists and is loaded",
+            "Vector dimension matches collection dimension",
+            "searchParams.nprobe is passed in the request",
+            "Expected behavior: nprobe should be >= 1 for IVF indexes"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_range_indexes_create_001: nlist must be >= 1 (index creation constraint exists for nlist)",
+            "API templates show searchParams as 'Extra search parameters' but no explicit constraints documented"
+          ],
+          "note": "Contract explicitly validates nlist >= 1 for index creation, suggesting similar constraint should exist for nprobe in search"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["nprobe", "searchParams", "generateSearchParams", "validateSearchParam"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/task_search.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go:2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\t// ... setup code ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION of nprobe range or type - just pass-through as string\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "HTTP handler_v2.go:1485 -> generateSearchParams (utils.go:2076) -> converts all params to strings with fmt.Sprintf -> NO range check on nprobe -> passes to SearchRequest",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals that generateSearchParams() converts ALL search parameters to strings using fmt.Sprintf('%v', value) at line 2125 WITHOUT any validation. No nprobe range checking exists in the HTTP layer. Grep found zero files containing 'nprobe.*validation' or 'validate.*nprobe' across entire codebase."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Test with nprobe=-1 (another illegal value)",
+          "observed": "API also accepts nprobe=-1 with HTTP 200 and valid results, confirming lack of validation",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"searchParams\": {\"nprobe\": -1}}' -> returns 200"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Not a by-design behavior (no explicit default handling for nprobe=0 in source)",
+            "Not an environment issue (tested on clean local container)",
+            "Not a concurrent operation issue (single-threaded test)",
+            "Not a request parameter typo (parameter is correctly named and passed)"
+          ],
+          "surviving": "validation_missing_in_api_layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; Returns wrong values for large integers; Array fields in raw protobuf format",
+        "note": "This defect matches the 'REST v2 data type handling' pattern from bug_shapes.json. The developer_cognition.json explicitly lists 'REST v2 API data type serialization - 8 issues in corpus' as a blindspot indicator. This is a REST v2 parameter validation gap where nprobe should be validated as >= 1 but isn't."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found for searchParams.nprobe, but contract has milvus_range_indexes_create_001 requiring nlist >= 1 for index creation, establishing precedent for IVF parameter validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "For IVF (Inverted File) indexes, nprobe represents the number of inverted lists to probe during search. Physical constraint: nprobe must be >= 1 (probing 0 lists makes search meaningless) AND nprobe <= nlist (cannot probe more lists than exist). nprobe=0 violates the lower bound.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) AND verdict_C=CONFIRMED (not graceful) -> final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_param_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API accepts nprobe=0 and nprobe=-1 without error, returning HTTP 200 with valid search results. Source code analysis of generateSearchParams() (utils.go:2076-2131) shows NO validation of nprobe range - parameters are simply converted to strings using fmt.Sprintf(). Physical constraints require nprobe >= 1 for IVF indexes (probing 0 lists is meaningless). This matches developer_cognition blindspot 'REST v2 API data type serialization'. Unlike the nlist parameter which has explicit validation (milvus_range_indexes_create_001), nprobe lacks any range checking in the REST v2 layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_param_validation": 1
+    }
+  }
+}

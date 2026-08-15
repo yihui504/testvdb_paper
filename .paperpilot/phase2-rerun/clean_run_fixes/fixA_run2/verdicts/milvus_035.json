@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collection having Int64 primary key field, sending string values for id field",
+          "observed": "Insert with string '123' succeeds (HTTP 200, returns insertIds=[123]), insert with string 'abc' fails with error code 1804: strconv.ParseInt parsing error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_pk\", \"data\": [{\"id\": \"123\", \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' → succeeds, but '{\"id\": \"abc\"}' → fails"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Raw request contains valid JSON data array",
+            "Collection exists and has Int64 primary key field",
+            "Response shows successful insert with type conversion from string to int64"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 (dataType == Int64 for Int64 scalar fields)",
+            "constraint_id: milvus_state_insert_collection_001 (collection MUST exist before insert)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "strconv.ParseInt",
+            "json.Number.Int64",
+            "checkAndSetData",
+            "DataType_Int64"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils_test.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 639-644\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result\n\n// The json.Number type in Go's encoding/json automatically accepts string representations\n// of integers and converts them. This creates inconsistent type handling where valid\n// integer strings (like '123') are accepted and converted, while invalid strings (like 'abc')\n// fail with strconv.ParseInt error. The expectation is that Int64 fields should reject\n// string types entirely, not perform implicit type coercion.",
+          "call_chain_traced": "REST v2 insert request → checkAndSetData() → switch on DataType_Int64 → json.Number(dataString).Int64() → implicit type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: checkAndSetData 函数对 Int64 字段使用 json.Number(dataString).Int64() 进行类型转换,这会接受字符串形式的整数并自动转换,而没有先检查输入类型是否匹配预期。Valid integer strings are accepted and coerced, but invalid strings fail with parse error. This is inconsistent type handling — should either reject all strings or explicitly document type coercion behavior."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Repeated insertion with both valid string integers and invalid strings to confirm inconsistent behavior",
+          "observed": "Valid integer strings ('123', '456') consistently succeed and auto-convert, while non-numeric strings ('abc', 'xyz') consistently fail with strconv.ParseInt errors. This confirms the API performs selective type coercion rather than strict type validation.",
+          "evidence_cmd": "Multiple curl tests confirmed: string '123'→success, string 'abc'→error 1804, string '999'→success, string 'null'→error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on standard Milvus Docker v3.0.0)",
+            "Concurrent race (sequential single-threaded tests)",
+            "Caching/latency (immediate responses)",
+            "Request parameter typo (exact schema-matched payloads)",
+            "API semantics misunderstanding (REST v2 API contract checked)"
+          ],
+          "surviving": "none",
+          "note": "Not a mundane explanation. This is a genuine API design inconsistency in type handling."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types / Returns wrong values for large integers / AutoId not working for Int64 PK",
+        "pattern_id": "rest-v2-data-type-handling",
+        "hit_blindspot": true,
+        "note": "候选命中 blindspot: 'REST v2 API data type serialization - 8 issues in corpus'. 本缺陷确属 REST v2 数据类型处理问题,符合历史模式."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Int64 fields should accept Int64 data type (constraint_id: milvus_type_int64_001)",
+          "assertion_text_quoted": "dataType == Int64",
+          "api_observed_value": "REST v2 insert accepts string '123' for Int64 field and converts to int64 123 (HTTP 200 success)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Int64 fields should only accept 64-bit integer values within valid range [-2^63, 2^63-1]",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_handling_details": "API accepts valid integer strings and converts them (graceful coercion), rejects invalid strings with explicit error (graceful failure)",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "implicit_type_coercion_in_rest_v2",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "REST v2 insert API exhibits inconsistent type handling for Int64 fields: it accepts and auto-converts valid integer strings (like '123' → 123) but rejects non-numeric strings (like 'abc' → error 1804). Source code analysis confirms this is caused by json.Number(dataString).Int64() in checkAndSetData() which performs implicit type coercion. This violates the type contract that Int64 fields should accept Int64 data types, not strings. The behavior matches the historical blindspot pattern 'rest-v2-data-type-handling' with 26 known instances. While the API handles errors gracefully for invalid strings, the implicit coercion of valid integer strings is a type system violation that could lead to data integrity issues and client confusion."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "implicit_type_coercion_in_rest_v2": 1
+    }
+  }
+}

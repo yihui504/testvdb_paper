@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/list with empty dbName parameter variations",
+          "observed": "Testing revealed: (1) Empty string '' accepted: HTTP 200 with collections list; (2) null value accepted: HTTP 200; (3) Missing parameter accepted: HTTP 200; (4) Whitespace '   ' rejected: HTTP 800 'database not found'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: Empty string dbName should be rejected as invalid parameter - FALSE: API accepts empty string and treats it as default database",
+            "Assumption: Empty string is semantically different from null/missing - FALSE: All three (empty string, null, missing) produce identical behavior (200 + same collections list)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Parameter definition: dbName is 'required: false, type: string, default_value: _default'",
+            "No contract constraint requiring rejection of empty string for dbName parameter"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "type DatabaseReq struct",
+            "GetDbName",
+            "ShowCollections",
+            "collections/list"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line ~200-210\ntype DatabaseReq struct {\n\tDbName string `json:\"dbName\"`\n}\n\nfunc (req *DatabaseReq) GetDbName() string { return req.DbName }\n\n// internal/distributed/proxy/httpserver/handler_v2.go line ~1500-1520\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := &milvuspb.ShowCollectionsRequest{\n\t\tDbName: dbName,\n\t}\n\tc.Set(ContextRequest, req)\n\tresp, err := wrapperProxy(ctx, c, req, false, false, \"/milvus.proto.milvus.MilvusService/ShowCollections\", func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.ShowCollections(reqCtx, req.(*milvuspb.ShowCollectionsRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnList(resp.(*milvuspb.ShowCollectionsResponse).CollectionNames))\n\t}\n\treturn resp, err\n}",
+          "call_chain_traced": "HTTP POST /collections/list → listCollections handler → DatabaseReq.GetDbName() → ShowCollectionsRequest(DbName) → proxy.ShowCollections → mixCoord. No validation of empty string at any layer.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 handler 使用 DatabaseReq struct，其 DbName 字段无 binding validation tag。listCollections 函数直接传递 dbName 到底层 gRPC 请求，无空字符串校验。whitespace-only 被拒绝发生在更下层(datacoord/rootcoord)，但 empty string 被正常处理为 default db。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: Test with various dbName values + verify behavior consistency",
+          "observed": "Empty string '', null, and missing parameter all produce: HTTP 200 + identical collections ['test_nprobe', 'test_ttl_neg']. This is semantically equivalent behavior, not a defect. Whitespace-only strings are rejected (HTTP 800), confirming the system does validate - it just treats empty string as valid 'use default' input."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - ruled out: consistent behavior across multiple tests",
+            "Request parameter typo - ruled out: parameter format is correct",
+            "API semantic misunderstanding - CONFIRMED: empty string is valid 'default' semantics, not a validation violation"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-001",
+        "developer_quote": "uncommitted V3 growing segments intentionally excluded",
+        "note": "Not a direct match, but same pattern: API behavior that looks like a bug is actually intentional design. Empty string as 'use default database' is standard REST API convention."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "REST v2 collections/list accepts empty string dbName parameter and treats it as 'use default database' - this is standard API design pattern, not a validation defect. Source code confirms no validation in REST v2 handler layer (DatabaseReq struct has no binding tags, listCollections passes through directly). The system correctly validates whitespace-only strings (HTTP 800 'database not found'), proving validation exists - it just doesn't treat empty string as invalid. Contract defines dbName as optional with default '_default', and empty string behavior is consistent with that specification. Testing confirms empty string, null, and missing parameter are semantically equivalent - all return HTTP 200 with identical results. This is by-design behavior, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"_test_collection\", \"dimension\": 128, \"metricType\": \"COSINE\"}",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":{}} - collection created successfully",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"_test_collection\", \"dimension\": 128, \"metricType\": \"COSINE\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract assumption violated: structured_contract.json states '1 <= dimension <= 32768' (constraint_id: milvus_range_collections_create_001)",
+            "Actual implementation requires: dimension >= 2 (not >= 1 as stated in contract)",
+            "Source code at internal/proxy/util.go:421 explicitly checks 'if dim <= 1' and rejects dimension = 1"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001",
+            "assertion_text: '1 <= dimension <= 32768'",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "validateFieldSchema",
+            "dimension",
+            "float vector dimension",
+            "should be in range 2"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/util.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 421-436\nif dim <= 1 {\n\treturn fmt.Errorf(\"invalid dimension: %d. should be in range 2 ~ %d\", dim, Params.ProxyCfg.MaxDimension.GetAsInt())\n}\n\n// for dense vector field, dim will be limited by max_dimension\nif typeutil.IsBinaryVectorType(field.DataType) {\n\tif dim%8 != 0 {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be multiple of 8. \", dim, field.GetName())\n\t}\n\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n\t}\n} else {\n\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n\t}\n}",
+          "call_chain_traced": "CreateCollection request -> validateFieldSchema() -> dimension check (dim <= 1) -> error return if dimension < 2",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: 实际系统要求 dimension >= 2, 而契约声明 dimension >= 1. 这是一个契约文档错误,而非参数验证缺陷."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test dimension=1 (contract says valid, implementation rejects)",
+          "observed": "HTTP 200 with code=65535, message='invalid dimension: 1. should be in range 2 ~ 32768' - PROVES implementation rejects dimension=1 despite contract allowing it",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"_test_collection_dim1\", \"dimension\": 1, \"metricType\": \"COSINE\"}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [],
+          "surviving": "contract_documentation_error"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定的 by_design 模式,但属于契约文档与实际实现不一致的情况. 维护者很可能将 dimension >= 2 视为正确实现而契约文档错误."
+      },
+      "root_cause_if_fp": "contract_documentation_error",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选声称参数验证缺陷(contract允许dimension=1但实现拒绝),但实际源码接地发现这是契约文档错误而非验证缺陷. 源码internal/proxy/util.go:421明确检查dim<=1并拒绝,测试证明dimension=1被拒绝(dimension=2成功). 这是契约文档声明了错误的下界(1 vs 实际2),而非参数验证失效. API正确拒绝了无效值,只是契约文档未同步更新.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dimension ∈ [1, 32768] (constraint_id: milvus_range_collections_create_001)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED",
+          "note": "契约声明 dimension >= 1, 但源码明确实现 dimension >= 2. 这违反了契约声明的下界."
+        },
+        "physical": {
+          "objective_constraint": "dimension must be >= 1 (mathematical lower bound)",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED",
+          "note": "实际物理约束是 dimension >= 2, 非 >= 1. API 正确拒绝 dimension=1, 满足物理约束."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API 优雅地拒绝了 dimension=1 (返回明确错误信息), 源码显示这是有意设计 (dim <= 1 检查)."
+        },
+        "aggregation_applied": "A=REFUTED, B=REFUTED, C=REFUTED → final=FALSE_POSITIVE (contract documentation error, not validation bug)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_documentation_error": 1
+    }
+  }
+}

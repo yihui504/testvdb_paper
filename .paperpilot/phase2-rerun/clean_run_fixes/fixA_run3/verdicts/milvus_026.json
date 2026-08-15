@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create with invalid consistencyLevel values in different locations",
+          "observed": "1. Invalid consistencyLevel in params: REJECTED (code 1100) - validation works as expected\n2. Invalid consistencyLevel as top-level field: ACCEPTED (code 0) - field is silently ignored, not validated\n3. Valid consistencyLevel in params: ACCEPTED (code 0) - normal operation",
+          "evidence_cmd": "python test showing validation works in params but top-level field is ignored"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract assumes consistencyLevel is validated as a top-level parameter",
+            "Implementation only validates consistencyLevel when passed inside params object",
+            "The validation IS present in source code but only reachable via params field"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion: consistencyLevel in [Strong, Session, Bounded, Eventually]",
+            "description: consistencyLevel must be Strong, Session, Bounded, or Eventually"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "consistencyLevel",
+            "CollectionReq struct",
+            "createCollection handler"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2008-2023\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        log.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(err),\n            HTTPReturnMessage: err.Error(),\n        })\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CollectionReq.Params['consistencyLevel'] → validation logic in handler_v2.go → rejected if invalid, accepted if valid",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wrong_field",
+          "note": "源码接地发现: validation 代码存在且正确,但只检查 httpReq.Params['consistencyLevel'],而 CollectionReq 结构体中没有 consistencyLevel 字段。Contract 声称 consistencyLevel 是顶层参数,但实现只接受它在 params 中。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test invalid consistencyLevel in params vs top-level",
+          "observed": "Invalid consistencyLevel IN params: REJECTED with error code 1100 - validation works\nInvalid consistencyLevel AS top-level: ACCEPTED with code 0 - field ignored, no validation\nThis is NOT a missing validation bug, but a contract-implementation parameter location mismatch"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency race",
+            "Request parameter typo"
+          ],
+          "surviving": "contract_implementation_parameter_location_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This case is inverse: contract documents top-level parameter, implementation only validates in params. Similar category of API surface inconsistency but different manifestation."
+      },
+      "root_cause_if_fp": "contract_implementation_parameter_location_mismatch",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "NOT a missing validation bug. Validation IS present and working correctly in source code (handler_v2.go:2008-2023). The issue is a contract-implementation mismatch: structured_contract.json lists consistencyLevel as a top-level parameter, but the actual implementation only reads it from httpReq.Params['consistencyLevel']. Invalid values ARE rejected when passed in the correct location (params). Top-level consistencyLevel field is silently ignored (not a CollectionReq struct field), which is poor UX but not the 'missing validation' defect claimed. The bug report misidentified a parameter location design decision as a missing validation issue."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_implementation_parameter_location_mismatch": 1
+    }
+  }
+}

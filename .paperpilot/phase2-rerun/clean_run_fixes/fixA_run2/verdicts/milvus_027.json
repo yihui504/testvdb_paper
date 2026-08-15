@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=0, -1, 65535",
+          "observed": "All three requests succeeded with HTTP 200. API accepted invalid values (0, -1, 65535) without error.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate that shardsNum >= 1 per contract constraint milvus_range_collections_create_002",
+            "Request parameters are properly structured and valid JSON",
+            "Target DB container is running and accessible"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_002",
+            "assertion: shardsNum >= 1",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "shardsNum",
+            "ShardsNum",
+            "validate.*shards",
+            "DefaultShardsNum"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/ddl_callbacks_create_collection.go",
+            "pkg/common/common.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go, lines 2000-2006\nshardsNum := int32(ShardNumDefault)\nif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n    if shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n        shardsNum = int32(shards)  // NO VALIDATION: accepts any value including 0, -1, 65535\n    }\n}\nreq.ShardsNum = shardsNum\n\n// File: internal/rootcoord/create_collection_task.go, lines 59-73\n// Validation only checks UPPER bounds, NOT lower bound\nshardsNum := t.Req.GetShardsNum()\nvar cfgMaxShardNum int32\nif shardsNum > cfgMaxShardNum {  // Only checks > max, allows <= 0\n    return fmt.Errorf(\"shard num (%d) exceeds max configuration (%d)\", shardsNum, cfgMaxShardNum)\n}\nif shardsNum > cfgShardLimit {  // Only checks > limit, allows <= 0\n    return fmt.Errorf(\"shard num (%d) exceeds system limit (%d)\", shardsNum, cfgShardLimit)\n}\n\n// File: internal/rootcoord/ddl_callbacks_create_collection.go, lines 47-49\n// SILENT DEFAULT APPLIED AFTER VALIDATION\nif req.GetShardsNum() <= 0 {\n    req.ShardsNum = common.DefaultShardsNum  // Auto-corrects to 1 without error\n}\n\n// File: pkg/common/common.go, lines 68-69\nDefaultShardsNum = int32(1)",
+          "call_chain_traced": "REST API handler_v2.go (parse shardsNum, no validation) → rootcoord create_collection_task.go (validate upper bounds only) → ddl_callbacks_create_collection.go (silent default to 1 if <= 0)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_with_silent_correction",
+          "note": "Validation gap confirmed: REST v2 handler does NOT validate shardsNum >= 1. Root coord validation only checks upper bounds (> max config). A silent correction mechanism defaults shardsNum to 1 if <= 0, but this happens AFTER validation passes and without returning an error to the client. This violates the contract requirement that shardsNum >= 1 should be enforced at API boundary."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify actual stored shardsNum values via collections/describe",
+          "observed": "All three collections (shardsNum=0, -1, 65535 in requests) were stored with shardsNum=1. Silent auto-correction confirmed.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/describe -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\", \"dbName\": \"default\"}' | grep shardsNum"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, platform, filesystem)",
+            "Concurrent race condition",
+            "Cache/optimization delay",
+            "Request parameter typo",
+            "API semantic misunderstanding"
+          ],
+          "surviving": "none",
+          "note": "This is a genuine parameter validation gap in the REST v2 API handler. The behavior is consistent and reproducible across multiple invalid values (0, -1, 65535)."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This defect matches the identified blindspot pattern: REST v2 API has weaker validation than gRPC path. Maintainers have historically treated such cross-channel inconsistencies as defects and fix them."
+      },
+      "root_cause_if_confirmed": "param_validation_gap_rest_v2",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shardsNum >= 1 (constraint_id: milvus_range_collections_create_002)",
+          "assertion_text_quoted": "shardsNum >= 1",
+          "api_observed_value": "API accepted shardsNum=0, -1, 65535 (all returned HTTP 200)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "shardsNum represents number of shards for data distribution, must be >= 1 for valid collection topology",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_mechanism": "Silent auto-correction to shardsNum=1 (common.DefaultShardsNum) in ddl_callbacks_create_collection.go line 48",
+          "verdict_C": "WEAK_REFUTED",
+          "note": "While the system auto-corrects invalid values, this is NOT a documented by-design behavior. The correction happens silently without client feedback, masking the validation gap. This is a defensive fallback, not intentional graceful degradation."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) AND verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED. Verdict_C (WEAK_REFUTED) cannot override A/B - silent correction is implementation detail, not by-design API behavior.",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API handler_v2.go (lines 2000-2006) accepts any shardsNum value without validation. Root coord validation (create_collection_task.go lines 59-73) only checks upper bounds, allowing 0 and negative values to pass. A silent auto-correction in ddl_callbacks_create_collection.go (lines 47-49) defaults shardsNum to 1 if <= 0, but this occurs AFTER validation and without error response to client. This violates contract constraint milvus_range_collections_create_002 (shardsNum >= 1) and represents a cross-channel validation inconsistency (REST v2 weaker than gRPC), which maintainers historically treat as defects per developer_cognition.json blindspot 'REST v2 and gRPC divergent validation'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap_rest_v2": 1
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with id as string \"100\" (type coercion test)",
+          "observed": "System accepted both id=100 (integer) and id=\"100\" (string) and treated them as the same entity. Query after upsert with string id returned vector [0.9,0.9,0.9,0.9], confirming successful upsert.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_pk\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Candidate claims 'type coercion' is a defect, but this is intentional behavior per source code. The checkAndSetData function at line 640 explicitly uses json.Number(dataString).Int64() which handles both string and integer representations of numbers. This is graceful type handling, not a bug."]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No contract violation found - this is intentional type flexibility"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["json.Number.*Int64", "DataType_Int64", "checkAndSetData", "convertIDsToSchemapbIDs"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 639-644 (checkAndSetData function)\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result\n\n// Lines 259-285 (convertIDsToSchemapbIDs function) - explicit string handling:\n\t\tcase schemapb.DataType_Int64:\n\t\t\tint64IDs := make([]int64, 0, len(ids))\n\t\t\tfor i, id := range ids {\n\t\t\t\tvar int64ID int64\n\t\t\t\tswitch v := id.(type) {\n\t\t\t\tcase int64:\n\t\t\t\t\tint64ID = v\n\t\t\t\tcase int:\n\t\t\t\t\tint64ID = int64(v)\n\t\t\t\tcase float64:\n\t\t\t\t\t// JSON numbers are decoded as float64\n\t\t\t\t\tif v != math.Trunc(v) {\n\t\t\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"invalid int64 id at index %d: %v has fractional part\", i, v)\n\t\t\t\t\t}\n\t\t\t\t\tint64ID = int64(v)\n\t\t\t\tcase string:\n\t\t\t\t\t// Try to parse string as int64\n\t\t\t\t\tparsed, err := strconv.ParseInt(v, 10, 64)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn nil, merr.WrapErrParameterInvalidErr(err, \"invalid int64 id at index %d: %v\", i, id)\n\t\t\t\t\t}\n\t\t\t\t\tint64ID = parsed",
+          "call_chain_traced": "REST v2 upsert request → handler_v2.go:1663 checkAndSetData → utils.go:640 json.Number(dataString).Int64() → explicit string-to-int64 parsing with error handling",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:Int64 类型字段明确设计为接受 string 和 integer 两种格式,json.Number(dataString).Int64() 和 strconv.ParseInt(v, 10, 64) 提供了显式的类型转换逻辑,这是有意为之的 API 设计,而非缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query confirmed upsert worked correctly - id=100 returned vector [0.9,0.9,0.9,0.9], proving string \"100\" was correctly coerced to integer 100 and matched existing record",
+          "observed": "POST /v2/vectordb/entities/query with filter id==100 returned {\"id\":100,\"vector\":[0.9,0.9,0.9,0.9]}, confirming successful type coercion and upsert operation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API语义设计 - REST v2 JSON 协议中数字字段接受字符串表示是常见做法"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中明确的 by_design 模式,但源码显示这是显式支持的类型转换功能"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码明确显示 Int64 类型字段设计为接受 string 和 integer 两种格式。在 checkAndSetData 函数(640行)使用 json.Number(dataString).Int64(),在 convertIDsToSchemapbIDs 函数(259-285行)中使用 strconv.ParseInt 处理 string 类型,这是有意为之的类型转换逻辑,不属于缺陷。REST v2 API 中对数字字段接受字符串表示是常见的 API 设计实践,提高了客户端灵活性。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

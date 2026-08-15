@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_014",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover on standalone mode Qdrant",
+          "observed": "HTTP 500 with error: 'Service internal error: Qdrant is running in standalone mode'",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/cluster/recover"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Cluster recover endpoint exists and is accessible",
+            "Error response clearly indicates mode-specific behavior",
+            "Response structure matches expected error format"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: cluster+recover (POST)",
+            "description: 'Recover current peer Raft state'",
+            "category: management"
+          ],
+          "note": "Contract describes the endpoint but does not specify standalone vs cluster mode behavior requirements"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "cluster.*recover",
+            "consensus_propposal_sender",
+            "standalone",
+            "get_consensus_proposal_sender"
+          ],
+          "files_examined": [
+            "src/actix/api/cluster_api.rs",
+            "lib/storage/src/content_manager/toc/mod.rs",
+            "lib/storage/src/dispatcher.rs",
+            "src/main.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/content_manager/toc/mod.rs line 774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender\n        .as_ref()\n        .ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))\n}\n\n// src/main.rs line 508-514\nlet propose_operation_sender = if settings.cluster.enabled {\n    Some(OperationSender::new(propose_sender))\n} else {\n    None\n};",
+          "call_chain_traced": "POST /cluster/recover → recover_current_peer (cluster_api.rs:60-73) → dispatcher.toc().request_snapshot() (toc/mod.rs:545-550) → get_consensus_proposal_sender() (toc/mod.rs:774-778) → Error if consensus_proposal_sender is None (standalone mode)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly implements mode-dependent behavior: consensus_proposal_sender is None in standalone mode, and get_consensus_proposal_sender returns a service_error with exact message 'Qdrant is running in standalone mode'"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test cluster status endpoint confirms standalone mode",
+          "observed": "GET /cluster returns {\"result\":{\"status\":\"disabled\"},\"status\":\"ok\"} - confirms Qdrant is running in standalone mode, validating the error message",
+          "evidence_cmd": "curl -s http://localhost:6333/cluster"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, platform) - ruled out",
+            "Concurrency/race condition - ruled out",
+            "Request parameter error - ruled out (no params required)"
+          ],
+          "surviving": "mundane_api_semantics - This is expected API behavior where cluster-specific operations are not available in standalone mode"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This endpoint behavior aligns with Qdrant's architectural design: cluster management APIs are intentionally disabled in standalone mode. No evidence this would be considered a bug by maintainers."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract requirement for standalone vs cluster mode behavior",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract describes endpoint functionality but doesn't mandate mode-independent behavior"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint - this is purely architectural design choice",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical or mathematical constraint is being violated"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API returns clear error message indicating mode-specific limitation - this is graceful handling of unsupported operation in current mode"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "The POST /cluster/recover endpoint correctly returns HTTP 500 with error 'Qdrant is running in standalone mode' when Qdrant is not in cluster mode. This is intentional design: consensus_proposal_sender is None in standalone mode (src/main.rs:508-514), and get_consensus_proposal_sender explicitly checks for this condition and returns the exact error message (lib/storage/src/content_manager/toc/mod.rs:777). The cluster status endpoint confirms disabled status. This is expected API behavior, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

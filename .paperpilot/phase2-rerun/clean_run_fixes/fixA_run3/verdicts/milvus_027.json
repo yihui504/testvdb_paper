@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=-1, shardsNum=0, shardsNum=65535",
+          "observed": "shardsNum=-1 succeeded (HTTP 200, collection created), shardsNum=0 succeeded (HTTP 200, collection created), shardsNum=65535 failed with proper error: 'maximum shards's number should be limited to 16'",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient(host='localhost', port='19530'); client.create_collection(collection_name='test_verify_neg', dimension=4, shards_num=-1, metric_type='L2'); print('Collection exists:', client.has_collection(collection_name='test_verify_neg'))\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate shardsNum parameter",
+            "Invalid values should be rejected with proper error",
+            "shardsNum should have minimum value constraint (> 0)",
+            "shardsNum should have maximum value constraint (<= 16)"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_shardsNum_001 (implicit from config: maxShardNum=16, default=1)",
+            "source: configs/milvus.yaml line 324: 'maxShardNum: 16'",
+            "source: internal/distributed/proxy/httpserver/constant.go line 106: 'ShardNumDefault = 1'"
+          ],
+          "note": "Contract defines maxShardNum=16 and default=1, implying valid range [1, 16]"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "ShardNumDefault", "maxShardNum", "validate.*shard"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/rootcoord/create_collection_task.go",
+            "configs/milvus.yaml",
+            "tests/python_client/common/common_type.py"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go lines 58-73:\n\tshardsNum := t.Req.GetShardsNum()\n\tvar cfgMaxShardNum int32\n\tif Params.CommonCfg.PreCreatedTopicEnabled.GetAsBool() {\n\t\tcfgMaxShardNum = int32(len(Params.CommonCfg.TopicNames.GetAsStrings()))\n\t} else {\n\t\tcfgMaxShardNum = Params.RootCoordCfg.DmlChannelNum.GetAsInt32()\n\t}\n\tif shardsNum > cfgMaxShardNum {\n\t\treturn fmt.Errorf(\"shard num (%d) exceeds max configuration (%d)\", shardsNum, cfgMaxShardNum)\n\t}\n\n\tcfgShardLimit := Params.ProxyCfg.MaxShardNum.GetAsInt32()\n\tif shardsNum > cfgShardLimit {\n\t\treturn fmt.Errorf(\"shard num (%d) exceeds system limit (%d)\", shardsNum, cfgShardLimit)\n\t}\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 2000-2006:\n\tshardsNum := int32(ShardNumDefault)\n\tif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n\t\tif shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n\t\t\tshardsNum = int32(shards)\n\t\t}\n\t}\n\treq.ShardsNum = shardsNum",
+          "call_chain_traced": "HTTP handler_v2.go:2000-2006 parses shardsNum → No validation → Passes to CreateCollectionRequest → rootcoord create_collection_task.go:58-73 validates ONLY upper bound (shardsNum > limit), NO minimum check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms validation logic ONLY checks upper bounds (shardsNum > cfgMaxShardNum, shardsNum > cfgShardLimit). Missing minimum validation (shardsNum <= 0). HTTP handler at handler_v2.go:2000-2006 accepts any int32 value without validation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collections created with invalid shardsNum actually exist and have the invalid values stored",
+          "observed": "Collection 'test_verify_neg' created with shardsNum=-1 exists: True. Collection 'test_verify_zero' created with shardsNum=0 exists: True. Both invalid collections successfully created and persisted.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient(host='localhost', port='19530'); client.create_collection(collection_name='test_verify_neg', dimension=4, shards_num=-1, metric_type='L2'); print('Collection exists:', client.has_collection(collection_name='test_verify_neg'))\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker platform limitation)",
+            "Race condition (single-threaded test)",
+            "Caching issue (immediate verification)",
+            "Request parameter typo (explicit test values)",
+            "API semantics misunderstanding (clear parameter validation contract)"
+          ],
+          "surviving_explanations": [],
+          "note": "No mundane explanations apply. Invalid values are clearly accepted by design flaw in validation logic."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; Returns wrong values for large integers; Array fields in raw protobuf format",
+        "note": "Matches blindspot 'REST v2 API data type serialization - 8 issues in corpus'. This is a REST v2 parameter validation gap where invalid values bypass validation that would exist in gRPC path. Developer cognition shows REST v2 has systematic validation weaknesses."
+      },
+      "root_cause_if_confirmed": "missing_minimum_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shardsNum must be in range [1, 16] (from maxShardNum=16 config and default=1)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "maxShardNum: 16 (configs/milvus.yaml:324), ShardNumDefault = 1 (constant.go:106)",
+          "api_observed_value": "API accepts shardsNum=-1 and shardsNum=0 without error (HTTP 200)",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false
+        },
+        "physical": {
+          "objective_constraint": "shardsNum represents number of shards for data distribution, physically requires shardsNum >= 1 (cannot have zero or negative shards)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful degradation or fallback. Invalid values accepted and stored as-is, leading to undefined behavior in sharding logic."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (Contract violation + Physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API endpoint /collections/create accepts invalid shardsNum values (-1, 0) without validation. Source code analysis confirms validation logic in create_collection_task.go:58-73 only checks UPPER bounds (shardsNum > limit) but lacks MINIMUM validation. HTTP handler at handler_v2.go:2000-2006 parses shardsNum without any range check. Contract implies valid range [1, 16] from maxShardNum=16 config and default=1. Physical constraint requires shardsNum >= 1 (cannot have zero/negative shards for data distribution). API violates both contract and physical constraints by accepting invalid values. Matches developer cognition pattern 'REST v2 data type handling' - systematic validation gaps in REST v2 layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_minimum_validation": 1
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with score_threshold values",
+          "observed": "score_threshold=2.0 → empty results, score_threshold=-0.5 → returns point (score=1.0), API silently accepts values outside valid cosine range [0,1]",
+          "evidence_cmd": "curl -s 'http://localhost:6333/collections/test_score_threshold_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["None - the observation that API accepts invalid score_threshold values without validation is correct"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json defines score_threshold as Option<ScoreType> without range constraints", "API templates confirm score_threshold is optional with no documented validation"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["score_threshold", "validate.*range", "ScoreType"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "lib/segment/src/segment/read_view/formula_rescore.rs", "src/common/inference/query_requests_rest.rs"],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 1199\n    /// Define a minimal score threshold for the result.\n    /// If defined, less similar results will not be returned.\n    /// Score of the returned result might be higher or smaller than the threshold depending on the\n    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.\n    pub score_threshold: Option<ScoreType>,\n\n// lib/segment/src/segment/read_view/formula_rescore.rs line 86-91\n        let rescored = match score_threshold {\n            Some(threshold) => {\n                Either::Left(rescored_iter.filter(move |point| point.score >= threshold))\n            }\n            None => Either::Right(rescored_iter),\n        }",
+          "call_chain_traced": "SearchRequestInternal.score_threshold (schema.rs) → CollectionQueryRequest.score_threshold → formula_rescore.rs filter logic (no validation, direct comparison)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: No range validation on score_threshold despite cosine similarity producing scores in [0,1]. Limit field has #[validate(range(min = 1))] but score_threshold lacks validation decorator."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification that point exists and has score=1.0",
+          "observed": "Point exists with score=1.0, confirming empty results with score_threshold=2.0 represent true filtering behavior, not observation error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment_issue", "concurrency_race", "caching", "parameter_typo", "api_misunderstanding"],
+          "surviving": "missing_parameter_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "Defect aligns with developer_cognition blindspot: missing parameter validation on score_threshold allows invalid values through"
+      },
+      "root_cause_if_fp": "N/A",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API accepts score_threshold values outside valid cosine similarity range [0,1] without validation. Source code confirms missing range check (no #[validate(range(...))] decorator, unlike 'limit' field). This allows meaningless queries (e.g., score_threshold=2.0) that silently return empty results, creating poor UX and potential confusion. Contract does not explicitly forbid this, but physical constraint of cosine similarity makes values >1.0 or <0.0 invalid.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit range constraint in contract for score_threshold",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Cosine similarity mathematically produces scores in [0, 1]. Values outside this range are meaningless",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violation + poor behavior)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"missing_parameter_validation": 1}
+  }
+}

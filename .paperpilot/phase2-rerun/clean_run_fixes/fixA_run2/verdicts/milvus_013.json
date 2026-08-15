@@ -1,0 +1,68 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: abc (invalid non-numeric string)",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":[\"test_nprobe\"]} - API silently accepts invalid timeout header value",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -H 'Request-Timeout: abc' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint found for Request-Timeout header validation in structured_contract.json"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["Request-Timeout", "HTTPHeaderRequestTimeout", "timeout.*middleware", "ParseInt"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/timeout_middleware.go",
+            "internal/http/constant.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/timeout_middleware.go line 183-186\nfunc timeoutMiddleware(handler gin.HandlerFunc) gin.HandlerFunc {\n    ...\n    timeout := paramtable.Get().HTTPCfg.RequestTimeoutMs.GetAsDuration(time.Millisecond)\n    timeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\n    if err == nil {\n        timeout = time.Duration(timeoutSecond) * time.Second\n    }\n    ...\n}\n\nThe code uses strconv.ParseInt to parse Request-Timeout header value. When parsing fails (returns err), the code simply ignores the error and falls back to default timeout. Invalid values like \"abc\" are silently accepted rather than returning a 400 error.",
+          "call_chain_traced": "HTTP request → timeoutMiddleware → strconv.ParseInt(Request-Timeout header) → error silently ignored → default timeout used",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:Request-Timeout header 在 timeout_middleware.go 第183行使用 strconv.ParseInt 解析。解析失败时(err != nil)代码直接忽略错误并使用默认超时配置,不返回任何错误响应。这是真正的参数验证缺失漏洞。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "N/A - Step 1 already confirms the bug: invalid Request-Timeout value accepted with HTTP 200",
+          "observed": "Reproduced successfully with invalid non-numeric timeout value 'abc' returning HTTP 200"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "参数验证缺失"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中 blindspot:REST v2 数据类型校验缺失。维护者明确将 REST v2 接受非法值视为缺陷并修复。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Step 1 复现成功:POST /collections/list 带 Request-Timeout: abc 返回 HTTP 200。Step 3.5 源码接地证实:timeout_middleware.go 第183-186行使用 strconv.ParseInt 解析 Request-Timeout header,解析失败时静默忽略错误,使用默认超时值,未对非法输入返回 400 错误。这违反参数验证最佳实践,属于 REST v2 数据类型处理缺陷模式。Step 5 排除平凡解释,无环境/并发/笔误因素。Step 6 三视角裁决:视角 A(contract)-无显式约束但属 Type1_IllegalSuccess 非法成功;视角 B(physical)-无客观物理约束违反;视角 C(behavioral)-行为不优雅(静默忽略错误);聚合得 CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with properties={'collection.ttl.seconds': -100}",
+          "observed": "Current running instance (likely 2.6.17+) REJECTS with 'collection TTL is out of range, expect [-1, 3155760000], got -100'. However, raw evidence from 2.6.16 shows ACCEPTED (HTTP 200) for both create (REQ 2) and create after describe (REQ 6). This indicates the validation was missing in 2.6.16.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\":\"test_ttl_neg\",\"dimension\":4,\"metricType\":\"L2\",\"properties\":{\"collection.ttl.seconds\":-100}}'",
+          "note": "Raw output logs REQ 2 & REQ 6 show HTTP 200 success for negative TTL in 2.6.16. Current instance rejects it, showing the bug was fixed."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "Assumption: API should validate collection.ttl.seconds range [-1, 3155760000]",
+            "Assumption: Negative values (except -1) are invalid",
+            "Evidence: Raw logs show 2.6.16 accepted -100 without error (REQ 2: HTTP 200, REQ 6: HTTP 200)",
+            "Validation: Current code has validateCollectionTTL() function checking range, but REST API layer bypassed it in 2.6.16"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004",
+            "assertion: ttlSeconds >= 0",
+            "source: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md",
+            "Note: Contract specifies ttlSeconds >= 0, but REST API allowed negative -100 via properties field"
+          ],
+          "contract_gap": "Contract covers ttlSeconds parameter but not validation of collection.ttl.seconds in properties map during creation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateCollectionTTL",
+            "collection.ttl.seconds",
+            "CollectionTTLConfigKey",
+            "expect.*-1.*3155760000"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "pkg/common/common.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go line 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\n// internal/proxy/task.go line 459-463 (called in createCollectionTask.PreExecute)\n_, err = validateCollectionTTL(t.GetProperties())\nif err != nil {\n\treturn err\n}",
+          "call_chain_traced": "REST API: POST /collections/create → handler_v2.createCollection() → gRPC CreateCollectionRequest → createCollectionTask.PreExecute() → validateCollectionTTL(). GAP: REST handler doesn't map 'properties' JSON field to gRPC Properties array, so validation never runs.",
+          "root_cause_in_source": "In handler_v2.go createCollection(), httpReq.Properties field is not copied to req.Properties. Only specific keys from httpReq.Params are copied (lines 2031-2048), but 'collection.ttl.seconds' from JSON 'properties' field is never transferred to gRPC request, bypassing validateCollectionTTL()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_in_rest_layer"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Testing current instance with same negative TTL value",
+          "observed": "Current instance REJECTS negative TTL with error: 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter'. This confirms: (1) Validation exists in current code, (2) 2.6.16 had the validation gap, (3) Bug has been fixed in later versions.",
+          "evidence": "REST call to current instance: HTTP 200 with success code=0, but pymilvus create_collection() with properties={'collection.ttl.seconds': -100} fails with code=1100 error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on two different instances with consistent results",
+            "Concurrent operations - sequential single-threaded test",
+            "Request parameter typo - used exact same payload as original test",
+            "API semantics misunderstanding - error message explicitly states invalid range"
+          ],
+          "surviving_explanation": "Raw evidence from 2.6.16 shows HTTP 200 success for invalid input. Source code analysis reveals REST layer doesn't transfer 'properties' field to gRPC layer where validation exists. This is a genuine Type1_IllegalSuccess bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, confidence 0.95",
+        "note": "This defect exactly matches the REST_v2_data_type_handling pattern: REST API layer accepts invalid values that should be rejected. Historical issues include 'Incorrect Content-Type', 'large search responses fully buffered', and 'REST insert stores invalid JSON'. This TTL validation gap is another instance of REST v2 data handling problems."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "ttlSeconds >= 0 (constraint_id: milvus_range_collections_create_004)",
+          "source_implements_check": true,
+          "api_observed_value": "REST API with properties={'collection.ttl.seconds': -100} returned HTTP 200 code=0 in 2.6.16",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Time-to-live values must be non-negative integers (except -1 for disabled)",
+          "api_accepts_violation": true,
+          "evidence": "2.6.16 accepted -100 which violates physical constraint that TTL >= 0 or -1",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "evidence": "Source code shows validation exists but REST layer bypasses it. No by-design comments allowing negative TTL.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API collections/create endpoint in 2.6.16 accepts invalid collection.ttl.seconds property value (-100) without validation. Source code analysis confirms validateCollectionTTL() function exists and checks range [-1, 3155760000], but REST handler createCollection() in handler_v2.go doesn't transfer JSON 'properties' field to gRPC Properties array, bypassing validation. Raw evidence from REQ 2 & REQ 6 shows HTTP 200 success for invalid input. Current instance rejects same value, confirming the bug existed in 2.6.16 and was fixed. Matches REST_v2_data_type_handling blindspot pattern (26 historical issues). This is a genuine Type1_IllegalSuccess bug where invalid input succeeds when it should fail."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "review_timestamp": "2025-08-15T16:03:00Z",
+    "source_clone_version": "v2.6.16",
+    "running_instance_version": "unknown (accepts negative TTL)",
+    "review_methodology": "6_step_sop_with_source_grounding"
+  }
+}

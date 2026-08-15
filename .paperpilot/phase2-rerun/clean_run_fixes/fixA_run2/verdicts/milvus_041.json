@@ -1,0 +1,76 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_041",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/entities/upsert with string values for typed scalar fields",
+          "observed": "All 8 requests succeeded with HTTP 200. Milvus accepted and stored string '3.14159' for Double field, string 'true' and integer 1 for Bool field, string '42' for Int16 field without type validation errors.",
+          "evidence_cmd": "Raw log shows successful upserts: POST /entities/upsert with dbl_f='3.14159', bool_f='true', bool_f=1, i16_f='42' all returned HTTP 200 with upsertCount=1"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_bool_001 (dataType == Bool)",
+            "constraint_id: milvus_type_double_001 (dataType == Double)",
+            "constraint_id: milvus_type_int16_001 (dataType == Int16)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["cast.ToBoolE", "cast.ToInt16E", "cast.ToFloat64E", "checkAndSetData", "anyToColumns"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 615-632, 770-775\n// Critical type coercion in checkAndSetData function:\n\n// Bool field handling (lines 615-620):\n\t\t\t\tcase schemapb.DataType_Bool:\n\t\t\t\t\tresult, err := cast.ToBoolE(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// Int16 field handling (lines 627-632):\n\t\t\t\tcase schemapb.DataType_Int16:\n\t\t\t\t\tresult, err := cast.ToInt16E(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// Double field handling (lines 770-775):\n\t\t\t\tcase schemapb.DataType_Double:\n\t\t\t\t\tresult, err := cast.ToFloat64E(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// The issue: dataString contains the raw JSON string value.\n// cast.ToBoolE('true') succeeds → bool(true)\n// cast.ToInt16E('42') succeeds → int16(42)\n// cast.ToFloat64E('3.14159') succeeds → float64(3.14159)\n// NO validation that the input was already the correct type.",
+          "call_chain_traced": "REST v2 upsert → handler_v2.upsert() → checkAndSetData() → cast.ToBoolE/ToInt16E/ToFloat64E → anyToColumns() → direct type assertion append",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 upsert路径在checkAndSetData函数中使用spf13/cast库将JSON字符串值转换为Go类型(如cast.ToBoolE('true')转换字符串'true'为bool true)。该库会自动类型强制转换,导致字符串'3.14159'被成功转换为Double值,字符串'true'和整数1被转换为Bool值,字符串'42'被转换为Int16值,完全绕过类型检查。契约明文要求这些字段为Bool/Double/Int16类型,但源码未验证输入是否已为正确类型,直接做强制转换,是真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified that API actually stores the coerced values by examining successful upsert responses with upsertCount=1 and no validation errors",
+          "observed": "Raw HTTP responses confirm successful storage: code=0, upsertCount=1 for all type coercion cases. This is not a graceful fallback - it's silent acceptance of incorrectly typed data."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (running in Docker, standard REST API)",
+            "Request parameter typo (payload format is correct JSON)",
+            "API semantics misunderstanding (REST v2 spec requires proper types)",
+            "By-design behavior (developer_cognition shows no pattern accepting loose typing for scalars)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "Candidate directly matches the bug_shapes 'rest-v2-data-type-handling' pattern (shape_id: rest-v2-data-type-handling) which describes 'REST v2 API fails to properly serialize/deserialize complex data types' with symptoms including 'Returns wrong values for large integers' and 'Array fields in raw protobuf format'. Historical instances show 26 related issues with confidence 0.95."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实:REST v2 upsert路径在internal/distributed/proxy/httpserver/utils.go的checkAndSetData函数中使用spf13/cast库对JSON字符串值进行自动类型强制转换(cast.ToBoolE/ToInt16E/ToFloat64E),完全绕过类型检查。契约明确要求Bool/Double/Int16类型字段,但API接受字符串'true'/'3.14159'/'42'并成功存储,无验证错误。这匹配bug_shapes中'rest-v2-data-type-handling'模式(26个历史实例,置信度0.95),属于Type1_IllegalSuccess类型缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

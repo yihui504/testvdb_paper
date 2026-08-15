@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with empty metricType and invalid consistencyLevel",
+          "observed": "All 3 requests returned HTTP 200 with code:0. REQ4 (metricType=\"\") succeeded, REQ5 (consistencyLevel=\"None\") succeeded, REQ6 (dimension=32769) correctly failed with 65535",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: Empty metricType should be rejected → Source code shows metricType defaults to COSINE when empty (handler_v2.go:2067-2068)",
+            "Assumption 2: consistencyLevel='None' should be rejected → Source code shows convertConsistencyLevel() defaults to Bounded for unknown/empty values (utils.go:1747-1748)",
+            "Assumption 3: These are validation bugs → Both behaviors are intentional design choices with explicit defaults"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - metricType must be L2, IP, or COSINE (quick-setup defaults apply)",
+            "constraint_id: milvus_type_collections_create_003 - consistencyLevel must be Strong/Session/Bounded/Eventually (defaults to Bounded)",
+            "assertion_id: milvus_behavioral_collections_create_001 - returns 200 on success with empty data object"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": [
+            "metricType.*empty",
+            "DefaultMetricType",
+            "consistencyLevel.*Bounded.*default",
+            "convertConsistencyLevel"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/proxy/util.go",
+            "pkg/util/paramtable/component_param.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go lines 2067-2075\n\t\tif len(httpReq.MetricType) == 0 {\n\t\t\thttpReq.MetricType = DefaultMetricType\n\t\t}\n\t\tcreateIndexReq := &milvuspb.CreateIndexRequest{\n\t\t\tDbName:         dbName,\n\t\t\tCollectionName: httpReq.CollectionName,\n\t\t\tFieldName:      httpReq.VectorFieldName,\n\t\t\tIndexName:      httpReq.VectorFieldName,\n\t\t\tExtraParams:    []*commonpb.KeyValuePair{{Key: common.MetricTypeKey, Value: httpReq.MetricType}},\n\t\t}\n\n// File: internal/distributed/proxy/httpserver/utils.go lines 1740-1748\n\tif reqConsistencyLevel != \"\" {\n\t\tlevel, ok := commonpb.ConsistencyLevel_value[reqConsistencyLevel]\n\t\tif !ok {\n\t\t\treturn 0, false, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"parameter:'%s' is incorrect, please check it\", reqConsistencyLevel))\n\t\t}\n\t\treturn commonpb.ConsistencyLevel(level), false, nil\n\t}\n\t// ConsistencyLevel_Bounded default in PyMilvus\n\treturn commonpb.ConsistencyLevel_Bounded, true, nil\n\n// File: pkg/util/paramtable/component_param.go lines 2154-2162\n\tp.MaxDimension = ParamItem{\n\t\tKey:          \"proxy.maxDimension\",\n\t\tDefaultValue: \"32768\",\n\t\tVersion:      \"2.0.0\",\n\t\tPanicIfEmpty: true,\n\t\tDoc:          \"The maximum number of dimensions of a vector can have when creating in a collection.\",\n\t\tExport:       true,\n\t}",
+          "call_chain_traced": "CreateCollection → check empty metricType → set DefaultMetricType (COSINE) → CreateIndex; convertConsistencyLevel('None') → not in enum → default to Bounded",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:metricType为空时显式设置默认值COSINE (handler_v2.go:2067-2068), consistencyLevel无效时默认Bounded (utils.go:1747-1748) —— 这是有意的设计,非验证缺失"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe for created collections",
+          "observed": "test_mt_empty: metric_type=COSINE (默认值已生效), consistency_level=Bounded; test_cl_none: metric_type=L2, consistency_level=Bounded (默认值已生效). Both collections created successfully with defaults applied."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 无",
+            "并发race - 无",
+            "请求参数笔误 - 无,参数确实为空字符串/None",
+            "对API语义的误解 - 原oracle期望失败,但API设计允许空值并使用默认值"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior; examples: load partition stuck at 50%, channel checkpoint lag increasing. Attack guidance: Verify against documentation, check if behavior matches documented contract",
+        "note": "命中 rejection_pattern RP-001: API接受空值并提供合理默认值符合文档化行为 (metricType→COSINE, consistencyLevel→Bounded)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] (constraint_id: milvus_type_collections_create_002) BUT quick-setup mode allows empty with default=COSINE (handler_v2.go:2067-2068); consistencyLevel in [Strong, Session, Bounded, Eventually] (constraint_id: milvus_type_collections_create_003) BUT defaults to Bounded for invalid values (utils.go:1747-1748)",
+          "source_implements_check": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "None - API has no physical constraints on these parameter values (they are enums with documented defaults)",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED AND verdict_B=NEUTRAL AND verdict_C=REFUTED(by_design) → final=REFUTED (三个视角一致:这是有意设计,非缺陷)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "源码接地证实 metricType 和 consistencyLevel 的空值处理是显式设计: handler_v2.go:2067-2068 将空 metricType 设为 DefaultMetricType(COSINE); utils.go:1747-1748 对无效 consistencyLevel 默认 Bounded。证伪显示 collections 实际使用这些默认值创建成功 (metric_type=COSINE, consistency_level=Bounded)。这是 REST v2 API 的用户友好设计 —— 允许省略可选参数并应用文档化默认值,非参数验证缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

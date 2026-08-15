@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_019",
+      "endpoint": "collections+get_stats",
+      "defect_type": "Type3_RuntimeFailure",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection 'test_rowcount', insert 5 entities, load collection, call get_stats",
+          "observed": "get_stats returned {\"rowCount\": 0} despite 5 entities successfully inserted and loaded. Query API independently verified all 5 entities exist in the collection.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/get_stats' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rowcount\"}' | python -m json.tool"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Data was successfully inserted (insert returned insertCount=5)",
+            "Collection was successfully loaded (load returned HTTP 200)",
+            "Data actually exists in collection (independent query returned 5 entities with id=0,1,2,3,4)",
+            "get_stats API was called with correct parameters (collectionName=test_rowcount)"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavioral_collections_get_stats_001",
+            "assertion: 'insert(N entities) -> get_stats().rowCount >= N'",
+            "expected_behavior: 'returns 200 with data.rowCount showing the number of entities in the collection'"
+          ],
+          "api_observed_value": "get_stats returned rowCount=0 after inserting 5 entities",
+          "api_violates_assertion": true
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "GetCollectionStatistics",
+            "wrapperReturnRowCount",
+            "GetNumRowsOfCollection",
+            "isSegmentHealthy",
+            "SegmentState"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task_statistic.go",
+            "internal/datacoord/services.go",
+            "internal/datacoord/meta.go"
+          ],
+          "source_excerpt": "internal/datacoord/meta.go line 480-487:\nfunc (m *meta) GetNumRowsOfCollection(ctx context.Context, collectionID UniqueID) int64 {\n\tvar ret int64\n\tsegments := m.SelectSegments(ctx, WithCollection(collectionID), SegmentFilterFunc(isSegmentHealthy))\n\tfor _, segment := range segments {\n\t\tret += segment.GetNumOfRows()\n\t}\n\treturn ret\n}\n\ninternal/datacoord/meta.go line 2053-2058:\nfunc isSegmentHealthy(segment *SegmentInfo) bool {\n\treturn segment != nil &&\n\t\tsegment.GetState() != commonpb.SegmentState_SegmentStateNone &&\n\t\tsegment.GetState() != commonpb.SegmentState_NotExist &&\n\t\tsegment.GetState() != commonpb.SegmentState_Dropped\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:getCollectionStats -> proxy.impl.go:GetCollectionStatistics -> task_statistic.go:Execute -> datacoord.services.go:GetCollectionStatistics -> datacoord.meta.go:GetNumRowsOfCollection -> isSegmentHealthy filter",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:GetNumRowsOfCollection 使用 isSegmentHealthy 过滤，排除了 SegmentState_SegmentStateNone 状态的 segment。新建插入的 segment 在 flush/segment 状态转换前处于 SegmentStateNone，被过滤掉导致 rowCount=0。这是 segment 状态机边界条件处理的 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent query via entities/query API to verify actual data existence",
+          "observed": "query API returned 5 entities (id=0,1,2,3,4) with all fields present, proving data actually exists despite get_stats reporting rowCount=0. Bug consequence is observable: inconsistency between get_stats and query APIs."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker container healthy)",
+            "Concurrent/race condition (single-threaded test)",
+            "Cache/optimizer delay (immediate query after load)",
+            "Request parameter error (parameters correct per API spec)",
+            "API semantic misunderstanding (contract clearly states rowCount should show entity count)"
+          ],
+          "surviving_explanation": "segment_state_filtering_boundary"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Segment state machine violations - 15+ issues, Segment_state_management",
+        "pattern_id": "blindspot_indicators",
+        "note": "命中开发者认知盲区:Segment state machine violations 是已知的高频盲点区域 (15+ issues)。get_stats 通过 isSegmentHealthy 过滤排除了 SegmentStateNone 的 segment，导致刚插入尚未状态转换的数据不被计数。"
+      },
+      "root_cause_if_confirmed": "segment_state_filter_excludes_newly_inserted_segments",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现确认:插入5个entity后load再get_stats返回rowCount=0。独立证伪失败:query API证明数据实际存在。源码接地发现:GetNumRowsOfCollection使用isSegmentHealthy过滤，排除了SegmentStateNone状态的segment。刚插入的segment在状态机转换前处于SegmentStateNone，被过滤导致 rowCount=0。这是segment状态机边界条件处理bug，命中开发者认知盲区(Segment state machine violations - 15+ issues)。契约明确要求get_stats返回实体数量，违反成立。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "segment_state_filter_excludes_newly_inserted_segments": 1
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "Type4_StateLogicViolation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/batch with operations=[upsert 3 points where id=6 has 3-dim vector (expected: 4)]",
+          "observed": "HTTP 200 with operation_id=1, status='acknowledged'. Points 4 and 5 were inserted, but point 6 was silently skipped due to dimension error. Final count=5 (was 3, expected 6 or 3 on rollback).",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_batch2/points/batch' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_state_batch_update_007 - 'Batch update operations are executed atomically.' (evidence_tier: explicit, confidence: 1.0)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["do_batch_update_points", "transaction", "rollback", "atomic", "validate_vector_dimensions"],
+          "files_examined": [
+            "src/common/update.rs",
+            "src/common/validate_vectors.rs",
+            "src/actix/api/update_api.rs"
+          ],
+          "source_excerpt": "/// src/common/update.rs lines 803-912 (do_batch_update_points function)\nfor operation in operations {\n    let current_update_result = match operation {\n        UpdateOperation::Upsert(operation) => {\n            let (result, usage) = do_upsert_points(\n                toc_provider.clone(),\n                collection_name.clone(),\n                operation.upsert,\n                internal_params,\n                params,\n                auth.clone(),\n                inference_params.clone(),\n                hw_measurement_acc.clone(),\n            )\n            .await?;\n            inference_usage.merge_opt(usage);\n            result\n        }\n        // ... other operation types ...\n    };\n    results.push(current_update_result);\n}\n\n/// CRITICAL FINDING: No transaction/rollback wrapper exists.\n/// Each operation is executed sequentially. If any operation fails,\n/// previous operations remain applied. No atomicity guarantee enforced.\n\n/// src/common/validate_vectors.rs lines 40-46\nfor vector in vectors {\n    if vector.len() != expected_dim {\n        return Err(StorageError::bad_input(format!(\n            \"Vector dimension error: expected dim: {expected_dim}, got {}\",\n            vector.len()\n        )));\n    }\n}\n\n/// Vector dimension validation DOES exist and returns error,\n/// but batch processing lacks atomic transaction handling\n/// to rollback prior operations when later operations fail.",
+          "call_chain_traced": "POST /collections/{c}/points/batch → update_api.rs:update_batch() → update.rs:do_batch_update_points() → sequential operation loop (803-912) → each op executed independently with no rollback mechanism",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_no_atomicity",
+          "note": "源码接地发现：batch 处理函数 do_batch_update_points (803-912行) 顺序执行操作，无事务包装。向量维度校验函数 validate_vector_dimensions 返回错误，但失败时已执行的前序操作不会被回滚。contract 要求 atomicity 但源码未实现事务机制。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points with ids=[4,5,6] and with_vector=true to verify actual state",
+          "observed": "Points 4 and 5 exist with normalized 4-dim vectors. Point 6 does not exist. Count=5 (not 3 rollback to original, not 6 full success). Batch partially succeeded - violating atomicity contract."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "请求参数笔误 - vector dims 确实不匹配",
+            "环境问题 - 在干净环境中复现",
+            "并发/race - 单线程顺序执行",
+            "平台兼容性 - 标准 Docker 环境"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count), HNSW approximation edge cases in offset-based pagination, WAL replay state consistency (point resurrection), Concurrent shard worker restart safety (try_join_all cancellation), Silent failure in recommend API with missing point IDs",
+        "note": "命中 blindspot: 'Silent failure in recommend API with missing point IDs' - 同类模式：部分操作静默失败，API 返回成功但实际未全部完成。"
+      },
+      "root_cause_if_tp": "missing_transaction_handling_in_batch_operations",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Contract qdrant_state_batch_update_007 明确规定 'Batch update operations are executed atomically.' 但源码 do_batch_update_points (update.rs:803-912) 顺序执行操作，无事务或回滚机制。实测验证：含非法维度向量的 batch 请求返回 HTTP 200 acknowledged，但仅部分点插入成功（id=4,5 成功，id=6 静默跳过），count 从 3 变 5（非 3 回滚或 6 全成）。违反原子性约束。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_transaction_handling_in_batch_operations": 1
+    }
+  }
+}

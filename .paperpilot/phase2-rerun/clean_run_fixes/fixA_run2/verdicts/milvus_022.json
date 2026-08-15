@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {collectionName: 'test_milvus_022', dimension: 4, metricType: 'COSINE', idType: 'Int64', autoID: false} executed twice",
+          "observed": "Both requests succeeded with HTTP 200, code: 0 - no error returned on duplicate create",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_milvus_022\", \"dimension\": 4, \"metricType\": \"COSINE\", \"idType\": \"Int64\", \"autoID\": false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes duplicate collection creation must return 400 error, but this assumes non-idempotent API semantics",
+            "Contract invariant 'milvus_invariant_create_duplicate_001' expects 400 error on second create, but this conflicts with actual by-design idempotent behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "invariant_id: milvus_invariant_create_duplicate_001 - 'create(collection) -> create(collection) must return 400 with collection already exists'",
+            "behavioral_id: milvus_behavioral_collections_create_002 - 'returns 400 with descriptive error message on invalid parameters or duplicate collection name'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "validateIfCollectionExists",
+            "errIgnoredCreateCollection",
+            "create duplicate collection"
+          ],
+          "files_examined": [
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go line 522-540\nfunc (t *createCollectionTask) validateIfCollectionExists(ctx context.Context) error {\n\t// Check if the collection name duplicates an alias.\n\tif _, err := t.meta.DescribeAlias(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp); err == nil {\n\t\terr2 := fmt.Errorf(\"collection name [%s] conflicts with an existing alias, please choose a unique name\", t.Req.GetCollectionName())\n\t\tlog.Ctx(ctx).Warn(\"create collection failed\", zap.String(\"database\", t.Req.GetDbName()), zap.Error(err2))\n\t\treturn err2\n\t}\n\n\t// Check if the collection already exists.\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection  // <-- KEY: Same schema = ignore (idempotent)\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "Proxy.CreateCollection -> createCollectionTask.Execute -> mixCoord.CreateCollection -> root_coord.CreateCollection -> createCollectionTask.PreExecute (validateIfCollectionExists) -> GetCollectionByName -> errIgnoredCreateCollection returned",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: Milvus 实现了幂等的 create collection 语义。当且仅当 schema 完全相同时,重复 create 返回 errIgnoredCreateCollection,在 root_coord.go:903 被捕获并转换为 merr.Success()。这是显式的 by-design 幂等性,不是 bug。只有当参数不同时(534-535行)才返回错误。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create twice with identical params → Both return HTTP 200; POST with different params on second try → Returns error",
+          "observed": "Confirmed: Idempotent behavior is real. Same params = success (idempotent), different params = error (contract violation detected)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise",
+            "Concurrency race",
+            "Request parameter typos"
+          ],
+          "surviving": "by_design_idempotent_api"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中明确的 by_design_patterns,但源码显示这是幂等 API 设计的一部分,与文档契约的 invariant 矛盾属于文档过时而非实现缺陷"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_invariant_create_duplicate_001: 'create(collection) -> create(collection) must return 400 with collection already exists'",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract 文档要求返回 400,但源码显示当 schema 相同时返回 200 (幂等)。这是 contract 文档过时,而非源码违反契约。"
+        },
+        "physical": {
+          "objective_constraint": "Collection name must be unique within database (physical state constraint)",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL",
+          "note": "唯一性约束在源码中得到保障,但通过幂等语义处理而非拒绝请求"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "源码显式实现幂等行为:errIgnoredCreateCollection 在 root_coord.go:903 被捕获并转换为成功响应。注释明确说明'create existed collection with same schema, ignore it'"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL + verdict_B=NEUTRAL + verdict_C=REFUTED(by_design_in_source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选基于 invariant milvus_invariant_create_duplicate_001 断言'重复 create 必须返回 400',但源码接地发现 Milvus 实现了幂等的 create collection API:当且仅当 schema 完全相同时,重复 create 返回成功(HTTP 200)。源码在 internal/rootcoord/create_collection_task.go:531-537 检测到重复且 schema 相同时返回 errIgnoredCreateCollection,该错误在 internal/rootcoord/root_coord.go:903 被显式捕获并转换为 merr.Success()。注释明确说明'create existed collection with same schema, ignore it',证明这是 by-design 幂等性。只有当参数不同时才返回错误。因此该候选是 FALSE_POSITIVE,根因是 contract 文档过时(invariant 与实际实现不符),而非 API 违规。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

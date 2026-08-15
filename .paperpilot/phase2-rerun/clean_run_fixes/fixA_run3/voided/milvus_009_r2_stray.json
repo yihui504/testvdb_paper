@@ -1,0 +1,123 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={'nprobe': 0}",
+          "observed": "Both 2.6.16 (raw evidence REQ 5 & REQ 11) and current running instance accept nprobe=0 without error. HTTP 200 code=0 returned with successful search results.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient(uri='http://localhost:19530'); client.create_collection('test', dimension=4); client.insert('test', [{'id': 0, 'vector': [0.1,0.2,0.3,0.4]}]); client.load_collection('test'); client.search('test', data=[[1.0,2.0,3.0,4.0]], limit=3, search_params={'nprobe': 0})\"",
+          "note": "Current instance also accepts nprobe=0, suggesting validation gap persists in later versions."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "Assumption: nprobe parameter should be validated for IVF-type indexes",
+            "Assumption: nprobe=0 is physically invalid for IVF search (must probe at least 1 partition)",
+            "Evidence: Test expectations in idx_ivf_rabitq.py show nprobe should be in range [1, 65536]",
+            "Validation: No range validation found in REST API layer or proxy layer for nprobe parameter"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Note: No explicit contract constraint found for nprobe range in structured_contract.json",
+            "Source: Test expectations in tests/python_client/testcases/indexes/idx_ivf_rabitq.py",
+            "Expected: 'Out of range in json: param 'nprobe' (-1) should be in range [1, 65536]'",
+            "Gap: Contract doesn't specify nprobe validation, but test expectations indicate range should be [1, 65536]"
+          ],
+          "contract_gap": "No formal contract constraint for nprobe validation, but test expectations define valid range as [1, 65536]"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "generateSearchParams",
+            "nprobe",
+            "searchParams validation",
+            "range.*check.*nprobe"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task_search.go",
+            "tests/python_client/testcases/indexes/idx_ivf_rabitq.py"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2192-2241\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\t// ... parameter processing logic ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION of parameter ranges here - just converts map to gRPC format\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST API: POST /entities/search → handler_v2.search() → generateSearchParams() → gRPC SearchRequest. No nprobe range validation found in any layer.",
+          "root_cause_in_source": "generateSearchParams() in utils.go only converts JSON map to gRPC KeyValuePair array without validating parameter ranges. No validation of nprobe >= 1 found in REST layer, proxy layer, or passed through to query node.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Testing with invalid nprobe values to see if validation exists anywhere",
+          "observed": "Current instance accepts nprobe=0, nprobe=-1, and nprobe=100000 without error. No validation found in any layer. Search executes successfully with nprobe=0 despite being physically invalid for IVF indexes.",
+          "evidence": "Multiple test values accepted: nprobe=0 (success), nprobe=-1 (success), nprobe=100000 (success). No range validation detected."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on both 2.6.16 evidence and current instance with same behavior",
+            "Concurrent operations - single-threaded sequential test",
+            "Request parameter typo - used exact parameter names and formats",
+            "API semantics - nprobe=0 is physically meaningless for IVF (must probe at least 1 partition)"
+          ],
+          "surviving_explanation": "Test expectations explicitly state nprobe should be in range [1, 65536]. Source code shows no validation. Raw evidence shows invalid nprobe=0 accepted. This is a genuine Type1_IllegalSuccess bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, confidence 0.95",
+        "note": "This defect matches the REST_v2_data_type_handling pattern: REST API accepts invalid parameter values without validation. Similar to how REST layer accepted invalid collection.ttl.seconds in milvus_010, it also accepts invalid nprobe values. Historical REST v2 issues include parameter validation gaps."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Test expectations indicate nprobe should be in range [1, 65536], but no formal contract constraint exists",
+          "source_implements_check": false,
+          "api_observed_value": "REST API accepts nprobe=0 and returns HTTP 200 code=0 with successful search",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "For IVF index types, nprobe represents number of inverted file partitions to probe. Physical constraint: nprobe >= 1 (must probe at least one partition)",
+          "api_accepts_violation": true,
+          "evidence": "API accepts nprobe=0 which violates physical constraint that at least 1 partition must be probed for IVF search to be meaningful",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "evidence": "API gracefully accepts invalid nprobe and executes search, but no source code comments or logic indicate this is intentional. Test expectations suggest validation should occur.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (physical violation overrides behavioral gracefulness)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "REST v2 API entities/search endpoint accepts invalid nprobe=0 parameter value without validation. Raw evidence from REQ 5 & REQ 11 shows HTTP 200 success. Current instance also accepts nprobe=0, confirming the validation gap persists. Test expectations in idx_ivf_rabitq.py explicitly state nprobe should be in range [1, 65536], but source code analysis reveals generateSearchParams() in utils.go only converts JSON to gRPC format without range validation. No nprobe validation found in REST layer, proxy layer, or query node layer. Physical constraint: for IVF indexes, nprobe must be >= 1 (must probe at least one partition). This is a Type1_IllegalSuccess bug where invalid input succeeds when it should fail. Matches REST_v2_data_type_handling pattern (parameter validation gap)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "metadata": {
+    "reviewer_agent": "dev-reviewer",
+    "review_timestamp": "2025-08-15T16:10:00Z",
+    "source_clone_version": "v2.6.16",
+    "running_instance_version": "unknown (accepts nprobe=0)",
+    "review_methodology": "6_step_sop_with_source_grounding"
+  }
+}

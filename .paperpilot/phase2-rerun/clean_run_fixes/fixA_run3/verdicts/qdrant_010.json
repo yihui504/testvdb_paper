@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_010",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/broken2 with {shard_number: 1} (no vectors config) then PUT /collections/broken2/points with vector data",
+          "observed": "HTTP 400 with error: 'Wrong input: Not existing vector name error: '",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_qdrant_010' -H 'Content-Type: application/json' -d '{\"shard_number\": 1}' && curl -s -X PUT 'http://localhost:6333/collections/test_qdrant_010/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes Qdrant should auto-create vector config when points are inserted with vectors, even when collection was created without explicit vectors parameter"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name} (PUT), line 42: vectors is 'required': false (optional parameter)",
+            "endpoint: collections+{collection_name}+points (PUT), line 332-390: points parameter requires vector data but does not specify auto-creation behavior"
+          ],
+          "note": "Contract shows vectors is optional at collection creation time, but contains NO assertion that vectors will be auto-created when omitted. No contract violation exists."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "Not existing vector name",
+            "VectorNameNotExists",
+            "check_vector_names"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/collection/src/operations/types.rs",
+            "src/actix/api/update_api.rs",
+            "tests/openapi/test_optional_vectors.py"
+          ],
+          "source_excerpt": "// lib/collection/src/operations/types.rs lines 1736-1745\n/// Check that the vector names in this config are part of the given collection.\n///\n/// Returns an error if incompatible.\npub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {\n    for vector_name in self.0.keys() {\n        collection\n            .vectors\n            .get_params(vector_name)\n            .map(|_| ())\n            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name.clone()))?;\n    }\n    Ok(())\n}\n\n// lib/segment/src/common/operation_error.rs line 27-28\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },",
+          "call_chain_traced": "PUT /collections/{name}/points → upsert_points (update_api.rs:54) → do_upsert_points → PointInsertOperations processing → vectors.check_vector_names (types.rs:1736) → collection.vectors.get_params fails (empty vectors map) → OperationError::vector_name_not_exists → HTTP 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:Collection created with only {shard_number: 1} has empty vectors config (vectors参数未提供). check_vector_names函数显式验证vector name是否存在,当vectors map为空时,任何vector name都会触发VectorNameNotExists错误.这是by-design行为,不是bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create collection with proper vectors config: PUT /collections/test_with_vectors {vectors: {size: 4, distance: Cosine}, shard_number: 1} then insert points",
+          "observed": "HTTP 200 OK, point successfully inserted. Error only occurs when collection created WITHOUT vectors config.",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_proper' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 1}' && curl -s -X PUT 'http://localhost:6333/collections/test_proper/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/platform)",
+            "Race condition",
+            "Request parameter typo"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This is mundane API semantics: Qdrant requires explicit vector configuration at collection creation. Inserting points with vectors into a collection without vector config is correctly rejected."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns. 这是API设计的基本要求:vector config必须显式声明.不是维护者认为'不重要'的边缘情况,而是核心API契约."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Qdrant要求在创建collection时显式配置vectors参数.当仅提供{shard_number: 1}而不配置vectors时,collection的vectors config为空map.后续upsert points时会通过check_vector_names验证(default vector name),由于vectors map为空而触发'Not existing vector name error'.源码(types.rs:1736-1745)显示这是显式验证逻辑,by-design行为.提供正确vectors config后insert成功.这不是bug,是符合API设计的基本语义要求."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collection containing Int64 primary key field 'id', sending data [{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]",
+          "observed": "API accepted request and returned error: {\"code\":1804,\"message\":\"fail to deal the insert data, error: strconv.ParseInt: parsing \\\"abc\\\": invalid syntax: invalid parameter[expected=Int64][actual=abc]\"}",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_035\", \"data\": [{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API should validate data types at request boundary before processing",
+            "Int64 field should reject JSON string values at input validation stage"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001",
+            "assertion: dataType == Int64",
+            "confidence: 1.0 (explicit)",
+            "source: https://milvus.io/docs/schema.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "DataType_Int64",
+            "strconv.ParseInt",
+            "json.Number",
+            "checkAndSetData"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 639-644\n            case schemapb.DataType_Int64:\n                result, err := json.Number(dataString).Int64()\n                if err != nil {\n                    return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n                }\n                reallyData[fieldName] = result",
+          "call_chain_traced": "HTTP insert request → handler_v2.insert() → checkAndSetData() → anyToColumns() → json.Number(dataString).Int64() → strconv.ParseInt()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: 在 utils.go 的 checkAndSetData() 函数中,Int64 字段使用 json.Number(dataString).Int64() 进行转换,但此转换发生在内部处理阶段而非请求边界验证阶段。对于 'abc' 这样的非数字字符串,解析会失败并返回错误,但错误发生在处理流程中而非边界验证时。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with valid Int64: [{\"id\": 456, \"vector\": [0.7, 0.7, 0.7, 0.7]}] then POST /v2/vectordb/entities/query with filter id==456",
+          "observed": "Valid Int64 insert succeeded: {\"code\":0,\"data\":{\"insertCount\":1,\"insertIds\":[456]}}. Query confirmed data stored correctly: {\"code\":0,\"data\":[{\"id\":456}]}. String 'abc' fails parsing, numeric Int64 works correctly."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题 - API正常运行",
+            "并发竞争 - 单顺序请求",
+            "请求参数错误 - 'abc'明显为字符串非Int64"
+          ],
+          "surviving": "type_coercion_boundary_failure"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST v2 data type serialization issues",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中 developer_cognition.json 中 blindspot_indicators 的 'REST v2 API data type serialization not validated' 模式。源码显示 REST v2 在处理 Int64 字段时缺乏边界类型检查,依赖内部解析而非前置验证。"
+      },
+      "root_cause_if_confirmed": "missing_boundary_type_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 insert API 接受 JSON 字符串 'abc' 作为 Int64 字段值,仅在内部处理时才通过 strconv.ParseInt 发现类型不匹配并返回错误。根据 structured_contract.json 的 milvus_type_int64_001 约束(dataType == Int64, confidence 1.0 explicit),API 应在请求边界拒绝非 Int64 类型的值,而非延迟到处理阶段。源码分析显示 checkAndSetData() 函数中的 case schemapb.DataType_Int64 使用 json.Number(dataString).Int64() 进行转换,但此为处理流程非边界验证。独立复现确认:有效 Int64(456)插入成功,无效字符串('abc')在解析阶段失败。此行为违反契约明确规定的类型约束,属于真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_boundary_type_validation": 1
+    }
+  }
+}

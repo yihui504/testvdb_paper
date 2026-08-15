@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_002",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with vectorIndexConfig.flatSearchCutoff=-100",
+          "observed": "HTTP 200 success, negative value accepted and persisted",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestFC\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"flatSearchCutoff\": -100}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "flatSearchCutoff represents a threshold/count for search decision (should be >= 0)",
+            "Negative value (-100) breaks search condition: allowList.Len() < -100 is always false since lengths are >= 0",
+            "Parameter should have validation at API boundary"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No structured contract exists for weaviate 1.37.4 - relying on source code analysis"],
+          "note": "Source code reveals the bug through missing validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["flatSearchCutoff", "validate", "ParseAndValidateConfig"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "adapters/repos/db/vector/hnsw/search.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 201-205 (parsing)\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}\n\n// lines 260-323 (validation function - NOTE: flatSearchCutoff is NOT validated)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// ... other validations, but NO check for flatSearchCutoff >= 0\n\treturn nil\n}\n\n// adapters/repos/db/vector/hnsw/search.go lines 85-86 (semantic usage)\nflatSearchCutoff := int(atomic.LoadInt64(&h.flatSearchCutoff))\nif allowList != nil && !h.forbidFlat && allowList.Len() < flatSearchCutoff {\n\t// use flat search\n}",
+          "call_chain_traced": "ParseAndValidateConfig → OptionalIntFromMap('flatSearchCutoff') → UserConfig.validate() → NO RANGE CHECK → atomic.LoadInt64 in search → condition allowList.Len() < flatSearchCutoff",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: flatSearchCutoff 在 parseAndValidateConfig 中被解析,但在 validate() 函数中完全没有做范围校验。源码显示该参数用于搜索决策阈值 (line 86: allowList.Len() < flatSearchCutoff),负值会导致条件永远为假,破坏搜索逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestFC to verify persisted value",
+          "observed": "flatSearchCutoff persisted as -100 (verified via grep: '\"flatSearchCutoff\":-100'), negative value is observable and would break search logic",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestFC | grep -o '\"flatSearchCutoff\":[^,]*'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (clean Docker container)",
+            "Concurrency race (deterministic behavior)",
+            "Request parameter typo (intentional negative value test)",
+            "By-design (no evidence in source comments)"
+          ],
+          "surviving": "parameter_validation_gap_at_api_boundary"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing",
+        "pattern_id": "BS-004",
+        "note": "完美匹配 bug shape BS-004: Parameter Validation Issues in Request Parsing. developer_cognition 显示 'Parameter validation gaps at API boundaries' 属于开发者认定的 bug 类型。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实真缺陷: flatSearchCutoff 参数在 ParseAndValidateConfig 中解析后,validate() 函数未做非负校验 (与其他参数如 maxConnections/EFConstruction 的显式校验形成对比)。该参数语义为搜索阈值 (search.go line 86: allowList.Len() < flatSearchCutoff),负值 -100 会使条件永远为假 (因为 list 长度 >= 0),破坏搜索决策逻辑。API 边界缺失参数验证,符合开发者认知中明确的 bug 类型 (BS-004)。Step 1 复现成功,Step 4 证伪通过 (负值可观测且持久化),Step 5 排除平凡解释。三视角聚合: Contract(NEUTRAL,无契约但源码确证) + Physical(CONFIRMED,阈值参数物理上应 >= 0) + Behavioral(CONFIRMED,无优雅处理,直接破坏逻辑) → CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap_at_api_boundary": 1
+    }
+  }
+}

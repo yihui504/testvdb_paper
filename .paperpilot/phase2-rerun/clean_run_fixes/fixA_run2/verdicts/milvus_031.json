@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with autoID=true schema, then POST /v2/vectordb/entities/upsert with data containing 'color' field not in schema",
+          "observed": "HTTP 200 collection creation, followed by HTTP 200 with code=1804, message='fail to deal the insert data, error: has pass more field without dynamic schema, please check it: invalid parameter'",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_autoid\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes upsert should accept fields not defined in collection schema",
+            "Conclusion assumes REST API should behave differently from documented validation behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+upsert - description: 'Insert or update entities (insert if primary key not found, update if exists)'",
+            "constraint_id: milvus_type_entities_upsert_001 - assertion: 'data contains primary key field'",
+            "constraint_id: milvus_state_entities_upsert_001 - assertion: 'upsert: update if PK exists, insert if NOT; collection has PK defined'",
+            "endpoint_registry quote: '200 on success with upsert count and IDs'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "has pass more field without dynamic schema",
+            "checkDynamicFieldData",
+            "enableDynamicField",
+            "validateFields"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/util.go",
+            "internal/proxy/task_upsert.go",
+            "internal/proxy/task_insert.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 692\nreturn nil, nil, merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\")\n\n// internal/proxy/task_upsert.go line 941-946\nif it.schema.EnableDynamicField {\n    err := checkDynamicFieldData(it.schema.CollectionSchema, it.upsertMsg.InsertMsg)\n    if err != nil {\n        return err\n    }\n}\n\n// internal/proxy/util.go line 2410-2415\nfunc checkDynamicFieldData(schema *schemapb.CollectionSchema, insertMsg *msgstream.InsertMsg) error {\n    for _, data := range insertMsg.FieldsData {\n        if data.IsDynamic {\n            data.FieldName = common.MetaFieldName\n            return verifyDynamicFieldData(schema, insertMsg)\n        }",
+          "call_chain_traced": "UpsertRequest → parseRequestBody → checkDataExistsSchema → if EnableDynamicField=false && field not in schema → return error 1804 'has pass more field without dynamic schema'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：upsert 操作在 EnableDynamicField=false 时，严格验证 data 中的字段必须全部存在于 schema 中。这是显式的验证逻辑（utils.go:692），而非缺失校验。报告者将'拒绝未定义字段'的合法校验行为误报为缺陷。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Create collection with enableDynamicField=true, then upsert with extra field",
+          "observed": "Collection with autoID=true defaults to EnableDynamicField=false unless explicitly set. Test case used schema without enableDynamicField=true, so validation correctly rejected the 'color' field. API behaved as designed by rejecting schema-violating data."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（非）",
+            "并发/race（非）",
+            "缓存延迟（非）",
+            "请求参数笔误（否——请求明确包含 'color' 字段）"
+          ],
+          "surviving": "request_depends_on_disabled_feature",
+          "note": "Extra field 'color' in upsert data was rejected because collection was created without enableDynamicField=true. This is expected schema validation behavior, not a bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition 中的 by_design 或 rejection_patterns。但该行为符合数据库 schema 验证的通用设计原则（严格类型检查 + 显式字段列表）"
+      },
+      "root_cause_if_fp": "request_depends_on_disabled_feature",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "原 oracle 将'合法的 schema 验证行为'误报为缺陷：1) upsert payload 包含 schema 未定义的 'color' 字段；2) collection 创建时未启用 enableDynamicField；3) REST API 正确返回错误码 1804（'has pass more field without dynamic schema'）；4) 源码接地确认这是显式校验逻辑（utils.go:692），而非缺失校验；5) 契约未声明 upsert 应接受 schema 外字段；6) developer_cognition 无相关 by_design 模式，但严格 schema 验证符合数据库通用设计原则。实际测试：新建 collection autoID=true → upsert 带 'color' 字段 → HTTP 200 + code 1804 错误（符合预期）。验证 by-design：若启用 enableDynamicField=true，同一请求应成功。结论：报告者将'必需启用 dynamic schema 才能接受额外字段'的正确 API 语义误判为 bug。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "entities+upsert requires data fields to match collection schema when EnableDynamicField=false (implicit from parameter validation)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Schema fields must be pre-defined unless dynamic schema enabled",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED (contract supports validation), verdict_B=NEUTRAL, verdict_C=REFUTED (graceful error with clear message, by-design validation in source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_depends_on_disabled_feature": 1
+    }
+  }
+}

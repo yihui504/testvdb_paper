@@ -1,0 +1,95 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_008",
+      "endpoint": "collections+{collection_name}+points+scroll",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_idx2/points/scroll with filter category_id=cat_a, limit=100",
+          "observed": "Returns exactly 25 points, all with category_id='cat_a', next_page_offset=null",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_idx2/points/scroll' -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"limit\": 100}' | python -m json.tool"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Scroll API should return all points matching the filter",
+            "With 25 cat_a points and 25 cat_b points, filter for cat_a should return exactly 25 points",
+            "next_page_offset should be null when all results are returned"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "assertion_id: qdrant_behavioral_009 - 'Returns 200 with points list and next_page_offset for pagination'",
+            "constraint_id: qdrant_range_scroll_points_005 - 'limit default=10 (adjustable)'"
+          ],
+          "contract_supports_claim": false,
+          "note": "Contract states scroll returns points list with pagination support; observed behavior matches contract exactly"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "should_pre_filter",
+            "filtered_read_by_index",
+            "filtered_read_by_id_stream",
+            "read_filtered",
+            "estimate_cardinality"
+          ],
+          "files_examined": [
+            "lib/collection/src/shards/local_shard/scroll.rs",
+            "lib/segment/src/segment/read_view/scroll.rs",
+            "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+            "lib/segment/src/index/field_index/map_index/read_ops.rs"
+          ],
+          "source_excerpt": "lib/segment/src/segment/read_view/scroll.rs, lines 137-170:\n\n    pub fn read_filtered<'a>(\n        &'a self,\n        offset: Option<PointIdType>,\n        limit: Option<usize>,\n        filter: Option<&'a Filter>,\n        is_stopped: &AtomicBool,\n        hw_counter: &HardwareCounterCell,\n        deferred_behavior: DeferredBehavior,\n    ) -> OperationResult<Vec<PointIdType>> {\n        match filter {\n            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),\n            Some(condition) => {\n                if self.should_pre_filter(condition, limit, hw_counter)? {\n                    self.filtered_read_by_index(\n                        offset,\n                        limit,\n                        condition,\n                        is_stopped,\n                        hw_counter,\n                        deferred_behavior,\n                    )\n                } else {\n                    self.filtered_read_by_id_stream(\n                        offset,\n                        limit,\n                        condition,\n                        is_stopped,\n                        hw_counter,\n                        deferred_behavior,\n                    )\n                }\n            }\n        }\n    }\n\nlib/segment/src/segment/read_view/scroll.rs, lines 29-54:\n\n    pub fn should_pre_filter(\n        &self,\n        filter: &Filter,\n        limit: Option<usize>,\n        hw_counter: &HardwareCounterCell,\n    ) -> OperationResult<bool> {\n        let query_cardinality = self\n            .payload_index\n            .estimate_cardinality(filter, hw_counter)?;\n\n        let available_points = self.id_tracker.available_point_count() + 1;\n        let check_probability =\n            (query_cardinality.exp as f64 + 1.0) / available_points as f64;\n        let exp_stream_checks =\n            (limit.unwrap_or(available_points) as f64 / check_probability) as usize;\n\n        Ok(query_cardinality.exp < exp_stream_checks)\n    }",
+          "call_chain_traced": "scroll request -> CollectionShard::scroll -> LocalShard::internal_scroll_by_id -> segment.read_filtered -> should_pre_filter (cardinality heuristic) -> filtered_read_by_index OR filtered_read_by_id_stream",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source shows scroll implements two paths based on cardinality estimation heuristic. Both paths correctly filter and return matching points. The heuristic chooses index-based vs streaming based on estimated cost, but both return correct results."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: (1) count(exact=true) returned 25, (2) scroll with limit=10 pagination test returned 10+10+5=25 total, (3) all returned points verified to have category_id='cat_a'",
+          "observed": "All three verification methods confirm exactly 25 cat_a points exist and scroll returns all of them correctly",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_idx2/points/count' -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"exact\": true}' && curl pagination tests"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Request missing required parameters",
+            "Environment issues (Docker, platform)",
+            "Concurrency / race conditions",
+            "Eventual consistency (wait=true used)"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This appears to be a case where the attack script expected different behavior than what the API contract specifies. The scroll API is working exactly as designed."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "HNSW approximation duplicates in pagination",
+        "developer_quote": "Accepted limitation of approximate search",
+        "note": "While not directly applicable, this shows developers accept some query optimization trade-offs. In this case, the scroll API correctly implements filter and pagination semantics with a performance optimization heuristic."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The scroll API is working correctly according to its contract and source implementation. It returns exactly the 25 points that match the filter (category_id='cat_a') out of 50 total points (25 cat_a + 25 cat_b). The next_page_offset=null indicates all results were returned. Source code analysis shows the implementation uses a cardinality estimation heuristic to choose between index-based and streaming filtering approaches, but both paths correctly filter and return matching points. Pagination tests confirmed correct behavior with smaller limits. No violation of API contract or expected behavior exists."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

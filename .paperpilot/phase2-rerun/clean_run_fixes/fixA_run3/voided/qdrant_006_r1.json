@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_006",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_payload_filter/points/search with filter color=red, with_payload=true",
+          "observed": "Search returned points [id=2, id=4] with payload.color='red'. No points with color=None or missing color field were returned. All matched points legitimately have color=red.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 10, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"color\", \"match\": {\"value\": \"red\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim appears to depend on the assumption that points without payload should be rejected or treated as invalid, but the raw evidence shows the API correctly accepts and stores points with optional payload fields",
+            "The defect claim may assume that filter operations should match points with missing payload fields, but the observed behavior is that filters only match points that actually have the specified field populated with a matching value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - 'payload type is key-value object' (payload is optional per PointStruct definition)",
+            "constraint_id: qdrant_state_upsert_points_004 - 'Batch upsert is atomic: all points are inserted or none'"
+          ],
+          "note": "Contract specifies payload as optional (Option<Payload>) in PointStruct, no constraint requires payload to be present for all points"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["PointStruct", "payload.*Option", "pub struct PointStruct"],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs lines 1400-1411\n#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]\n#[serde(rename_all = \"snake_case\")]\npub struct PointStruct {\n    /// Point id\n    pub id: PointIdType,\n    /// Vectors\n    #[serde(alias = \"vectors\")]\n    #[validate(nested)]\n    pub vector: VectorStruct,\n    /// Payload values (optional)\n    pub payload: Option<Payload>,  // <-- Explicitly optional\n}",
+          "call_chain_traced": "PointStruct.payload: Option<Payload> → API accepts points with missing/None payload → Stored as empty payload {}",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:payload字段在PointStruct中明确定义为Option<Payload>(可选),这是API设计有意为之的行为,非缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_payload_filter/points with ids=[3] and with_payload=true",
+          "observed": "Point id=3 (which was upserted without payload) has payload={} (empty object, not null). Point id=2 and id=4 have payload.color='red'. Scroll confirms all 4 points stored correctly with appropriate payloads.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points' -H 'Content-Type: application/json' -d '{\"ids\": [3], \"with_payload\": true}' && curl -s -X POST 'http://localhost:6333/collections/test_payload_filter/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 10, \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - Docker/container issues ruled out",
+            "Concurrency race - single-threaded test execution",
+            "Request parameter typo - raw requests syntactically valid",
+            "Approximation/HNSW behavior - not an approximate search query"
+          ],
+          "surviving": "mundane_api_semantics",
+          "explanation": "The 'defect' is actually mundane API semantics: Qdrant's upsert API is designed to accept points with optional payload fields. Points without payload are stored with empty payload {}. Filters only match points that have the specified field with a matching value. This is by-design behavior, not a bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中developer_cognition.json中的任何by_design_pattern或rejection_pattern。但属常见的'API语义误解'类误报 - 将可选字段当作必填字段。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "源码明确定义payload为Option<Payload>(可选字段),API契约无强制payload要求,实测证实Qdrant正确处理无payload点(存为{}空对象),过滤器仅匹配具有指定字段的点。这是正常的API设计行为,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

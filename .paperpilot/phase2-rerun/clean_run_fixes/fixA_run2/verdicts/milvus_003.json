@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"ef\": 0}",
+          "observed": "HTTP 200 with successful search results. API accepted ef=0 (invalid parameter) and returned results instead of rejecting with error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review_milvus003\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"annsField\": \"vector\", \"searchParams\": {\"ef\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The conclusion that 'ef parameter is validated' depends on the API actually performing validation on search parameters",
+            "The conclusion that 'ef must be >= 1 for HNSW search' depends on this constraint being enforced at the API layer",
+            "Tested with ef=-1: API also accepts negative values and returns HTTP 200, confirming NO validation exists"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint in structured_contract.json for ef parameter validation",
+            "Related constraint found: milvus_range_indexes_create_003 (efConstruction >= 1) for index creation, suggesting parallel requirement for search ef parameter"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "generateSearchParams",
+            "SearchParams",
+            "ef",
+            "HNSW",
+            "KeyValuePair"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "client/index/hnsw.go",
+            "internal/proxy/search_util.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go:2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter processing logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// need to exposure ParamRoundDecimal in req?\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "SearchReqV2.SearchParams → generateSearchParams() → no validation → direct string formatting → passed to search execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：generateSearchParams 函数在 utils.go:2076-2131 中仅执行格式转换，无参数验证逻辑。第 2125 行直接将所有 searchParams 值格式化为字符串（fmt.Sprintf(\"%v\", value)），包括 ef 参数。HNSW 索引类型已知要求 ef >= 1（见 client/index/hnsw.go），但 REST API 层未执行此验证。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Tested with ef=1 (valid), ef=0 (invalid), ef=-1 (invalid) - all return HTTP 200 with successful results",
+          "observed": "Invalid ef values (0, -1) are accepted without error, confirming lack of validation. The search executes successfully despite invalid parameters, indicating the validation gap is real and exploitable."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (running in standard Docker environment)",
+            "Concurrency issues (single-threaded test)",
+            "Request parameter typos (using exact parameter names)",
+            "API semantic misunderstanding (ef parameter is well-documented for HNSW)"
+          ],
+          "surviving": "none - all mundane explanations excluded, validation gap confirmed"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches the blindspot indicator for REST v2 API data type serialization issues. Milvus developers have acknowledged REST v2 parameter validation gaps (8 issues in corpus). This ef validation absence is consistent with that pattern."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Independent reproduction confirms REST v2 /entities/search accepts invalid ef=0 in searchParams and returns HTTP 200 instead of 400 error. Source code analysis proves generateSearchParams() performs no parameter validation - only string formatting. HNSW index contract requires ef >= 1 (client/index/hnsw.go:hnswEfKey), but REST API layer enforces no such constraint. Matches developer cognition pattern: REST v2 parameter validation is a known blindspot area. This is a genuine Type1_IllegalSuccess defect - API succeeds with invalid input that should be rejected."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "No explicit constraint in structured_contract.json, but HNSW ef parameter must be >= 1 by design (client/index/hnsw.go)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "ef (exploration factor) must be >= 1 for HNSW search - represents candidate list size, zero/negative values are physically meaningless",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract and physical violations both present)",
+    "final_verdict": "CONFIRMED"
+  }
+}

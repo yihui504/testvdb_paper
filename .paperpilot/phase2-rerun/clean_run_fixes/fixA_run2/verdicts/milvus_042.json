@@ -1,0 +1,72 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as JSON string \"[0.1,0.2,0.3,0.4]\" instead of native array [0.1, 0.2, 0.3, 0.4]",
+          "observed": "HTTP 200 success with insertCount=1, insertIds=[1]. API accepts vector as string and coerces it to array.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_vec_str_dev_review\", \"dimension\": 4}' && curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\": \"test_vec_str_dev_review\", \"data\": [{\"id\": 1, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "assertion_id: milvus_assert_insert_success_001 - Inserting valid data succeeds (expects proper array format)",
+            "constraint_id: milvus_type_float_vector_001 - FLOAT_VECTOR data type definition"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["insert.*vector", "FloatVector.*json.Unmarshal", "checkAndSetData", "fieldValue.String"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 542-552\n\t\t\t\tswitch fieldType {\n\t\t\t\tcase schemapb.DataType_FloatVector:\n\t\t\t\t\tif dataString == \"\" {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n\t\t\t\t\t}\n\t\t\t\t\tvar vectorArray []float32\n\t\t\t\t\terr := json.Unmarshal([]byte(dataString), &vectorArray)  // ROOT CAUSE: Takes fieldValue.String() then JSON-unmarshals it\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = vectorArray",
+          "call_chain_traced": "handler_v2.insert() → checkAndSetData() → json.Unmarshal([]byte(dataString), &vectorArray). Line 548 converts string to array without validating original JSON type.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert处理在checkAndSetData()函数中对FloatVector字段做json.Unmarshal(dataString, &vectorArray)。该实现先把字段值转为字符串(fieldValue.String())，再JSON解析该字符串，导致接受\"[0.1,0.2,0.3,0.4]\"这种合法JSON字符串的非法输入。正确做法应直接使用fieldValue.Raw并验证其为JSON array类型。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query inserted entities to verify actual storage format",
+          "observed": "POST /entities/query returns vector as proper array [0.1,0.2,0.3,0.4], confirming data was coerced and stored correctly despite invalid input format"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Concurrent race", "Request parameter typo"],
+          "surviving": "REST_v2_data_type_serialization_blindspot"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "Matches blindspot indicator: REST_v2_data_types is high-frequency blindspot area with 8 historical issues"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /entities/insert accepts vector field as JSON string \"[0.1,0.2,0.3,0.4]\" instead of requiring native JSON array format [0.1, 0.2, 0.3, 0.4]. Source code at utils.go:548 performs json.Unmarshal(dataString, &vectorArray) which coerces string representations to arrays without type validation. This violates proper type checking and matches known REST v2 data type handling blindspot (8 historical issues). The API returns HTTP 200 success for malformed input, constituting Type1_IllegalSuccess defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "REST_v2_data_type_serialization_blindspot": 1
+    }
+  }
+}

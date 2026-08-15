@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/insert with fields '123field' and '@field' → succeeds (200). POST /entities/query with outputFields=['123field','@field'] → fails with 'parse output field name failed: 123field'",
+          "observed": "Insert accepts invalid field names (starting with digit, starting with special char). Query rejects same field names in outputFields parameter with parse error.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_dev_review_005\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}]}' → 200 OK. curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_dev_review_005\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"123field\",\"@field\"]}' → 65535 error."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint in structured_contract.json regarding field name validation for insert vs query asymmetry"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["parse output field name", "isAlpha", "isNumber", "validCharInIndexName"],
+          "files_examined": ["internal/proxy/util.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "// internal/proxy/util.go line 145-150\nfunc isAlpha(c byte) bool {\n    if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {\n        return false\n    }\n    return true\n}\n\nfunc isNumber(c byte) bool {\n    if c < '0' || c > '9' {\n        return false\n    }\n    return true\n}\n\n// internal/proxy/util.go line 1696-1698\nfunc validCharInIndexName(c byte) bool {\n    return c == '_' || c == '[' || c == ']' || isAlpha(c) || isNumber(c)\n}\n\n// internal/proxy/util.go line 1663-1664 (parseOutputFields)\nif err != nil {\n    log.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n    return nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n}",
+          "call_chain_traced": "Insert → utils.go parseInsertData → accepts any JSON keys without validation. Query → util.go parseOutputFields → validates field names via isAlpha/isNumber checks → rejects '123field' (starts with digit) and '@field' (starts with special char)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:insert 路径(utils.go parseInsertData)对 dynamic field 名不做任何校验,直接接受 JSON key;query 路径(util.go parseOutputFields)对 field 名做严格校验(必须字母开头或下划线),导致两者不对称接受同一字段名"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/get with id=[1,2] and outputFields=['*'] → returns actual stored data showing '123field' and '@field' were successfully inserted and stored",
+          "observed": "Entities were successfully stored with invalid field names. GET /entities/get returns: [{\"123field\":\"v1\",\"id\":1,...},{\"@field\":\"v2\",\"id\":2,...}]. This proves insert accepted the invalid names, contradicting query's rejection."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发/race", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "asymmetric_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的已知模式,属于发现的非对称验证新缺陷"
+      },
+      "root_cause_if_confirmed": "asymmetric_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Insert 和 query 对同一字段名采用不对称验证规则:insert 接受任意 JSON key(包括以数字开头如 '123field'、以特殊字符开头如 '@field'),query 在 parseOutputFields 中拒绝不符合命名规范的字段(必须字母或下划线开头)。这导致数据能插入但无法查询,形成数据写入后不可访问的实质性缺陷。源码接地确认:insert 路径无校验,query 路径有 isAlpha/isNumber 校验。Falsification 通过 GET 证伪:数据确实存储成功。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"asymmetric_validation": 1}
+  }
+}

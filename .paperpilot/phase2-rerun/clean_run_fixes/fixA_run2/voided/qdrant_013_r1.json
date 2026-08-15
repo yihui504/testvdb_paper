@@ -1,0 +1,123 @@
+{
+  "defect_id": "qdrant_013",
+  "judge": "dev-review",
+  "final_verdict": "FALSE_POSITIVE",
+  "confidence": 0.95,
+  "evidence": {
+    "reproduction": {
+      "steps_executed": [
+        "1. Created collection: PUT /collections/test_qnull with vectors config",
+        "2. Inserted 3 test points with IDs [10, 1, 5]",
+        "3. Executed query with null: POST /collections/test_qnull/points/query with '{\"query\": null, \"limit\": 5}'",
+        "4. Observed response: returned all 3 points with score=1.0, ordered by ID"
+      ],
+      "actual_response": {
+        "status": "ok",
+        "result": {
+          "points": [
+            {"id": 1, "version": 0, "score": 1.0},
+            {"id": 5, "version": 0, "score": 1.0},
+            {"id": 10, "version": 0, "score": 1.0}
+          ]
+        },
+        "time": 0.000929525
+      },
+      "expected_for_bug": "Should return 4xx error code for invalid query parameter",
+      "expected_for_correct": "Should return points ordered by ID when query is null/missing"
+    },
+    "contract_analysis": {
+      "endpoint": "POST /collections/{collection_name}/points/query",
+      "parameter_spec": {
+        "name": "query",
+        "type": "Option<QueryInterface>",
+        "validation": "#[validate(nested)]",
+        "documentation": "Query to perform. If missing without prefetches, returns points ordered by their IDs."
+      },
+      "contract_compliance": {
+        "is_null_allowed": true,
+        "is_missing_allowed": true,
+        "expected_behavior_for_null": "Returns points ordered by ID",
+        "expected_behavior_for_missing": "Returns points ordered by ID"
+      },
+      "deviation_found": false
+    },
+    "source_grounding": {
+      "files_examined": [
+        "lib/api/src/rest/schema.rs",
+        "lib/collection/src/operations/universal_query/shard_query.rs",
+        "lib/collection/src/operations/universal_query/collection_query.rs",
+        "src/common/inference/query_requests_rest.rs",
+        "src/actix/api/query_api.rs"
+      ],
+      "source_excerpt": "lib/api/src/rest/schema.rs:573-575: /// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n    #[validate(nested)]\n    pub query: Option<QueryInterface>,\n\nlib/collection/src/operations/universal_query/shard_query.rs:39-42: None => {\n            // Order by ID\n            Some(Order::SmallBetter)\n        }",
+      "implementation_details": {
+        "query_type": "Option<QueryInterface>",
+        "validation_strategy": "nested validation only applies if Some(value), None is valid",
+        "null_handling": "None/null maps to Order::SmallBetter (order by ID)",
+        "intended_behavior": "Allow null/missing query to return all points ordered by ID"
+      }
+    },
+    "reverse_falsification": {
+      "test_cases_executed": [
+        {
+          "input": "{\"query\": null, \"limit\": 5}",
+          "result": "200 OK, returned 3 points with score=1.0"
+        },
+        {
+          "input": "{\"limit\": 5}",
+          "result": "200 OK, returned 3 points with score=1.0 (identical behavior)"
+        }
+      ],
+      "api_error_response_test": {
+        "expected": "4xx error if null were invalid",
+        "actual": "200 OK with valid response",
+        "conclusion": "null is explicitly handled and valid"
+      },
+      "behavior_consistency": {
+        "null_vs_missing": "IDENTICAL - both return same results",
+        "implementation_matches_documentation": true
+      }
+    },
+    "trivial_case_exclusion": {
+      "edge_cases_considered": [
+        "Empty collection: query with null returns empty result (expected)",
+        "Collection with points: returns points ordered by ID with score=1.0",
+        "Query field missing: behaves identically to explicit null"
+      ],
+      "is_trivial_missing_field": false,
+      "is_documented_intended_behavior": true,
+      "by_design_indicators": [
+        "Explicit documentation comment: 'If missing without prefetches, returns points ordered by their IDs'",
+        "Type is Option<QueryInterface> - None is valid type value",
+        "Validation is #[validate(nested)] - only validates content if present",
+        "Implementation explicitly handles None case with ID ordering"
+      ]
+    }
+  },
+  "three_perspective_analysis": {
+    "contract_perspective": {
+      "verdict": "FALSE_POSITIVE",
+      "reasoning": "API contract explicitly documents null/missing query as valid behavior returning points ordered by ID. Field type Option<QueryInterface> permits None. No contract violation."
+    },
+    "developer_perspective": {
+      "verdict": "FALSE_POSITIVE",
+      "reasoning": "Documentation comment and implementation show intentional handling of None/null case. Behavior is documented feature, not oversight. Validation strategy #[validate(nested)] only applies when Some(value)."
+    },
+    "implementation_perspective": {
+      "verdict": "FALSE_POSITIVE",
+      "reasoning": "Source code explicitly maps None query to Order::SmallBetter (ID ordering). Behavior is consistent between missing field and explicit null. No validation gap found."
+    },
+    "aggregation_rule_applied": "Unanimous FALSE_POSITIVE (all 3 perspectives agree)",
+    "final_verdict": "FALSE_POSITIVE"
+  },
+  "metadata": {
+    "defect_type": "param_validation",
+    "severity_level": "High",
+    "endpoint": "collections+{collection_name}+points",
+    "timestamp": "2026-08-15T01:50:00Z",
+    "reviewer_type": "dev-review",
+    "developer_cognition_aligned": true,
+    "matches_known_bug_shapes": false,
+    "related_issue_numbers": []
+  }
+}

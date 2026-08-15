@@ -1,0 +1,65 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_003",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with replicationConfig.factor=-1",
+          "observed": "HTTP 200 success with response showing replicationConfig.factor coerced to 1 (silent auto-correction)",
+          "evidence_cmd": "Raw request: POST /schema {\"class\":\"TestRep\",\"replicationConfig\":{\"factor\":-1},...} → Raw response: HTTP 200 with body containing \"replicationConfig\":{\"factor\":1,...}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_range_schema_replication_001", "assertion: replicationConfig.factor >= 1", "type: range_constraint", "confidence: 0.85", "evidence_tier: inferred_from_example"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["replicationConfig.*factor", "factor.*<.*1", "validate.*replication"],
+          "files_examined": ["usecases/schema/class.go", "entities/models/replication_config.go", "usecases/replica/config.go", "usecases/sharding/state.go"],
+          "source_excerpt": "usecases/schema/class.go lines 513-515:\nif class.ReplicationConfig.Factor < 1 {\n    class.ReplicationConfig.Factor = int64(globalCfg.MinimumFactor)\n}\n\nentities/models/replication_config.go lines 49-64:\nfunc (m *ReplicationConfig) Validate(formats strfmt.Registry) error {\n    var res []error\n    if err := m.validateAsyncConfig(formats); err != nil {\n        res = append(res, err)\n    }\n    if err := m.validateDeletionStrategy(formats); err != nil {\n        res = append(res, err)\n    }\n    if len(res) > 0 {\n        return errors.CompositeValidationError(res...)\n    }\n    return nil\n}",
+          "call_chain_traced": "POST /schema → ReplicationConfig.Validate() → NO factor validation → class.ReplicationConfig.Factor < 1 → silent coercion to MinimumFactor (1)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: ReplicationConfig.Validate() 方法仅验证 asyncConfig 和 deletionStrategy 字段，完全没有验证 factor 范围。后端逻辑在 usecases/schema/class.go 中对 factor<1 的情况执行静默纠正（改为1），而非返回错误。这是典型的 Type1_IllegalSuccess：API 应该拒绝非法参数但实际通过默认值接受了。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestRep after POST with factor=-1",
+          "observed": "HTTP 200 response shows replicationConfig.factor=1 in the stored schema, confirming silent coercion occurred",
+          "evidence_cmd": "Raw logs: REQ 3 GET /schema/TestRep → RESP 3 HTTP 200 with body showing replicationConfig.factor=1"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "assertion_valid_input_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries (developer_cognition.json)",
+        "note": "候选命中 BS-004: Parameter Validation Issues in Request Processing 症状模式，具体表现为 'Accepting invalid parameter values on write endpoints with per-item success status'。源码显示 API boundary 缺少 factor 范围校验，依赖后端静默纠正。"
+      },
+      "root_cause_if_true": "missing_range_validation_in_api_layer",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "候选完全符合 Type1_IllegalSuccess 定义：(1) 契约明文要求 replicationConfig.factor >= 1（constraint_id: weaviate_range_schema_replication_001）；(2) 源码接地确认 ReplicationConfig.Validate() 漏掉 factor 范围检查，仅验证 asyncConfig/deletionStrategy；(3) API 实测接受 factor=-1 并返回 HTTP 200，响应中显示 factor 被静默纠正为 1；(4) 命名符合历史根因模式 BS-004。维护者视角：这是输入验证缺口，应返回 422 错误而非 200 + 自动修正。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"missing_range_validation_in_api_layer": 1}
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/query {\"query\": null, \"limit\": 5}",
+          "observed": "HTTP 200, returned points [{\"id\":1,\"score\":1.0},{\"id\":5,\"score\":1.0},{\"id\":10,\"score\":1.0}]",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_qnull/points/query' -H 'Content-Type: application/json' -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: API should reject null query parameter with 4xx error",
+            "Contract shows query parameter is 'required': false (optional by design)",
+            "The defect claim assumes query must be non-null, but contract explicitly allows it to be optional"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json line 1202-1206: query parameter definition shows 'required': false, 'type': object, 'description': 'Query to perform (nearest, recommend, discover, fusion)'",
+            "No constraint in contract that requires query to be non-null",
+            "Contract explicitly marks query as optional, contradicting the defect assumption"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "\"query.*null\"",
+            "\"points.*query\"",
+            "\"Option<Query>\"",
+            "\"query.is_none()\"",
+            "\"ScoringQuery\""
+          ],
+          "files_examined": [
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/collection/src/collection/query.rs",
+            "lib/shard/src/query/mod.rs",
+            "src/actix/api/query_api.rs"
+          ],
+          "source_excerpt": "// File: lib/collection/src/operations/universal_query/collection_query.rs, Lines 742-782\npub fn validation(\n    query: &Option<Query>,\n    using: &VectorNameBuf,\n    prefetch: &[CollectionPrefetch],\n    score_threshold: Option<ScoreType>,\n) -> CollectionResult<()> {\n    // Check no prefetches without a query\n    if !prefetch.is_empty() && query.is_none() {\n        return Err(CollectionError::bad_request(\n            \"A query is needed to merge the prefetches. Can't have prefetches without defining a query.\",\n        ));\n    }\n\n    // Check no score_threshold without a vector query\n    if score_threshold.is_some() {\n        match query {\n            Some(Query::OrderBy(_)) => {\n                return Err(CollectionError::bad_request(\n                    \"Can't use score_threshold with an order_by query.\",\n                ));\n            }\n            None => {\n                return Err(CollectionError::bad_request(\n                    \"A query is needed to use the score_threshold. Can't have score_threshold without defining a query.\",\n                ));\n            }\n            _ => {}\n        }\n    }\n    // ... no validation that query must be non-null in general\n    Ok(())\n}\n\n// File: lib/collection/src/collection/query.rs, Lines 422-434\nlet result = match query.as_ref() {\n    Some(ScoringQuery::Fusion(fusion)) => { /* ... */ }\n    Some(ScoringQuery::Mmr(mmr)) => { /* ... */ }\n    None\n    | Some(ScoringQuery::Vector(_))\n    | Some(ScoringQuery::OrderBy(_))\n    | Some(ScoringQuery::Formula(_))\n    | Some(ScoringQuery::Sample(_)) => {\n        // Otherwise, it will be a list with a single list of scored points.\n        debug_assert_eq!(intermediates.len(), 1);\n        intermediates.pop().ok_or_else(|| {\n            CollectionError::service_error(\n                \"Query response was expected to have one list of results.\",\n            )\n        })?\n    }\n};\n\n// File: lib/shard/src/query/mod.rs, Lines 38-39\n#[serde(skip_serializing_if = \"Option::is_none\")]\npub query: Option<ScoringQuery>,",
+          "call_chain_traced": "REST request → CollectionQueryRequest.validation() checks query.is_none() only for prefetch/score_threshold contexts → ShardQueryRequest.query is Option<ScoringQuery> → collection/query.rs line 422-426 explicitly handles None case alongside Vector/OrderBy/Formula/Sample → returns intermediate results (bypasses actual query logic, returns points with default score=1.0)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现：query 参数设计为 Option<ScoringQuery>（可为 None）。validation() 函数仅检查在 prefetch 或 score_threshold 存在时 query 不能为 None，但一般情况下允许 query=None。当 query=None 时，collection/query.rs line 422-426 明确处理 None case，将其与 Vector/OrderBy/Formula/Sample 等合法查询类型同等对待，返回中间结果（points 获默认 score=1.0）。这是有意设计，用于支持 filter-only 查询（类似 scroll 但带 score 字段）。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull/points/scroll {\"limit\": 5, \"with_payload\": true}",
+          "observed": "Scroll API returns same 3 points (id=1,5,10) without scores. Null query returns same points with score=1.0. Behavior consistent with filter-only retrieval.",
+          "evidence_cmd": "curl -s 'http://localhost:6333/collections/test_qnull/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 5, \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（非 POSIX 文件系统 / Windows volume mount / Docker 已知限制）",
+            "并发 / race（delete+upsert、index drop+search）",
+            "缓存 / 优化器延迟（wait=false 后立即查）",
+            "请求参数笔误（漏带关键参数）"
+          ],
+          "surviving": "mundane_api_semantics - query parameter is optional by contract and source design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何明确 by_design_pattern。但源码明确显示 query=None 是有意处理的设计（None case 在 match 语句中显式处理），非遗漏。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - contract explicitly states query parameter is 'required': false (optional)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does NOT require query to be non-null. It marks query as optional. No assertion violated."
+        },
+        "physical": {
+          "objective_constraint": "None - no physical constraint that query must be non-null",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical/semantic constraint violated. Query can be None without violating type system or API contract."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code explicitly handles query=None case (line 422-426 in query.rs) alongside other valid query types. This is by-design behavior for filter-only queries."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (by_design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "源码接地与契约对照均证实：query 参数设计为可选（Option<ScoringQuery>）。contract 明确标记 'required': false。源码中 validation() 函数仅在特定上下文（prefetch/score_threshold）检查 query.is_none()，一般情况下允许 None。collection/query.rs line 422-426 显式处理 query=None case，将其与 Vector/OrderBy/Formula/Sample 等合法查询类型同等对待。返回 points with score=1.0 是有意设计，用于支持 filter-only 查询（类似 scroll 操作但带 score 字段以统一响应格式）。非缺陷，属 API 语义设计。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with score_threshold values outside valid range",
+          "observed": "API accepts score_threshold=2.0 (impossible for Cosine similarity, max=1.0) and score_threshold=-0.5 (negative) returning HTTP 200. score_threshold=2.0 returns empty results, score_threshold=-0.5 returns point with score=1.0. No validation error returned.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_score_threshold_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_008 - '200 with ranked results descending by score; 4XX on invalid params'",
+            "schema: lib/api/src/rest/schema.rs:573 - 'pub score_threshold: Option<ScoreType>' with no range validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "score_threshold",
+            "ScoreType",
+            "filter.*score.*threshold",
+            "score.*>=.*threshold"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "lib/segment/src/segment/read_view/formula_rescore.rs",
+            "lib/collection/src/shards/local_shard/query.rs",
+            "lib/collection/src/operations/conversions.rs",
+            "lib/common/common/src/types.rs",
+            "lib/collection/src/collection/query.rs"
+          ],
+          "source_excerpt": "File: lib/segment/src/segment/read_view/formula_rescore.rs, Lines 85-92:\n\n        // Handle score threshold.\n        let rescored = match score_threshold {\n            Some(threshold) => {\n                Either::Left(rescored_iter.filter(move |point| point.score >= threshold))\n            }\n            None => Either::Right(rescored_iter),\n        }\n        .k_largest(limit) // Keep only the top k results.\n        .collect();\n\nFile: lib/collection/src/shards/local_shard/query.rs, Lines 440-448:\n\n        let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {\n            fused\n                .into_iter()\n                .take_while(|point| point.score >= score_threshold)\n                .take(limit)\n                .collect()\n        } else {\n            fused.into_iter().take(limit).collect()\n        };\n\nFile: lib/common/common/src/types.rs, Line 8:\npub type ScoreType = f32;\n\nFile: lib/api/src/rest/schema.rs, Lines 572-573:\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,",
+          "call_chain_traced": "REST API SearchRequest.score_threshold (no validation) → internal conversions → segment filtering logic (point.score >= threshold) with no range checks",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms complete absence of score_threshold range validation. The filtering logic at formula_rescore.rs:88 and query.rs:443 performs direct 'point.score >= threshold' comparison without any prior validation that threshold is within valid semantic range [0.0, 1.0] for Cosine similarity. API schema defines score_threshold as Option<ScoreType> (f32) with no range constraints."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified invalid values are silently accepted: score_threshold=2.0 returns empty (no points meet impossible threshold), score_threshold=-0.5 accepts points with score=1.0. No error returned.",
+          "observed": "API behavior consistent with lack of validation - impossible threshold accepted but produces no results; negative threshold accepted and filters incorrectly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on standard Qdrant container)",
+            "Concurrent race (single-threaded test)",
+            "Request parameter typo (tested valid JSON schema)",
+            "API semantics misunderstanding (Cosine similarity max=1.0 is standard)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing - symptom_pattern: API accepts invalid Numeric Boundary values without returning 4xx",
+        "note": "Matches bug_shape pattern: score_threshold is a numeric parameter with no boundary validation, allowing impossible values (2.0, -0.5) that violate the semantic constraints of Cosine similarity [0.0, 1.0]"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Source code接地确认API完全缺失score_threshold范围校验。虽然API契约(qdrant_behavioral_008)声明'4XX on invalid params'，但实际实现中schema定义score_threshold为Option<ScoreType>(f32)无约束，且过滤逻辑(formula_rescore.rs:88, query.rs:443)直接执行point.score >= threshold比较，无任何[0.0, 1.0]语义范围检查。实测证实API接受score_threshold=2.0(Cosine不可能值)和-0.5(负值)返回HTTP 200，违反契约。属Type1_IllegalSuccess - 应返回4XX但返回200。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

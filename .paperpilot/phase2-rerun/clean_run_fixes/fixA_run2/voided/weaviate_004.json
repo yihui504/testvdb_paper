@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-1 (negative value)",
+          "observed": "API returns HTTP 200 and persists ef=-1",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestEfneg\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}' && echo ''"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "ef (ef-search) represents the HNSW search-time precision parameter",
+            "ef value represents a candidate list size (must be non-negative)",
+            "API should validate ef >= 0 during POST /schema",
+            "Negative ef values are semantically meaningless (cannot have negative candidate count)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema endpoint exists (no explicit ef constraints in structured_contract.json)"
+          ],
+          "note": "No explicit contract assertion, but non-negative constraint is universal for count/size parameters"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": [" EF ", "ef.*validation", "validate.*ef", "OptionalIntFromMap.*ef"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/hnsw/config_test.go",
+            "adapters/repos/db/vector/hnsw/index.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go line 53 (struct field)\nEF int `json:\"ef\"`\n\n// entities/vectorindex/hnsw/config.go line 175-176 (parsing, no validation)\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"ef\", func(v int) {\n\tuc.EF = v\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/hnsw/config.go line 260-290 (validate() function - NO ef check)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\t// NO CHECK: ef >= 0 - this is the bug\n}",
+          "call_chain_traced": "ParseAndValidateConfig() → validate() → missing ef >= 0 check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: validate() function checks maxConnections, EFConstruction, and filterStrategy, but completely omits ef >= 0 validation. The parameter is parsed (lines 175-176) and used directly in HNSW operations. While -1 is documented as 'use default' in some contexts, the API should explicitly validate and reject negative values that are not special-cased, or document the -1 = default behavior in the contract."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfneg to verify persisted config",
+          "observed": "Invalid configuration persisted: ef=-1",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestEfneg | grep -o '\"ef\":[^,}]*' | head -1"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (container is running normally)",
+            "Request parameter typos (parameter is correctly named)",
+            "API semantic misunderstanding (ef represents count/size, must be non-negative)",
+            "By-design behavior (while -1 might mean 'use default' in some contexts, this is not documented in the contract/schema, and negative values should be explicitly handled or rejected)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing",
+        "pattern_description": "Systematic parameter_validation defects affecting request_parsing functionality. Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Candidate matches bug_shape BS-004 (Parameter Validation Issues) - validates that Weaviate developers consider parameter validation gaps at API boundaries to be bugs, especially for invalid numeric values accepted on schema creation endpoints. The ef parameter should have explicit validation >= 0 (or explicit handling of -1 as special case)."
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.88,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in structured_contract.json. However, non-negative constraint is universal for count/size parameters unless -1 is explicitly documented as a special sentinel value.",
+          "source_implements_check": false,
+          "note": "If -1 is meant to be 'use default', this should be explicitly documented in the contract/schema spec. Without documentation, it appears as unvalidated input.",
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "ef represents the search-time precision parameter (candidate list size) in HNSW algorithm. Size/count parameters must be non-negative by definition. If -1 is a special sentinel, it should be explicitly documented and validated.",
+          "api_accepts_violation": true,
+          "note": "Even if -1 means 'use default', accepting ANY negative value without validation is problematic. The code should either: (1) Validate ef >= 0, or (2) Explicitly check for ef == -1 as special case and reject ef < -1.",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "No source comments indicate -1 is a deliberate sentinel value. The validate() function ignores ef entirely, suggesting this is an oversight rather than intentional design.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint: negative sizes are invalid without explicit documentation) AND verdict_C=CONFIRMED (no graceful handling, no source evidence of design intent) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Source code analysis (entities/vectorindex/hnsw/config.go) confirms the validate() function completely omits ef >= 0 validation, despite validating other HNSW parameters (maxConnections, EFConstruction, filterStrategy). The API accepts ef=-1 via HTTP 200 and persists it. While -1 might conventionally mean 'use default' in some systems, this is not: (1) Documented in the structured_contract.json, (2) Explicitly handled in the validate() function, (3) Documented in source comments. The proper behavior would be: either validate ef >= 0 and reject negative values, OR explicitly check for ef == -1 as a special sentinel and reject ef < -1. This matches bug_shape BS-004 (Parameter Validation Issues) from developer_cognition.json, indicating Weaviate developers consider such parameter validation gaps to be genuine defects."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

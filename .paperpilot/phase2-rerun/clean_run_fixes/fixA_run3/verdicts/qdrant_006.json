@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_006",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/{name}/points with mixed payload states (points with and without payload field)",
+          "observed": "API successfully accepts points with missing payload, returns HTTP 200 with operation_id. Subsequent GET by IDs shows points with empty payload {} stored correctly.",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_repro_qdrant_006/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"payload\": {\"color\": \"blue\"}}, {\"id\": 2, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {...}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_type_upsert_points_003 - payload type is key-value object (not required)"],
+          "note": "Contract explicitly defines payload field with required=False in PointStruct definition"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["PointStruct", "payload.*Option", "unwrap_or_default"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "lib/shard/src/operations/point_ops.rs"],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 1402-1411\n#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]\npub struct PointStruct {\n    pub id: PointIdType,\n    pub vector: VectorStruct,\n    pub payload: Option<Payload>,  // <-- Explicitly optional\n}\n\n// lib/shard/src/operations/point_ops.rs line 305\npayload: payload.unwrap_or_default(),  // <-- By-design handling of missing payload",
+          "call_chain_traced": "REST API PointInsertOperations -> lib/shard/src/operations/point_ops.rs:305 payload.unwrap_or_default() creates empty HashMap for None",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms payload is intentionally optional and handled gracefully with unwrap_or_default()"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/{name}/points/search with filter color=red vs scroll all points",
+          "observed": "Search returns exactly 2 points with color=red (IDs 2 and 4). Scroll shows point 3 has empty payload {} and is correctly excluded from color=red results. Mixed payload states handled correctly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API accepts optional payload field as designed"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "API backward compatibility over strict validation",
+        "developer_quote": "API backward compatibility over strict validation",
+        "note": "Matches developer stance on prioritizing API flexibility and backward compatibility"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate appears to assume that all points must have payload fields, but both the API contract and source code explicitly define payload as optional. PointStruct has payload: Option<Payload> (required: False). Source code at lib/shard/src/operations/point_ops.rs:305 intentionally handles missing payload with unwrap_or_default(), creating empty HashMap {} for points without payload. This is by-design behavior for an upsert API where payload fields are optional per point. All empirical tests show correct behavior: points with missing payload are stored with empty payload, and filtering/search operations correctly distinguish between points with and without specific payload fields."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "payload field is optional (required: False) in PointStruct per structured_contract.json",
+      "source_implements_check": false,
+      "verdict_A": "NEUTRAL"
+    },
+    "physical": {
+      "objective_constraint": "No physical/semantic constraint requires all points to have payload",
+      "api_accepts_violation": false,
+      "verdict_B": "NEUTRAL"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": true,
+      "verdict_C": "REFUTED"
+    },
+    "aggregation_applied": "verdict_A=NEUTRAL + verdict_B=NEUTRAL + verdict_C=REFUTED(by-design in source) → final=FALSE_POSITIVE",
+    "final_verdict": "FALSE_POSITIVE"
+  }
+}

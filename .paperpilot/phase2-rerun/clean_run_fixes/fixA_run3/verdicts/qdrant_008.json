@@ -1,0 +1,114 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_008",
+      "endpoint": "collections+{collection_name}+points+scroll",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_idx2/points/scroll with filter {category_id: cat_a} and limit=100",
+          "observed": "Returned 25 points (ids 1-25), all with category_id=cat_a. All returned points correctly match the filter condition.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_idx2/points/scroll -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"limit\": 100}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The oracle appears to have expected some different behavior (possibly expecting more than 25 points, or expecting some points to not match the filter), but the raw request shows the API correctly returned exactly the 25 points that match category_id=cat_a out of 50 total points (25 cat_a + 25 cat_b)",
+            "No explicit defect claim is visible in the raw evidence - the behavior appears correct: scroll with filter returns exactly the matching points"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+scroll",
+            "parameter: filter (type: object, optional) - Filter conditions",
+            "parameter: limit (type: integer, optional, default: 10) - Page size",
+            "assertion: qdrant_behavioral_008 - 200 with result points array"
+          ],
+          "note": "Contract specifies scroll returns points matching filter. No explicit constraint states scroll must return a specific number of points or that results must include non-matching points."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "scroll",
+            "limit",
+            "filter",
+            "ScrollRequestInternal"
+          ],
+          "files_examined": [
+            "lib/collection/src/shards/local_shard/scroll.rs",
+            "lib/segment/src/segment/read_view/scroll.rs",
+            "lib/edge/src/scroll.rs",
+            "lib/shard/src/query/scroll.rs",
+            "lib/collection/src/shards/local_shard/shard_ops.rs"
+          ],
+          "source_excerpt": "// lib/edge/src/scroll.rs lines 22-75\nimpl EdgeShard {\n    pub fn scroll(\n        &self,\n        request: ScrollRequestInternal,\n    ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {\n        let ScrollRequestInternal {\n            offset,\n            limit,\n            filter,\n            with_payload,\n            with_vector,\n            order_by,\n        } = request;\n\n        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());\n        let with_payload = with_payload.unwrap_or(ScrollRequestInternal::default_with_payload());\n\n        match order_by.map(OrderBy::from) {\n            None => {\n                let limit_plus_one = limit.saturating_add(1);\n                let mut records = self.scroll_by_id(\n                    offset,\n                    limit_plus_one,\n                    &with_payload,\n                    &with_vector,\n                    filter.as_ref(),\n                    HwMeasurementAcc::disposable_edge(),\n                )?;\n                let next_offset = if records.len() > limit {\n                    let last_record = records.pop().unwrap();\n                    Some(last_record.id)\n                } else {\n                    None\n                };\n                Ok((records, next_offset))\n            }\n            // ... rest of implementation\n        }\n    }\n}\n\n// lib/segment/src/segment/read_view/scroll.rs lines 74-100\npub fn filtered_read_by_index(\n    &self,\n    offset: Option<PointIdType>,\n    limit: Option<usize>,\n    condition: &Filter,\n    is_stopped: &AtomicBool,\n    hw_counter: &HardwareCounterCell,\n    deferred_behavior: DeferredBehavior,\n) -> OperationResult<Vec<PointIdType>> {\n    let cardinality_estimation = self\n        .payload_index\n        .estimate_cardinality(condition, hw_counter)?;\n\n    let ids_iterator = self\n        .payload_index\n        .iter_filtered_points(\n            condition,\n            &cardinality_estimation,\n            hw_counter,\n            is_stopped,\n            deferred_behavior,\n        )?\n        .filter_map(|internal_id| {\n            let external_id = self.id_tracker.external_id(internal_id)?;\n            match offset {\n                Some(offset) if external_id < offset => None,\n                _ => Some(external_id),\n            }\n        })\n        .take(limit.unwrap_or(usize::MAX));\n\n    Ok(ids_iterator.collect())\n}",
+          "call_chain_traced": "scroll request → ScrollRequestInternal::scroll → scroll_by_id → filtered_read_by_index → iter_filtered_points (payload index filter application) → returns only matching points",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows scroll implementation correctly applies filter via payload_index.iter_filtered_points() which returns ONLY points matching the filter condition. The observed behavior (returning exactly 25 cat_a points when filter specifies category_id=cat_a) is the correct implementation of the filter contract."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via (a) count API with same filter, (b) direct point lookup with IDs",
+          "observed": "Count API returned count=25 for category_id=cat_a filter. Direct point lookup of IDs 1-5 with with_payload=true confirmed all have category_id=cat_a. Independent verification confirms: exactly 25 points match category_id=cat_a, all returned by scroll are correctly filtered.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_idx2/points/count -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}' && curl -X POST http://localhost:6333/collections/test_idx2/points -H 'Content-Type: application/json' -d '{\"ids\": [1,2,3,4,5], \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue: ruled out - ran on clean Docker container with consistent behavior",
+            "Race condition: ruled out - test data was static, results deterministic",
+            "Request parameter typo: ruled out - raw request shows valid filter and limit parameters",
+            "Approximation by-design: ruled out - scroll API with filter is expected to be exact, not approximate (unlike search)"
+          ],
+          "surviving": "The only surviving explanation is that the original oracle made an incorrect assumption about expected behavior. The API is functioning correctly: it returns exactly the points that match the filter."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This candidate does not match any by_design_patterns or rejection_patterns from developer_cognition.json. The behavior observed (filtered scroll returning exact matches) is correct API behavior, not a known limitation or accepted pattern."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The scroll API with filter category_id=cat_a correctly returned exactly 25 points (all with category_id=cat_a) from a collection of 50 points (25 cat_a + 25 cat_b). Count API confirms exactly 25 points match the filter. Direct point lookup confirms returned points have correct payloads. Source code shows scroll implementation correctly applies filter via iter_filtered_points(). The observed behavior is the correct implementation of filter contract. No defect exists - the oracle appears to have flagged correct API behavior as a defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Scroll API returns points matching filter (qdrant_behavioral_008)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract specifies scroll returns 200 with result points array matching filter. No explicit constraint about number of results or specific result pattern. The observed behavior (returning exactly the matching points) satisfies the contract."
+        },
+        "physical": {
+          "objective_constraint": "Filter must return only points matching condition",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "API correctly enforces filter - returns only cat_a points when filter specifies cat_a. No physical constraint violation."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code shows filter application is by-design via iter_filtered_points(). Behavior is correct and graceful - returns exact matches without error or unexpected results."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (FALSE_POSITIVE). All three perspectives agree the API behaves correctly.",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

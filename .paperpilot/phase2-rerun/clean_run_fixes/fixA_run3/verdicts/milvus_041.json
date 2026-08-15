@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_041",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "Reproduced 4 requests from raw log (Req 1-4) against clean Milvus 3.0.0 container",
+          "observed": "Clean reproduction FAILED: All 4 requests returned HTTP 1804 errors (unable to cast string to float64/bool). Raw log evidence shows successful 200 OK responses - evidence is unreliable/inconsistent with actual API behavior.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"bool_f\": \"true\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Raw log accuracy assumption: The log shows 200 OK for all 8 requests, but clean reproduction shows 1804 errors for type coercion violations. Evidence is unreliable.",
+            "Conclusion validity: The defect conclusion 'type coercion accepted' contradicts actual API behavior which rejects type mismatches."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_bool_001 (dataType == Bool)",
+            "constraint_id: milvus_type_int16_001 (dataType == Int16)",
+            "constraint_id: milvus_type_double_001 (dataType == Double)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "case schemapb.DataType_Bool",
+            "case schemapb.DataType_Double",
+            "case schemapb.DataType_Int16",
+            "cast.ToBoolE",
+            "cast.ToInt16E",
+            "cast.ToFloat64E"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 615-620, 627-632, 770-774\ncase schemapb.DataType_Bool:\n    result, err := cast.ToBoolE(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\ncase schemapb.DataType_Int16:\n    result, err := cast.ToInt16E(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\ncase schemapb.DataType_Double:\n    result, err := cast.ToFloat64E(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())",
+          "call_chain_traced": "checkAndSetData() → cast.ToBoolE()/ToInt16E()/ToFloat64E() → type validation with error return on mismatch",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: REST v2 upsert handler 在 checkAndSetData 函数中对每个 scalar 字段执行严格的类型转换检查(cast.ToBoolE/ToInt16E/ToFloat64E)，转换失败返回 merr.ErrInvalidInsertData 错误(1804)。这是真·类型验证逻辑，非宽松模式。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted to insert string values into typed fields (bool_f='true', dbl_f='3.14159', i16_f='42', bool_f=1)",
+          "observed": "All 4 test cases returned HTTP 1804 errors with messages: 'unable to cast \\\"\\\" of type string to float64: invalid parameter[expected=Double][actual=]' and 'strconv.ParseBool: parsing \\\"\\\": invalid syntax: invalid parameter[expected=Bool][actual=]'. API correctly rejects type mismatches. Bug is falsified."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Raw log evidence is unreliable/inconsistent with actual API behavior",
+            "Type coercion validation IS present in source code and working correctly",
+            "No environmental issue - clean reproduction against same Milvus 3.0.0 container"
+          ],
+          "surviving": "evidence_unreliable_raw_log_discrepancy"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types [Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK]",
+        "note": "命中 bug_shapes.json 中的 'rest-v2-data-type-handling' 模式(26 个历史实例，置信度 0.95)。但当前候选的情况恰恰相反 - API 正确拒绝了类型不匹配，而非接受非法值。这是历史 bug 模式的反向情况(误报)。"
+      },
+      "root_cause_if_fp": "evidence_unreliable_raw_log_discrepancy",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原始 log 显示所有 upsert 请求返回 200 OK，但干净环境复现显示这些类型不匹配请求应返回 1804 错误。源码接地发现 REST v2 handler 在 checkAndSetData 函数中使用 cast.ToBoolE/ToInt16E/ToFloat64E 执行严格的类型验证，转换失败直接返回错误。API 行为符合契约要求，正确拒绝类型不匹配。raw log 证据与实际 API 行为不一致，属于证据问题非真实 bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"evidence_unreliable_raw_log_discrepancy": 1}
+  }
+}

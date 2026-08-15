@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/broken with vectors:{}, then PUT /collections/broken/points with vector data",
+          "observed": "Collection created successfully (HTTP 200), but point insertion returns HTTP 400 with error 'Not existing vector name error:'",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/qdrant_009_test' -d '{\"vectors\": {}}'; curl -X PUT 'http://localhost:6333/collections/qdrant_009_test/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: vectors:{} is a valid collection configuration - VALIDATED, API accepts it during creation",
+            "Assumption 2: Point insertion with vector data should work - VIOLATED, API returns HTTP 400",
+            "Assumption 3: Error message should clearly indicate the root cause - VIOLATED, error message is ambiguous 'Not existing vector name error:' without pointing to the empty vectors config"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "PUT collections+{collection_name} vectors parameter: type=object, required=false (no explicit constraint about empty config)",
+            "PUT collections+{collection_name}+points: constraint_id=qdrant_type_upsert_points_003 - 'vector type is array of floats or object of named vectors' (no constraint about vector config validation timing)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["Not existing vector name", "VectorNameNotExists", "check_vector_name", "get_vector_config_or_error", "check_named_vectors", "upsert_point"],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/segment/entry.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/update.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs lines 162-170\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))\n}\n\n// lib/segment/src/segment/entry.rs lines 658-690\nimpl SegmentEntry for Segment {\n    fn upsert_point(\n        &mut self,\n        op_num: SeqNumberType,\n        point_id: PointIdType,\n        mut vectors: NamedVectors,\n        hw_counter: &HardwareCounterCell,\n    ) -> OperationResult<bool> {\n        debug_assert!(self.is_appendable());\n        check_named_vectors(&vectors, &self.segment_config)?;  // <-- Vector validation happens here\n        vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());\n        // ... rest of insertion logic\n    }\n}",
+          "call_chain_traced": "upsert_point (entry.rs:666) → check_named_vectors (mod.rs:149-157) → get_vector_config_or_error (mod.rs:162-170) → vector_data.get(vector_name) returns None → VectorNameNotExists error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现：当 collection 配置 vectors:{} 时，segment_config.vector_data HashMap 为空。在 upsert_point 时，check_named_vectors 会调用 get_vector_config_or_error，由于 HashMap 中找不到任何向量名称，返回 VectorNameNotExists 错误。这是故意的设计，但导致了 API 契约不一致问题。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with properly configured collection to verify vector insertion works correctly",
+          "observed": "Created collection with '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}', point insertion succeeded (HTTP 200). This confirms the issue is specific to empty vectors config, not a general vector insertion failure."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on standard Qdrant container",
+            "Concurrency/race conditions - tested with sequential operations and wait=true",
+            "Request parameter typos - verified correct request format",
+            "Network issues - local container communication",
+            "Cache/optimizer delays - used wait=true for synchronous operation"
+          ],
+          "surviving": "contract_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "param_validation",
+        "developer_quote": null,
+        "note": "命中 developer_cognition.json 中的 param_validation 模式。这个缺陷属于 API 参数验证不一致：创建时接受空配置，但使用时拒绝。"
+      },
+      "root_cause_if_defect": "contract_inconsistency_vectors_config",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "这是一个真正的 API 契约不一致缺陷。Collection 创建 API 接受 vectors:{} 作为合法配置，但在插入点时拒绝任何向量数据，且错误消息 'Not existing vector name error:' 不够清晰，没有指出问题根源是空的 vectors 配置。从用户视角看，如果 vectors:{} 是非法的，应该在创建时被拒绝；如果合法，应该要么支持向量插入（从数据推断维度），要么给出更清晰的错误消息。源码验证确认这是设计的验证逻辑，但设计本身存在问题。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "contract_inconsistency_vectors_config": 1
+    }
+  }
+}

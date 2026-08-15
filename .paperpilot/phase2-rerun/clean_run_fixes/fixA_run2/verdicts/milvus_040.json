@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{id:100, vector:[0.1,0.2,0.3,0.4], meta:\"plain_string\"}] where meta field is dataType JSON",
+          "observed": "Insert succeeded with HTTP 200, insertCount=1, insertIds=[100]. API accepted non-JSON string \"plain_string\" for JSON field without validation error.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\":\"dev_review_repro\",\"dbName\":\"default\",\"data\":[{\"id\":100,\"vector\":[0.1,0.2,0.3,0.4],\"meta\":\"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 - JSON scalar data type with assertion 'dataType == JSON'",
+            "constraint_id: milvus_type_json_041 - Supported data type: JSON with assertion 'dataType == JSON'",
+            "constraint_id: milvus_enum_datatype_json_028 - Valid dataType value: JSON"
+          ],
+          "constraint_assertions": [
+            "Field declared as dataType: JSON should accept valid JSON objects/arrays/scalars per schema definition",
+            "JSON field is a structured data type, not a free-form string field"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ 3.0.0",
+          "grep_queries": [
+            "case schemapb.DataType_JSON",
+            "checkAndSetData",
+            "anyToColumns",
+            "JSON.*validation",
+            "insert.*JSON"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// Context: In checkAndSetData function, switch statement handling field types\n// Line 530: dataString := fieldValue.String()\n// Line 761: JSON field values are converted to []byte without any JSON validity check\n// Contrast with other types (e.g., FloatVector line 547-551) that DO validate:\n//\t\t\t\tcase schemapb.DataType_FloatVector:\n//\t\t\t\t\tif dataString == \"\" {\n//\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n//\t\t\t\t\t}\n//\t\t\t\t\tvar vectorArray []float32\n//\t\t\t\t\terr := json.Unmarshal([]byte(dataString), &vectorArray)\n//\t\t\t\t\tif err != nil {\n//\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n//\t\t\t\t\t}\n\n// The JSON case lacks: 1) Empty check 2) json.Unmarshal validation 3) Error return on invalid JSON",
+          "call_chain_traced": "insert() [handler_v2.go:1563] → checkAndSetData() [utils.go:466] → switch fieldType [utils.go:542] → case schemapb.DataType_JSON [utils.go:760] → reallyData[fieldName] = []byte(dataString) [NO VALIDATION]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:JSON 字段在 proxy 层完全没有做校验,直接把任何字符串转成 []byte 存入。这违反了 JSON 字段应该是合法 JSON 的契约要求,是真缺陷。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/query filter=id==100 with outputFields=[id, vector, meta]",
+          "observed": "Query returned: {id:100, meta:\"plain_string\", vector:[0.1,0.2,0.3,0.4]}. The stored value is literally \"plain_string\" (a string), NOT a JSON value. This confirms the API accepted and stored non-JSON data without conversion or validation.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -H 'Content-Type: application/json' -d '{\"collectionName\":\"dev_review_repro\",\"dbName\":\"default\",\"filter\":\"id == 100\",\"outputFields\":[\"id\",\"vector\",\"meta\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker, filesystem, platform)",
+            "Race condition (single-threaded insert)",
+            "Caching issue",
+            "Request parameter typo (payload is syntactically valid)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "pattern_id": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical instances, symptoms include 'Incorrect Content-Type', 'stores invalid JSON for JSON field'",
+        "note": "Candidate exactly matches the blindspot pattern: REST v2 data type serialization issues. Developer cognition shows 26 high-confidence instances of this pattern. This is a known weak area in REST v2 validation."
+      },
+      "root_cause_if_confirmed": "rest_v2_json_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Fields declared with dataType: JSON shall contain valid JSON-formatted data (objects, arrays, or JSON scalar values). Constraints: milvus_type_json_001, milvus_type_json_041, milvus_enum_datatype_json_028.",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "api_violates_assertion": true,
+          "api_observed_value": "Insert accepted plain_string (non-JSON) for JSON field, stored as literal string without error",
+          "assertion_text_quoted": "dataType == JSON (JSON scalar data type, should accept valid JSON objects/arrays/scalars)",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "JSON fields must contain syntactically valid JSON (RFC 8259). Invalid JSON should be rejected at insert time.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful degradation. No by-design comments. Source code shows other types (FloatVector, Int32, etc.) have explicit validation with error returns. JSON case uniquely lacks validation - this is an inconsistency, not intentional design."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (contract violation + physical constraint violation + no graceful handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 entities/insert endpoint accepts non-JSON string values for fields declared as dataType JSON without validation. Source code (utils.go:760-761) shows JSON case in checkAndSetData() directly converts input string to []byte without json.Unmarshal validation, unlike other types (FloatVector, Int32, etc.) that validate and return errors on invalid input. This matches the known REST v2 data type handling blindspot pattern (26 historical instances). The API violates contract constraints (milvus_type_json_001) requiring JSON fields to contain valid JSON data. Query verification confirms the literal string \"plain_string\" was stored, not converted to JSON. This is a true defect - JSON field validation is missing in REST v2 insert path."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_json_validation_missing": 1
+    }
+  }
+}

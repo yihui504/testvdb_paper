@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with class='TestClass', vectorIndexConfig.distance=null",
+          "observed": "Request sent distance=null, API returned HTTP 200 with response showing distance='cosine' (coerced from null to default)",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - the request is syntactically valid and the API accepts it. The bug is in semantic handling: null is coerced to 'cosine' instead of being rejected or preserved."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_schema_create_001 - class field must be CamelCase",
+            "constraint_id: weaviate_type_schema_create_002 - vectorIndexType must be one of {hnsw, flat, dynamic, bwes}",
+            "No explicit constraint found for vectorIndexConfig.distance null handling"
+          ],
+          "note": "Contract does not explicitly specify behavior for distance=null. However, per API design principles and developer cognition, null should either be rejected (Type1) or preserved as null, not silently coerced to a default string value."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "distance",
+            "vectorIndexConfig",
+            "OptionalStringFromMap",
+            "SetDefaults",
+            "DefaultDistanceMetric"
+          ],
+          "files_examined": [
+            "entities/vectorindex/common/config.go",
+            "entities/vectorindex/hnsw/config.go",
+            "entities/schema/config/vector_index_config.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/common/config.go lines 22-32:\nconst (\n\tDistanceCosine    = \"cosine\"\n\tDistanceDot       = \"dot\"\n\tDistanceL2Squared = \"l2-squared\"\n\tDistanceManhattan = \"manhattan\"\n\tDistanceHamming   = \"hamming\"\n\n\t// Set these defaults if the user leaves them blank\n\tDefaultVectorCacheMaxObjects = 1e12\n\tDefaultDistanceMetric        = DistanceCosine\n)\n\n// entities/vectorindex/hnsw/config.go lines 85-96 (SetDefaults function):\nfunc (u *UserConfig) SetDefaults() {\n\tu.MaxConnections = DefaultMaxConnections\n\tu.EFConstruction = DefaultEFConstruction\n\tu.CleanupIntervalSeconds = DefaultCleanupIntervalSeconds\n\tu.VectorCacheMaxObjects = vectorIndexCommon.DefaultVectorCacheMaxObjects\n\tu.EF = DefaultEF\n\tu.DynamicEFFactor = DefaultDynamicEFFactor\n\tu.DynamicEFMax = DefaultEFMax\n\tu.DynamicEFMin = DefaultEFMin\n\tu.Skip = DefaultSkip\n\tu.FlatSearchCutoff = DefaultFlatSearchCutoff\n\tu.Distance = vectorIndexCommon.DefaultDistanceMetric  // <-- SETS DEFAULT\n\n// entities/vectorindex/hnsw/config.go lines 213-217 (ParseAndValidateConfig):\nif err := vectorIndexCommon.OptionalStringFromMap(asMap, \"distance\", func(v string) {\n\tuc.Distance = v  // <-- ONLY SETS IF KEY EXISTS AND IS STRING\n}); err != nil {\n\treturn uc, err\n}\n\n// entities/vectorindex/common/config.go lines 95-110 (OptionalStringFromMap):\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil  // <-- KEY MISSING: DOES NOTHING, DEFAULT STAYS\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // <-- VALUE IS NOT STRING (e.g., null): DOES NOTHING, DEFAULT STAYS\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig (line 140) → SetDefaults() sets Distance=cosine (line 96) → OptionalStringFromMap('distance') called (line 213) → distance=null in input map → value.(string) type assertion fails (line 103) → function returns nil without modifying uc.Distance → default 'cosine' remains → returned in response (line 257)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现真缺陷：OptionalStringFromMap 在遇到 null 值时，type assertion 失败但静默返回 nil（不报错），导致无法覆盖默认值。这是 type coercion bug 的根本原因。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via GET /schema/TestClass after POST with distance=null",
+          "observed": "GET /schema/TestClass returns HTTP 200 with vectorIndexConfig.distance='cosine' persisted - confirms type coercion actually occurred in storage, not just transient response artifact",
+          "evidence_cmd": "curl -X GET http://localhost:18080/v1/schema/TestClass"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/filesystem) - reproducible across clean restarts",
+            "Race condition - deterministic behavior on repeated attempts",
+            "Request parameter typo - payload is valid JSON",
+            "API semantic misunderstanding - distance metric is core vector index config"
+          ],
+          "surviving_explanation": null
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004: Parameter Validation Issues in Request Parsing",
+        "pattern_category": "parameter_validation",
+        "affected_layer": "request_parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "Falls under developer_cognition_signals.what_developers_consider_bugs: 'Parameter validation gaps at API boundaries'. The OptionalStringFromMap function fails to validate null inputs and silently falls back to default, exactly the type of validation gap developers consider a bug."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint found for distance=null handling in contract",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not specify behavior for null distance, so verdict_A is NEUTRAL (no assertion to violate)"
+        },
+        "physical": {
+          "objective_constraint": "distance metric must be a valid string identifier (cosine/dot/l2-squared/manhattan/hamming) - null is not a valid metric identifier",
+          "api_accepts_violation": true,
+          "api_observed_value": "API accepts distance=null (via OptionalStringFromMap silent failure) and coerces to 'cosine'",
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: distance must be string enum value; null violates this constraint. API accepts it via silent coercion → physical violation confirmed."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API behavior is not graceful: it silently coerces user input (null) to a default (cosine) without warning/error. Source code shows this is unintentional (OptionalStringFromMap type assertion fails silently), not by-design."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=CONFIRMED (physical constraint violation), verdict_C=CONFIRMED (not graceful, not by-design) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Confirmed type coercion defect: POST /schema with vectorIndexConfig.distance=null returns HTTP 200 with distance coerced to 'cosine'. Source code analysis (entities/vectorindex/hnsw/config.go + common/config.go) reveals root cause: OptionalStringFromMap function performs silent type assertion that fails for null values, causing fallback to default instead of validation error or null preservation. This violates physical constraint (distance must be valid string enum, not null) and is not graceful/by-design. Falls under developer-recognized bug pattern BS-004 (Parameter Validation Issues). Independent GET verification confirms coercion is persisted to storage. High severity: affects core schema API, could lead to unexpected index behavior if user relies on explicit null handling."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

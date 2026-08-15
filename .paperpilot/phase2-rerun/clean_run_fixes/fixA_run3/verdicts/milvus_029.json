@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_029",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search {\"collectionName\": \"devreview_test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0}",
+          "observed": "HTTP 200 with {\"code\":65535,\"message\":\"topk [0] is invalid, it should be in range [1, 16384], but got 0\"}",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"devreview_test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_search_002 - \"limit + offset must be < 16384\"",
+            "constraint_id: milvus_behavioral_entities_search_001 - \"Search returns 400 on invalid parameters\""
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["validateLimit", "topk", "16384", "TopKKey"],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 199-208\nfunc validateLimit(limit int64, largeTopKEnabled bool) error {\n\ttopKLimit := Params.QuotaConfig.TopKLimit.GetAsInt64()\n\tif largeTopKEnabled {\n\t\ttopKLimit = Params.QuotaConfig.LargeTopKLimit.GetAsInt64()\n\t}\n\tif limit <= 0 || limit > topKLimit {\n\t\treturn fmt.Errorf(\"it should be in range [1, %d], but got %d\", topKLimit, limit)\n\t}\n\treturn nil\n}\n\n// internal/proxy/search_util.go line 202\nreturn nil, fmt.Errorf(\"%s [%d] is invalid, %w\", TopKKey, topK, err)\n\n// internal/proxy/task.go line 70\nTopKKey = \"topk\"",
+          "call_chain_traced": "REST request → parseSearchParams → validateLimit(topK=0) → returns error → wrapped with 'topk [0] is invalid' prefix → HTTP 200 with error code 65535 instead of HTTP 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wrong_http_status",
+          "note": "源码接地发现: validateLimit 函数正确检查了 limit <= 0 条件并返回错误,但错误通过 fmt.Errorf 包装后返回 HTTP 200 + code 65535,而非契约要求的 HTTP 400"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search {\"collectionName\": \"devreview_test\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 1}",
+          "observed": "HTTP 200 with {\"code\":0,\"cost\":0,\"data\":[{\"distance\":1,\"id\":0}],\"topks\":[1]} - valid limit=1 returns proper search results"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (clean Docker container)",
+            "Concurrent/race condition (single-threaded test)",
+            "Cache/optimizer delay (immediate response)",
+            "Request parameter typo (explicit limit=0)",
+            "API semantic misunderstanding (clear contract violation)"
+          ],
+          "surviving": "protocol_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "候选命中 blindspot: REST v2 与 gRPC 验证不一致。REST v2 返回 HTTP 200 + 错误码,而非标准 HTTP 400,这是维护者明确认定的缺陷类别"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实 validateLimit 正确执行检查(limit <= 0 时返回错误),但 REST v2 层将错误包装为 HTTP 200 + code 65535,违反契约 milvus_behavioral_entities_search_001 (\"Search returns 400 on invalid parameters\")。实测 limit=0 触发违规消息,limit=1 正常返回结果。此属 REST v2 协议层缺陷,非平凡解释可排除。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

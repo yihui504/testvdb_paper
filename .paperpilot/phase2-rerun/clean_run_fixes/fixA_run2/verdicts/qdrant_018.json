@@ -1,0 +1,96 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.3",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_018",
+      "endpoint": "points+count",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/c/points/count with exact:true vs exact:false using is_empty condition on indexed keyword field",
+          "observed": "exact:true returned count=2, exact:false returned count=1, scroll ground truth confirmed 2 points with empty kw field",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/c/points/count -H \"Content-Type: application/json\" -d '{\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}' && curl -s -X POST http://localhost:6333/collections/c/points/count -H \"Content-Type: application/json\" -d '{\"exact\": false, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Keyword index was successfully created on field 'kw'",
+            "Collection contains both points with kw='red' and points without kw field (empty)",
+            "exact=true performs full scan and returns accurate count",
+            "exact:false should use index estimation but returns different (incorrect) count"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_cardinality_oracle_count-exact-false - count API's approximate cardinality path uses index-based estimation",
+            "endpoint: POST /collections/{collection_name}/points/count",
+            "parameter: exact (boolean) - true=accurate scan count, false=approximate indexed cardinality estimate"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.3 @ v1.18.3",
+          "grep_queries": [
+            "estimate_cardinality_impl",
+            "IsEmpty",
+            "MapIndexRead",
+            "match_cardinality",
+            "CardinalityEstimation"
+          ],
+          "files_examined": [
+            "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+            "lib/segment/src/index/field_index/map_index/read_ops.rs",
+            "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+            "lib/segment/src/index/query_estimator.rs",
+            "lib/edge/src/count.rs",
+            "lib/shard/src/count.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs line 242-276\nfn estimate_cardinality_impl<T: MapIndexRead<str>>(\n    index: &T,\n    condition: &FieldCondition,\n    hw_counter: &HardwareCounterCell,\n) -> Option<CardinalityEstimation> {\n    match &condition.r#match {\n        Some(Match::Value(MatchValue { value })) => match value {\n            ValueVariants::String(keyword) => {\n                let mut estimation = index.match_cardinality(keyword.as_str(), hw_counter);\n                estimation\n                    .primary_clauses\n                    .push(PrimaryCondition::Condition(Box::new(condition.clone())));\n                Some(estimation)\n            }\n            ValueVariants::Integer(_) => None,\n            ValueVariants::Bool(_) => None,\n        },\n        Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {\n            AnyVariants::Strings(keywords) => {\n                let estimations = keywords\n                    .iter()\n                    .map(|keyword| index.match_cardinality(keyword.as_str(), hw_counter))\n                    .collect::<Vec<_>>();\n                let estimation = if estimations.is_empty() {\n                    CardinalityEstimation::exact(0)\n                } else {\n                    combine_should_estimations(&estimations, index.get_indexed_points())\n                };\n                Some(estimation.with_primary_clause(...))\n            }\n            AnyVariants::Integers(integers) => {\n                if integers.is_empty() {\n                    Some(CardinalityEstimation::exact(0).with_primary_clause(...))\n                } else {\n                    None\n                }\n            }\n        },\n        Some(Match::Except(MatchExcept { except })) => match except {\n            AnyVariants::Strings(keywords) => {\n                Some(index.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))\n            }\n            AnyVariants::Integers(_) => None,\n        },\n        _ => None,  // IsEmpty/IsNull conditions return None here!\n    }\n}\n\n// lib/segment/src/index/struct_payload_index/read_view/filtering.rs line 104-112\n            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {\n                let available_points = self.available_point_count();\n                let condition = FieldCondition::new_is_empty(field.key.clone(), true);\n\n                self.estimate_field_condition(&condition, nested_path, hw_counter)?\n                    .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))\n            }",
+          "call_chain_traced": "CountRequest(exact:false) → EdgeShard::count → estimate_point_count → condition_cardinality → IsEmpty condition → estimate_field_condition → MapIndex::estimate_cardinality → estimate_cardinality_impl → returns None (fallback to unknown estimation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code接地发现: MapIndex的estimate_cardinality_impl函数只处理Match条件(Match::Value/Match::Any/Match::Except)，对IsEmpty/IsNull条件返回None。当返回None时，调用方fallback到CardinalityEstimation::unknown，这导致近似计数与精确计数不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Scroll with same is_empty filter returns ground truth count",
+          "observed": "Scroll returned 2 points (id=1, id=6) with empty payload {}, confirming exact=true count=2 is accurate. The approximate count=1 is incorrect.",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/c/points/scroll -H \"Content-Type: application/json\" -d '{\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"limit\": 100, \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - running on standard qdrant v1.18.3 container",
+            "Concurrency race - single-threaded test",
+            "Request parameter typo - using exact boolean parameter correctly",
+            "API semantics misunderstanding - exact:true/false have documented meanings",
+            "By-design fallback - documented behavior expects accurate estimation"
+          ],
+          "surviving": "indexed_cardinality_estimation_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-cardinality-oracle-count-exact-false",
+        "developer_quote": "Cardinality Oracle mismatch on count API exact:false (indexed approximate path). count(exact:false)=N but count(exact:true)=M and scroll with same filter returns M points; |N-M| exceeds tolerated estimation error (>20% OR systematic one-directional drift across collection sizes).",
+        "note": "Matches known bug shape qdrant-cardinality-oracle-count-exact-false: is_empty condition on indexed field shows divergence between exact:true scan (2) and exact:false indexed estimate (1), with scroll ground truth confirming 2. Error rate: 50% exceeds tolerated 20% threshold."
+      },
+      "root_cause_if_tp": "indexed_field_empty_value_estimation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "qdrant_018 CONFIRMED: Cardinality estimation bug in MapIndex (keyword field) for IsEmpty condition when exact=false. Source code接地发现 estimate_cardinality_impl 只处理Match条件，IsEmpty条件返回None导致fallback到CardinalityEstimation::unknown。实测证实: exact:true=2 (准确), exact:false=1 (错误), scroll真值=2。误差50%超过容忍阈值20%。符合bug_shapes.json中的qdrant-cardinality-oracle-count-exact-false模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "indexed_field_empty_value_estimation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{id:1, vector:[0.1,0.2,0.3,0.4], text_field:'hello'}, {id:2, vector:[0.1,0.2,0.3,0.4], text_field:12345}]",
+          "observed": "Both inserts succeed (HTTP 200). Query returns id=1 text_field='hello' (type: str) and id=2 text_field=12345 (type: int). Integer value accepted and stored as int without type conversion.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient(host='localhost', port='19530'); client.create_collection(collection_name='test_devreview_milvus006', dimension=4); client.insert(collection_name='test_devreview_milvus006', data={'id': 2, 'vector': [0.1, 0.2, 0.3, 0.4], 'text_field': 12345}); print(client.query(collection_name='test_devreview_milvus006', filter='id in [2]', output_fields=['text_field']))\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes type coercion (integer stored as-is) is a violation",
+            "Oracle fails to recognize that dynamic fields are enabled by default in quick-setup collections",
+            "Conclusion 'type coercion bug' depends on assumption that fields must match collection schema types, but dynamic fields intentionally allow arbitrary types"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 - 'data field types match collection schema' applies to schema-defined fields, not dynamic fields",
+            "constraint_id: milvus_state_entities_insert_001 - collection exists AND is loaded condition satisfied",
+            "Behavioral: milvus_behavioral_entities_insert_001 - returns 200 with insertCount and insertIds (observed)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["EnableDynamicField", "dynamic schema", "checkAndSetData"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/ddl_callbacks_create_collection.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 590-621 (dynamic field handling)\n\n// fill dynamic schema\nfor mapKey, mapValue := range data.Map() {\n    if !containsString(fieldNames, mapKey) {\n        if collSchema.EnableDynamicField {\n            if mapKey == common.MetaFieldName {\n                return merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"use the invalid field name(%s) when enable dynamicField\", mapKey)), nil, nil\n            }\n            mapValueStr := mapValue.String()\n            switch mapValue.Type {\n            case gjson.True, gjson.False:\n                reallyData[mapKey] = cast.ToBool(mapValueStr)\n            case gjson.String:\n                reallyData[mapKey] = mapValueStr\n            case gjson.Number:\n                if strings.Contains(mapValue.Raw, \".\") {\n                    reallyData[mapKey] = cast.ToFloat64(mapValue.Raw)\n                } else {\n                    reallyData[mapKey] = cast.ToInt64(mapValueStr)\n                }\n            case gjson.JSON:\n                reallyData[mapKey] = mapValue.Value()\n            case gjson.Null:\n                // skip null\n            default:\n                log.Warn(\"unknown json type found\", zap.Int(\"mapValue.Type\", int(mapValue.Type)))\n            }\n        } else {\n            return merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\"), nil, nil\n        }\n    }\n}",
+          "call_chain_traced": "REST v2 insert → checkAndSetData() → dynamic field detection (line 594) → type-aware storage (lines 600-611) → integers stored as int64, strings as string",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: checkAndSetData 函数在 line 594 检查 collSchema.EnableDynamicField。若为 true (quick-setup 默认启用), 则接受任意字段并按 JSON 类型智能存储: Number→int64/float64, String→string。这是 dynamic field 的设计特性,非缺陷。若 EnableDynamicField=false, 则 line 618 会拒绝 extra field。实测验证 quick-setup collection 确实 EnableDynamicField=True。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via GET entities+query and pymilvus client.get() after insert",
+          "observed": "GET /v2/vectordb/entities/query returns id=2 text_field=12345 (type: int). Pymilvus client.get() confirms same value and type. No type coercion error - integer stored as-is is by-design for dynamic fields."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - ruled out (tested on clean collection)",
+            "Concurrency/race - ruled out (single-threaded insert)",
+            "Request param typo - ruled out (field names correct)",
+            "Approximate search - not applicable (exact insert)"
+          ],
+          "surviving": "mundane_api_semantics",
+          "explanation": "Oracle misinterpreted dynamic field behavior as type coercion bug. Dynamic fields (enabled by default in quick-setup collections) intentionally accept and preserve arbitrary JSON types without schema validation or type conversion. This is a documented feature, not a defect."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (from bug_shapes.json). However, this candidate does NOT exhibit that pattern - dynamic fields are working as designed.",
+        "note": "虽然命中 blindspot_indicators (REST v2 data types), 但深入审查发现这是 dynamic field 的预期行为,非 bug。历史案例 52232/52230 是关于类型序列化错误,而本案是 dynamic field 按设计工作。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus quick-setup collections (dimension-based creation) have EnableDynamicField=True by default. Dynamic fields intentionally accept arbitrary field names and preserve JSON types (numbers as int/float, strings as string) without schema validation or coercion. The source code checkAndSetData() in utils.go lines 592-621 explicitly implements this behavior: if EnableDynamicField=true, extra fields are accepted and type-aware storage occurs; if false, they are rejected (line 618). The observed behavior (text_field=12345 stored as integer) is the correct implementation of dynamic fields, not a type coercion bug. Oracle mistook a documented feature for a defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_insert_001: data field types match collection schema (for schema-defined fields)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Constraint applies to schema fields, not dynamic fields. No explicit contract violation since dynamic fields are intentionally schema-less."
+        },
+        "physical": {
+          "objective_constraint": "None - dynamic fields have no type constraints by design",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical constraint violated. Dynamic fields accept any JSON type."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Behavior is graceful and explicitly by-design in source (lines 592-621 of utils.go). EnableDynamicField controls this behavior; quick-setup defaults to true."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED (by_design_in_source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

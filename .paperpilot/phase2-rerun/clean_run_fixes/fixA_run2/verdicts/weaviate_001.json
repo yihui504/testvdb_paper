@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_001",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.dynamicEfMin=500, dynamicEfMax=10 (max < min)",
+          "observed": "API returns HTTP 200 and persists the invalid configuration",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestEfBad\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"dynamicEfMin\": 500, \"dynamicEfMax\": 10, \"dynamicEfFactor\": 8}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}' && echo ''"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "dynamicEfMin should represent minimum EF value",
+            "dynamicEfMax should represent maximum EF value",
+            "By semantic definition, min <= max is a fundamental constraint",
+            "API should validate parameter relationships during POST /schema"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema endpoint exists (no explicit dynamicEfMin/dynamicEfMax constraints in structured_contract.json)"
+          ],
+          "note": "No explicit contract assertion, but semantic constraint (min <= max) is universally expected"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["dynamicEfMin", "dynamicEfMax", "validate", "efMin.*efMax"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/hnsw/config_test.go",
+            "adapters/repos/db/vector/hnsw/index.go",
+            "adapters/repos/db/vector/hnsw/config_update.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go line 260-290\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\t// NO CHECK: DynamicEFMin <= DynamicEFMax - this is the bug\n}\n\n// entities/vectorindex/hnsw/config.go line 183-193\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMax\", func(v int) {\n\tuc.DynamicEFMax = v\n}); err != nil {\n\treturn uc, err\n}\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMin\", func(v int) {\n\tuc.DynamicEFMin = v\n}); err != nil {\n\treturn uc, err\n}",
+          "call_chain_traced": "ParseAndValidateConfig() → validate() → missing DynamicEFMin <= DynamicEFMax check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: validate() function checks maxConnections, EFConstruction, and filterStrategy, but completely omits DynamicEFMin <= DynamicEFMax validation. Parameters are parsed (lines 183-193) and used directly in index initialization (adapters/repos/db/vector/hnsw/index.go lines 366-368) without any validation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfBad to verify persisted config",
+          "observed": "Invalid configuration persisted: dynamicEfMin=500, dynamicEfMax=10 (min > max)",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestEfBad | grep -o '\"dynamicEfMin\":[^,]*' | head -1 && curl -s http://localhost:18080/v1/schema/TestEfBad | grep -o '\"dynamicEfMax\":[^,]*' | head -1"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (container is running normally)",
+            "Request parameter typos (parameters are correctly named)",
+            "API semantic misunderstanding (min <= max is universal)",
+            "By-design behavior (no source comments or documentation support this)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing",
+        "pattern_description": "Systematic parameter_validation defects affecting request_parsing functionality. Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Candidate matches bug_shape BS-004 (Parameter Validation Issues) - validates that Weaviate developers do consider parameter validation gaps at API boundaries to be bugs, especially for invalid configurations accepted on schema creation endpoints"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in structured_contract.json, but semantic constraint min <= max is universal",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "By semantic definition, dynamicEfMin (minimum EF) must be <= dynamicEfMax (maximum EF). This is a fundamental mathematical constraint for min/max parameter pairs.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) AND verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Source code analysis (entities/vectorindex/hnsw/config.go) confirms the validate() function completely omits the DynamicEFMin <= DynamicEFMax check, despite validating other parameters (maxConnections, EFConstruction, filterStrategy). The API accepts semantically invalid configuration (min=500 > max=10) via HTTP 200 and persists it. This matches bug_shape BS-004 (Parameter Validation Issues) from developer_cognition.json, indicating Weaviate developers consider such parameter validation gaps at API boundaries to be genuine defects."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

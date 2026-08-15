@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with {\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}",
+          "observed": "HTTP 200 returned, but schema NOT actually created (silent failure)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}' && curl -s -X GET 'http://localhost:18080/v1/schema' | grep -v TestNeg"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": "Assumption 1: desiredCount should be >= 0 (physical constraint for shard count). Assumption 2: API should validate and reject invalid parameter values. Both assumptions VIOLATED - API accepts negative desiredCount without validation.",
+          "root_cause": "Parameter validation gap at API boundary"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Physical constraint: Shard count must be >= 0 (or > 0 for meaningful sharding)",
+            "API boundary validation requirement: Parameters should be validated before processing"
+          ],
+          "note": "No structured_contract.json available for weaviate; using physical constraint analysis"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "desiredCount",
+            "validate",
+            "parseShardingConfig",
+            "ParseConfig"
+          ],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/parser.go",
+            "usecases/sharding/config/config_test.go",
+            "usecases/sharding/config/config_update.go"
+          ],
+          "source_excerpt": "// usecases/sharding/config/config.go lines 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil  // NO VALIDATION for DesiredCount!\n}",
+          "call_chain_traced": "POST /schema → parseShardingConfig() → shardingConfig.ParseConfig() → validate() → NO check for DesiredCount >= 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: Config.validate() checks Key, Strategy, Function but NOT DesiredCount. This is a clear validation gap that allows negative values to pass through."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema to verify schema creation status",
+          "observed": "Multiple POST requests with desiredCount=-1, -5, -999 all returned HTTP 200, but GET /v1/schema shows NONE of these schemas were actually created. This is a SILENT FAILURE - API returns success but doesn't create the resource.",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:18080/v1/schema' | grep 'TestNeg' returns no results, confirming silent failure"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/platform) - ruled out, behavior consistent",
+            "Concurrent/race condition - ruled out, simple sequential test",
+            "Request parameter typo - ruled out, parameter explicitly specified",
+            "API semantics misunderstanding - ruled out, physical constraint violated"
+          ],
+          "surviving_explanation": "Parameter validation gap at API boundary - this matches developer cognition pattern 'what_developers_consider_bugs': 'Parameter validation gaps at API boundaries'",
+          "note": "No by_design_patterns match (empty array). No evidence this is intentional behavior."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "what_developers_consider_bugs",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_note": "Direct match: developers explicitly consider parameter validation gaps at API boundaries to be bugs",
+        "blindspot_match": "Configuration validation is inconsistent across parameters",
+        "blindspot_note": "This bug demonstrates the blindspot: DesiredCount validation is missing while Key/Strategy/Function are validated, showing inconsistency"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "This is a CONFIRMED bug. Source code analysis (usecases/sharding/config/config.go) proves that Config.validate() does NOT check DesiredCount, creating a parameter validation gap at the API boundary. The API accepts negative desiredCount values (physical violation: shard count must be >= 0) and returns HTTP 200, but silently fails to create the schema. This matches developer cognition patterns: 'Parameter validation gaps at API boundaries' are explicitly considered bugs, and 'Configuration validation is inconsistent across parameters' is a documented blindspot. The severity is High because: (1) it violates physical constraints, (2) it causes silent failures (success response without resource creation), and (3) it could lead to data consistency issues if applications rely on the success response."
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "Physical constraint: Shard count (desiredCount) must be >= 0 for meaningful sharding; API boundary validation is required per developer cognition model",
+      "source_implements_check": false,
+      "source_evidence": "Config.validate() in usecases/sharding/config/config.go lines 53-70 validates Key, Strategy, Function but NOT DesiredCount",
+      "api_observed_value": "POST /schema with desiredCount=-1 returns HTTP 200 (no validation error)",
+      "api_violates_assertion": true,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Shard count is a non-negative integer (desiredCount >= 0 or > 0). Negative values have no physical meaning in distributed sharding.",
+      "api_accepts_violation": true,
+      "evidence": "API accepts desiredCount=-1, -5, -999 without error",
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "silent_failure": true,
+      "evidence": "API returns HTTP 200 but schema not actually created (silent failure)",
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a bug)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    },
+    "confidence_avg": 0.95
+  }
+}

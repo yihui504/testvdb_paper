@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_dev_review/points/search with vector [0.1,0.2,0.3,0.4], score_threshold=2.0 (invalid for Cosine similarity range [0,1])",
+          "observed": "HTTP 200 OK with empty result array. Server accepted score_threshold=2.0 (impossible for Cosine similarity) without validation error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_dev_review/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Cosine similarity produces scores in range [0, 1] (mathematical fact)",
+            "score_threshold=2.0 is outside the valid range for Cosine similarity",
+            "score_threshold=-0.5 is outside the valid range for Cosine similarity",
+            "Server should reject score_threshold values outside the valid score range for the configured distance metric"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API schema defines score_threshold as Option<ScoreType> (f32) in lib/api/src/rest/schema.rs line 573, 779, 1160, 1199",
+            "No validation constraint exists for score_threshold range validation"
+          ],
+          "note": "Contract shows score_threshold is an optional f32 without range validation. The API documentation mentions 'Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.' but does not enforce that score_threshold values must be within the valid range for the distance metric."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "score_threshold",
+            "ScoreType",
+            "filter.*score.*threshold",
+            "distance.*cosine"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "lib/shard/src/search.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/segment/src/segment/read_view/formula_rescore.rs",
+            "lib/common/common/src/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/segment/read_view/formula_rescore.rs line 85-91\n// Handle score threshold.\nlet rescored = match score_threshold {\n    Some(threshold) => {\n        Either::Left(rescored_iter.filter(move |point| point.score >= threshold))\n    }\n    None => Either::Right(rescored_iter),\n}\n.k_largest(limit) // Keep only the top k results.\n.collect();\n\n// lib/api/src/rest/schema.rs line 573\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n// lib/common/common/src/types.rs line 8\npub type ScoreType = f32;\n\n// lib/shard/src/search.rs line 70\nscore_threshold: value.score_threshold,",
+          "call_chain_traced": "REST API (schema.rs:573) → CoreSearchRequest (search.rs:70) → CollectionQueryRequest (collection_query.rs:733) → formula_rescore.rs:88 (filter applied as point.score >= threshold). No validation exists in any layer to ensure score_threshold is within valid range for the distance metric.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code analysis confirms: score_threshold is passed through all layers without validation. The filtering logic at formula_rescore.rs:88 simply compares point.score >= threshold without checking if threshold is valid for the distance metric. For Cosine similarity (scores in [0,1]), thresholds like 2.0 or -0.5 are mathematically invalid but accepted by the API."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested score_threshold=2.0 (impossible) returns empty results without error. Tested score_threshold=-0.5 (impossible) returns score=1.0 point, violating the threshold logic. Tested baseline search without threshold returns score=1.0.",
+          "observed": "score_threshold=2.0: API returns HTTP 200 with [] (empty). No 4xx error despite invalid threshold.\nscore_threshold=-0.5: API returns HTTP 200 with [{\"id\":1,\"version\":1,\"score\":1.0}]. Point score 1.0 >= -0.5 passes, but -0.5 is outside valid Cosine range [0,1].\nBaseline: API returns same point with score=1.0.\n\nThe bug is confirmed: API accepts invalid score_threshold values that cannot possibly be valid for the configured distance metric (Cosine similarity ∈ [0,1]).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_dev_review/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}' && curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_dev_review/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": -0.5}' && curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_dev_review/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: Reproducible on clean Qdrant 1.18.0 container",
+            "Race condition: Single-threaded test, no concurrent operations",
+            "Caching/optimization: Immediate queries after data insertion, no wait=false involved",
+            "Request parameter typo: Parameters correctly formed as JSON",
+            "API semantic misunderstanding: Cosine similarity range [0,1] is well-defined mathematical property"
+          ],
+          "surviving_explanations": "Parameter validation gap at API input layer for score_threshold semantic validity"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "Matches bug_shapes.json pattern 'Parameter Validation issues where Numeric Boundary validation is missing' (shape_id: qdrant-parameter-validation-numeric-boundary, root_cause_category: parameter_validation). This is exactly that pattern: score_threshold should have numeric boundary validation based on distance metric but does not."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "API contract (schema.rs) defines score_threshold as Option<ScoreType> (f32) without range constraints. API documentation states threshold behavior depends on distance function but does not specify valid ranges per metric type.",
+          "source_implements_check": false,
+          "api_observed_value": "score_threshold=2.0 and score_threshold=-0.5 accepted without 4xx error for Cosine distance (valid score range [0,1])",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not explicitly assert valid range constraints for score_threshold. However, this absence of constraint is itself a contract gap - the API should either (a) document valid ranges per distance metric or (b) enforce them. Currently does neither."
+        },
+        "physical": {
+          "objective_constraint": "Cosine similarity mathematically produces scores in range [0, 1] where 1=identical vectors, 0=orthogonal vectors. This is a fundamental physical constraint of the Cosine distance metric.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint violation: API accepts score_threshold=2.0 (>1) and score_threshold=-0.5 (<0) for Cosine distance, which violates the mathematical bounds of the similarity function. This is a Type1_IllegalSuccess - accepting semantically invalid input."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling: score_threshold=-0.5 returns points with score=1.0, silently accepting an invalid threshold that filters nothing meaningful. No by-design comments or fallback logic found in source code for out-of-range thresholds."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL (contract silent on range), verdict_B=CONFIRMED (physical constraint violation), verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED (B and C both confirm violation, physical constraint is dispositive)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Qdrant POST /points/search accepts score_threshold values that are mathematically invalid for the configured distance metric. For Cosine similarity (valid range [0,1]), the API accepts score_threshold=2.0 and score_threshold=-0.5 without validation errors. Source code analysis confirms no validation exists in any layer (REST schema → search request → query processing → filtering). The filtering implementation at formula_rescore.rs:88 blindly applies point.score >= threshold without checking threshold semantic validity. This is a genuine Type1_IllegalSuccess parameter validation bug (Type1_IllegalSuccess): API accepts invalid Numeric Boundary values without returning 4xx, matching bug shape qdrant-parameter-validation-numeric-boundary. Physical constraint (verdict_B=CONFIRMED) combined with lack of graceful handling (verdict_C=CONFIRMED) confirms this is a true bug, not by-design behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation": 1
+    }
+  }
+}

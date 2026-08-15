@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-1",
+          "observed": "HTTP 200 returned, collection created with ef=-1 set in vectorIndexConfig",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestEfnegRepro\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes ef parameter has a lower bound validation (ef >= 1 for meaningful HNSW search)",
+            "API behavior violates physical constraint: ef=-1 is not a valid HNSW configuration"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No explicit contract assertion exists for ef parameter validation in structured_contract.json"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": [
+            "ef",
+            "validate",
+            "UserConfig",
+            "vectorIndexConfig"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/usecases/schema/parser.go"
+          ],
+          "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go lines 260-323\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\t// ... rest of validation\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → parseVectorIndexConfig() → ParseAndValidateConfig() → UserConfig.validate() → NO ef validation found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code definitively proves there is NO validation for the 'ef' parameter in the validate() function. The function validates MaxConnections (lines 262-267), MaxConnections upper bound (269-274), EFConstruction (276-281), and FilterStrategy (283-285), but completely lacks any validation for u.EF field. DefaultEF is set to -1 (line 28: DefaultEF = -1) which indicates 'let Weaviate pick', but user-provided negative values are not rejected."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfnegRepro to verify collection persistence",
+          "observed": "Collection successfully retrieved with ef=-1 present in vectorIndexConfig, proving the invalid value was accepted and stored",
+          "evidence_cmd": "curl -s 'http://localhost:18080/v1/schema/TestEfnegRepro' | grep '\"ef\":-1'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (running in official Weaviate Docker container)",
+            "Request parameter typo (exact JSON syntax verified)",
+            "API semantics misunderstanding (ef is a documented HNSW parameter that should have positive integer constraint)"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Systematic parameter_validation defects affecting request_parsing functionality. Accepting invalid parameter values on write endpoints with per-item success status",
+        "pattern_id": "BS-004",
+        "note": "Defect matches historical bug shape BS-004 (Parameter Validation Issues). The developer cognition model explicitly identifies 'Parameter validation gaps at API boundaries' as what developers consider bugs."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "DEFECT CONFIRMED: Source code analysis definitively proves parameter validation gap. The validate() function in hnsw/config.go (lines 260-323) validates MaxConnections, EFConstruction, and FilterStrategy, but completely lacks validation for the ef parameter. POST /schema accepts ef=-1 (HTTP 200) and creates a collection with this invalid configuration. Physical constraint: ef should be ≥ 1 for meaningful HNSW search behavior (ef controls search-time candidate list size in HNSW algorithm). This matches bug shape BS-004 (Parameter Validation Issues) from developer cognition model."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

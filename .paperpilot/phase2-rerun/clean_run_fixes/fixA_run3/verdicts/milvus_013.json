@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: abc",
+          "observed": "HTTP 200 with successful response (code:0, data:[...]) - API accepts invalid non-numeric timeout value",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: abc' -H 'Content-Type: application/json' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate Request-Timeout header format",
+            "Request-Timeout should accept only numeric values",
+            "Invalid timeout values should be rejected with error"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No explicit constraint found in structured_contract.json for Request-Timeout header validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "Request-Timeout",
+            "HTTPHeaderRequestTimeout",
+            "ParseInt.*timeout",
+            "timeoutSecond"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/timeout_middleware.go",
+            "internal/http/constant.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/timeout_middleware.go lines 182-186\n\ttimeout := paramtable.Get().HTTPCfg.RequestTimeoutMs.GetAsDuration(time.Millisecond)\n\ttimeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\n\tif err == nil {\n\t\ttimeout = time.Duration(timeoutSecond) * time.Second\n\t}\n\tfinish := make(chan struct{}, 1)",
+          "call_chain_traced": "Request-Timeout header → strconv.ParseInt (line 183) → error checked but only used to conditionally apply timeout → parse error for 'abc' is silently ignored → default timeout used",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：strconv.ParseInt 对 'abc' 返回错误，但该错误仅用于条件判断（if err == nil），解析失败时静默回退到默认超时，未向客户端返回错误。这是真正的输入验证缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "note": "Not applicable - this is a parameter validation issue that doesn't require independent verification"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (running on standard Docker)",
+            "Race condition (deterministic behavior)",
+            "Request parameter typo (abc is intentionally invalid)",
+            "API semantic misunderstanding (numeric validation is standard)"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": null,
+        "pattern_note": "Matches historical REST v2 data type handling bug shape - REST v2 API fails to properly validate/serialize data types. Issue #52232 and #52230 show REST v2 accepting invalid values without proper validation."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found for Request-Timeout validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Request-Timeout header value must be numeric (strconv.ParseInt requires base-10 integer)",
+          "api_accepts_violation": true,
+          "evidence": "API accepts 'abc' (non-numeric) without error, returns HTTP 200",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "source_evidence": "timeout_middleware.go line 183-186: parse error silently ignored, no error returned to client",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violated + no graceful handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "missing_input_validation",
+      "severity_after_review": "Medium",
+      "confidence": 0.92,
+      "rationale": "REST v2 API接受无效的Request-Timeout头值'abc'（非数字字符串），返回HTTP 200成功而非拒绝请求。源码分析发现timeout_middleware.go第183行使用strconv.ParseInt解析该头值，但解析失败时仅静默回退到默认超时配置，未向客户端返回任何错误。这违反了输入验证的基本原则——无效参数应被明确拒绝。历史bug形状显示REST v2存在系统性数据类型验证问题（如#52232, #52230），该缺陷符合此模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_input_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

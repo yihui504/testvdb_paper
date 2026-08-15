@@ -1,0 +1,93 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_020",
+      "endpoint": "entities+search",
+      "defect_type": "Type4_StateViolation",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with 10 entities, delete ids [1,2,3,4,5], search immediately after",
+          "observed": "Before delete: search returns [0,1,2,3,4,5,6,7,8,9]; Delete returns count=5; After delete (immediate): search STILL returns [0,1,2,3,4,5,6,7,8,9] - deleted entities 1-5 still present in results",
+          "evidence_cmd": "python -c 'from pymilvus import MilvusClient; client = MilvusClient(\"http://localhost:19530\"); client.create_collection(\"test_stale_check\", 4); client.insert(\"test_stale_check\", [{\"id\": i, \"vector\": [0.1,0.2,0.3,0.4]} for i in range(10)]); client.load_collection(\"test_stale_check\"); print(client.search(\"test_stale_check\", [[0.1,0.2,0.3,0.4]], 10, [\"id\"])[0]); client.delete(\"test_stale_check\", \"id in [1,2,3,4,5]\"); print(client.search(\"test_stale_check\", [[0.1,0.2,0.3,0.4]], 10, [\"id\"])[0])'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_verified": [
+            "Collection is loaded before search (verified: load_collection called)",
+            "Delete operation succeeded (verified: delete_count=5 returned)",
+            "Search uses correct collection and vector (verified: same query params)",
+            "Milvus maintains internal consistency between delete and search operations"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_delete_001 - 'Deleted entities cannot be recovered' (assertion: delete is irreversible)",
+            "constraint_id: milvus_state_entities_search_001 - 'Collection must be loaded; index must exist on annsField'",
+            "invariant_id: milvus_invariant_delete_count_001 - 'After deleting entities matching a filter, get_stats rowCount must decrease by the number of deleted entities'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "DeletedRecord",
+            "timestamp",
+            "delete.*buffer",
+            "mvccTimestamp",
+            "consistency.*level"
+          ],
+          "files_examined": [
+            "internal/core/src/segcore/DeletedRecord.h",
+            "internal/querynodev2/delegator/delegator_data.go",
+            "internal/querynodev2/delegator/deletebuffer/delete_buffer.go",
+            "internal/querynodev2/delegator/delegator.go",
+            "internal/querynodev2/tasks/search_task.go"
+          ],
+          "source_excerpt": "// internal/core/src/segcore/DeletedRecord.h line 68-80\ntemplate <bool is_sealed = false>\nclass DeletedRecord {\n public:\n  DeletedRecord(InsertRecord<is_sealed>* insert_record,\n                std::function<void(\n                    const std::vector<PkType>& pks,\n                    const Timestamp* timestamps,\n                    std::function<void(SegOffset offset, Timestamp ts)> cb)>\n                    search_pk_func,\n                int64_t segment_id)\n    : insert_record_(insert_record),\n      search_pk_func_(std::move(search_pk_func)),\n      segment_id_(segment_id),\n\n// internal/querynodev2/delegator/delegator.go line 463-466\n// use tsafe as mvcc timestamp if request not provide it\nif req.GetReq().GetMvccTimestamp() == 0 {\n    req.Req.MvccTimestamp = tSafe\n}\n\n// internal/querynodev2/delegator/deletebuffer/delete_buffer.go line 40-62\ntype DeleteBuffer[T timed] interface {\n\tPut(T)\n\tListAfter(uint64) []T\n\tSafeTs() uint64\n\tTryDiscard(uint64)\n\t// Register L0 segment\n\tRegisterL0(segments ...segments.Segment)\n\t// Clean delete data\n\tUnRegister(ts uint64)",
+          "call_chain_traced": "DeleteBuffer stores deleted records with timestamps → Search requests use mvccTimestamp for consistency → When mvccTimestamp not provided, delegator uses tSafe (timestamp at start of request) → Delete may arrive AFTER tSafe is captured → Search with stale tSafe doesn't see newly deleted records",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "timestamp_synchronization_gap",
+          "note": "源码接地发现: Milvus 使用 mvccTimestamp 实现 TimeTravel 语义。delegator.go:463-466 显示,当请求未提供 mvccTimestamp 时,使用 tSafe (delegator 启动时的安全时间戳)。删除操作通过 DeleteBuffer 传播,其时间戳可能晚于 tSafe,导致立即搜索仍使用旧时间戳,无法看到最新删除。这是 MVCC 时间戳同步窗口问题,不是删除失败。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification using get_collection_stats and delayed search",
+          "observed": "get_collection_stats.row_count = 0 immediately after delete (correct), but search still returns 10 entities including deleted ones. Search 5 seconds later still returns stale data. Row count and search results are inconsistent, proving state violation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment (Docker, filesystem - controlled test environment)",
+            "Request parameter error (same params used before and after delete)",
+            "API semantics misunderstanding (delete clearly returned count=5, indicating success)",
+            "Concurrent race (single-threaded sequential test)",
+            "Cache timeout issue (issue persists across multiple search attempts)"
+          ],
+          "surviving": "mvcc_timestamp_synchronization_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中明确的 by_design 或 rejection_pattern。但命中 blindspot_indicators: 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects' - 虽非本案例直接问题,但显示时间戳一致性是已知薄弱区域。"
+      },
+      "root_cause_if_confirmed": "mvcc_timestamp_propagation_delay",
+      "severity_after_review": "High",
+      "rationale": "删除操作成功(delete_count=5),但立即搜索返回的结果仍包含已删除的实体(ids 1-5)。源码分析显示,Milvus 使用 MVCC 时间戳实现一致性:delegator.go:463-466 当搜索请求未提供 mvccTimestamp 时使用 tSafe(启动时间戳)。删除通过 DeleteBuffer 传播,其时间戳晚于 tSafe,导致搜索使用过时的时间戳窗口。这是 TimeTravel 语义实现中的时间戳同步窗口问题,违反了 'Deleted entities cannot be recovered' (milvus_state_entities_delete_001) 状态约束。独立证伪通过 row_count=0 vs search返回10条 证实了状态不一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "mvcc_timestamp_propagation_delay": 1
+    }
+  }
+}

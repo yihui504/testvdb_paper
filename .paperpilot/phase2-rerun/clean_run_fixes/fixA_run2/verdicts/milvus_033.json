@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with vectorFieldType=InvalidVectorType",
+          "observed": "API returns HTTP 200 with code:0, collection created successfully. Invalid vectorFieldType value is silently ignored.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_repro\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"InvalidVectorType\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect conclusion assumes that vectorFieldType should be validated and used to determine the vector field type",
+            "The raw request explicitly includes vectorFieldType=InvalidVectorType, which should be rejected if the parameter were functional"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+create",
+            "parameter: vectorFieldType (appears in API surface but behavior undefined in contract)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "vectorFieldType",
+            "VectorFieldType",
+            "CollectionReq struct",
+            "DataType_FloatVector",
+            "createCollection.*func"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go lines 690-703\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// NOTE: No vectorFieldType field exists in CollectionReq struct\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 1915-1927\n{\n\tFieldID:      common.StartOfUserFieldID + 1,\n\tName:         httpReq.VectorFieldName,\n\tIsPrimaryKey: false,\n\tDataType:     schemapb.DataType_FloatVector,  // HARDCODED - ignores vectorFieldType parameter\n\tTypeParams: []*commonpb.KeyValuePair{\n\t\t{\n\t\t\tKey:   Dim,\n\t\t\tValue: strconv.FormatInt(int64(httpReq.Dimension), 10),\n\t\t},\n\t},\n\tAutoID: DisableAutoID,\n}",
+          "call_chain_traced": "CollectionReq struct (no vectorFieldType field) → createCollection handler → hardcoded DataType_FloatVector at line 1919",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:vectorFieldType 参数完全不存在于 CollectionReq 结构体中,createCollection 函数在 line 1919 硬编码 DataType_FloatVector,完全忽略用户提供的 vectorFieldType 值。这是真正的 API 参数缺失缺陷。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Describe created collection to verify vector field type",
+          "observed": "Collection describe shows vector field type is always FloatVector regardless of vectorFieldType parameter value (InvalidVectorType, Float16Vector, etc.)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_repro\", \"dbName\": \"default\"}' | python -m json.tool"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment noise - tested on clean Milvus container",
+            "Request parameter typo - parameter name is correctly spelled as vectorFieldType",
+            "API semantics misunderstanding - vectorFieldType is a documented parameter in API surface"
+          ],
+          "surviving": "parameter_accepted_but_ignored"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; Returns wrong values for large integers; Array fields in raw protobuf format",
+        "note": "This defect directly matches the BDP-001 pattern from bug_shapes.json: 'REST_v2_data_type_handling' - REST v2 API fails to properly handle data type parameters. The vectorFieldType parameter is silently ignored, which is the same class of issue as other REST v2 data type handling problems documented in the corpus."
+      },
+      "root_cause_if_tp": "parameter_accepted_but_ignored",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion found for vectorFieldType validation (parameter is undocumented in contract constraints)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "vectorFieldType should only accept valid vector data types (FloatVector, BinaryVector, Float16Vector, BFloat16Vector) if parameter is functional",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (silently ignoring critical type parameter is a defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 POST /collections/create endpoint accepts vectorFieldType parameter but completely ignores it. Source code analysis confirms: (1) CollectionReq struct lacks vectorFieldType field, (2) createCollection handler hardcodes DataType_FloatVector at line 1919, (3) No validation exists for vectorFieldType values. This is a genuine API defect where the parameter surface accepts user input but has no implementation, creating a false impression of configurability. Matches known REST v2 data type handling issues (milvus/issues/52232, 52230, 52229)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_accepted_but_ignored": 1
+    }
+  }
+}

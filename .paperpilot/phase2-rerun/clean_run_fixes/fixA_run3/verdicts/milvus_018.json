@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_018",
+      "endpoint": "collections+rename",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: POST /collections/rename with existing destination collection name",
+          "observed": "HTTP 200 with code 65535, message: 'duplicated new collection name default:test_rename_dst with other collection name or alias'",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/collections/rename -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rename_src\", \"newCollectionName\": \"test_rename_dst\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_rename_001 - 'Collection must exist; new name must not already exist'",
+            "endpoint_registry: '400 if new name already exists'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": ["RenameCollection", "duplicated.*collection", "rename.*collection"],
+          "files_examined": [
+            "internal/rootcoord/meta_table.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/meta_table.go lines 1126-1131\n\t// check new collection already exists\n\tcoll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\n\tif coll != nil {\n\t\tlog.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n\t\treturn fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n\t}",
+          "call_chain_traced": "HTTP handler -> proxy.RenameCollection -> rootcoord meta_table.getCollectionByNameInternal -> duplicate check returns error -> error propagated with code 65535 instead of HTTP 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wrong_http_status",
+          "note": "源码接地发现:rootcoord层确实做了重复名称校验(正确逻辑),但HTTP层未将error转换为HTTP 400状态码,而是返回HTTP 200+code 65535。违反契约明文规定'400 if new name already exists'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4: Verify error is NOT a false positive by testing with non-existent destination",
+          "observed": "When destination does NOT exist, rename succeeds with HTTP 200 code 0 - confirming the duplicate detection logic works correctly, but HTTP status code is wrong"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (test in clean Docker container)",
+            "Race condition (deterministic reproduction)",
+            "Request parameter typo (verified correct parameters)",
+            "API semantic misunderstanding (contract explicitly states HTTP 400 for this case)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何by_design模式;此为真正的契约违反,非维护者有意设计"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "HTTP 400 if new name already exists (constraint_id: milvus_state_collections_rename_001, endpoint_registry quote: '400 if new name already exists')",
+          "source_implements_check": true,
+          "api_observed_value": "HTTP 200 with code 65535",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Collection names must be unique within a database",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (契约违反是最高优先级)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "契约明文规定'400 if new name already exists',但实测API返回HTTP 200+code 65535。源码接地确认rootcoord层确实做了重复校验(正确),但HTTP层未将error转换为HTTP 400状态码。这是真正的HTTP状态码违反契约,非误报。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

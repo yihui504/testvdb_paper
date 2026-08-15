@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_review/points with empty vector [] (dimension 0) in collection expecting dimension 4, tested with both wait=false and wait=true",
+          "observed": "wait=false: HTTP 200 with status='acknowledged'; wait=true: HTTP 400 with 'Vector dimension error: expected dim: 4, got 0'",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_review/points -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 100, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: Empty vector [] should be rejected regardless of wait parameter - VIOLATED",
+            "Assumption 2: Dimension validation should occur synchronously in both paths - VIOLATED",
+            "Assumption 3: 'acknowledged' status means operation was accepted, not just queued - VIOLATED"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "API implicitly requires vector dimension match with collection config (size: 4)",
+            "Sync path (wait=true) correctly enforces dimension validation with HTTP 400",
+            "Async path (wait=false) skips validation and returns misleading 'acknowledged' status"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "Vector dimension error",
+            "expected_dim",
+            "check_vector_against_config",
+            "update_from_client",
+            "update_local",
+            "UpdateStatus::Acknowledged"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/shards/replica_set/update.rs",
+            "lib/collection/src/shards/local_shard/shard_ops.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/points.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/shards/local_shard/shard_ops.rs line 50-97\nasync fn update(\n    &self,\n    mut operation: OperationWithClockTag,\n    wait: bool,\n) -> CollectionResult<UpdateResult> {\n    let (callback_sender, callback_receiver) = if wait {\n        let (tx, rx) = oneshot::channel();\n        (Some(tx), Some(rx))  // wait=true: creates callback for validation errors\n    } else {\n        (None, None)  // wait=false: no callback, errors lost\n    };\n    \n    // ... operation queued ...\n    \n    if let Some(receiver) = callback_receiver {\n        let _res = receiver.await??;  // wait=true: awaits validation result\n        Ok(UpdateResult {\n            operation_id: Some(operation_id),\n            status: UpdateStatus::Completed,\n            clock_tag: operation.clock_tag,\n        })\n    } else {\n        Ok(UpdateResult {\n            operation_id: Some(operation_id),\n            status: UpdateStatus::Acknowledged,  // wait=false: returns immediately\n            clock_tag: operation.clock_tag,\n        })\n    }\n}\n\n// lib/segment/src/common/mod.rs line 184-194\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),  // Validation happens DEEP in async handler\n                });\n            }\n            Ok(())\n        }\n        // ...\n    }\n}",
+          "call_chain_traced": "REST API (update_api.rs) → do_upsert_points → toc.update → collection.update_from_client (initial validate() passes PointList) → shard.update_local (creates callback if wait) → update handler → process_point_operation → upsert_points → segment.upsert_point → check_vector_against_config (actual validation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_happens_async_deep",
+          "note": "源码接地发现：Vector dimension validation occurs DEEP in the async update handler (lib/segment/src/common/mod.rs:184-194), NOT in the initial API validation layer. When wait=false, validation errors are lost and client receives misleading 'acknowledged' status for data that will never be inserted."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/test_review after 'acknowledged' insertion + GET /collections/test_review/points to retrieve point 100",
+          "observed": "points_count=0, retrieval returns [] - the acknowledged point was never actually inserted despite the success response",
+          "evidence_cmd": "curl http://localhost:6333/collections/test_review | grep points_count"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on standard Docker)",
+            "Race condition (reproducible 100%)",
+            "Request parameter typo (identical requests, only wait differs)",
+            "API semantics misunderstanding (dimension validation IS expected)",
+            "Platform compatibility (standard qdrant:1.12.1 image)"
+          ],
+          "surviving": "inconsistent_validation_based_on_wait_parameter"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "API backward compatibility over strict validation",
+        "note": "Hits parameter_validation blindspot in developer cognition. Developers prioritize backward compatibility and async performance over strict validation, allowing silent failures in wait=false path."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Vector dimension must match collection config (size: 4). Contract implies validation via sync path behavior (wait=true rejects dimension mismatch with HTTP 400).",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Collection config requires vectors.size = 4. Empty vector [] has dimension 0, violating physical constraint.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Qdrant has inconsistent validation behavior for vector dimension checks based on the wait parameter. With wait=true, empty vectors (dimension 0) are correctly rejected with HTTP 400 'Vector dimension error: expected dim: 4, got 0'. With wait=false, the same invalid input returns HTTP 200 status='acknowledged' but the point is never actually inserted (points_count remains 0). Source code analysis confirms dimension validation occurs deep in the async update handler (lib/segment/src/common/mod.rs check_vector_against_config), not during initial API validation. When wait=false, validation errors are silently discarded and clients receive misleading success responses for operations that will fail asynchronously. This is a Type1_IllegalSuccess bug: API accepts invalid input and returns success when it should reject it."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "inconsistent_validation_based_on_wait_parameter": 1
+    }
+  }
+}

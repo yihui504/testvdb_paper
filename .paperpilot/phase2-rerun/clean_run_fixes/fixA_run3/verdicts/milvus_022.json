@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with collectionName='test_dev_review', dimension=4, metricType='COSINE', idType='Int64', autoID=false - executed twice",
+          "observed": "Both requests returned HTTP 200 with success code 0. Second create request for existing collection returned success instead of error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review\", \"dimension\": 4, \"metricType\": \"COSINE\", \"idType\": \"Int64\", \"autoID\": false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect assumption that 'creating a collection with an existing name should fail' is incorrect - Milvus intentionally implements idempotent collection creation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Source code internal/rootcoord/root_coord.go line 904: explicit handling of duplicate collection creation with comment 'create existed collection with same schema, ignore it'",
+            "Source code internal/rootcoord/meta_table.go line 56: errIgnoredCreateCollection error constant definition",
+            "Source code internal/rootcoord/create_collection_task.go lines 532-537: validation logic that checks for existing collections and returns errIgnoredCreateCollection when schema matches"
+          ],
+          "note": "structured_contract.json not available for this target/version, relied on direct source code analysis"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": [
+            "errIgnoredCreateCollection",
+            "create existed collection with same schema",
+            "validateIfCollectionExists"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task.go",
+            "internal/coordinator/mix_coord.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/meta_table.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go lines 532-537\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection\n\t}\n\n// internal/rootcoord/root_coord.go lines 903-906\n\t\tif errors.Is(err, errIgnoredCreateCollection) {\n\t\t\tlogger.Info(\"create existed collection with same schema, ignore it\")\n\t\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n\t\t\treturn merr.Success(), nil\n\t\t}\n\n// internal/rootcoord/meta_table.go line 56\n\terrIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.",
+          "call_chain_traced": "REST v2 handler_v2.go → proxy.CreateCollection → createCollectionTask.PreExecute (no duplicate check) → createCollectionTask.Execute → mixCoord.CreateCollection → rootCoord.CreateCollection → broadcastCreateCollectionV1 → createCollectionTask.validateIfCollectionExists (checks GetCollectionByName, returns errIgnoredCreateCollection if same schema) → rootCoord.CreateCollection catches errorIgnoredCreateCollection and returns success",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly implements idempotent collection creation. Dedicated error constant errIgnoredCreateCollection with comment 'ignored create collection' confirms this is intentional design, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has collectionName='test_dev_review' + POST /v2/vectordb/collections/list",
+          "observed": "Collection exists (has=true) and appears in list. Subsequent create calls succeed, confirming idempotent behavior is working as designed.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review\", \"dbName\": \"default\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - ruled out, behavior consistent across multiple test runs",
+            "Concurrency/race - ruled out, sequential requests show same behavior",
+            "Cache/optimizer delay - ruled out, immediate second request shows same response"
+          ],
+          "surviving": "by_design_idempotent_api"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-002",
+        "developer_quote": "Design may prioritize scalability over perfect balance",
+        "pattern_id": "by_design",
+        "rejection_reason": "intentional design choice",
+        "note": "While not explicitly listed in by_design_patterns, the source code clearly shows this is intentional idempotent behavior with dedicated error handling and logging. Matches RP-002 pattern: 'Issue rejected as intentional design choice'."
+      },
+      "root_cause_if_fp": "by_design_idempotent_api",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None in structured_contract.json (file not available). Source code shows explicit by-design handling: 'create existed collection with same schema, ignore it'",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Collection names are namespace identifiers (expected uniqueness)",
+          "api_accepts_violation": true,
+          "note": "While collection names logically should be unique, Milvus intentionally relaxes this constraint for idempotency - only errors if schemas differ",
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "evidence": "Explicit source code comments, dedicated error constant (errIgnoredCreateCollection), and conditional success return confirm this is intentional by-design idempotent behavior",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (by-design idempotent behavior confirmed in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Milvus REST v2 API implements idempotent collection creation by design. Source code internal/rootcoord/root_coord.go line 904 explicitly logs 'create existed collection with same schema, ignore it' and returns success. Dedicated error constant errIgnoredCreateCollection (meta_table.go line 56) confirms this is intentional. The createCollectionTask.validateIfCollectionExists method (create_collection_task.go lines 532-537) checks for existing collections and returns the 'ignored' error when schemas match. Only differs from expected uniqueness semantics when schemas differ (line 535: returns error for 'create duplicate collection with different parameters'). This is well-designed idempotent API behavior, not a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "by_design_idempotent_api": 1
+    }
+  }
+}

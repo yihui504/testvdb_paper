@@ -1,0 +1,120 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_008",
+      "endpoint": "/schema/{className}/tenants",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema/TestTenant/tenants with body=[{\"name\": \"tenant_empty\", \"activityStatus\": \"\"}]",
+          "observed": "HTTP 200 OK with response [{\"name\":\"tenant_empty\"}] - empty activityStatus accepted",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema/TestTenant/tenants' -H 'Content-Type: application/json' -d '[{\"name\": \"tenant_empty\", \"activityStatus\": \"\"}]'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Request includes required className parameter",
+            "Request includes body with array of Tenant objects",
+            "activityStatus field is provided in request (albeit empty string)",
+            "Expected behavior: API should reject empty activityStatus as invalid enum value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_tenants_create_001",
+            "assertion: body[].activityStatus in {ACTIVE, INACTIVE}",
+            "endpoint: /schema/{className}/tenants POST",
+            "description: Tenant.activityStatus on create must be ACTIVE or INACTIVE"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "activityStatus",
+            "validateTenants",
+            "Tenant Validate",
+            "tenants.*create"
+          ],
+          "files_examined": [
+            "usecases/schema/tenant.go",
+            "entities/models/tenant.go",
+            "adapters/handlers/rest/handlers_schema.go",
+            "adapters/handlers/rest/operations/schema/tenants_create.go"
+          ],
+          "source_excerpt": "// usecases/schema/tenant.go line 103-128\nfunc validateTenants(tenants []*models.Tenant, allowOverHundred bool) (validated []*models.Tenant, err error) {\n\tif !allowOverHundred && len(tenants) > 100 {\n\t\terr = uco.NewErrInvalidUserInput(ErrMsgMaxAllowedTenants)\n\t\treturn validated, err\n\t}\n\tuniq := make(map[string]*models.Tenant)\n\tfor i, requested := range tenants {\n\t\tif errMsg := schema.ValidateTenantName(requested.Name); errMsg != nil {\n\t\t\terr = uco.NewErrInvalidUserInput(\"tenant name at index %d: %s\", i, errMsg.Error())\n\t\t\treturn validated, err\n\t\t}\n\t\t_, found := uniq[requested.Name]\n\t\tif found {\n\t\t\terr = uco.NewErrInvalidUserInput(\"tenant name %s existed multiple times\", requested.Name)\n\t\t\treturn validated, err\n\t\t}\n\t\tuniq[requested.Name] = requested\n\t}\n\tvalidated = make([]*models.Tenant, len(uniq))\n\ti := 0\n\tfor _, tenant := range uniq {\n\t\tvalidated[i] = tenant\n\t\ti++\n\t}\n\treturn validated, err\n}\n\n// entities/models/tenant.go line 109-120\nfunc (m *Tenant) validateActivityStatus(formats strfmt.Registry) error {\n\tif swag.IsZero(m.ActivityStatus) { // not required\n\t\treturn nil  // <-- EMPTY STRING PASSES HERE\n\t}\n\n\t// value enum\n\tif err := m.validateActivityStatusEnum(\"activityStatus\", \"body\", m.ActivityStatus); err != nil {\n\t\treturn err\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema/{className}/tenants → handlers_schema.go:createTenants() → tenant.go:AddTenants() → validateTenants() → [MISSING: tenants[i].Validate() call]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:validateTenants()函数只验证租户名称(ValidateTenantName),完全跳过了Tenant.Validate()调用。虽然entities/models/tenant.go有validateActivityStatus()方法,但从未被调用。空字符串被swag.IsZero()判定为'not required'而直接返回nil,导致非法值通过验证。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证合法值也能正常工作: POST with activityStatus=ACTIVE → HTTP 200, POST with activityStatus=INACTIVE → HTTP 200",
+          "observed": "合法枚举值(ACTIVE/INACTIVE)正常工作,证明问题仅在于缺少对非法值的校验",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema/TestTenant/tenants' -H 'Content-Type: application/json' -d '[{\"name\": \"tenant_valid\", \"activityStatus\": \"ACTIVE\"}]'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题",
+            "并发race",
+            "缓存/优化器延迟",
+            "请求参数笔误",
+            "API语义误解"
+          ],
+          "surviving": "param_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "命中bug_shapes.json的BS-004模式(请求解析中的参数验证问题),开发者认知明确指出'API边界的输入验证经常不完整',本缺陷正是此类问题的典型案例"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: weaviate_type_tenants_create_001 - body[].activityStatus in {ACTIVE, INACTIVE}",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "body[].activityStatus in {ACTIVE, INACTIVE}",
+          "api_observed_value": "activityStatus=\\\"\\\" (empty string) accepted with HTTP 200",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "activityStatus is an enum field with finite valid values {ACTIVE, INACTIVE}",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API优雅地接受了非法值(返回200而非422),但源码中validateTenants()函数完全没有调用Tenant.Validate(),这显然是遗漏而非有意设计"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint violation) + verdict_C=CONFIRMED (not by-design) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "源码接地发现关键证据:validateTenants()函数在usecases/schema/tenant.go第103-128行只验证租户名称,完全跳过了对Tenant对象本身的Validate()调用。虽然entities/models/tenant.go定义了validateActivityStatus()方法,但它从未被执行。该方法中swag.IsZero()将空字符串视为'not required'直接返回nil,导致空字符串绕过了枚举验证。contract明确要求activityStatus必须是{ACTIVE, INACTIVE}之一,但实际API接受空字符串并返回200,这是典型的Type1_IllegalSuccess参数验证缺失缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams: {groupByField: 'cat', groupSize: 2, strictGroupSize: true}",
+          "observed": "Request accepted (HTTP 200), returned 15 results with each category appearing exactly 3 times, violating strictGroupSize=true which should limit each group to exactly 2 results",
+          "evidence_cmd": "Original output log shows 15 results where cat values [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0,4,3,2,1,0] - each of the 5 categories (0-4) appears exactly 3 times instead of the requested 2 times"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Response is expected to contain grouped results based on 'cat' field",
+            "groupSize=2 should limit each group to at most 2 results",
+            "strictGroupSize=true should strictly enforce groupSize limit",
+            "Milvus returns results grouped by the specified field"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "REST API entities+search supports groupParams with groupingField, groupSize, and strictGroupSize fields",
+            "strictGroupSize parameter is defined in request_v2.go:501 as boolean field",
+            "Grouping functionality is a documented feature for limiting results per group"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0",
+          "grep_queries": [
+            "strictGroupSize",
+            "groupSize",
+            "ResultInfo",
+            "reduceSearchResultDataWithGroupBy"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/search_reduce_util.go",
+            "internal/util/reduce/reduce_info.go",
+            "internal/proxy/search_reduce_util.go"
+          ],
+          "source_excerpt": "// internal/util/reduce/reduce_info.go lines 10-20\n type ResultInfo struct {\n\tnq                  int64\n\ttopK                int64\n\tmetricType          string\n\tpkType              schemapb.DataType\n\toffset              int64\n\tgroupSize           int64\n\tisAdvance           bool\n\tgroupByFieldIds     []int64\n\tisSearchAggregation bool\n}\n\n// NOTE: No strictGroupSize field exists in ResultInfo struct!\n\n// internal/proxy/search_reduce_util.go line 87-97\nfunc reduceSearchResultDataWithGroupBy(\n\tctx context.Context,\n\tsubSearchResultData []*schemapb.SearchResultData,\n\tnq, topk int64,\n\tmetricType string,\n\tpkType schemapb.DataType,\n\toffset int64,\n\tgroupSize int64,\n\tgroupByFieldIDs []int64,\n\tisSearchAggregation bool,\n) (*milvuspb.SearchResults, error) {\n\t// NOTE: No strictGroupSize parameter received!\n\n// internal/proxy/search_reduce_util.go lines 235-236\n} else if exists && int64(len(bucket)) >= groupSize {\n\t// group full - ALWAYS applies groupSize limit regardless of strictGroupSize setting\n",
+          "call_chain_traced": "HTTP request (request_v2.go StrictGroupSize field) → search_util.go (rankParams.GetStrictGroupSize()) → search_reduce_util.go (reduceSearchResultDataWithGroupBy) – MISSING: strictGroupSize not passed to reduce function",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: strictGroupSize 参数在 HTTP 请求层被正确解析并存储在 rankParams 结构体中，但在实际执行分组缩减的 reduceSearchResultDataWithGroupBy 函数中完全缺失。ResultInfo 结构体未定义 strictGroupSize 字段，导致该参数无法传递到缩减逻辑中。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Analyzed response data structure: counted occurrences of each category value in the returned results",
+          "observed": "Each category (cat values 0-4) appears exactly 3 times in the 15 results. With strictGroupSize=true and groupSize=2, each category should appear at most 2 times. The observed behavior proves that strictGroupSize is being ignored.",
+          "evidence_cmd": "Response analysis showed: cat=0: 3 occurrences, cat=1: 3 occurrences, cat=2: 3 occurrences, cat=3: 3 occurrences, cat=4: 3 occurrences. Expected max 2 per category with strictGroupSize=true."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (running in clean Milvus container)",
+            "Concurrency issues (single request test)",
+            "Request parameter errors (well-formed JSON with correct parameter names)",
+            "API semantic misunderstandings (grouping is a documented Milvus feature)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This defect falls under the 'REST v2 API data type serialization' blindspot area. The strictGroupSize parameter is accepted by the REST API but not properly implemented in the core reduce logic, representing a cross-layer inconsistency."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "The strictGroupSize parameter is parsed and stored at the HTTP request layer but completely missing from the ResultInfo structure and reduce function signature. The grouping logic at line 235-236 in search_reduce_util.go applies groupSize limits unconditionally, with no code path to respect strictGroupSize=false. This is a clear implementation gap where a documented API parameter is not wired to the execution logic. The violation is reproducible and confirmed through both raw response analysis and source code inspection."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

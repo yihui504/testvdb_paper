@@ -1,0 +1,103 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create → POST /v2/vectordb/entities/insert → POST /v2/vectordb/entities/search (no explicit load)",
+          "observed": "Search returned results: {\"code\":0,\"data\":[{\"distance\":1,\"id\":1}],\"topks\":[1]} despite collection never explicitly loaded",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_unloaded\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"annsField\": \"vector\", \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "REST v2 search should enforce explicit collection load state",
+            "Contract constraint milvus_state_entities_search_001 requires: collection is loaded AND index exists on annsField"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001",
+            "assertion: collection is loaded AND index exists on annsField",
+            "source: https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "collection.*load|auto.*load|lazy.*load",
+            "search|Search",
+            "GetShard|collection.*load"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/shardclient/lb_policy.go",
+            "internal/proxy/meta_cache.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1487-1549\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\t// ... parameter parsing ...\n\t}\n\t// NO explicit load state check before calling h.proxy.Search()\n\t// Search proceeds directly without validating collection load state\n}\n\n// internal/proxy/shardclient/lb_policy.go line 108-126\n// GetShard will retry until ctx done, except the collection is not loaded.\nfunc (lb *LBPolicyImpl) GetShard(ctx context.Context, dbName string, collName string, collectionID int64, channel string, withCache bool) ([]NodeInfo, error) {\n\t// Comments acknowledge 'collection not loaded' state but load check appears deferred/implicit\n}",
+          "call_chain_traced": "REST v2 search handler → h.proxy.Search → shardclient.GetShard → NO explicit load state validation found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 /entities/search 处理链路(handler_v2.go:1487 search函数)中未发现显式的 collection load state 检查。虽然 shardclient 有关于 'collection not loaded' 的注释,但未在搜索入口处进行前置验证,导致未显式加载的 collection 仍可返回搜索结果,违反契约约束 milvus_state_entities_search_001"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/get_load_state for collection",
+          "observed": "Load state shows loadProgress=100, loadState='LoadStateLoaded' despite no explicit load call → indicates implicit auto-load behavior or load state not enforced"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on running Milvus container",
+            "Concurrent race - single sequential operation",
+            "Request param typo - used valid search parameters"
+          ],
+          "surviving": "contract_misread可能性低;API实测表明REST v2存在隐式auto-load或load state enforcement缺失"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中开发者认知盲点:REST v2 与 gRPC 验证行为不一致。根据 developer_cognition.json,维护者明确将此类跨通道不一致视为缺陷。本案符合此模式——REST v2 绕过了契约要求的显式 load 检查"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "复现成功:未显式调用 load endpoint的 collection 可直接返回搜索结果(HTTP 200 + 数据),违反契约约束 milvus_state_entities_search_001('collection must be loaded')。源码接地确认 REST v2 搜索处理链路(handler_v2.go:1487)中缺失显式 load state 前置检查。虽然 get_load_state 返回 loaded 状态(可能隐式 auto-load),但契约未声明此豁免,且与开发者认知的 'REST v2 验证松弛' 盲点模式一致,判定为真缺陷。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "milvus_state_entities_search_001: collection is loaded AND index exists on annsField",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "搜索操作依赖集合在内存中的索引结构;未加载的集合无法进行有效搜索",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override contract/physical violations)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

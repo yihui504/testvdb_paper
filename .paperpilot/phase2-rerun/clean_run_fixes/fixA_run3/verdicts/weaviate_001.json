@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_001",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with {\"class\": \"TestDevReview001\", \"vectorIndexConfig\": {\"dynamicEfMin\": 500, \"dynamicEfMax\": 10}} (logically invalid: min > max)",
+          "observed": "HTTP 200 OK - API accepts and stores logically invalid parameters (min > max)",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestDevReview001\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"dynamicEfMin\": 500, \"dynamicEfMax\": 10, \"dynamicEfFactor\": 8}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["no explicit contract constraint for dynamicEfMin ≤ dynamicEfMax"],
+          "note": "Contract does not specify validation relationship between dynamicEfMin and dynamicEfMax"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["dynamicEfMin", "dynamicEfMax", "validate"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/hnsw/config_test.go",
+            "test/acceptance/schema/get_schema_without_client_test.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 260-323\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\t// ... NO CHECK for dynamicEfMin <= dynamicEfMax\n\treturn nil\n}",
+          "call_chain_traced": "ParseAndValidateConfig → UserConfig.validate() → NO validation of dynamicEfMin <= dynamicEfMax relationship",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: validate()函数检查 maxConnections, efConstruction, filterStrategy,但完全未检查 dynamicEfMin <= dynamicEfMax 的逻辑约束"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestDevReview001 verify stored values",
+          "observed": "Stored values confirmed: dynamicEfMin=500, dynamicEfMax=10 - logically invalid (min > max) successfully persisted",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestDevReview001 | grep -o '\"dynamicEfMin\":[^,]*' && curl -s http://localhost:18080/v1/schema/TestDevReview001 | grep -o '\"dynamicEfMax\":[^,}]*'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment", "race_condition", "request_param_typo", "api_semantics"],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Processing - Accepting invalid parameter values on write endpoints",
+        "pattern_details": "Matches historical bug shape BS-004: Parameter validation gaps at API boundaries accepting invalid values (dynamicEfMin > dynamicEfMax) with HTTP 200 success",
+        "note": "Aligns with developer cognition: parameter validation gaps are considered real bugs"
+      },
+      "root_cause_if_confirmed": "parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found for dynamicEfMin ≤ dynamicEfMax",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Semantic impossibility: min value must be ≤ max value for any ranged parameter. This is a fundamental physical/logical constraint.",
+          "api_accepts_violation": true,
+          "api_observed_violation": "dynamicEfMin=500 > dynamicEfMax=10 accepted and stored with HTTP 200",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "error_message": "No error returned; HTTP 200 with logically invalid config stored",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical/semantic violation) → final=CONFIRMED (contract neutral, but physical constraint violation is sufficient)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "POST /schema accepts logically invalid dynamicEf parameters (min=500 > max=10) without validation. Source code entities/vectorindex/hnsw/config.go validate() function (lines 260-323) checks maxConnections, efConstruction, and filterStrategy ranges, but completely omits the semantic constraint that dynamicEfMin must be ≤ dynamicEfMax. This violates fundamental physical/semantic constraints (ranged parameters require min ≤ max). The invalid values are successfully persisted (verified via GET /schema), confirming this is a real parameter validation gap matching historical bug shape BS-004."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

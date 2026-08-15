@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points?wait=true with 3D vector to 4D collection",
+          "observed": "400 error: 'Wrong input: Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 400, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect conclusion assumes API should reject invalid vector dimensions synchronously regardless of wait parameter",
+            "Raw evidence shows: wait=false (async) returns 200 acknowledged; wait=true (sync) returns 400 validation error",
+            "The claim 'API accepts invalid vectors' only holds for async mode where validation is deferred by design"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - specifies vector type but not dimension validation",
+            "constraint_id: qdrant_state_upsert_points_004 - states upsert is atomic (all or none)",
+            "invariant_id: qdrant_invariant_upsert_count - assumes 200 response means successful insertion",
+            "No contract assertion explicitly requires synchronous dimension validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "Vector dimension error",
+            "wait.*true.*wait.*false",
+            "upsert.*validation"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/collection/src/operations/verification/update.rs",
+            "lib/collection/src/shards/local_shard/mod.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 22-26\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\n// lib/segment/src/data_types/vectors.rs line 310-314\nif let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {\n    return Err(OperationError::WrongVectorDimension {\n        expected_dim: dim,\n        received_dim: bad_vec.len(),\n    });\n}\n\n// lib/collection/src/shards/local_shard/mod.rs line 873\nwait_for_deferred: false,  // Async operations defer validation",
+          "call_chain_traced": "UpsertRequest → Validation (conditional on wait=true) → vector dimension check → WrongVectorDimension error or accept",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_deferred",
+          "note": "源码接地发现: Qdrant 确实实现了向量维度校验(WrongVectorDimension),但校验时机取决于 wait 参数。wait=false(异步模式)时,操作先被 acknowledged,校验在后台执行;wait=true(同步模式)时,校验同步执行并返回错误。这是 by-design 的异步处理行为,非缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证同步模式确实拒绝无效维度",
+          "observed": "wait=true 时返回 400 错误,证明维度校验存在且有效。缺陷声称 'API accepts invalid vectors' 仅在异步模式成立,而异步模式的 acknowledged 响应是设计行为(操作已排队,校验在后台)。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(非 Windows/Docker 特定)",
+            "并发竞态(单线程顺序执行)",
+            "API 语义误解(异步处理是标准设计)"
+          ],
+          "surviving": "async_processing_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何 by_design_pattern。此案例属于异步 API 的标准行为模式,而非维护者明确声明的已知限制。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "qdrant_004 声称 'type_coercion: API accepts vectors with wrong dimensions'。双盲审查发现: (1) 步骤 1 复现成功但仅限 wait=true 同步模式,wait=false 异步模式返回 200 acknowledged 是正常设计; (2) 步骤 2 前提审计揭示缺陷依赖错误假设—认为所有请求都应同步校验维度; (3) 步骤 3 契约对照显示 contract 无显式维度校验要求; (4) 步骤 3.5 源码接地证实 Qdrant 确实有 WrongVectorDimension 校验,但执行时机由 wait 参数控制(异步队列 vs 同步); (5) 步骤 4 证伪证明同步模式正确拒绝无效维度; (6) 步骤 5 排除平凡解释后确认这是异步 API 的标准语义。结论:此非 bug,是报告者对 Qdrant 异步处理模式(wait 参数语义)的误解。API 在同步模式下正确校验维度,异步模式先 acknowledged 后后台校验也是 by-design。根因:mundane_api_semantics。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with collectionName=test_unloaded, data=[[0.1,0.2,0.3,0.4]], annsField=vector, limit=5",
+          "observed": "HTTP 200, response: {\"code\":0,\"cost\":0,\"data\":[{\"distance\":1,\"id\":1}],\"topks\":[1]}",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_unloaded\",\"data\":[[0.1,0.2,0.3,0.4]],\"annsField\":\"vector\",\"limit\":5}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Raw log shows no defect assertion or violation evidence - only normal successful request/response sequence"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_search_001 (vector dimension == collection dimension)",
+            "constraint_id: milvus_range_entities_search_002 (limit + offset < 16384)"
+          ],
+          "note": "Found relevant constraints but raw request (limit=5, offset=0) does not violate any known constraint"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["validateMaxQueryResultWindow", "validateLimit", "limit.*offset.*16384", "search.*handler"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/util.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task_query.go",
+            "internal/proxy/task_search.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 180-197\nfunc validateMaxQueryResultWindow(offset int64, limit int64, largeTopKEnabled bool) error {\n\tif offset < 0 {\n\t\treturn fmt.Errorf(\"%s [%d] is invalid, should be gte than 0\", OffsetKey, offset)\n\t}\n\tif limit <= 0 {\n\t\treturn fmt.Errorf(\"%s [%d] is invalid, should be greater than 0\", LimitKey, limit)\n\t}\n\tdepth := offset + limit\n\tmaxQueryResultWindow := Params.QuotaConfig.MaxQueryResultWindow.GetAsInt64()\n\tif largeTopKEnabled {\n\t\tmaxQueryResultWindow = Params.QuotaConfig.LargeMaxQueryResultWindow.GetAsInt64()\n\t}\n\tif depth <= 0 || depth > maxQueryResultWindow {\n\t\treturn fmt.Errorf(\"(offset+limit) should be in range [1, %d], but got %d\", maxQueryResultWindow, depth)\n\t}\n\treturn nil\n}\n\n// internal/proxy/util.go lines 199-208\nfunc validateLimit(limit int64, largeTopKEnabled bool) error {\n\ttopKLimit := Params.QuotaConfig.TopKLimit.GetAsInt64()\n\tif largeTopKEnabled {\n\t\ttopKLimit = Params.QuotaConfig.LargeTopKLimit.GetAsInt64()\n\t}\n\tif limit <= 0 || limit > topKLimit {\n\t\treturn fmt.Errorf(\"it should be in range [1, %d], but got %d\", topKLimit, limit)\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:1487 search func) → parse SearchReqV2 → validateMaxQueryResultWindow (util.go:180) → enforced at proxy layer with configurable MaxQueryResultWindow default=16384",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: REST v2 search 请求在 proxy 层通过 validateMaxQueryResultWindow 函数强制执行 limit+offset<16384 约束，默认值 16384。实测验证确认约束生效。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test edge cases: limit=17000 (rejected), limit=10000+offset=6400=16400 (rejected), limit=10000+offset=6384=16384 (accepted)",
+          "observed": "API correctly enforces constraint: 'topk [17000] is invalid, it should be in range [1, 16384]' and 'offset+topk [16400] is invalid, it should be in range [1, 16384]'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_unloaded\",\"data\":[[0.1,0.2,0.3,0.4]],\"annsField\":\"vector\",\"limit\":17000}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - Docker container正常运行",
+            "Concurrency/race - 单线程顺序操作无并发",
+            "Request parameter typo - limit=5是合法参数值",
+            "API semantics misunderstanding - 请求完全符合API规范"
+          ],
+          "surviving": "insufficient_evidence",
+          "note": "Raw log contains only 4 successful requests with no assertion of what defect was expected. Cannot identify what behavior was claimed to be defective."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何 by_design 或 rejection 模式。但这不影响 FP 判定——根本问题是 raw evidence 缺失。"
+      },
+      "root_cause_if_fp": "insufficient_evidence",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "Raw output_milvus_021.log 仅包含 4 个成功的 REST v2 请求（drop collection, create collection, insert, search），响应全部为 HTTP 200 且无错误。没有 oracle 断言标记、没有预期违规说明、没有异常行为。源码接地确认 API 存在 limit+offset<16384 约束且实测验证生效，但原始请求 (limit=5, offset=0) 完全合法。无法从 raw evidence 推断出声称的 defect 是什么——这属于证据不足，必须判 FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "insufficient_evidence": 1
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with collectionName='repro_<tracked>', data=[[0.1]*8], limit=3, searchParams={ef:0}, outputFields=['id']",
+          "observed": "HTTP 200 with results: {code:0, data:[{distance:0,id:0},{distance:0,id:1},{distance:0,id:2}], topks:[3]} - API accepts ef=0 without error",
+          "evidence_cmd": "Raw request REQ 5: POST http://localhost:19530/v2/vectordb/entities/search payload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"ef\": 0}, \"outputFields\": [\"id\"]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json entities_search endpoint: searchParams description='Extra search parameters' - no explicit constraint on ef range documented"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["search.*param", "ef.*validation", "generateSearchParams", "handler_v2.go"],
+          "files_examined": ["internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1485-1493\nsearchParams, err := generateSearchParams(httpReq.SearchParams)\nif err != nil {\n    log.Ctx(ctx).Warn(\"high level restful api, generate SearchParams failed\", zap.Error(err))\n    HTTPAbortReturn(c, http.StatusOK, gin.H{\n        HTTPReturnCode:    merr.Code(err),\n        HTTPReturnMessage: err.Error(),\n    })\n    return nil, err\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 2076-2131\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n    var searchParams []*commonpb.KeyValuePair\n    // ... processes searchParams ...\n    for key, value := range reqSearchParams {\n        if key != Params {\n            // for compatibility\n            if key == \"ignoreGrowing\" {\n                key = common.IgnoreGrowing\n            }\n            searchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n        }\n    }\n    return searchParams, nil\n}",
+          "call_chain_traced": "REST v2 search endpoint → generateSearchParams() → NO validation of ef parameter value → passes through to search backend",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 的 generateSearchParams 函数对 searchParams 中的参数做无校验透传,ef=0 这种非法值被直接传递给底层搜索,没有任何范围检查(ef >= 1 的物理约束未执行)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent test: Search with ef=0 returns HTTP 200 (no error) - bug behavior confirmed",
+          "observed": "No falsification evidence - API确实接受了 ef=0 这个违反物理约束的值并返回结果"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞态", "缓存延迟", "请求参数笔误", "API语义误解"],
+          "surviving": "validation_absent"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_types",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中开发者认知盲区:REST v2 数据类型/参数验证缺失,maintainers 明确将跨通道不一致视为缺陷"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码接地与开发者认知模型交叉验证:REST v2 searchParams 处理无校验直接透传,ef 参数(代表 HNSW 搜索的候选列表大小)存在客观物理约束 ef >= 1,但源码未执行此约束检查。开发者明确将 REST v2 与 gRPC 验证不一致视为缺陷。raw 证据显示 API 接受 ef=0 并返回 HTTP 200,无任何错误提示,违反了参数有效性基本原则。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "entities_search endpoint: searchParams is 'Extra search parameters' (no explicit ef >= 1 constraint in contract)",
+      "source_implements_check": false,
+      "verdict_A": "NEUTRAL"
+    },
+    "physical": {
+      "objective_constraint": "ef (HNSW search parameter) represents candidate list size, must satisfy ef >= 1 for meaningful HNSW search",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (physical violation + no graceful handling)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"validation_absent": 1}
+  }
+}

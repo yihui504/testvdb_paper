@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug/points/search with params={\"hnsw_ef\": 0}",
+          "observed": "HTTP 200, successful search results returned",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_hnsw_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: hnsw_ef=0 is invalid and should be rejected with 4xx error",
+            "Assumption: API should validate minimum value for hnsw_ef parameter"
+          ],
+          "note": "Raw request shows API accepts hnsw_ef=0 and returns successful results. No evidence this should be an error."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "OpenAPI specification defines hnsw_ef as: type=integer, format=uint, minimum=0, nullable=true",
+            "Source: docs/redoc/v1.18.x/openapi.json, line 9886-9891"
+          ],
+          "note": "Contract explicitly permits 0 as minimum valid value for hnsw_ef parameter"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ 1.18.0",
+          "grep_queries": ["hnsw_ef", "SearchParams", "check_limit_opt"],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/collection/src/operations/verification/mod.rs",
+            "lib/segment/src/index/hnsw_index/hnsw.rs",
+            "docs/redoc/v1.18.x/openapi.json"
+          ],
+          "source_excerpt": "File: lib/segment/src/index/hnsw_index/hnsw.rs, lines 1049-1051:\n```rust\nlet ef = params\n    .and_then(|params| params.hnsw_ef)\n    .unwrap_or(self.config.ef);\n```\n\nFile: lib/segment/src/types.rs, lines 589-594:\n```rust\n#[serde(rename_all = \"snake_case\")]\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n```\n\nFile: lib/collection/src/operations/verification/mod.rs, lines 297-312:\n```rust\npub(crate) fn check_limit_opt<T: PartialOrd + Display>(\n    value: Option<T>,\n    limit: Option<T>,\n    name: &str,\n) -> CollectionResult<()> {\n    let (Some(limit), Some(value)) = (limit, value) else {\n        return Ok(());\n    };\n\n    if value > limit {\n        return Err(CollectionError::strict_mode(\n            format!(\"Limit exceeded {value} > {limit} for \\\"{name}\\\"\"),\n            format!(\"Reduce the \\\"{name}\\\" parameter to or below {limit}.\"),\n        ));\n    }\n    Ok(())\n}\n```\n\nFile: docs/redoc/v1.18.x/openapi.json, lines 9886-9891:\n```json\n\"hnsw_ef\": {\n  \"description\": \"Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\",\n  \"type\": \"integer\",\n  \"format\": \"uint\",\n  \"minimum\": 0,\n  \"nullable\": true\n}",
+          "call_chain_traced": "SearchParams.hnsw_ef field definition → search_with_graph function extracts ef value → unwrap_or falls back to config.ef → No minimum validation exists",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code reveals hnsw_ef=0 is by-design: (1) OpenAPI spec explicitly sets minimum=0, (2) Source code accepts any value and falls back to default config.ef, (3) Validation only checks upper limits, not minimum values"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested multiple hnsw_ef values: 0, 1, 100, 15 (exceeding strict mode limit)",
+          "observed": "All values return HTTP 200 with successful search results. Even with strict mode enabled (search_max_hnsw_ef=10), hnsw_ef=15 still succeeds - strict mode validation appears not enforced for search params in this version",
+          "note": "No evidence that hnsw_ef=0 causes any functional problem. Search works correctly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: None - container running normally",
+            "Race condition: None - deterministic behavior",
+            "Request param typo: None - parameter correctly formatted",
+            "API misunderstanding: This IS the correct API behavior - hnsw_ef=0 is explicitly permitted"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "The mundane explanation is that this is correct API behavior. The OpenAPI spec explicitly allows minimum=0, and the implementation gracefully handles any value."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "This candidate hits a blindspot indicator pattern, but source code verification reveals this is by-design, not a bug"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "hnsw_ef parameter defined as type=integer, format=uint, minimum=0 (OpenAPI spec v1.18.x)",
+          "source_implements_check": false,
+          "api_observed_value": "API accepts hnsw_ef=0 and returns HTTP 200 with successful search",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "In HNSW algorithm, ef represents candidate list size during search. Mathematically, ef should be ≥ 1 for meaningful approximate search. ef=0 has no algorithmic meaning.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint exists (ef ≥ 1 mathematically) but API and contract both permit 0"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code shows explicit design: params.hnsw_ef.unwrap_or(self.config.ef) - any value accepted, fallback to default"
+        },
+        "aggregation_applied": "verdict_A=REFUTED (contract allows 0) + verdict_C=REFUTED (by-design) → final=FALSE_POSITIVE. Physical constraint alone insufficient when contract and implementation both permit the value.",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Defect claim: 'API accepts hnsw_ef=0 without returning 4xx error'. Investigation reveals: (1) OpenAPI spec explicitly defines minimum=0 for hnsw_ef parameter - 0 is a valid value per contract; (2) Source code shows by-design acceptance of any value with fallback to config default; (3) No minimum validation exists in codebase; (4) API returns successful search results with hnsw_ef=0. While HNSW algorithm theoretically requires ef≥1, both API specification and implementation permit 0, making this mundane API semantics, not a bug. Verification outcome: by_design_in_source."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

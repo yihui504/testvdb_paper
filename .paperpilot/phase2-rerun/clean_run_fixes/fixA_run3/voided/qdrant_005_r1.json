@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero with shard_number=0, PUT /collections/test_shard_neg with shard_number=-1",
+          "observed": "shard_number=0 → 422 'value 0 invalid, must be 1 or larger'; shard_number=-1 → 400 'expected u32'; shard_number=1 → 200 success",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_zero' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should validate shard_number >= 1",
+            "Validation should occur at input validation layer for consistency"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001",
+            "assertion: shard_number >= 1",
+            "confidence: 1.0, evidence_tier: explicit"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": [
+            "shard_number",
+            "NonZeroU32::new",
+            "bad_input.*shard_number"
+          ],
+          "files_examined": [
+            "lib/storage/src/content_manager/toc/create_collection.rs",
+            "lib/collection/src/config.rs",
+            "lib/api/src/rest/validate.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/content_manager/toc/create_collection.rs lines 135-136\nlet collection_params = CollectionParams {\n    vectors,\n    sparse_vectors,\n    shard_number: NonZeroU32::new(shard_number)\n        .ok_or_else(|| StorageError::bad_input(\"`shard_number` cannot be 0\"))?,\n    ...\n};\n\n// lib/collection/src/config.rs line 97\npub shard_number: NonZeroU32,\n\n// lib/collection/src/config.rs lines 216-218\npub fn default_shard_number() -> NonZeroU32 {\n    NonZeroU32::new(1).unwrap()\n}",
+          "call_chain_traced": "CreateCollection request → serde deserialization (u32) → create_collection.rs:135 NonZeroU32::new() validation → StorageError::bad_input for 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地揭示: shard_number 使用 NonZeroU32 类型,该类型在编译时保证不为0。运行时通过 NonZeroU32::new() 检查,0值返回明确错误。负值由 serde 层拒绝(u32 无法解析负数)。这是类型安全的正确设计,符合契约要求。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that valid shard_number=1 succeeds and invalid values are consistently rejected",
+          "observed": "shard_number=1 (valid) → 200 success; shard_number=0 → 422 with clear error message; shard_number=-1 → 400 from serde layer. All invalid inputs rejected, no violation of contract."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency race",
+            "Request parameter typos"
+          ],
+          "surviving": "type_safe_parameter_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "缺陷类型与 bug_shapes.json 中的 'Parameter Validation issues where Numeric Boundary validation is missing' 模式匹配。但深入审查发现,实际上存在完整的类型安全验证 (NonZeroU32 + 运行时检查),符合维护者优先级 'Data consistency and persistence over API strictness'。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "该候选声称 shard_number 参数缺少边界验证,但源码接地揭示这是类型安全的正确设计: (1) NonZeroU32 类型在编译时保证非零; (2) 运行时 NonZeroU32::new() 对 0 值返回明确错误; (3) serde 层自动拒绝无法解析为 u32 的负值。API 行为完全满足契约 'shard_number >= 1',所有无效输入均被拒绝,只是错误码分层不同(422 vs 400)。这是正常的 API 设计模式,不是缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

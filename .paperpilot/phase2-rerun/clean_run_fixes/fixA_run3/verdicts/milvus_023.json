@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":{}} - success response for non-existent collection",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/collections/drop -H 'Content-Type: application/json' -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Request should return 404 when collection does not exist (per contract doc_quote: '200 on success; 404 if collection does not exist')",
+            "Collection should be verified to exist before attempting drop operation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: endpoint_registry collections+drop line 1907: '200 on success; 404 if collection does not exist; Drop is irreversible'",
+            "constraint_id: milvus_state_collections_drop_001 assertion: 'drop is irreversible AND all data is permanently deleted'"
+          ],
+          "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "DropCollection",
+            "errIgnoredDropCollection",
+            "drop collection one with bad collection name",
+            "drop collection that not found"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go (lines 710-721: PreExecute comment 'also permit drop collection one with bad collection name')",
+            "internal/rootcoord/root_coord.go (lines 946-973: DropCollection function)",
+            "internal/rootcoord/drop_collection_task.go (lines 42-69: validate function)",
+            "internal/rootcoord/meta_table.go (line 58: errIgnoredDropCollection definition)",
+            "internal/distributed/proxy/httpserver/handler_v2.go (lines 745-759: dropCollection handler)"
+          ],
+          "source_excerpt": "// internal/proxy/task.go line 710-721\nfunc (t *dropCollectionTask) PreExecute(ctx context.Context) error {\n\t// No need to check collection name\n\t// Validation shall be preformed in `CreateCollection`\n\t// also permit drop collection one with bad collection name\n\treturn nil\n}\n\n// internal/rootcoord/drop_collection_task.go lines 52-56\n\tcollMeta, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err != nil {\n\t\tif errors.Is(err, merr.ErrCollectionNotFound) || errors.Is(err, merr.ErrDatabaseNotFound) {\n\t\t\treturn errIgnoredDropCollection\n\t\t}\n\t\treturn err\n\t}\n\n// internal/rootcoord/root_coord.go lines 958-963\n\tif err := c.broadcastDropCollectionV1(ctx, in); err != nil {\n\t\tif errors.Is(err, errIgnoredDropCollection) {\n\t\t\tlogger.Info(\"drop collection that not found, ignore it\")\n\t\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"DropCollection\", metrics.SuccessLabel).Inc()\n\t\t\treturn merr.Success(), nil\n\t\t}\n\t\tlogger.Info(\"failed to drop collection\", zap.Error(err))\n\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"DropCollection\", metrics.FailLabel).Inc()\n\t\treturn merr.Status(err), nil\n\t}\n\n// internal/rootcoord/meta_table.go line 58\n\terrIgnoredDropCollection = errors.New(\"ignored drop collection\") // drop collection or database not found, so it can be ignored.",
+          "call_chain_traced": "REST handler_v2.dropCollection -> proxy.DropCollection -> dropCollectionTask.PreExecute (permits bad names) -> dropCollectionTask.Execute -> mixCoord.DropCollection -> root_coord.DropCollection -> broadcastDropCollectionV1 -> dropCollectionTask.validate returns errIgnoredDropCollection when collection not found -> root_coord catches errIgnoredDropCollection and returns Success() instead of error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: 当 collection 不存在时,代码通过 errIgnoredDropCollection 错误码将 not found 转换为 Success 返回,显式违反了契约中 '404 if collection does not exist' 的要求"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collection still doesn't exist after drop attempt via GET /collections/has",
+          "observed": "POST /collections/has {\"collectionName\": \"nonexistent_collection_xyz\"} returns {\"code\":0,\"data\":{\"has\":false}} - confirmed collection does not exist, but drop returned success instead of 404"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (tested on clean container)",
+            "Concurrent operations (single-threaded test)",
+            "Request parameter errors (valid JSON with required fields)",
+            "API semantic misunderstanding (explicit contract violation)"
+          ],
+          "surviving_explanation": "by_design_in_source"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns",
+        "developer_quote": "errIgnoredDropCollection = errors.New(\"ignored drop collection\") // drop collection or database not found, so it can be ignored.",
+        "pattern_id": "RP-001",
+        "note": "虽然源码注释显示这是有意设计,但该设计违反了明文契约(doc_quote: '404 if collection does not exist'),属于 by-design but violates contract"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现成功: 对不存在的 collection 发起 drop 请求返回 HTTP 200 {code:0} 而非契约规定的 404。源码接地证实这是有意为之(errIgnoredDropCollection),但该行为与 REST v2 契约明文规定('404 if collection does not exist')直接冲突。候选虽然被 developer_cognition 标记为 'expected_behavior',但契约是维护者的承诺 —— 显式违反契约的真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

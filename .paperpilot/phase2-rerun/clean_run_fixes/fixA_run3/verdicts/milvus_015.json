@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_015",
+      "endpoint": "indexes+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/indexes/create with collection_name='test_rest_idx' (non-existent collection), index_params=[{fieldName='vector', metricType='L2', indexType='IVF_FLAT'}]",
+          "observed": "HTTP 200 with body {\"code\":100,\"message\":\"collection not found[database=default][collection=test_rest_idx]\"} - Error correctly returned for non-existent collection",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/indexes/create -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rest_idx\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}], \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Raw logs show the API correctly returns error code 100 for non-existent collection. No implicit assumptions violated."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Constraint milvus_type_indexes_create_001: metricType must be valid for field type AND index_type in supported list",
+            "Constraint milvus_range_indexes_create_001: nlist must be >= 1",
+            "Constraint milvus_range_indexes_create_002: M (HNSW) must be 4-64",
+            "Constraint milvus_range_indexes_create_003: efConstruction >= 1"
+          ],
+          "note": "No contract constraint requires index creation to succeed on non-existent collections. Collection existence is a semantic prerequisite."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "createIndex",
+            "collection.*not.*found",
+            "ErrCollectionNotFound"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/impl.go",
+            "internal/proxy/task_index.go"
+          ],
+          "source_excerpt": "// internal/proxy/impl.go line 2090-2120\nfunc (node *Proxy) CreateIndex(ctx context.Context, request *milvuspb.CreateIndexRequest) (*commonpb.Status, error) {\n\tif err := merr.CheckHealthy(node.GetStateCode()); err != nil {\n\t\treturn merr.Status(err), nil\n\t}\n\n\tctx, sp := otel.Tracer(typeutil.ProxyRole).Start(ctx, \"Proxy-CreateIndex\")\n\tdefer sp.End()\n\n\tcit := &createIndexTask{\n\t\tctx:       ctx,\n\t\tCondition: NewTaskCondition(ctx),\n\t\treq:       request,\n\t\tmixCoord:  node.mixCoord,\n\t}\n\t// Task is enqueued for processing; collection existence check happens downstream\n\tif err := node.sched.ddQueue.Enqueue(cit); err != nil {\n\t\treturn merr.Status(err), nil\n\t}\n}\n\n// internal/proxy/task_index.go line 242-292\nfunc (cit *createIndexTask) parseIndexParams(ctx context.Context) error {\n\t// Parses and validates index parameters (indexType, metricType, params)\n\t// No collection existence validation here - happens at datacoord level\n\tchecker, err := indexparamcheck.GetIndexCheckerMgrInstance().GetChecker(specifyIndexType)\n\tif err != nil {\n\t\treturn merr.WrapErrParameterInvalid(\"valid index\", fmt.Sprintf(\"invalid index type: %s\", specifyIndexType))\n\t}\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:createIndex → Proxy.CreateIndex → createIndexTask enqueued → collection existence validated downstream at datacoord level (returns ErrCollectionNotFound)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows collection existence check is intentionally performed downstream (at datacoord level), not at proxy entry point. The error code 100 'collection not found' is the expected by-design response when collection doesn't exist."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted to reproduce claim that API should succeed for non-existent collection, but actual behavior is correct error return",
+          "observed": "Python SDK also raises DescribeCollectionException for non-existent collection. No bug observed.",
+          "note": "Both REST v2 API and Python SDK correctly reject index creation on non-existent collections."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - API is functioning correctly",
+            "Request parameter error - collection_name doesn't exist, which should fail",
+            "API semantic misunderstanding - collection must exist before index creation"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This appears to be a case where the oracle expected wrong behavior (success on non-existent collection). The actual API behavior is correct."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any known by_design_patterns or rejection_patterns from developer_cognition.json"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The REST v2 API correctly returns error code 100 ('collection not found') when attempting to create an index on a non-existent collection. This is expected by-design behavior - a collection must exist before an index can be created on it. Both REST API and Python SDK properly enforce this prerequisite. The defect claim appears to be based on an incorrect expectation that index creation should succeed without the collection existing, which violates basic API semantics.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint asserts that index creation should succeed on non-existent collections",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract specifies parameter validation (metricType, nlist, M, efConstruction) but collection existence is a semantic prerequisite, not a parameter constraint"
+        },
+        "physical": {
+          "objective_constraint": "Collection must exist to create index on it (causal dependency - index requires collection as parent entity)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "API correctly rejects the physically impossible operation (creating index on non-existent collection)"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API returns clear error message 'collection not found' with appropriate error code 100. Source code shows this is by-design - collection existence validated downstream at datacoord level."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED (by-design in source) → final_verdict=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

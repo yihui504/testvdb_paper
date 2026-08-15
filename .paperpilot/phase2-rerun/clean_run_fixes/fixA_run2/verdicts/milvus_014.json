@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_014",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/create with dimension=32769 (above max 32768)",
+          "observed": "API correctly rejects dimension=32769 with error code 65535 and message 'invalid dimension: 32769 of field vector. float vector dimension should be in range 2 ~ 32768'. API accepts dimension=32768 (at boundary) successfully.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_dim_32769\", \"schema\": {\"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 32769}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "validated_assumptions": [
+            "API enforces FloatVector dimension range [2, 32768]",
+            "Lower boundary (dimension=1) correctly rejected",
+            "Upper boundary (dimension=32768) correctly accepted",
+            "Above upper boundary (dimension=32769) correctly rejected"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001",
+            "assertion: '1 <= dimension <= 32768'",
+            "confidence: 1.0",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "32768",
+            "dimension.*range",
+            "validateDimension",
+            "MaxDimension"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/util_test.go",
+            "pkg/util/paramtable/component_param.go",
+            "tests/python_client/milvus_client/test_milvus_client_collection.py",
+            "tests/go_client/testcases/collection_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 396-438\nfunc validateDimension(field *schemapb.FieldSchema) error {\n\texist := false\n\tvar dim int64\n\tfor _, param := range field.TypeParams {\n\t\tif param.Key == common.DimKey {\n\t\t\texist = true\n\t\t\ttmp, err := strconv.ParseInt(param.Value, 10, 64)\n\t\t\tif err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t\tdim = tmp\n\t\t\tbreak\n\t\t}\n\t}\n\t// for sparse vector field, dim should not be specified\n\tif typeutil.IsSparseFloatVectorType(field.DataType) {\n\t\tif exist {\n\t\t\treturn fmt.Errorf(\"dim should not be specified for sparse vector field %s(%d)\", field.GetName(), field.FieldID)\n\t\t}\n\t\treturn nil\n\t}\n\tif !exist {\n\t\treturn errors.Newf(\"dimension is not defined in field type params of field %s, check type param `dim` for vector field\", field.GetName())\n\t}\n\n\tif dim <= 1 {\n\t\treturn fmt.Errorf(\"invalid dimension: %d. should be in range 2 ~ %d\", dim, Params.ProxyCfg.MaxDimension.GetAsInt())\n\t}\n\n\t// for dense vector field, dim will be limited by max_dimension\n\tif typeutil.IsBinaryVectorType(field.DataType) {\n\t\tif dim%8 != 0 {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be multiple of 8. \", dim, field.GetName())\n\t\t}\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n\t\t}\n\t} else {\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n\t\t}\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "validateDimension() called from validateField() -> checks dim <= 1 and dim > MaxDimension, returns descriptive error messages for violations",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code confirms explicit dimension validation: lower bound check (dim <= 1), upper bound check (dim > MaxDimension=32768), with descriptive error messages matching observed API behavior"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test both boundaries (dim=1, dim=2, dim=32768, dim=32769)",
+          "observed": "dim=1: rejected with 'should be in range 2 ~ 32768'; dim=2: accepted (HTTP 200); dim=32768: accepted (HTTP 200); dim=32769: rejected with 'float vector dimension should be in range 2 ~ 32768'. API behavior consistent and correct."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "API semantic misunderstandings"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - validation working as designed",
+        "pattern_id": "expected_behavior",
+        "note": "This candidate matches RP-001 (expected behavior): API correctly enforces documented dimension limits [2, 32768] with proper error messages. This is working as designed by Milvus developers."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The API correctly enforces FloatVector dimension range [2, 32768] as documented in structured_contract.json (constraint milvus_range_collections_create_001) and implemented in source code (validateDimension function in internal/proxy/util.go). Test cases at boundaries (dim=1, 2, 32768, 32769) all produce expected behavior: dim=2 and dim=32768 succeed with HTTP 200; dim=1 and dim=32769 fail with descriptive error messages. Source code confirms explicit validation logic with MaxDimension=32768 (pkg/util/paramtable/component_param.go). This is not a defect but proper API validation working as designed."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with integer value 12345 for string field text_field",
+          "observed": "Insert succeeded with HTTP 200, query returned {\"id\":2,\"text_field\":12345} - integer stored in VarChar field without type validation",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"final_test\",\"data\":[{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"text_field\":12345}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_entities_insert_001 - 'data field types match collection schema'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["func checkAndSetData", "case schemapb.DataType_VarChar", "dataString"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 331-582\ndataString := fieldValue.String()  // Line 331: converts any JSON value to string representation\n...\nswitch fieldType {\n...\ncase schemapb.DataType_VarChar:\n    reallyData[fieldName] = dataString  // Line 582: NO TYPE CHECK - direct assignment\n}",
+          "call_chain_traced": "insert() → checkAndSetData() → gjson fieldValue.String() → direct assignment without type validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:VarChar字段处理直接使用fieldValue.String()转换所有值为字符串,缺失类型校验 → 真缺陷(contract要求类型匹配但源码未实现)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test reverse coercion: insert string 'string_value' into same field, verify bidirectional type coercion",
+          "observed": "String value also accepted with HTTP 200, confirming type coercion is bidirectional - no type enforcement in either direction"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "request parameter typos"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 8 issues in corpus",
+        "note": "命中开发者认知盲点:REST v2 API数据类型序列化问题,属于高频缺陷类型"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "data field types match collection schema (constraint_id: milvus_type_entities_insert_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "VarChar field must only accept string values per schema definition",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (contract and physical violation, no graceful handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_type_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 /entities/insert端点缺失类型校验:源码utils.go:581-582行直接用fieldValue.String()转换任意值为字符串赋给VarChar字段,违反契约milvus_type_entities_insert_001(data field types match collection schema)。实测插入整数12345至字符串字段text_field成功并返回整数12345,反向插入字符串值亦成功,证实双向类型强制转换无校验。此属REST v2 API数据类型处理高频缺陷模式(开发者认知盲点,历史8例),非平凡解释可排除。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"rest_v2_type_validation_missing": 1}
+  }
+}

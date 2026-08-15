@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupSize=-1 and groupSize=0",
+          "observed": "Both values accepted without error, HTTP 200 returned with normal search results",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dev_review\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":-1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "groupSize parameter represents 'results per group' and must be >= 1",
+            "API should validate parameter ranges before processing",
+            "Silent parameter dropping is not acceptable behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No contract constraints found for groupSize parameter validation in structured_contract.json"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "GroupSize",
+            "group_size",
+            "ParamGroupSize",
+            "groupSize.*validation",
+            "groupSize.*check"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/distributed/proxy/httpserver/request_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/distributed/proxy/httpserver/constant.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/proxy/search_pipeline.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/util/function/chain/operator_group_by.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1929-1932\nif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n}\n\n// Same validation pattern at lines 2184-2187\n// Critical issue: GroupSize > 0 check is only used to decide whether to ADD the parameter,\n// but NO validation error is raised when GroupSize <= 0 with GroupByField set",
+          "call_chain_traced": "HTTP Request → handler_v2.go:genSearchParams → groupSize condition check (line 1929) → parameter silently dropped if <= 0 → NO error returned",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: REST v2 handler checks GroupSize > 0 only for conditional parameter addition, but lacks explicit validation. Invalid values (0, -1) are silently ignored rather than returning ParameterInvalid error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent testing with multiple invalid groupSize values (0, -1, -100)",
+          "observed": "All invalid values accepted without error, search proceeds normally without grouping applied"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment/platform issues",
+            "Race conditions",
+            "API semantic misunderstandings",
+            "Request parameter typos"
+          ],
+          "surviving": "missing_range_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match known by_design_patterns. Parameter validation gaps are recognized as defects in Milvus development (see blindspot_indicators: 'REST v2 API data type serialization not validated')"
+      },
+      "root_cause_if_confirmed": "missing_range_validation",
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "REST v2 API accepts groupSize values of 0 and -1 without validation. Source code confirms missing range check: handler only uses GroupSize > 0 conditionally to add parameter, but never validates against invalid values when groupByField is specified. Physical constraint violation confirmed: groupSize represents 'results per group' and must be >= 1. No by-design evidence found in source code or documentation.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - no contract constraint found for groupSize validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "groupSize parameter represents 'results per group' and must be >= 1 (semantically invalid for values <= 0)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_range_validation": 1
+    }
+  }
+}

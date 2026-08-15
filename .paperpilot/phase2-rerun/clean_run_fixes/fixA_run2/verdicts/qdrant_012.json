@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "endpoint": "points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points/query with filter={\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}",
+          "observed": "API returns HTTP 200 with result.points=[id=2, score=1.0]. Point id=2 has tag='y' (excluded by must_not condition). Point id=1 has tag='x' (correctly excluded). Response is semantically correct.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_mustnot/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "The raw request properly includes filter parameter with must_not condition",
+            "The API accepts and processes the must_not filter structure",
+            "The response contains semantically correct results (excludes tag='x' points)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+query (POST)",
+            "parameter: filter (object, optional) - Filter conditions",
+            "constraint_id: qdrant_range_query_points_008 (limit default=10)"
+          ],
+          "contract_assertions_found": "No explicit contract constraint prohibits or validates must_not filter structure. The contract defines filter as optional object parameter."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "must_not",
+            "struct Filter",
+            "enum Condition",
+            "FieldCondition"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs, lines 3834-3865\n#[derive(\n    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash,\n)]\n#[serde(rename_all = \"snake_case\")]\npub struct Filter {\n    /// At least one of those conditions should match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,\n    /// At least minimum amount of given conditions should match\n    #[validate(nested)]\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub min_should: Option<MinShould>,\n    /// All conditions must match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must: Option<Vec<Condition>>,\n    /// All conditions must NOT match\n    #[validate(nested)]\n    #[serde(\n        default,\n        with = \"MaybeOneOrMany\",\n        skip_serializing_if = \"Option::is_none\"\n    )]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must_not: Option<Vec<Condition>>,\n}\n\nimpl Filter {\n    pub fn new_must_not(condition: Condition) -> Self {\n        Filter {\n            should: None,\n            min_should: None,\n            must: None,\n            must_not: Some(vec![condition]),\n        }\n    }",
+          "call_chain_traced": "Filter struct definition with must_not field -> validated via #[validate(nested)] attribute -> used in query processing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: Filter.must_not 是经过设计的字段，带有 #[validate(nested)] 属性进行验证。这是有意的设计，不是bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent ground truth verification via scroll API and direct point retrieval",
+          "observed": "Ground truth verification: (1) Scroll returns [id=1, tag='x'], [id=2, tag='y']; (2) Direct GET /points/1 confirms tag='x'; (3) Direct GET /points/2 confirms tag='y'; (4) Query with must_not tag='x' correctly returns only id=2. No violation found.",
+          "evidence_cmds": [
+            "curl -s -X POST 'http://localhost:6333/collections/test_mustnot/points/scroll' -H 'Content-Type: application/json' -d '{\"limit\": 10, \"with_payload\": true}'",
+            "curl -s -X GET 'http://localhost:6333/collections/test_mustnot/points/1'",
+            "curl -s -X GET 'http://localhost:6333/collections/test_mustnot/points/2'"
+          ]
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "请求参数笔误",
+            "环境问题",
+            "并发/race",
+            "缓存/优化器延迟"
+          ],
+          "surviving": "mundane_api_semantics",
+          "explanation": "The must_not filter functionality is working as designed. The API correctly processes the filter and returns semantically accurate results. This is intentional API behavior, not a parameter validation defect."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns，但API行为符合预期设计。源码显示must_not是经过验证的有意设计。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原候选声称param_validation缺陷，但干净复现证伪：API成功接受并处理must_not过滤请求，返回语义正确结果（正确排除tag='x'的点id=1，返回tag='y'的点id=2）。独立验证（scroll+主键直取）确认结果真值一致。源码接地显示Filter.must_not是经过设计的字段，带#[validate(nested)]验证属性，为有意功能。契约无约束违反。无任何客观物理/语义约束被违反。此为正常API行为，非缺陷。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "无契约约束禁止或明确要求must_not结构验证。契约定义filter为可选对象参数。",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "契约未明确定义must_not的验证规则，但source显示存在验证。"
+        },
+        "physical": {
+          "objective_constraint": "无客观物理或语义约束禁止must_not过滤。这是标准布尔查询操作。",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "源码显示must_not是经过验证的有意设计字段，带#[validate(nested)]属性。"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=REFUTED, verdict_C=REFUTED → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

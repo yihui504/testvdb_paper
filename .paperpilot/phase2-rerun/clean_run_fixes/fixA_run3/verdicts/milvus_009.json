@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}",
+          "observed": "HTTP 200 OK with search results returned successfully. API accepts nprobe=0 without error.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.create_collection('test_nprobe', dimension=4); client.insert('test_nprobe', [{'id': 0, 'vector': [0.1, 0.2, 0.3, 0.4]}]); client.load_collection('test_nprobe'); result = client.search('test_nprobe', data=[[1.0, 2.0, 3.0, 4.0]], limit=3, search_params={'nprobe': 0}); print(result)\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim assumes nprobe has a documented lower bound of 1",
+            "Defect claim assumes REST v2 API should validate nprobe range",
+            "No evidence in raw request/response that nprobe=0 violates any documented constraint"
+          ]
+        },
+        "contract_grounding": {
+          "pass": false,
+          "contract_refs": [
+            "NO contract constraint found for nprobe parameter in structured_contract.json",
+            "entities+search endpoint (lines 786-873 in structured_contract.json) has no range constraint on searchParams.nprobe",
+            "Only constraint found: milvus_type_entities_search_001 asserts 'data is array[array[float]] AND annsField is a vector field AND limit > 0' - no mention of nprobe"
+          ],
+          "note": "Contract formalizer did NOT extract any nprobe range constraint. If nprobe ≥ 1 were a requirement, it would be documented as a range_constraint like 'milvus_range_search_nprobe_001: nprobe >= 1'. Absence of such constraint suggests this is NOT a contractual requirement."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "nprobe",
+            "searchParams",
+            "generateSearchParams",
+            "validateSearchParam",
+            "range.*check"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search_pipeline.go",
+            "internal/proxy/search_util.go",
+            "internal/querynodev2/mock_data.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2192-2242\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... deepEqual function ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s...\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value  // <-- NO RANGE VALIDATION: blindly accepts all keys including 'nprobe'\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})  // <-- PASS-THROUGH: no validation\n\t\t}\n\t}\n\n\treturn searchParams, nil\n}\n\n// KEY FINDING: The function does NOT check if 'nprobe' (or any search param) has valid range. It merely:\n// 1. Merge searchParams into paramsMap\n// 2. Serialize to JSON\n// 3. Pass-through to downstream knowhere/index engine\n// No range check like 'if key == \"nprobe\" && value < 1' exists anywhere in this function.",
+          "call_chain_traced": "REST v2 Handler (handler_v2.go:1528) → generateSearchParams (utils.go:2192) → NO validation → pass to querynode → knowhere index",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code search across entire clone (Grep for 'nprobe' in 176 files) found NO validation logic. The generateSearchParams function in utils.go is the REST v2 entry point for search parameters, and it performs 0 range validation on nprobe or any numeric search parameter. This is a pure pass-through implementation."
+        },
+        "falsification": {
+          "pass": false,
+          "note": "Falsification not applicable for this defect type. The bug is 'API accepts invalid parameter value', not 'API returns wrong results'. The correct test is Step 1 (clean reproduction) which confirms the API accepts nprobe=0. If this were a TRUE bug, we would expect the API to return an error like 'nprobe must be >= 1', but it doesn't."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: NO - reproducible on clean Docker container",
+            "Race condition: NO - deterministic behavior",
+            "Request parameter typo: NO - nprobe is spelled correctly",
+            "API semantics misunderstanding: NEEDS CHECK - is nprobe=0 actually allowed for IVF indexes?"
+          ],
+          "surviving": "potential_by_design_or_knowhere_default"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match known rejection patterns (RP-001 expected_behavior, RP-002 by_design, BDP-001/002). However, developer_cognition.json shows blindspot indicators for 'REST v2 API data type serialization - 8 issues' which aligns with this case (REST v2 passes through invalid values without validation). This suggests REST v2 parameter validation IS a known weakness area, but that doesn't make nprobe=0 a bug per se."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "Step 1 confirms API accepts nprobe=0 (HTTP 200). Step 3 finds NO contract constraint asserting nprobe >= 1. Step 3.5 source grounding confirms generateSearchParams performs NO range validation - it's a pure pass-through. Without contract backing AND without source validation, this is NOT a defect but rather either: (a) by-design behavior where nprobe=0 is valid (possibly meaning 'use IVF default'), or (b) a gap in documentation but not a code bug. The defect claim 'nprobe should be validated to be >= 1' assumes a requirement that exists neither in contract nor in source. Comparing to REST v2 limit validation (REQ 6 shows 'topk [0] is invalid, it should be in range [1, 16384]'), the fact that nprobe=0 produces NO error message suggests nprobe=0 is intentionally allowed. FALSE_POSITIVE: assertion assumes requirements not documented or implemented.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "NONE - no contract constraint exists for nprobe range",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Unknown - nprobe is an IVF index tuning parameter (number of probe lists), not a fundamental physical constraint like 'limit >= 1'. Zero probe lists might be valid (meaning: use default/no probing). This is domain-specific index behavior, not a universal invariant.",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "note": "API returns HTTP 200 with search results. No error, no crash, no data loss. The behavior is graceful. However, source code shows NO explicit by-design comment or constant for nprobe=0 handling.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=WEAK_REFUTED → final=FALSE_POSITIVE (no contract violation, no physical constraint, behavior is graceful, no source evidence of bug)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

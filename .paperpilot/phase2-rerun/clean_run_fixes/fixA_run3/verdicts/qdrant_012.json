@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "endpoint": "points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/dev_review_test_mustnot/points/query with filter must_not tag=x",
+          "observed": "HTTP 200 with result.points=[id=2] (correctly excluded id=1 with tag=x)",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/dev_review_test_mustnot/points/query -H 'Content-Type: application/json' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_checked": [
+            "API should support must_not filter syntax",
+            "must_not should exclude matching points from results"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+query (POST)",
+            "parameter: filter (object) - Filter conditions"
+          ],
+          "note": "Contract defines filter parameter but contains no explicit validation constraints for must_not filter structure or behavior"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "must_not",
+            "Filter",
+            "check_must_not"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/segment/src/index/query_optimization/optimized_filter.rs",
+            "lib/segment/src/payload_storage/query_checker.rs",
+            "lib/api/src/grpc/qdrant.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs line 3857-3865\n/// All conditions must NOT match\n#[validate(nested)]\n#[serde(\n    default,\n    with = \"MaybeOneOrMany\",\n    skip_serializing_if = \"Option::is_none\"\n)]\n#[schemars(with = \"MaybeOneOrMany<Condition>\")]\npub must_not: Option<Vec<Condition>>,\n\n// lib/segment/src/index/query_optimization/optimized_filter.rs line 75-81\nfn check_must_not(must_not: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {\n    let check = |condition| !check_condition(condition, point_id);\n    match must_not {\n        None => true,\n        Some(conditions) => conditions.iter().all(check),\n    }\n}",
+          "call_chain_traced": "Filter struct definition → check_optimized_filter → check_must_not → negation logic (!check_condition)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows must_not filter is fully implemented with correct negation logic. No validation constraints exist that would reject valid must_not filter structures."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: (1) Direct point lookup confirms id=1 has tag=x, id=2 has tag=y; (2) must filter query correctly returns only id=1; (3) must_not filter query correctly returns only id=2",
+          "observed": "All three independent verification methods confirm must_not filter behaves correctly",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/dev_review_test_mustnot/points -H 'Content-Type: application/json' -d '{\"ids\": [1, 2], \"with_payload\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded_explanations": [
+            "Environment issues",
+            "Concurrency race",
+            "Request parameter typos"
+          ],
+          "root_cause": "mundane_api_semantics",
+          "note": "The must_not filter functionality is working as designed. The defect appears to be based on incorrect expectations about API behavior rather than an actual bug."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "No specific developer cognition pattern matched. The must_not filter is a standard feature working correctly."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint defines must_not filter validation requirements",
+          "constraint_id": "none",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical or mathematical constraint violated by must_not filter syntax",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final_verdict=FALSE_POSITIVE (must_not filter works correctly as designed)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The must_not filter is functioning correctly. Raw evidence shows HTTP 200 responses with correct filtering behavior: must_not tag=x correctly excludes id=1 (tag=x) and returns id=2 (tag=y). Source code examination reveals complete implementation of must_not logic with proper negation in check_must_not function. No contract constraints exist that would restrict must_not filter usage. Independent verification via direct point lookups confirms the data and filtering behavior are correct. This appears to be a case of incorrect expectations about standard API behavior rather than an actual defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

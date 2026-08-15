@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with dbName: ''",
+          "observed": "API returned HTTP 200 with code:0 and valid data: [\"test_nprobe\"]",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption that empty dbName string should be rejected - VIOLATED: API accepts empty dbName as valid input",
+            "Assumption that dbName must be non-empty - VIOLATED: Contract explicitly marks dbName as optional with default value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "collections+list parameter: dbName (string, required: false, default_value: \"_default\")",
+            "No constraint specifies that empty string dbName is invalid"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["ShowCollections", "DefaultDbName", "validate.*dbName", "listCollections"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 362-366\nif dbName == \"\" {\n    dbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n    if dbName == \"\" {\n        dbName = DefaultDbName  // = \"default\"\n    }\n}\n\n// internal/distributed/proxy/httpserver/constant.go line 126\nDefaultDbName = \"default\"\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 568-570\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n    req := &milvuspb.ShowCollectionsRequest{\n        DbName: dbName,  // Direct pass-through, no validation\n    }",
+          "call_chain_traced": "HTTP POST /collections/list → listCollections() → ShowCollectionsRequest{DbName: dbName} → proxy.ShowCollections() → No validation of empty string",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:API层显式处理空字符串dbName,将其默认为'default',这是有意的默认行为设计,而非缺少校验的缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test API rejection of empty dbName",
+          "observed": "API accepts empty dbName (\"\"), missing dbName ({}), both return HTTP 200 with code:0 and valid collection list. No rejection occurs."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (ruled out - clean API behavior)",
+            "Concurrency/race (ruled out - deterministic)",
+            "Request parameter typo (ruled out - request is correct)"
+          ],
+          "surviving": "mundane_api_semantics - This is documented, intended API behavior where empty dbName defaults to '_default' database",
+          "root_cause_if_fp": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "Hits rejection pattern RP-001: Accepting empty dbName is documented expected behavior, not a bug"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原oracle声称collections+list端点存在'参数验证缺陷',但API实际行为完全符合契约:dbName参数标记为非必需(required: false),且有默认值'_default'。源码证实这是有意设计 - 当dbName为空字符串时,系统显式将其默认为'default'数据库。API成功返回HTTP 200 + 有效数据,证明空字符串是合法输入,非违规。此属mundane_api_semantics误报 - 将正常默认参数处理误判为参数验证缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

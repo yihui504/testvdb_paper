@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "points",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_review/points with vector [0.1, 0.2, 0.3] (3D, should be 4D) - without wait=true returns 200 acknowledged, with wait=true returns 400 dimension error",
+          "observed": "Inconsistent validation behavior: same invalid vector request returns 200 'acknowledged' without wait=true but 400 'Vector dimension error: expected dim: 4, got 3' with wait=true",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_review/points' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}' -> 200 acknowledged; curl -X PUT 'http://localhost:6333/collections/test_review/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 2, \"vector\": [0.1, 0.2, 0.3]}]}' -> 400 dimension error"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "API validates vector dimensions consistently regardless of wait parameter",
+            "200 'acknowledged' response means operation was valid and will succeed",
+            "Validation happens synchronously before returning response"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_005 - 'Returns 200 on success; returns 4XX on validation error'",
+            "constraint_id: qdrant_type_upsert_points_003 - 'id type is integer (uint64) or UUID string; vector type is array of floats or object of named vectors'",
+            "assertion_id: qdrant_behavioral_006 - '200 with matching points (missing IDs are silently omitted)'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "process_point_operation",
+            "do_upsert_points",
+            "try_from_matrix"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/shard/src/update.rs",
+            "src/common/update.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "src/actix/api/update_api.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 22-26\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n},\n\n// lib/shard/src/update.rs line 29-60\npub fn process_point_operation(\n    segments: &SegmentHolder,\n    op_num: SeqNumberType,\n    point_operation: PointOperations,\n    hw_counter: &HardwareCounterCell,\n) -> OperationResult<usize> {\n    match point_operation {\n        PointOperations::UpsertPoints(operation) => {\n            let points = operation.into_point_vec();\n            let res = upsert_points(segments, op_num, points.iter(), hw_counter)?;\n            Ok(res)\n        }\n        // ... other operations\n    }\n}\n\n// src/actix/api/update_api.rs line 32-65\n#[put(\"/collections/{collection_name}/points\")]\nasync fn upsert_points(\n    dispatcher: web::Data<Dispatcher>,\n    collection: Path<CollectionPath>,\n    operation: Json<PointInsertOperations>,\n    params: Query<UpdateParams>,\n    // ...\n) -> impl Responder {\n    let request_hw_counter = get_request_hardware_counter(\n        &dispatcher,\n        collection.collection_name.clone(),\n        service_config.hardware_reporting(),\n        Some(params.wait),  // wait parameter affects validation timing\n    );\n    \n    let result_with_usage = do_upsert_points(\n        StrictModeCheckedTocProvider::new(&dispatcher),\n        collection.into_inner().collection_name,\n        operation,\n        InternalUpdateParams::default(),\n        params.into_inner(),  // contains wait parameter\n        auth,\n        inference_params,\n        request_hw_counter.get_counter(),\n    ).await;",
+          "call_chain_traced": "HTTP request -> upsert_points API -> do_upsert_points -> process_point_operation -> upsert_points -> vector dimension validation via try_from_matrix -> WrongVectorDimension error thrown only when wait=true forces synchronous processing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: vector 维度验证在 OperationError::WrongVectorDimension 定义中存在，但在实际调用链中，只有 wait=true 时才会同步执行验证导致返回 400 错误；wait=false 时操作被异步化立即返回 200 acknowledged，但实际插入会在后续失败或被丢弃。这是 type coercion 验证不一致的根因。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via collection state check",
+          "observed": "After 200 acknowledged response for invalid vector (wait=false), collection shows points_count=0, confirming the point was never actually inserted despite the successful response"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean container)",
+            "Race condition (same request, deterministic behavior based on wait parameter)",
+            "Request parameter typo (vector dimension 3 vs 4 is intentional test case)",
+            "API semantics misunderstanding (validation should be synchronous for type safety)"
+          ],
+          "surviving": "validation_timing_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "type_coercion",
+        "developer_quote": "None - this is not a documented by-design pattern",
+        "note": "Hits type coercion defect pattern from bug_shapes.json: 'Type Coercion issues where Type Confusion validation is missing' - specifically missing consistent validation for vector dimensions"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Confirmed type coercion defect: Qdrant API inconsistently validates vector dimensions based on wait parameter. Without wait=true, invalid 3D vector (should be 4D) returns 200 'acknowledged' but point is never inserted (collection shows 0 points). With wait=true, same request correctly returns 400 validation error. Violates qdrant_behavioral_005 contract ('4XX on validation error') and creates type safety hole where clients receive false success signals for invalid data. Source code confirms validation exists (WrongVectorDimension in operation_error.rs) but timing depends on synchronous vs asynchronous execution path controlled by wait parameter.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_005: 'Returns 200 on success; returns 4XX on validation error'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimensions are mathematically invariant - if collection config specifies 4D vectors, only 4D vectors are physically valid",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint violation) + verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_timing_inconsistency": 1
+    }
+  }
+}

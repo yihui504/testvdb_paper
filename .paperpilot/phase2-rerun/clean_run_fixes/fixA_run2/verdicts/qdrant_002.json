@@ -1,0 +1,108 @@
+{
+  "self_check": "PASSED",
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug/points/search {\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}",
+          "observed": "HTTP 200 OK, returned search result with id=1, score=1.0. API accepts hnsw_ef=0 without error.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_hnsw_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}' → status=200, result returned"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes hnsw_ef must be >= 1, but contract does not specify this constraint",
+            "Candidate assumes validation should reject zero values, but OpenAPI spec explicitly allows minimum: 0"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "OpenAPI specification for SearchParams.hnsw_ef: {\"type\": \"integer\", \"format\": \"uint\", \"minimum\": 0, \"nullable\": true}"
+          ],
+          "note": "Contract explicitly permits hnsw_ef=0 via 'minimum: 0' in the uint format specification."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["hnsw_ef", "SearchParams", "minimum.*0", "uint.*format"],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/api/src/rest/schema.rs",
+            "docs/redoc/v1.18.x/openapi.json",
+            "lib/api/src/grpc/conversions.rs"
+          ],
+          "source_excerpt": "// From docs/redoc/v1.18.x/openapi.json line 572-577:\n\"hnsw_ef\": {\n  \"description\": \"Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\",\n  \"type\": \"integer\",\n  \"format\": \"uint\",\n  \"minimum\": 0,\n  \"nullable\": true\n}",
+          "call_chain_traced": "REST API → OpenAPI schema (hnsw_ef: uint, minimum: 0) → SearchParams internal (hnsw_ef: Option<usize>) → No validation adds additional constraints beyond uint format",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "contract_compliant",
+          "note": "Source confirms OpenAPI spec explicitly sets minimum: 0 for hnsw_ef. No additional validation in code adds stricter requirements. The uint format itself rejects negative values (confirmed via test: hnsw_ef=-1 returns 400)."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test confirmed: (1) hnsw_ef=0 accepted and returns correct search results (HTTP 200, id=1, score=1.0). (2) Negative value hnsw_ef=-1 correctly rejected with 400 error. API validates uint format correctly.",
+          "observed": "Search with hnsw_ef=0 returns expected results. Negative values properly rejected. No bug behavior observed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (reproducible on clean environment)",
+            "Race condition (deterministic behavior)",
+            "Request parameter typo (valid uint format)",
+            "API semantics misunderstanding (hnsw_ef=0 is valid per spec)"
+          ],
+          "surviving": "contract_misread"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match by_design_patterns (no beam-size=0 acceptance documented) or blindspot_indicators. This is a pure contract misread - the candidate assumes validation requirements that the contract does not specify."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The OpenAPI specification for SearchParams.hnsw_ef explicitly defines it as type=integer, format=uint, minimum=0. The value 0 is contractually valid and correctly accepted by the API. Negative values are properly rejected (verified: hnsw_ef=-1 returns 400). The candidate assumes validation requirements (>= 1) that are not present in the contract or source code. This is a straightforward contract misread, not a defect.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "OpenAPI spec: hnsw_ef is uint with minimum: 0 (not minimum: 1)",
+          "source_implements_check": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint prohibits beam size of 0; could represent 'use default' or 'minimal beam'",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=WEAK_REFUTED → No contract or physical violation found → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "session_info": {
+    "target": "qdrant",
+    "version": "1.18.0",
+    "session_dir": "C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.0/qdrant_002",
+    "reviewed_at": "2026-08-15T00:00:00Z"
+  }
+}

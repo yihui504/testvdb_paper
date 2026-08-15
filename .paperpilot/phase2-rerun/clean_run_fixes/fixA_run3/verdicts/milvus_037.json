@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_037",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collectionName=test_json_dev_review, data=[{\"id\": 9999, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"string_instead_of_json\"}]",
+          "observed": "HTTP 200 success response: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[9999]}}. Query confirmed storage: GET returned {\"id\":9999,\"meta\":\"string_instead_of_json\"}",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_dev_review\", \"data\": [{\"id\": 9999, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"string_instead_of_json\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "JSON field should accept only valid JSON objects/arrays",
+            "Type coercion should be rejected for strongly-typed fields",
+            "API should return error for invalid type values"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 (dataType == JSON)",
+            "assertion_id: milvus_behavioral_insert_then_get_001 (Inserted entities should be retrievable)",
+            "invariant_id: milvus_si_count_001 (Insert count should match row count)"
+          ],
+          "relevant_assertions": [
+            "milvus_assert_insert_success_001: Inserting valid data succeeds (returns insertCount > 0 and insertIds array)",
+            "milvus_behavioral_insert_then_get_001: After inserting entities, they should be get-able by their IDs"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "case schemapb.DataType_JSON",
+            "checkAndSetData.*json",
+            "insert.*type.*validation",
+            "anyToColumns.*json"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/validate_util_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// Line 530 shows dataString extraction:\ndataString := fieldValue.String()\n\n// Critical issue: No JSON validation before casting to []byte\n// The code directly converts ANY string to bytes without checking if it's valid JSON\n// For comparison, see Bool field handling (line 615-620):\n// case schemapb.DataType_Bool:\n//     result, err := cast.ToBoolE(dataString)\n//     if err != nil {\n//         return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(...)\n//     }\n//     reallyData[fieldName] = result\n\n// JSON handling lacks the validation step present in other scalar types",
+          "call_chain_traced": "Insert request → handler_v2.go:insert() → checkAndSetData() → case schemapb.DataType_JSON → direct []byte casting without validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:JSON字段处理在utils.go第761行直接将dataString转为[]byte，没有任何JSON格式校验。对比同文件中Bool/Int等类型都有cast.ToXxE()加错处理，JSON类型缺失这一关键步骤。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET entities by ID after malformed insert + direct query verification",
+          "observed": "POST insert with 'string_instead_of_json' for JSON field succeeded (HTTP 200). Subsequent GET by ID confirmed the malformed string was stored and retrieved without error. No data validation occurred at any layer.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_dev_review\", \"filter\": \"id==9999\", \"outputFields\": [\"meta\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/container issue) - reproduced consistently",
+            "Concurrency race (single-threaded test)",
+            "Request parameter typo (tested with deliberate invalid value)",
+            "Approximate by-design behavior (JSON requires strict format)"
+          ],
+          "surviving_explanation": "Data type validation gap in REST v2 layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. Symptoms: Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Defect matches historical pattern REST_v2_data_type_handling with 95% confidence. JSON field validation is part of broader REST v2 data type serialization issues."
+      },
+      "root_cause_if_confirmed": "rest_v2_json_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /v2/vectordb/entities/insert accepts and stores invalid data for JSON fields without validation. Raw test: string 'string_instead_of_json' stored in JSON schema field. Source code confirms: utils.go line 761 directly casts dataString to []byte without JSON validation, unlike Bool/Int/Float types which use cast.ToXxE() with error handling. Matches historical bug pattern rest-v2-data-type-handling. Type coercion violates contract: milvus_type_json_001 expects JSON objects/arrays, not arbitrary strings."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_json_validation_missing": 1
+    }
+  }
+}

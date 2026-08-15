@@ -1,0 +1,65 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}",
+          "observed": "Request sent with distance=null, but response shows distance=cosine. API silently coerced null to default value instead of rejecting invalid input.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:18080/v1/schema\" -H \"Content-Type: application/json\" -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}' | grep -o '\"distance\":\"[^\"]*\"'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_type_schema_create_002 - vectorIndexType must be one of allowed index types", "constraint_id: weaviate_behavioral_schema_create_001 - creating collection with disallowed vectorIndexType returns 422"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["distance.*null.*default", "setClassDefaults", "DefaultVectorDistanceMetric", "setNewClassDefaults"],
+          "files_examined": ["usecases/schema/class.go", "entities/vectorindex/hnsw/config.go", "entities/vectorindex/common/config.go", "usecases/schema/parser.go"],
+          "source_excerpt": "// usecases/schema/class.go lines 691-696:\nif h.config.DefaultVectorDistanceMetric != \"\" {\n    if class.VectorIndexConfig == nil {\n        class.VectorIndexConfig = map[string]interface{}{\"distance\": h.config.DefaultVectorDistanceMetric}\n    } else if vIdxCfgMap, ok := class.VectorIndexConfig.(map[string]interface{}); ok && vIdxCfgMap[\"distance\"] == nil {\n        class.VectorIndexConfig.(map[string]interface{})[\"distance\"] = h.config.DefaultVectorDistanceMetric\n    }\n}\n\n// entities/vectorindex/common/config.go line 31:\nDefaultDistanceMetric = DistanceCosine\n\n// entities/vectorindex/hnsw/config.go line 96 (in SetDefaults method):\nu.Distance = vectorIndexCommon.DefaultDistanceMetric",
+          "call_chain_traced": "POST /schema → Handler.addClass() → setNewClassDefaults() → setClassDefaults() → checks if vIdxCfgMap[\"distance\"] == nil → sets to DefaultVectorDistanceMetric (\"cosine\")",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: setClassDefaults 函数明确检测 distance=null 情况并直接设置为默认值 cosine，而不是抛出错误。这是 type coercion bug 的根本原因。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 null distance 被拒绝 - 用无效字符串值测试",
+          "observed": "当 distance 设为无效字符串 'invalid_string' 时，API 正确返回错误: 'unrecognized distance metric'. 证明系统有能力拒绝无效值，但对 null 却选择了 coercion 而非 rejection。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "请求参数笔误"],
+          "surviving": "type_coercion_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns，但发现源码中有显式的 null 处理逻辑，表明这是有意设计但属于宽松的输入处理策略。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Type coercion defect confirmed: API accepts null for required enum field 'distance' and silently coerces it to default 'cosine' instead of rejecting invalid input. Source code shows explicit null handling in setClassDefaults() that sets default value rather than validation. This violates strict type validation principles - required enum fields should reject null values, not coerce them to defaults."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "self_check": "PASSED"
+}

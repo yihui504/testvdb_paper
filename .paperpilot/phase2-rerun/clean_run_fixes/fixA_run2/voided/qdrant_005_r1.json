@@ -1,0 +1,94 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero {vectors:{size:4,distance:Cosine},shard_number:0}",
+          "observed": "HTTP 422 with validation error: 'shard_number: value 0 invalid, must be 1 or larger'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_zero' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001",
+            "assertion: shard_number >= 1",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference/collections/create-collection"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["shard_number", "validate.*range", "CreateCollection"],
+          "files_examined": [
+            "lib/storage/src/content_manager/collection_meta_ops.rs",
+            "lib/api/src/grpc/validate.rs",
+            "lib/api/build.rs",
+            "src/actix/api/collections_api.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/content_manager/collection_meta_ops.rs line 125-126\n#[serde(default)]\n#[validate(range(min = 1))]\npub shard_number: Option<u32>,\n\n/// Documentation comment from source:\n/// For auto sharding:\n/// Number of shards in collection.\n///  - Default is 1 for standalone, otherwise equal to the number of nodes\n///  - Minimum is 1\n///\n/// For custom sharding:\n/// Number of shards in collection per shard group.\n///  - Default is 1, meaning that each shard key will be mapped to a single shard\n///  - Minimum is 1",
+          "call_chain_traced": "REST API (PUT /collections/{name}) → Json<CreateCollection> → validator::Validate derive macro → #[validate(range(min = 1))] attribute on shard_number field → validation error returned",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:shard_number 字段有 #[validate(range(min = 1))] 注解,使用 validator crate 自动验证.当值=0 时返回 422 验证错误,当值=-1 时 JSON 解析失败(u32 类型不接受负数).契约要求与源码实现一致."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 shard_number=0 确实被拒绝,shard_number=1 成功创建",
+          "observed": "shard_number=0 → HTTP 422 validation error; shard_number=-1 → HTTP 400 format error; shard_number=1 → HTTP 200 ok (collection created). Validation works as designed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns 或 rejection_patterns.源码显示这是 validator crate 的标准范围验证,非有意设计."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "复现成功:shard_number=0 返回 HTTP 422 验证错误,shard_number=-1 返回 HTTP 400 格式错误.契约约束 qdrant_range_create_collection_001 明确规定 shard_number >= 1.源码接地:CreateCollection 结构体中 shard_number 字段有 #[validate(range(min = 1))] 注解,使用 validator crate 自动实现范围检查.这不是 bug,而是正常工作的参数验证机制.原 oracle 误报为缺陷.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "shard_number >= 1 (constraint_id: qdrant_range_create_collection_001)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "shard_number is u32 type, must be >= 1",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED AND verdict_B=REFUTED AND verdict_C=REFUTED → final=REFUTED (正常工作的验证)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "working_validation_misreported_as_defect": 1
+    }
+  }
+}

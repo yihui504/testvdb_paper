@@ -1,0 +1,70 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero_verify with shard_number=0",
+          "observed": "HTTP 422 with 'Validation error in JSON body: [shard_number: value 0 invalid, must be 1 or larger]'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_zero_verify' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_range_create_collection_001 assertion: shard_number >= 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": ["shard_number", "NonZeroU32", "pub struct CollectionParams"],
+          "files_examined": [
+            "lib/collection/src/config.rs",
+            "lib/collection/src/operations/validation.rs",
+            "lib/collection/src/operations/cluster_ops.rs",
+            "lib/api/src/grpc/qdrant.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/config.rs lines 87-97\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]\n#[serde(rename_all = \"snake_case\")]\npub struct CollectionParams {\n    /// Configuration of the vector storage\n    #[validate(nested)]\n    #[serde(default)]\n    pub vectors: VectorsConfig,\n    /// Number of shards the collection has\n    #[serde(default = \"default_shard_number\")]\n    #[anonymize(false)]\n    pub shard_number: NonZeroU32,\n\n// lib/collection/src/config.rs lines 216-218\npub fn default_shard_number() -> NonZeroU32 {\n    NonZeroU32::new(1).unwrap()\n}",
+          "call_chain_traced": "CollectionParams.shard_number (NonZeroU32 type) → serde deserialization → compile-time type constraint enforces non-zero → validation rejects 0 and negative values",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: shard_number 字段类型为 NonZeroU32 (Rust编译期非零约束)，在JSON反序列化时自动拒绝0和负值，验证逻辑存在且有效，API正确返回422/400错误"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_boundary with valid shard_number=1",
+          "observed": "HTTP 200 with result:true, confirming API works correctly for valid values",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_boundary' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 1}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design 模式；此为类型系统正常工作，非设计缺陷"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Qdrant 使用 Rust 的 NonZeroU32 类型作为 shard_number 字段类型，该类型在编译期保证非零约束。API 正确拒绝了非法值: shard_number=0 返回 HTTP 422 明确错误 'value 0 invalid, must be 1 or larger'，shard_number=-1 返回 HTTP 400 格式错误 'expected u32'。有效值 shard_number=1 正常返回 HTTP 200。参数验证逻辑完整且按预期工作，报告的违规实为API的正确行为，不存在缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

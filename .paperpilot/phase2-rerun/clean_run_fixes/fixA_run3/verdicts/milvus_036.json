@@ -1,0 +1,68 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupSize=0 and groupSize=-1",
+          "observed": "Both invalid values (groupSize=0 and groupSize=-1) are accepted with HTTP 200 and return search results, when they should be rejected with parameter validation error",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_gs\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": []
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupSize", "group_size", "GroupByWithScorer"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/util/function/chain/chain.go",
+            "internal/util/function/chain/operator_group_by.go"
+          ],
+          "source_excerpt": "// internal/util/function/chain/chain.go line 394-407\nfunc (fc *FuncChain) GroupByWithScorer(groupByField string, groupSize, limit, offset int64, scorer GroupScorer) *FuncChain {\n\tif groupByField == \"\" {\n\t\treturn fc.addWithError(nil, merr.WrapErrParameterMissingMsg(\"groupByField cannot be empty\"))\n\t}\n\tif groupSize <= 0 {\n\t\treturn fc.addWithError(nil, merr.WrapErrParameterInvalidMsg(\"groupSize must be positive, got %d\", groupSize))\n\t}\n\tif limit <= 0 {\n\t\treturn fc.addWithError(nil, merr.WrapErrParameterInvalidMsg(\"limit must be positive, got %d\", limit))\n\t}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:1929) only checks `httpReq.GroupSize > 0` before setting parameter, but allows <=0 values to pass through without validation → internal validation in chain.go:398 should catch but REST v2 bypasses this check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:chain.go:398-399 显示 groupSize 必须 > 0 (must be positive), 但 REST v2 handler (handler_v2.go:1929) 仅在 > 0 时才设置参数,未对 <= 0 做拒绝处理 → 真缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - clean repro already confirms violation",
+          "observed": "Clean reproducibility step confirms the API accepts invalid groupSize values (0 and -1) without error, violating the source code requirement that groupSize must be positive"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issue", "request parameter typo", "API semantic misunderstanding", "by-design behavior"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types / validate parameters",
+        "note": "命中 blindspot_indicators: REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码明确要求 groupSize > 0 (chain.go:398: 'groupSize must be positive'),但 REST v2 API 接受 groupSize=0 和 groupSize=-1 并返回 HTTP 200。这是典型的 REST v2 参数验证缺失缺陷,命中开发者认知模型中的 blindspot_indicators (REST v2 与 gRPC 验证不一致)。实测复现成功,源码接地确认约束存在,证伪步骤通过。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_007",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with data=[[]] (empty vector array), missing annsField",
+          "observed": "Error 1801: 'can only accept json format request, error: dimension: 8, but length of []float: 0: invalid parameter[expected=FloatVector][actual=[[]]]'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_milvus_007\", \"dbName\": \"default\", \"data\": [[]], \"limit\": 3, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect claim assumes search should work without annsField parameter",
+            "Original claim assumes empty vector array [[]] is valid input for 8-dimension collection"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001",
+            "assertion: 'data is array[array[float]] AND annsField is a vector field AND limit > 0'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "SearchReqV2",
+            "annsField",
+            "serializeFloatVectors",
+            "dimension.*mismatch"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 333-352\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tData             []interface{}          `json:\"data\" binding:\"required\"`\n\tAnnsField        string                 `json:\"annsField\"`  // ← NOT marked as required\n\t...\n\tLimit            int32                  `json:\"limit\"`  // ← NOT marked as required\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1457-1520\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\t// ... \n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: proxy.AnnsFieldKey, Value: httpReq.AnnsField})\n\t// No validation that httpReq.AnsField is non-empty before using it\n\t...\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 1221-1237\nfunc serializeFloatVectors(vectorStr string, dataType schemapb.DataType, dimension, bytesLen int64, fpArrayToBytesFunc func([]float32) []byte) ([][]byte, error) {\n\tvar fp32Values [][]float32\n\terr := json.Unmarshal([]byte(vectorStr), &fp32Values)\n\tif err != nil {\n\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr, err.Error())\n\t}\n\tvalues := make([][]byte, 0, len(fp32Values))\n\tfor _, vectorArray := range fp32Values {\n\t\tif int64(len(vectorArray)) != dimension {\n\t\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr,\n\t\t\t\tfmt.Sprintf(\"dimension: %d, but length of []float: %d\", dimension, len(vectorArray)))\n\t\t}\n\t\t// No check for len(vectorArray) == 0 before dimension check\n\t\t...\n\t}\n}",
+          "call_chain_traced": "SearchReqV2 struct → search() handler → serializeFloatVectors() → dimension validation fails on empty array",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: annsField 和 limit 字段在 SearchReqV2 结构体中均未标记 binding:'required'，REST v2 API 允许省略这些参数。serializeFloatVectors 函数对空数组 [[]] 先检查维度匹配，0 != 8 时抛出参数错误。这是正常的参数校验行为，不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test proper search with annsField provided and valid vector data",
+          "observed": "Search succeeds when annsField='vector' and data=[[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]]: returns results with distance=0 and ids=[0,1,2]",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_milvus_007\", \"annsField\": \"vector\", \"data\": [[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]], \"limit\": 3}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Missing required parameter: annsField is mandatory per contract but not enforced by request validation",
+            "Invalid vector data: Empty array [[]] cannot match dimension 8 requirement",
+            "Normal error handling: API correctly returns parameter validation error for invalid input"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - examples: 'load partition stuck at 50%', 'channel checkpoint lag increasing'",
+        "note": "命中 rejection pattern RP-001 (expected_behavior)。原始 defect 将参数校验错误报告为行为缺陷，但这属于正常的 API 参数验证逻辑。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原始 defect milvus_007 声称搜索接口在特定输入下返回错误是缺陷。经独立复现与源码接地分析：(1) 契约 constraint milvus_type_entities_search_001 明确要求 annsField 必须是 vector 字段、data 必须是 array[array[float]]；(2) 原始请求省略了 annsField 且使用了无效的空向量数组 [[]]，违反了契约前提；(3) 源码显示 serializeFloatVectors 函数正确执行了维度校验（0 != 8），抛出参数错误是预期行为；(4) 补全 annsField 和有效向量数据后搜索正常工作。此为正常的参数校验逻辑，符合维护者预期的行为模式 (RP-001)，非系统缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

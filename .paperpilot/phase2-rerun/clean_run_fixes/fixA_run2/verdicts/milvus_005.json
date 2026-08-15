@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data containing '123field' and '@field' → insert succeeds, then POST /v2/vectordb/entities/query with outputFields=['123field', '@field'] → parse output field name failed: 123field",
+          "observed": "Insert with invalid field names (starting with digit/special char) succeeds via REST v2 insert API, but query with those field names in outputFields fails with 'parse output field name failed: 123field'. Valid field names like 'valid_field' work correctly in both insert and query.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_devreview_milvus005\", \"schema\": {\"autoID\": false, \"enableDynamicField\": true, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 4}}]}}' && curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_devreview_milvus005\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4], \"123field\": \"v1\"}, {\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"@field\": \"v2\"}]}' && curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_devreview_milvus005\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"123field\", \"@field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_entities_insert_001 - data field types match collection schema", "No explicit constraint found for field name validation in insert endpoint"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["parse output field name failed", "func ParseIdentifier", "Identifier.*Nondigit"],
+          "files_examined": ["internal/proxy/util.go", "internal/parser/planparserv2/plan_parser_v2.go", "internal/parser/planparserv2/Plan.g4"],
+          "source_excerpt": "// Plan.g4 line 139-153:\nIdentifier: Nondigit (Nondigit | Digit)*;\nfragment Nondigit: [a-zA-Z_];\nfragment Digit: [0-9];\n\n// internal/proxy/util.go line 1640-1665:\nerr := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n    columnInfo := expr.GetColumnExpr().GetInfo()\n    // there must be no error here\n    dynamicField, _ := schema.schemaHelper.GetDynamicField()\n    // only $meta[\"xxx\"] is allowed for now\n    if dynamicField.GetFieldID() != columnInfo.GetFieldId() {\n        return errors.New(\"not support getting subkeys of json field yet\")\n    }\n    nestedPaths := columnInfo.GetNestedPath()\n    // $meta[\"A\"][\"B\"] not allowed for now\n    if len(nestedPaths) != 1 {\n        return errors.New(\"not support getting multiple level of dynamic field for now\")\n    }\n    return nil\n})\nif err != nil {\n    log.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n    return nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n}",
+          "call_chain_traced": "REST v2 insert API accepts any field names in data (including '123field', '@field') via dynamic field storage → query API calls ParseIdentifier which validates field names per grammar (must start with [a-zA-Z_]) → validation mismatch",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent_in_insert",
+          "note": "Source code confirms that insert path (utils.go checkAndSetData) accepts field names into dynamic JSON storage without validation, but query path (util.go ParseIdentifier) strictly validates per Plan.g4 grammar requiring [a-zA-Z_][a-zA-Z0-9_]* pattern. This is a cross-path validation inconsistency."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified valid field names (e.g., 'valid_field') work correctly in both insert and query. Confirmed '123field' and '@field' fail query outputFields validation but insert accepts them.",
+          "observed": "Valid field 'valid_field' successfully inserted and retrieved. Invalid fields '123field' and '@field' accepted during insert but fail during query outputFields parsing, proving the validation inconsistency."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Concurrency race", "Cache delay", "Request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 historical issues in this pattern",
+        "note": "This defect matches the REST_v2_data_type_handling shape pattern - cross-path validation inconsistency between insert accepting field names and query rejecting them"
+      },
+      "root_cause_if_confirmed": "validation_inconsistency_cross_path",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Cross-path validation inconsistency confirmed: REST v2 insert API accepts field names violating identifier grammar ('123field', '@field') into dynamic field storage, but query API strictly validates outputFields per Plan.g4 identifier rules requiring [a-zA-Z_][a-zA-Z0-9_]* pattern. This creates data insertion success but query failure, violating principle of least surprise. Source grounding confirms insert path lacks field name validation while query path enforces grammar-based validation via ParseIdentifier. This is a true Type1_IllegalSuccess defect (bad state reported as success) in the REST v2 API layer, matching the rest-v2-data-type-handling pattern with 26 historical instances."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_inconsistency_cross_path": 1
+    }
+  }
+}

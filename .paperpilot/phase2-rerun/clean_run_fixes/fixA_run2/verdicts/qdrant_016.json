@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_016",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from.collection=nonexistent_collection_xyz",
+          "observed": "HTTP 200 OK with successful results: {\"result\":{\"points\":[{\"id\":3,\"version\":1,\"score\":0.91287094},{\"id\":0,\"version\":1,\"score\":0.91287094},{\"id\":2,\"version\":1,\"score\":0.91287094}]},\"status\":\"ok\"}",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_lookup_source/points/query' -H 'Content-Type: application/json' -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API returns HTTP 200 (success status) when lookup_from.collection does not exist",
+            "API returns valid query results from source collection, ignoring the invalid lookup target",
+            "No error or warning indicates the lookup target collection does not exist"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: lookup_from (type: object, required: false) - 'Cross-collection lookup location'",
+            "endpoint: POST collections+{collection_name}+points+query (description: 'Universal Query API with multi-stage pipeline support')"
+          ],
+          "contract_assertion": "Contract defines lookup_from parameter for cross-collection lookup but does not explicitly specify validation behavior for nonexistent target collections"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["lookup_from", "check_lookup_from", "find_view"],
+          "files_examined": [
+            "lib/storage/src/rbac/ops_checks.rs",
+            "lib/storage/src/rbac/mod.rs",
+            "lib/collection/src/operations/conversions.rs",
+            "lib/api/src/rest/schema.rs"
+          ],
+          "source_excerpt": "// lib/storage/src/rbac/ops_checks.rs lines 100-108\nfn check_lookup_from(\n    &self,\n    lookup_location: &Option<LookupLocation>,\n) -> Result<(), StorageError> {\n    if let Some(lookup_location) = lookup_location {\n        self.find_view(&lookup_location.collection)?;\n    }\n    Ok(())\n}\n\n// lib/storage/src/rbac/mod.rs lines 154-168\npub(self) fn find_view<'a>(\n    &'a self,\n    collection_name: &'a str,\n) -> Result<CollectionAccessView<'a>, StorageError> {\n    let access = self\n        .0\n        .iter()\n        .find(|collections| collections.collection == collection_name)\n        .ok_or_else(|| {\n            StorageError::forbidden(format!(\n                \"Access to collection {collection_name} is required\"\n            ))\n        })?;\n    Ok(access.view())\n}",
+          "call_chain_traced": "check_lookup_from → find_view → only validates access control, NOT collection existence. The find_view function searches the access control list and returns 'forbidden' if access denied, but never checks if the collection physically exists in the database.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: RBAC层只做权限检查(find_view遍历access list),未做collection存在性验证。API接受不存在的collection名并返回200,绕过了存在性检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collection does not exist: GET /collections/nonexistent_collection_xyz",
+          "observed": "HTTP 404 Not Found - collection does not exist, confirming the bug",
+          "evidence_cmd": "curl -s http://localhost:6333/collections/nonexistent_collection_xyz"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (environmental) - reproducible on clean container",
+            "并发race (concurrency race) - single-threaded test, no concurrent operations",
+            "缓存延迟 (cache delay) - immediate query, no timing issues",
+            "参数笔误 (parameter typo) - parameter name is correct, collection name intentionally invalid",
+            "API语义误解 (API semantics) - cross-collection lookup should validate target existence"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "lookup_from parameter exists for cross-collection lookup (no explicit validation requirement in contract)",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Cross-collection lookup requires target collection to exist for semantic correctness",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "cognition_match": "none",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (B alone sufficient, C confirms)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design模式；这是真实缺陷—lookup_from应验证target collection存在性但未实现"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Clean repro confirmed: POST /points/query with lookup_from.collection=nonexistent_collection_xyz returns HTTP 200 with successful results, despite the target collection not existing (verified by 404 on GET /collections/nonexistent_collection_xyz). Source grounding reveals the bug: RBAC layer's check_lookup_from function only validates access control via find_view, which searches the access control list but never checks if the collection physically exists in the database. The API accepts an invalid collection reference without error and executes the query successfully using only the source collection. This is a genuine Type2_PoorDiagnostics defect—missing validation that should fail fast with a clear error when the lookup target doesn't exist."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

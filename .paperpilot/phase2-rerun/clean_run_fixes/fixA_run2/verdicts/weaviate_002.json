@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_002",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.flatSearchCutoff=-100",
+          "observed": "HTTP 200 SUCCESS - API accepts negative flatSearchCutoff value and stores it as-is. Response shows flatSearchCutoff=-100 persisted.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestFC\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"flatSearchCutoff\": -100}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should validate flatSearchCutoff is a non-negative integer (threshold for allowList.Len() comparison)",
+            "Negative values for flatSearchCutoff break the conditional logic in search.go",
+            "The parameter controls search strategy selection: flatSearchCutoff should logically be >= 0"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_schema_create_001 - class field must be CamelCase",
+            "constraint_id: weaviate_type_schema_create_002 - vectorIndexType must be one of allowed index types",
+            "constraint_id: weaviate_type_schema_create_003 - properties[].tokenization must be a valid enum value"
+          ],
+          "note": "No explicit constraint found for flatSearchCutoff range validation in structured_contract.json. However, the parameter's semantic usage in search.go (line 86: allowList.Len() < flatSearchCutoff) implies it should be a non-negative threshold value."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": [
+            "flatSearchCutoff",
+            "vectorIndexConfig",
+            "validate",
+            "range.*check"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/search.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/index.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/config_update.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config_test.go"
+          ],
+          "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/search.go line 85-86\nfunc (h *hnsw) SearchByVector(ctx context.Context, vector []float32, k int, allowList helpers.AllowList) ([]uint64, []float32, error) {\n    flatSearchCutoff := int(atomic.LoadInt64(&h.flatSearchCutoff))\n    if allowList != nil && !h.forbidFlat && allowList.Len() < flatSearchCutoff {\n        helpers.AnnotateSlowQueryLog(ctx, \"hnsw_flat_search\", true)\n        return h.flatSearch(ctx, vector, k, h.searchTimeEF(k), allowList)\n    }\n\n// C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go line 201-205\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n    uc.FlatSearchCutoff = v\n}); err != nil {\n    return uc, err\n}\n\n// C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go line 260-289 (validate function)\nfunc (u *UserConfig) validate() error {\n    var errMsgs []string\n    if u.MaxConnections < MinmumMaxConnections {\n        errMsgs = append(errMsgs, fmt.Sprintf(\n            \"maxConnections must be a positive integer with a minimum of %d\",\n            MinmumMaxConnections,\n        ))\n    }\n    if u.MaxConnections > MaximumMaxConnections {\n        errMsgs = append(errMsgs, fmt.Sprintf(\n            \"maxConnections must be less than %d\",\n            MaximumMaxConnections+1,\n        ))\n    }\n    if u.EFConstruction < MinmumEFConstruction {\n        errMsgs = append(errMsgs, fmt.Sprintf(\n            \"efConstruction must be a positive integer with a minimum of %d\",\n            MinmumMaxConnections,\n        ))\n    }\n    if u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n        errMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n    }\n    // NO VALIDATION FOR FLATSEARCHCUTOFF - BUG CONFIRMED\n}",
+          "call_chain_traced": "UserConfig.parse() line 201-205: flatSearchCutoff parsed from JSON without validation → UserConfig.validate() line 260-289: NO range check for flatSearchCutoff → index.go line 340: stored directly → search.go line 86: used in allowList.Len() < flatSearchCutoff comparison",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：validate()函数检查MaxConnections、EFConstruction、FilterStrategy但完全没有对flatSearchCutoff的范围校验。flatSearchCutoff在search.go中用于阈值比较(allowList.Len() < flatSearchCutoff)，负值会导致条件永远为FALSE，禁用flat search优化。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with positive flatSearchCutoff value (10000) to confirm API accepts valid range",
+          "observed": "HTTP 200 SUCCESS with flatSearchCutoff=10000 persisted. Confirms API accepts non-negative values and defect is specifically about lack of negative value validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested against running Weaviate container v1.37.4",
+            "Request parameter typo - payload structure is valid JSON with correct field name",
+            "API semantic misunderstanding - flatSearchCutoff clearly used as threshold in search.go line 86",
+            "Platform-specific behavior - confirmed on Windows with Docker container",
+            "Documentation discrepancy - field is documented in OpenAPI spec but lacks range constraint"
+          ],
+          "surviving_explanations": [
+            "Parameter validation gap - UserConfig.validate() function explicitly checks other int parameters (MaxConnections, EFConstruction) but omits flatSearchCutoff",
+            "Historical pattern - matches BS-004 (Parameter Validation Issues in Request Parsing) from bug_shapes.json"
+          ]
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "pattern_name": "Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "what_developers_consider_bugs": "Parameter validation gaps at API boundaries",
+        "note": "候选直接命中开发者认知模型中的'Parameter validation gaps at API boundaries'类别，属于开发者明确认为的bug类型。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint found in structured_contract.json for flatSearchCutoff range. However, the parameter's semantic usage (threshold comparison in search.go line 86) implies it should be >= 0.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "flatSearchCutoff represents a threshold for allowList.Len() comparison (search.go line 86: allowList.Len() < flatSearchCutoff). As a threshold for comparing with unsigned quantity (list length), it semantically should be non-negative. Negative value -100 makes the comparison always false, breaking the intended search strategy selection logic.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API gracefully accepts negative value without error, storing and returning it. However, this graceful handling masks a semantic bug: the negative value will cause search.go line 86 condition (allowList.Len() < flatSearchCutoff) to always evaluate to FALSE, effectively disabling flat search optimization. Source code shows no by-design intent to accept negative values for this threshold parameter."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation: threshold parameter should be >= 0) + verdict_C=CONFIRMED (graceful but buggy handling) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "root_cause_if_true": "Parameter validation gap in UserConfig.validate() function - missing range check for flatSearchCutoff parameter while other int parameters (MaxConnections, EFConstruction) are validated",
+      "rationale": "源码接地确认：1) parse函数直接接受flatSearchCutoff任何int值(config.go:201-205)，2) validate函数检查MaxConnections/EFConstruction/FilterStrategy但完全省略flatSearchCutoff校验(config.go:260-289)，3) search.go:86使用allowList.Len() < flatSearchCutoff，负值(-100)导致条件恒FALSE、禁用flat search。实测API接受-100并持久化，无错误提示。属于BS-004模式(Request Parsing层参数校验遗漏)，开发者认知明确归类为bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  },
+  "self_check": "PASSED"
+}
