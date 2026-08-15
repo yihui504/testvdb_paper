@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_bug/points/search with vector=[0.1,0.2,0.3,0.4], score_threshold=2.0 (outside valid cosine similarity range [-1, 1])",
+          "observed": "API returns HTTP 200 with empty result array, no validation error despite invalid score_threshold value",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_score_threshold_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Response should indicate validation error for out-of-range score_threshold",
+            "API should validate score_threshold against distance function semantic constraints",
+            "score_threshold=2.0 is invalid for Cosine distance (valid range: [-1, 1])"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_behavioral_008 - '200 with ranked results descending by score; 4XX on invalid params'",
+            "OpenAPI schema: score_threshold is type 'number, format: float' with no min/max validation"
+          ],
+          "contract_analysis": "Contract states 4XX should be returned on invalid parameters, but score_threshold lacks range validation despite semantic constraints from distance functions"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "score_threshold",
+            "ScoreType",
+            "validate.*range"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs (lines 565-585, 776-795, 1156-1165, 1195-1204, 1243-1255)",
+            "lib/common/common/src/types.rs (line 8)",
+            "tests/openapi/test_score_threshold.py"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 572-573\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n// lib/common/common/src/types.rs line 8\npub type ScoreType = f32;\n\n// lib/api/src/rest/schema.rs line 576-577 (contrast with limit parameter)\n/// Max number of points to return. Default is 10.\n#[validate(range(min = 1))]\npub limit: Option<usize>,",
+          "call_chain_traced": "REST request parsing → schema.rs ScoreRequest.score_threshold → No validation attribute → Direct pass-through to search execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms score_threshold (ScoreType=f32) has no range validation, unlike limit parameter which has #[validate(range(min = 1))]. The field is defined as Option<ScoreType> with no validation attributes, accepting any f32 value including those outside semantic bounds for distance functions."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested score_threshold with truly invalid type (string 'invalid') → API correctly returns 400 error: 'Format error in JSON body: invalid type: string \"invalid\", expected f32'",
+          "observed": "Type validation works correctly (string rejected), but range validation is absent (score_threshold=2.0, 999999 accepted with HTTP 200)",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_score_threshold_bug/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": \"invalid\"}' → Returns 400 validation error as expected"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on clean Qdrant 1.18.0 container",
+            "Race condition - single-threaded sequential test",
+            "Request parameter typo - valid JSON structure",
+            "API semantics misunderstanding - score_threshold clearly documented as minimal threshold"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Unmapped to known by_design_patterns (no HNSW approximation, resource limits, or platform issues). This is a pure parameter validation gap consistent with bug_shape 'qdrant-parameter-validation-numeric-boundary' - missing validation for numeric boundary constraints."
+      },
+      "root_cause_if_confirmed": "missing_range_validation_on_score_threshold",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API accepts score_threshold=2.0 for Cosine distance (valid range [-1,1]) without validation error, returning HTTP 200 instead of 4XX. Source code confirms no range validation exists (no #[validate(range(...))] attribute unlike limit parameter). This violates qdrant_behavioral_008 contract ('4XX on invalid params') and is a genuine parameter validation gap. The defect is confirmed because: (1) Clean repro shows API accepts semantically invalid value, (2) Source grounding reveals missing validation, (3) Falsification shows type validation works but range validation absent, (4) No mundane explanation or by-design pattern applies.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_behavioral_008: '200 with ranked results descending by score; 4XX on invalid params'",
+          "source_implements_check": false,
+          "api_observed_value": "HTTP 200 with empty result array for score_threshold=2.0 (invalid for Cosine)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Cosine similarity scores ∈ [-1, 1] by mathematical definition; score_threshold must fall within this range for semantic validity",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_range_validation_on_score_threshold": 1
+    }
+  }
+}

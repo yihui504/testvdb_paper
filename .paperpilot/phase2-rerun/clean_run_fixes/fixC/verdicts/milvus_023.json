@@ -1,0 +1,69 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/collections/drop with {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with {\"code\": 0, \"data\": {}}",
+          "evidence_cmd": "curl -X POST \"http://localhost:19530/v2/vectordb/collections/drop\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["None violated - raw request is valid and complete"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No structured_contract.json found for milvus - contract not applicable"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["errIgnoredDropCollection", "DropCollection", "drop_collection"],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/drop_collection_task.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/meta_table.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/root_coord.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/meta_table.go (lines 58):\n    errIgnoredDropCollection = errors.New(\"ignored drop collection\")   // drop collection or database not found, so it can be ignored.\n\nC:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/drop_collection_task.go (lines 52-56):\n    collMeta, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n    if err != nil {\n        if errors.Is(err, merr.ErrCollectionNotFound) || errors.Is(err, merr.ErrDatabaseNotFound) {\n            return errIgnoredDropCollection\n        }\n        return err\n    }\n\nC:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/root_coord.go (lines 959-962):\n    if errors.Is(err, errIgnoredDropCollection) {\n        logger.Info(\"drop collection that not found, ignore it\")\n        metrics.RootCoordDDLReqCounter.WithLabelValues(\"DropCollection\", metrics.SuccessLabel).Inc()\n        return merr.Success(), nil\n    }",
+          "call_chain_traced": "REST v2 handler_v2.go:dropCollection() → proxy.DropCollection() → rootCoord.DropCollection() → dropCollectionTask.validate() → GetCollectionByName() returns ErrCollectionNotFound → returns errIgnoredDropCollection → caught in root_coord.go → returns merr.Success()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly documents 'ignored drop collection' behavior: when collection not found, the system returns success. This is a deliberate idempotent design pattern."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe + POST /v2/vectordb/collections/list to verify collection state",
+          "observed": "Describe returns code=100 'can't find collection', List confirms collection does not exist in DB. This proves the drop request was properly handled (no-op on non-existent resource)."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API idempotency pattern", "No-op on non-existent resources"],
+          "surviving": "by_design_idempotent_drop"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Behavior matches by-design pattern but not explicitly documented in developer_cognition.json for drop operations"
+      },
+      "root_cause_if_fp": "by_design_idempotent_drop",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Source code reveals this is an intentional idempotent design: drop_collection() explicitly handles non-existent collections via errIgnoredDropCollection and returns success (merr.Success()). This is documented in meta_table.go as 'drop collection or database not found, so it can be ignored'. The REST v2 and gRPC APIs both implement this idempotent behavior consistently. The HTTP 200 response is the correct success code for an idempotent operation that achieved its intended state (collection does not exist). This matches standard idempotent API patterns (e.g., DELETE 404 vs 204 semantics debates)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"by_design_idempotent_drop": 1}
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams wrapper: {\"collectionName\": \"test_gv_review\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"vector\", \"groupSize\": 1}}",
+          "observed": "API returns HTTP 200 with 5 identical vectors (distance=0.9128709, ids=[0,1,2,3,4]) - no grouping applied despite groupSize=1 request",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_gv_review\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"vector\", \"groupSize\": 1}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Request assumes groupParams is valid wrapper object - but source code shows SearchReqV2 struct expects 'groupingField' at root level (line 499: GroupByField string `json:\"groupingField\"`)",
+            "Request assumes API applies grouping transformation - but observed response shows 5 duplicate vectors when groupSize=1 should return at most 1 per group"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+search, source_url: https://milvus.io/api-reference/restful/v3.0.x/v2/Vector%20(v2)/Search.md"
+          ],
+          "note": "Contract documents grouping feature but doesn't specify exact JSON schema - implementation accepts both 'groupingField' (correct) and silently ignores 'groupParams' wrapper (bug)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "GroupByField",
+            "groupParams",
+            "groupingField",
+            "ParamGroupByField",
+            "ParamGroupSize"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 491-501\ntype SearchReqV2 struct {\n    DbName            string                 `json:\"dbName\"`\n    CollectionName    string                 `json:\"collectionName\" binding:\"required\"`\n    Data              []interface{}          `json:\"data\"`\n    Ids               []interface{}          `json:\"ids\"`\n    AnnsField         string                 `json:\"annsField\"`\n    PartitionNames    []string               `json:\"partitionNames\"`\n    Filter            string                 `json:\"filter\"`\n    GroupByField      string                 `json:\"groupingField\"`  // <-- Expects 'groupingField' at root\n    GroupSize         int32                  `json:\"groupSize\"`\n    StrictGroupSize   bool                   `json:\"strictGroupSize\"`\n    Limit             int32                  `json:\"limit\"`\n    Offset            int32                  `json:\"offset\"`\n    OutputFields      []string              `json:\"outputFields\"`\n    SearchParams      map[string]interface{} `json:\"searchParams\"`\n    ConsistencyLevel  string                 `json:\"consistencyLevel\"`\n    ...\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1926-1932\nif httpReq.GroupByField != \"\" {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupByField, Value: httpReq.GroupByField})\n}\nif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n    searchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n}",
+          "call_chain_traced": "REST v2 JSON unmarshal → SearchReqV2.GroupByField field → handler_v2.go line 1926 check → searchParams append → gRPC SearchRequest. No code path exists to process 'groupParams' wrapper object.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: (1) SearchReqV2 struct expects 'groupingField' at root level, not 'groupParams' wrapper. (2) No validation or error handling when 'groupParams' is provided - it's simply ignored by JSON unmarshal. (3) Silent parameter ignore: API accepts malformed grouping parameters without error and returns ungrouped results."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Cross-channel validation test - compare REST v2 vs gRPC behavior for invalid grouping (grouping by vector field)",
+          "observed": "REST v2 with 'groupParams': {\"groupByField\": \"vector\", \"groupSize\": 1} → HTTP 200, returns 5 identical vectors (SILENT IGNORE). gRPC (pymilvus) with group_by_field='vector' → ERROR 2001: 'unsupported data type VECTOR_FLOAT for group by operator'. This is E2 channel inconsistency evidence."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproduced consistently on current container",
+            "Concurrency/race - single-threaded test",
+            "Caching/optimization delay - immediate response",
+            "Request parameter typo - 'groupParams' wrapper is structurally valid but semantically wrong"
+          ],
+          "surviving_explanation": "silent_parameter_ignore_with_channel_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "REST_v2_data_type_handling",
+        "note": "This defect directly hits the blindspot indicator: REST v2 API data type serialization - accepts malformed grouping parameters that gRPC correctly rejects"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "CONFIRMED - Type4_StateLogicViolation: REST v2 accepts 'groupParams' wrapper object (structurally valid JSON) but silently ignores it, returning ungrouped results when groupSize=1 was requested. Source code shows SearchReqV2 expects 'groupingField' at root level, not wrapped in 'groupParams'. Cross-channel evidence (E2): gRPC correctly rejects invalid grouping (e.g., grouping by vector fields) with error 2001, while REST v2 silently ignores malformed parameters. This is a genuine API inconsistency where REST v2 lacks validation present in gRPC path.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "grouping feature exists (documented at https://milvus.io/api-reference/restful/v3.0.x/v2/Vector%20(v2)/Search.md) but JSON schema not explicitly specified - implementation accepts 'groupingField' at root level",
+          "source_implements_check": false,
+          "api_observed_value": "REST v2 accepts 'groupParams' wrapper → HTTP 200 with ungrouped results (5 identical vectors). gRPC rejects invalid grouping → ERROR 2001.",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Grouping transformation: groupSize=1 should return at most 1 result per group. Requested grouping by vector with 10 identical vectors should return 1 result, not 5.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "No by-design comments or constants found for silent parameter ignore. Source code shows struct expects 'groupingField', not 'groupParams' - this is unhandled parameter path, not intentional design.",
+          "verdict_C": "CONFIRMED"
+        },
+        "evidence_conflict_resolution": "E2 applied - REST v2 and gRPC show divergent behavior for invalid grouping: REST v2 silently accepts and ignores 'groupParams' wrapper, while gRPC correctly rejects invalid grouping with error. Channel inconsistency itself is defect evidence. Even if behavior were graceful (which it isn't - it's silent ignore), E2 would override C.",
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "silent_parameter_ignore_with_channel_inconsistency": 1
+    }
+  }
+}

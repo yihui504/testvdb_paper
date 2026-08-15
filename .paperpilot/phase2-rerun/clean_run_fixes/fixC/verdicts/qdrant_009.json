@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Create collection with vectors={}, then attempt PUT /collections/broken/points with vector data",
+          "observed": "Collection created successfully (HTTP 200), but point insertion fails with HTTP 400 and error: 'Wrong input: Not existing vector name error: '",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/broken' -d '{\"vectors\": {}}' && curl -X PUT 'http://localhost:6333/collections/broken/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect report assumes that a collection with vectors={} should accept point insertions with unnamed vectors",
+            "The oracle assumes this is a validation failure, but it's actually by-design behavior - Qdrant requires explicit vector configuration"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_create_collection_001 - vectors config determines vector schema",
+            "assertion_id: qdrant_behavioral_005 - 4XX on validation error (this is correct validation behavior)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": [
+            "check_vector",
+            "check_named_vectors",
+            "get_vector_config_or_error",
+            "VectorNameNotExists"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/segment/entry.rs",
+            "lib/collection/src/config.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs lines 162-170\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))\n}\n\n// lib/segment/src/common/operation_error.rs line 27-28\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\n// lib/segment/src/segment/entry.rs lines 658-667\nfn upsert_point(\n    &mut self,\n    op_num: SeqNumberType,\n    point_id: PointIdType,\n    mut vectors: NamedVectors,\n    hw_counter: &HardwareCounterCell,\n) -> OperationResult<bool> {\n    debug_assert!(self.is_appendable());\n    check_named_vectors(&vectors, &self.segment_config)?;\n    vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());",
+          "call_chain_traced": "upsert_point → check_named_vectors → check_vector → get_vector_config_or_error → returns VectorNameNotExists error when vectors={} is empty",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: Qdrant 显式验证向量名称必须存在于配置中。当 vectors={} 时，vector_data 为空，任何向量插入都会触发 VectorNameNotExists 错误。这是 by-design 行为，不是 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4: Test with proper vector config - create collection with named vector config",
+          "observed": "When collection created with '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}' (unnamed default vector), point insertion succeeds with HTTP 200. This confirms the API requires proper vector configuration."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - ruled out by consistent behavior across tests",
+            "Race condition - ruled out by deterministic error",
+            "Request parameter typo - ruled out, syntax is correct"
+          ],
+          "surviving": "by_design_api_semantics - Qdrant requires explicit vector configuration, empty vectors={} means no vectors configured"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": null,
+        "note": "未命中特定的 by_design_pattern，但符合参数验证的一般原则：空向量配置 = 不接受向量数据。这是显式设计选择，非缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 将 Qdrant 的显式设计误判为缺陷。Qdrant 要求集合创建时必须显式配置向量参数（size、distance），vectors={} 表示不接受向量数据。插入点时源码通过 check_named_vectors → get_vector_config_or_error 验证向量名称存在性，空配置下返回 VectorNameNotExists 是符合契约的正确行为。测试证实：正确配置向量参数后插入成功。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

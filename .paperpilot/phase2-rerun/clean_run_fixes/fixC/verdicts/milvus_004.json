@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_004",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete with filter: \"age in [10, 5]\"",
+          "observed": "Returns 200 with deleteCount=1 (only age=10 deleted, age=5 doesn't exist)",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/delete' -d '{\"collectionName\": \"test_milvus_004_dev_review\", \"filter\": \"age in [10, 5]\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim assumes filter should validate that all values (age=5) exist in collection",
+            "Defect claim assumes deleteCount should reflect number of filter values rather than actual entities deleted"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - filter must be valid boolean expression",
+            "constraint_id: milvus_state_entities_delete_001 - delete is irreversible",
+            "assertion_id: milvus_behavioral_entities_delete_001 - returns 400 on invalid filter expression"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "delete.*filter",
+            "validateDeleteExpr",
+            "IsAlwaysTruePlan"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task_delete.go",
+            "internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_delete.go lines 315-317\nif planparserv2.IsAlwaysTruePlan(dr.plan) {\n    return merr.WrapErrAsInputError(merr.WrapErrParameterInvalidMsg(\"delete plan can't be empty or always true : %s\", dr.req.GetExpr()))\n}\n// internal/distributed/proxy/httpserver/handler_v2.go lines 1187-1192\nreq := &milvuspb.DeleteRequest{\n    DbName:         dbName,\n    CollectionName: httpReq.CollectionName,\n    PartitionName:  httpReq.PartitionName,\n    Expr:           httpReq.Filter,\n}",
+          "call_chain_traced": "DeleteRequest → handler_v2.delete → proxy.Delete → task_delete.PreExecute → planparserv2.CreateRetrievePlanArgs (no validation of filter value existence)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:delete 只验证 filter 不是 'always true', 不验证 filter 中的值是否实际存在于数据中。这是 by-design 行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query for age=10 and Get id=1 after delete",
+          "observed": "Entity id=1 (age=10) no longer exists - deleteCount=1 is accurate, filter matched only existing entity age=10"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "API semantic misunderstandings"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定认知模式，但属于'误解 filter 语义'的通用类误报"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "filter: \"age in [10, 5]\" 是合法的布尔表达式。filter 语义是'匹配存在的数据'而非'验证 filter 值是否存在'。age=5 不存在于集合中，filter 自然不匹配该值。deleteCount=1 准确反映实际删除的实体数(仅 age=10)。源码证实:delete 仅验证 filter 非 'always true', 不验证 filter 中的值是否存在于数据中。这是标准数据库行为，非缺陷。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_delete_001: filter must be a valid boolean expression",
+          "source_implements_check": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "None - filters match existing data, don't validate filter value existence",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

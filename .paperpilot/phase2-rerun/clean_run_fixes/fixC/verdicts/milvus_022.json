@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {collectionName: 'test_dup', dimension: 4, metricType: 'COSINE', idType: 'Int64', autoID: false} executed twice with same parameters",
+          "observed": "First create: HTTP 200 with code:0. Second create (duplicate): HTTP 200 with code:0. Expected: HTTP 400 on second attempt per contract assertion.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dup\",\"dimension\":4,\"metricType\":\"COSINE\",\"idType\":\"Int64\",\"autoID\":false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract assertion milvus_invariant_create_duplicate_001 states duplicate collection creation must return 400",
+            "Contract assertion milvus_behavioral_collections_create_002 states create returns 400 on duplicate name"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_invariant_create_duplicate_001 - 'create(collection) -> create(collection) must return 400 with collection already exists'",
+            "assertion_id: milvus_behavioral_collections_create_002 - 'returns 400 with descriptive error message on duplicate collection name'",
+            "state_constraint: milvus_state_collections_create_001 - 'collectionName is unique within dbName'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["errIgnoredCreateCollection", "duplicate collection", "collection already exists", "GetCollectionByName"],
+          "files_examined": [
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/root_coord.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/meta_table.go line 56\nerrIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.\n\n// internal/rootcoord/create_collection_task.go lines 530-538\n// Check if the collection already exists.\nexistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\nif err == nil {\n    newCollInfo := newCollectionModel(t.header, t.body, 0)\n    if equal := existedCollInfo.Equal(*newCollInfo); !equal {\n        return fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n    }\n    return errIgnoredCreateCollection  // <-- KEY: Returns special error for idempotent creates\n}\n\n// internal/rootcoord/root_coord.go lines 903-906\nif errors.Is(err, errIgnoredCreateCollection) {\n    logger.Info(\"create existed collection with same schema, ignore it\")\n    metrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n    return merr.Success(), nil  // <-- Converts errIgnoredCreateCollection to HTTP 200\n}",
+          "call_chain_traced": "CreateCollectionRequest -> PreCreateCollection.validate (line 531: GetCollectionByName) -> if exists+Equal -> return errIgnoredCreateCollection -> root_coord.CreateCollection (line 903) -> catches errIgnoredCreateCollection -> returns merr.Success() (HTTP 200)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: Milvus 实现了幂等创建(idempotent create)模式 - 当集合已存在且参数相同时,返回专用错误 errIgnoredCreateCollection,在 root_coord 层被捕获并转换为 HTTP 200 成功响应。这是显式的 by-design 行为,通过专用错误常量(56行)和处理逻辑(903-906行)实现。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证幂等性: 先删除集合后创建两次,第二次仍返回 200;创建后 describe 确认只有1个集合存在",
+          "observed": "第二次创建返回 HTTP 200 但未创建新集合 (describe 返回相同 collectionID)。这符合幂等操作语义,非 bug。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 在官方 Docker 容器 v2.6.17 上复现",
+            "并发竞争 - 同步顺序执行",
+            "请求参数错误 - 两次请求参数完全相同"
+          ],
+          "surviving": "幂等API语义(idempotent create) - 这是数据库领域常见的 by-design 模式"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected_behavior",
+        "note": "命中 rejection_patterns RP-001: 'Issue rejected as expected system behavior'。源码注释 'create collection with same schema, so it can be ignored' 明确声明这是有意的设计。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "候选违反了契约断言(milvus_invariant_create_duplicate_001 期望 400),但源码接地发现了更强的证据: Milvus 实现了幂等创建模式。源码包含专用错误常量 errIgnoredCreateCollection(注释:'create collection with same schema, so it can be ignored')和显式处理逻辑(root_coord.go 903-906行: 捕获该错误并返回 merr.Success()/HTTP 200)。这是 E3 证据类型(源码显式意图声明)的典型案例,根据 SOP 证据冲突消解次序,E3(源码显式意图声明) > 契约文档。因此契约中期望 400 的断言应视为文档过时,实际行为是 by-design 的幂等 API。判为 FALSE_POSITIVE。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_invariant_create_duplicate_001: 'create(collection) -> create(collection) must return 400 with collection already exists'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "集合名称必须在数据库内唯一 (状态约束)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "E3 evidence (by_design_in_source with explicit intent comments and errIgnoredCreateCollection constant) overrides contract assertion per SOP evidence conflict resolution order. Despite verdict_A=CONFIRMED (contract violation) and verdict_B=CONFIRMED (physical constraint violated), E3 triggers: '源码显式意图声明 > 契约文档'. The source code contains explicit by-design implementation with dedicated error constant and handler, making this idempotent behavior intentional.",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

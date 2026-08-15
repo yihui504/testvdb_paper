@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_041",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with string values for Bool/Int16/Double scalar fields",
+          "observed": "Raw logs from output_milvus_041.log show HTTP 200 success responses for all type coercion attempts: REQ 2 (bool_f: \"true\"), REQ 3 (bool_f: 1), REQ 4 (i16_f: \"42\"), REQ 5 (dbl_f: \"3.14159\"). The API accepts string values for typed scalar fields without error.",
+          "evidence_cmd": "Verified against raw log: output_milvus_041.log lines 9-13 show bool_f=\\\"true\\\" returning HTTP 200; lines 23-27 show i16_f=\\\"42\\\" returning HTTP 200; lines 31-35 show dbl_f=\\\"3.14159\\\" returning HTTP 200."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_bool_001 (DataType == Bool for boolean scalar fields)",
+            "constraint_id: milvus_type_int16_001 (DataType == Int16 for INT16 scalar fields)",
+            "constraint_id: milvus_type_double_001 (DataType == Double for DOUBLE scalar fields)"
+          ],
+          "note": "Contract defines scalar field types but REST v2 handler does not enforce strict type matching at the HTTP boundary."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "cast.ToBoolE",
+            "cast.ToInt8E",
+            "cast.ToInt16E",
+            "checkAndSetData",
+            "anyToColumns"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 615-632\n\t\t\t\t\tcase schemapb.DataType_Bool:\n\t\t\t\t\t\tresult, err := cast.ToBoolE(dataString)\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t\t}\n\t\t\t\t\t\treallyData[fieldName] = result\n\t\t\t\t\tcase schemapb.DataType_Int8:\n\t\t\t\t\t\tresult, err := cast.ToInt8E(dataString)\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t\t}\n\t\t\t\t\t\treallyData[fieldName] = result\n\t\t\t\t\tcase schemapb.DataType_Int16:\n\t\t\t\t\t\tresult, err := cast.ToInt16E(dataString)\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t\t}\n\t\t\t\t\t\treallyData[fieldName] = result\n\t\t\t\t\tcase schemapb.DataType_Int32:\n\t\t\t\t\t\tresult, err := cast.ToInt32E(dataString)",
+          "call_chain_traced": "REST v2 upsert request → handler_v2.go:upsert() → checkAndSetData() → field type switch → cast.ToBoolE/ToInt8E/ToInt16E (automatic string-to-type coercion)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source接地发现:REST v2 handler使用spf13/cast库自动将字符串转换为目标类型(Bool/Int8/Int16等),未在HTTP边界进行严格类型检查。这导致API接受非法的字符串值而非拒绝。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "无法证伪 - 该类型接受行为在源码层面确认为真实现,非观察artifact",
+          "observed": "源码证明类型强制转换是有意的实现逻辑(sp f13/cast库),而非测试artifact或临时状态。REST v2通道设计上即允许字符串到类型的自动转换。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(非通用)",
+            "并发/竞态条件",
+            "缓存/延迟",
+            "请求参数笔误(参数确实存在)"
+          ],
+          "surviving": "REST_v2_data_type_handling - 匹配bug_shapes.json中rest-v2-data-type-handling模式,属REST v2 API层系统性问题,非孤立case"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "命中developer_cognition.json中blindspot_indicators:REST v2 API data type serialization问题;维护者视跨通道不一致为缺陷并会修复"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 upsert API接受字符串类型的标量字段值(Bool/Int16/Double),违反schema定义的强类型约束。源码接地证实handler使用spf13/cast库自动类型转换,未在HTTP边界执行类型校验。该行为与gRPC通道不一致(已知blindspot),匹配历史bug shape rest-v2-data-type-handling。维护者视跨通道类型验证不一致为缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

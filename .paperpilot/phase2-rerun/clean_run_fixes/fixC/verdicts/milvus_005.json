@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/insert with dynamic fields: 123field (starts with number), @field (special character)",
+          "observed": "Insert succeeds (HTTP 200, insertCount=2). Query with outputFields=['123field','@field'] fails: 'parse output field name failed: 123field'. Valid field names (id, vector) query successfully.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_devreview_milvus005\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_devreview_milvus005\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"123field\",\"@field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes inserted dynamic fields should be queryable in outputFields - assumption violated",
+            "Assumes enableDynamicField=true allows any field name format - no validation on insert, strict validation on query"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_type_entities_insert_001: data field types match collection schema (dynamic fields bypass schema validation)",
+            "milvus_behavioral_entities_insert_001: Insert returns insertCount and IDs on success (confirmed - HTTP 200 with insertCount=2)"
+          ],
+          "note": "Contract does NOT specify field naming rules for dynamic fields. The contract acknowledges insert success but is silent about field name validation during query."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "parse output field name",
+            "ParseIdentifier",
+            "validCharInIndexName"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/parser/planparserv2/plan_parser_v2.go",
+            "internal/parser/planparserv2/parser_visitor.go",
+            "tests/python_client/milvus_client/test_milvus_client_query.py"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 1638-1665\nif schema.EnableDynamicField {\n    dynamicNestedPath := outputFieldName\n    err := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n        columnInfo := expr.GetColumnExpr().GetInfo()\n        dynamicField, _ := schema.schemaHelper.GetDynamicField()\n        if dynamicField.GetFieldID() != columnInfo.GetFieldId() {\n            return errors.New(\"not support getting subkeys of json field yet\")\n        }\n        nestedPaths := columnInfo.GetNestedPath()\n        if len(nestedPaths) != 1 {\n            return errors.New(\"not support getting multiple level of dynamic field for now\")\n        }\n        if nestedPaths[0] != outputFieldName {\n            dynamicNestedPath = nestedPaths[0]\n        }\n        return nil\n    })\n    if err != nil {\n        log.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n        return nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n    }",
+          "call_chain_traced": "InsertRequest (REST v2) → no field name validation for dynamic fields → storage accepts '123field', '@field' | QueryRequest with outputFields → parseIdentifierInner → ParseIdentifier → parser rejects invalid identifier syntax → returns 'parse output field name failed'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source接地发现: Insert路径无字段名验证,Query路径ParseIdentifier通过语法解析拒绝'123field'和'@field'。REST v2允许插入但拒绝检索,构成状态不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query entities with valid field names vs invalid field names",
+          "observed": "Valid field names (id, vector): HTTP 200 with data | Invalid field names (123field, @field): HTTP 200 with code=65535 'parse output field name failed'. Bug confirmed: data was inserted but cannot be retrieved via query outputFields.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_devreview_milvus005\",\"filter\":\"id==1\",\"outputFields\":[\"id\",\"vector\"]}' → SUCCESS vs curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"test_devreview_milvus005\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"123field\",\"@field\"]}' → FAIL with parse error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproduced on clean container",
+            "Race condition - deterministic behavior on every run",
+            "Request parameter typo - field names intentionally test invalid syntax",
+            "API semantics misunderstanding - REST v2 dynamic fields documented to support arbitrary keys"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "Hits E2 blindspot indicator (REST v2/gRPC validation divergence) and rest-v2-data-type-handling bug shape. REST v2 accepts on insert, rejects on query - classic Type1_IllegalSuccess with data loss consequence."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_entities_insert_001: Insert returns insertCount and IDs on success (HTTP 200 with insertCount=2 - confirmed)",
+          "source_implements_check": false,
+          "contract_gap": "Contract silent on dynamic field name validation rules. No explicit constraint prevents '123field' or '@field' in schema.",
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Field names must be valid identifiers (cannot start with number, cannot contain special chars like @) - this is a semantic constraint from the parser implementation, not documented in contract",
+          "api_accepts_violation": true,
+          "physical_evidence": "ParseIdentifier in plan_parser_v2.go line 161-177 validates identifier syntax. Fields starting with numbers or containing @ violate identifier grammar rules. Insert bypasses this validation, query enforces it.",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "asymmetric_validation": "Insert accepts (no validation) → Query rejects (strict ParseIdentifier validation). Data is stored but inaccessible via outputFields - data loss consequence.",
+          "test_evidence": "tests/python_client/milvus_client/test_milvus_client_query.py:433 expects error 65535 with 'parse output field name failed' for invalid field names - this is expected TEST BEHAVIOR, not expected API BEHAVIOR for insert.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "A=CONFIRMED + B=CONFIRMED + C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a defect: contract permits insert, physical constraint violated by allowing invalid identifiers, behavioral asymmetry causes data loss)",
+        "final_verdict": "CONFIRMED",
+        "evidence_resolution": "E2 (REST v2/gRPC divergent validation) applies: Insert accepts, Query rejects → cross-channel inconsistency itself is defect evidence per developer_cognition. No E3 override (no by-design comments in source about accepting invalid field names)."
+      },
+      "rationale": "REST v2 Insert API accepts dynamic field names starting with numbers (123field) and containing special characters (@field) without validation (source: internal/proxy/util.go shows no ParseIdentifier call on insert path). Query API strictly validates field names via ParseIdentifier (plan_parser_v2.go line 161-177) and rejects them with 'parse output field name failed: 123field'. This creates a Type1_IllegalSuccess: insert returns HTTP 200 with insertCount, data is stored, but cannot be retrieved via query outputFields. Matches REST_v2_data_type_handling bug shape (REST v2 serialization/validation gap). Developer cognition signals this as blindspot area (cross-channel inconsistency treated as defect by maintainers). Source接地: Grep confirmed ParseIdentifier validation exists in query path but absent in insert path. This is a genuine REST v2 validation inconsistency bug, not a contract misreading (contract silent on field naming rules for dynamic fields)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/search with vector [0.5, 0.5, 0.5, 0.5], limit=10, varying offsets (0, 10, 20)",
+          "observed": "Page 1 (offset=0): ids [0-9]; Page 2 (offset=10): ids [10-19]; Page 3 (offset=20): ids [20-24]. All 25 unique IDs, no duplicates found across pages.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_pagination_dedup/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.5, 0.5, 0.5, 0.5], \"limit\": 10, \"offset\": 0, \"with_payload\": false}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["qdrant_behavioral_008: '200 with ranked results descending by score'", "qdrant_state_search_points_009: 'exact=false uses HNSW for approximate search'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["offset.*search", "seen_ids", "pagination", "dedup"],
+          "files_examined": ["lib/collection/src/collection/search.rs"],
+          "source_excerpt": "// lib/collection/src/collection/search.rs line 283-322\nlet mut seen_ids = AHashSet::new();\n...\nlet merged_iter = match order {\n    Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),\n    Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),\n}\n.filter(|point| seen_ids.insert(point.id));\n\n// Skip `offset` only for client requests\n// to avoid applying `offset` twice in distributed mode.\nlet top_res = if is_client_request && request.offset > 0 {\n    merged_iter\n        .skip(request.offset)\n        .take(request.limit)\n        .collect()\n} else {\n    merged_iter.take(request.offset + request.limit).collect()\n};",
+          "call_chain_traced": "search request → merge_from_shards → seen_ids HashSet filter → offset/limit application",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:去重机制显式实现(seen_ids HashSet + filter)，在 offset 应用前执行去重，确保分页结果无重复。实际测试验证了三个页面返回唯一不重复的 ID 集合。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/scroll with limit=100 to verify ground truth",
+          "observed": "Scroll returned exactly 25 unique points (ids 0-24), matching the union of all three search pages. No duplicates exist in the collection, confirming pagination is working correctly."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "HNSW approximation edge cases in offset-based pagination",
+        "developer_quote": "HNSW approximation duplicates in pagination - Accepted limitation of approximate search",
+        "note": "候选声称的 pagination 去重问题实际上已被正确实现。源码显示显式的去重机制(seen_ids HashSet)，实测结果验证了三个页面无重复返回。此为 by-design 行为，非缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原候选声称 pagination 存在去重问题，但复现测试显示：三次分页请求(offset 0/10/20)返回了唯一不重复的 25 个 ID，与 scroll 真值集完全一致。源码分析证实了显式去重机制(seen_ids HashSet + filter)在 offset 应用前执行。契约要求'返回按分数排序的结果'被正确满足。这是近似搜索的 by-design 行为，developer_cognition 明确标记'HNSW approximation duplicates in pagination'为可接受的限制。无违规。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "qdrant_behavioral_008: Returns 200 with array of scored points (descending by score)",
+      "source_implements_check": true,
+      "verdict_A": "REFUTED"
+    },
+    "physical": {
+      "objective_constraint": "None - pagination is semantic behavior, not physical constraint",
+      "api_accepts_violation": false,
+      "verdict_B": "NEUTRAL"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": true,
+      "verdict_C": "REFUTED"
+    },
+    "aggregation_applied": "A=REFUTED, B=NEUTRAL, C=REFUTED (by-design in source) → final=FALSE_POSITIVE",
+    "final_verdict": "FALSE_POSITIVE"
+  }
+}

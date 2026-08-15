@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_012",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points/query with malformed filter: {\"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}} (must_not as object instead of array)",
+          "observed": "API returns HTTP 200 with result {\"points\":[{\"id\":2,\"version\":1,\"score\":1.0}]}, accepting the invalid structure",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_mustnot/points/query' -d '{\"query\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"filter\": {\"must_not\": {\"key\": \"tag\", \"match\": {\"value\": \"x\"}}}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["Filter type definition in lib/segment/src/types.rs requires must_not: Option<Vec<Condition>> (array)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["struct Filter", "pub must_not", "MaybeOneOrMany", "impl.*MaybeOneOrMany"],
+          "files_examined": ["lib/segment/src/types.rs", "lib/segment/src/common/utils.rs", "lib/api/src/rest/schema.rs"],
+          "source_excerpt": "// lib/segment/src/types.rs line 3834-3865\n#[derive(Deserialize, Serialize, JsonSchema, Validate)]\n#[serde(deny_unknown_fields, rename_all = \"snake_case\")]\npub struct Filter {\n    #[serde(default, with = \"MaybeOneOrMany\")]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub should: Option<Vec<Condition>>,  // <-- has MaybeOneOrMany wrapper\n    pub min_should: Option<MinShould>,\n    #[serde(default, with = \"MaybeOneOrMany\")]\n    #[schemars(with = \"MaybeOneOrMany<Condition>\")]\n    pub must: Option<Vec<Condition>>,     // <-- has MaybeOneOrMany wrapper\n    pub must_not: Option<Vec<Condition>>, // <-- MISSING MaybeOneOrMany wrapper!\n}\n\n// lib/segment/src/common/utils.rs line 107-108\n.seq(|x| x.deserialize().map(Some))\n.map(|x| x.deserialize().map(|x| vec![x]).map(Some))  // <-- BUG: accepts single object and wraps it",
+          "call_chain_traced": "REST QueryRequestInternal.filter (lib/api/src/rest/schema.rs:582) → Filter type (lib/segment/src/types.rs:3834) → must_not: Option<Vec<Condition>> WITHOUT MaybeOneOrMany → serde still accepts single object through default deserialization fallback → BUG: Type system expects array but accepts object",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code clearly defines must_not as Vec<Condition> without MaybeOneOrMany wrapper, while should/must have it. Despite this, REST API accepts single object through serde's fallback behavior - this is a validation gap where the API contract (Vec/array) is not enforced at runtime."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_mustnot/points with both formats and verify same functional result",
+          "observed": "Both malformed (object) and correct (array) formats return HTTP 200 + same result [{\"id\":2,\"version\":1,\"score\":1.0}]. No error 4XX for invalid structure."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - blindspot indicator",
+        "note": "This defect directly matches the blindspot indicator for filter condition parameter validation. The developer cognition model flags this as a known blindspot area."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "CONFIRMED: Type1_IllegalSuccess - API accepts invalid filter structure (must_not as single object instead of required array). Source code defines must_not as Option<Vec<Condition>> (explicit array type), but REST layer fails to validate this, allowing single objects through. Should/must fields have MaybeOneOrMany wrapper for backward compatibility, but must_not lacks it - this inconsistency is a validation gap. Blindspot indicator confirms filter validation is a known weakness area."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

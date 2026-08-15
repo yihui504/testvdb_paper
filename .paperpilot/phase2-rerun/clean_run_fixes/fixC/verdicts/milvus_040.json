@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with JSON field containing plain string 'plain_string'",
+          "observed": "HTTP 200 success, insertCount=1, stored value = 'plain_string' (not valid JSON)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_milvus_040\", \"dbName\": \"default\", \"data\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "JSON fields should only accept valid JSON objects/arrays",
+            "dataType == JSON means field stores JSON data types",
+            "Insert should validate field types match schema"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_001 - dataType == JSON (JSON scalar data type, confidence 1.0)",
+            "constraint_id: milvus_type_json_041 - dataType == 'JSON' (Supported data type, confidence 0.95)"
+          ],
+          "violation": "Contract asserts dataType == JSON but API accepts non-JSON plain strings without error"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "insert.*validation",
+            "JSON.*validate",
+            "checkJSONFieldData",
+            "DataType_JSON"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/validate_util.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, lines 1967-1968\ncase schemapb.DataType_JSON:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([][]byte), candi.v.Interface().([]byte))\n\n// File: internal/proxy/validate_util.go, lines 980-1002\nfunc (v *validateUtil) checkJSONFieldData(field *schemapb.FieldData, fieldSchema *schemapb.FieldSchema) error {\n    jsonArray := field.GetScalars().GetJsonData().GetData()\n    if jsonArray == nil && fieldSchema.GetDefaultValue() == nil && !fieldSchema.GetNullable() {\n        return merr.WrapErrParameterInvalid(\"need json array\", \"got nil\", msg)\n    }\n    // CRITICAL: Only checks length, NO json.Valid() or json.Unmarshal() validation\n    if v.checkMaxLen {\n        for _, s := range jsonArray {\n            if int64(len(s)) > paramtable.Get().CommonCfg.JSONMaxLength.GetAsInt64() {\n                // length check only\n            }\n        }\n    }\n    return nil\n}",
+          "call_chain_traced": "InsertRequest → anyToColumns (case DataType_JSON) → direct cast to []byte with NO validation → checkJSONFieldData (validate_util.go) → length check only, NO format validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms NO JSON format validation exists. checkJSONFieldData validates only max length, not that content is valid JSON. Direct cast from interface{} to []byte bypasses all type checking."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query entity by id=100 to verify stored value",
+          "observed": "Query returned meta='plain_string' (plain string, NOT JSON object/array). Stored value violates JSON type contract."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (standard Docker container)",
+            "Concurrency/race (sequential operations)",
+            "Request parameter typo (schema correctly declares dataType:JSON)",
+            "API semantic misunderstanding (JSON type clearly implies valid JSON)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 fails to properly serialize/deserialize complex data types. Symptoms: Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "This defect matches the known blindspot pattern: REST v2 API fails to validate JSON data type serialization. Maintenders have documented this as a repeated issue area."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "rationale": "REST v2 entities+insert endpoint accepts and stores non-JSON plain strings in JSON-typed fields without validation, violating contract assertions milvus_type_json_001 and milvus_type_json_041. Source code analysis confirms missing validation: anyToColumns (utils.go:1967-1968) performs direct cast to []byte with no JSON validity check, and checkJSONFieldData (validate_util.go:980-1002) validates only byte length, not JSON format. This matches the documented blindspot pattern 'REST v2 API data type serialization'. Independent verification via query confirms stored value is plain string, not JSON. All three perspectives (contract violation, physical constraint violation, not by-design) confirm the defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

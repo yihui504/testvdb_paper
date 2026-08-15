@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collection having Int64 primary key, data=[{\"id\": \"123\", \"vector\": [0.1, 0.2, 0.3, 0.4]}] and data=[{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]",
+          "observed": "Test 1 (valid Int64 as string '123'): HTTP 200 with {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[123]}} - SUCCESS. Test 2 (invalid Int64 as string 'abc'): HTTP 200 with error code 1804, message \"fail to deal the insert data, error: strconv.ParseInt: parsing \\\"abc\\\": invalid syntax: invalid parameter[expected=Int64][actual=abc]\" - PROPER ERROR RESPONSE. Test 3 (invalid Int64 as string 'xyz123'): HTTP 200 with error code 1804, message \"fail to deal the insert data, error: strconv.ParseInt: parsing \\\"xyz123\\\": invalid syntax: invalid parameter[expected=Int64][actual=xyz123]\" - PROPER ERROR RESPONSE.",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName': 'dev_review_test', 'data': [{'id': 'abc', 'vector': [0.5, 0.5, 0.5, 0.5]}]})\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes REST v2 API should silently reject invalid type coercion without error",
+            "Conclusion treats proper error response (HTTP 200 + error code 1804) as a defect rather than expected error handling",
+            "Conclusion assumes string-to-Int64 coercion should succeed when string contains non-numeric characters"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_assert_insert_success_001 - Inserting valid data succeeds",
+            "constraint_id: milvus_assert_http_400_error_001 - Returns 400 when invalid parameters (but actual REST v2 behavior returns HTTP 200 with error code in body)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "DataType_Int64",
+            "strconv.ParseInt",
+            "AsSchemapb",
+            "convertFieldDataArray"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/wrap_request.go, Lines 169-183:\n\nfunc (f *FieldData) AsSchemapb() (*schemapb.FieldData, error) {\n\tret := schemapb.FieldData{\n\t\tType:      f.Type,\n\t\tFieldName: f.FieldName,\n\t\tFieldId:   f.FieldID,\n\t}\n\n\traw := f.Field\n\tswitch f.Type {\n\t// ... other cases ...\n\tcase schemapb.DataType_Int64:\n\t\tdata := []int64{}\n\t\terr := json.Unmarshal(raw, &data)\n\t\tif err != nil {\n\t\t\treturn nil, newFieldDataError(f.FieldName, err)\n\t\t}\n\t\tret.Field = &schemapb.FieldData_Scalars{\n\t\t\tScalars: &schemapb.ScalarField{\n\t\t\t\tData: &schemapb.ScalarField_LongData{\n\t\t\t\t\tLongData: &schemapb.LongArray{\n\t\t\t\t\t\tData: data,\n\t\t\t\t\t},\n\t\t\t\t},\n\t\t\t},\n\t\t}\n\n// The JSON unmarshaling from string to int64 fails with proper error message\n// When string 'abc' cannot be parsed to Int64, json.Unmarshal returns error\n// which is wrapped and returned as error code 1804 to client",
+          "call_chain_traced": "REST v2 insert handler → WrappedInsertRequest.AsInsertRequest() → convertFieldDataArray() → FieldData.AsSchemapb() → json.Unmarshal(raw, []int64{}) → ParseInt error → wrapped as error code 1804",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_with_proper_error_response",
+          "note": "源码接地发现: REST v2 API 在 wrap_request.go 中对 DataType_Int64 字段进行 json.Unmarshal 到 []int64，当无法解析字符串(如'abc')到int64时，Go的json.Unmarshal内部会调用strconv.ParseInt并返回清晰的错误信息。这个错误被包装成error code 1804返回给客户端，是正确的错误处理流程，不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert with valid Int64 string '123' succeeds (insertCount=1, insertIds=[123]). Insert with invalid Int64 string 'abc' returns proper error response (HTTP 200, error code 1804, clear error message indicating parsing failure). The API behavior is correct: valid data succeeds, invalid data fails with informative error.",
+          "observed": "The REST v2 API correctly handles type coercion: accepts valid numeric strings that can be parsed to Int64 ('123' → 123), and properly rejects non-numeric strings ('abc', 'xyz123') with error code 1804 and clear error messages. This is expected error handling behavior, not a bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, platform-specific)",
+            "Concurrency or race conditions",
+            "Request parameter typos"
+          ],
+          "surviving": "mundane_api_semantics - This is expected REST v2 API behavior for type validation and error reporting"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK. But this candidate actually shows CORRECT error handling, not a data type serialization failure.",
+        "pattern_details": "The candidate hits the 'rest-v2-data-type-handling' pattern area from bug_shapes.json, but upon investigation, this instance shows PROPER type validation behavior (rejecting invalid 'abc' as Int64 with clear error), not a serialization defect.",
+        "note": "命中历史盲点区域REST v2 data types，但本案例表现为正确的类型校验行为而非缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原候选声称REST v2 insert存在type coercion缺陷，但实际测试显示API行为正确：①有效字符串'123'成功解析为Int64并插入(insertIds=[123])；②无效字符串'abc'/'xyz123'被正确拒绝，返回error code 1804及清晰的'strconv.ParseInt: parsing failed'错误信息。源码接地确认wrap_request.go中DataType_Int64字段通过json.Unmarshal做类型转换，解析失败时返回标准错误并包装为1804码，这是预期的错误处理流程而非缺陷。根据developer_cognition.json，REST v2确实存在数据类型处理问题(26个历史案例)，但本实例表现为正确的类型校验行为，应判为FALSE_POSITIVE。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_assert_insert_success_001 - Inserting valid data succeeds (returns insertCount > 0 and insertIds array)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract requires valid inserts succeed, but doesn't specify behavior for invalid type coercion. Invalid data rejection with error 1804 doesn't violate this assertion."
+        },
+        "physical": {
+          "objective_constraint": "Int64 fields must contain parseable integer values (numeric strings or integers)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "API correctly rejects non-numeric strings ('abc') for Int64 fields - no physical constraint violation observed"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "REFUTED",
+          "note": "API behavior is graceful: returns HTTP 200 with informative error code 1804 and clear error message. No source code evidence of explicit by-design intent, but behavior is proper error handling."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (mundane_api_semantics)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

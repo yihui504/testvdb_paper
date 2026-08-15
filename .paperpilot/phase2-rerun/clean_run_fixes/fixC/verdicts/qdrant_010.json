@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_010",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with empty vectors config: PUT /collections/{collection_name} with {\"shard_number\": 1}, then attempt to upsert points with vectors: PUT /collections/{collection_name}/points with {\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}",
+          "observed": "Collection creation returns HTTP 200 (success). Point upsert returns HTTP 400 with error 'Wrong input: Not existing vector name error: '. The collection was created successfully but is fundamentally broken - it cannot store points with vectors.",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/broken2' -H 'Content-Type: application/json' -d '{\"shard_number\": 1}' && curl -X PUT 'http://localhost:6333/collections/broken2/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - the bug is clear: collection creation succeeds with empty vectors config, but subsequent point operations fail because the collection has no vector configuration defined. This is a validation gap in the creation endpoint itself."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_state_create_collection_001 - assertion: 'Atomic collection creation. After 200 response, collection is fully initialized and ready for operations.'",
+            "API endpoint: PUT /collections/{collection_name} - vectors parameter is marked as 'required': false in structured_contract.json, but the contract state constraint requires collections be 'fully initialized and ready for operations' after creation."
+          ],
+          "note": "Contract allows vectors to be optional (required: false) but state constraint qdrant_state_create_collection_001 explicitly requires 'collection is fully initialized and ready for operations' after 200 response. A collection without vectors config cannot perform its core function (storing vectors), violating the 'fully initialized' requirement."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ 1.18.2",
+          "grep_queries": [
+            "Not existing vector name",
+            "validate_batch_vectors",
+            "get_params",
+            "VectorsConfig",
+            "create_collection"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/collection/src/operations/types.rs",
+            "src/common/validate_vectors.rs",
+            "lib/storage/src/content_manager/toc/create_collection.rs"
+          ],
+          "source_excerpt": "// src/common/validate_vectors.rs lines 34-47\nfn validate_batch_vectors(\n    batch_vectors: &BatchVectorStructPersisted,\n    vectors_config: &VectorsConfig,\n) -> Result<(), StorageError> {\n    match batch_vectors {\n        BatchVectorStructPersisted::Single(vectors) => {\n            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {\n                return Ok(());  // <-- BUG: Returns Ok(()) when vectors config is empty\n            };\n            let expected_dim = params.size.get() as usize;\n            for vector in vectors {\n                if vector.len() != expected_dim {\n                    return Err(StorageError::bad_input(format!(\n                        \"Vector dimension error: expected dim: {expected_dim}, got {}\",\n                        vector.len()\n                    )));\n                }\n            }\n        }\n// ... (similar pattern for MultiDense and Named variants)\n\n// lib/collection/src/operations/types.rs lines 1498-1526\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Hash, Eq)]\n#[serde(rename_all = \"snake_case\", untagged)]\npub enum VectorsConfig {\n    Single(VectorParams),\n    Multi(BTreeMap<VectorNameBuf, VectorParams>),\n}\n\nimpl VectorsConfig {\n    pub fn empty() -> Self {\n        VectorsConfig::Multi(BTreeMap::new())  // <-- Empty config is possible\n    }\n\n    pub fn get_params(&self, name: &VectorName) -> Option<&VectorParams> {\n        match self {\n            VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),\n            VectorsConfig::Multi(params) => params.get(name),  // Returns None for empty Multi\n        }\n    }",
+          "call_chain_traced": "Collection creation (create_collection.rs) accepts empty/missing vectors → VectorsConfig::Multi(BTreeMap::new()) created → During point upsert, validate_vector_dimensions calls validate_batch_vectors → get_params(DEFAULT_VECTOR_NAME) returns None for empty config → Validation returns Ok(()) at line 37 → Point passes validation → Actual insertion fails with VectorNameNotExists error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals the validation gap: validate_batch_vectors silently returns Ok(()) when vectors_config.get_params returns None (line 37 in validate_vectors.rs). This allows collections with empty vectors config to be created and pass point validation, but then fail during actual insertion. The create_collection function (create_collection.rs) has no validation that prevents creation of collections with empty vectors config when the intent is to store vector data."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create collection with proper vectors config and verify it works: PUT /collections/test_vectors_check with {\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}, then upsert points → Succeeds with HTTP 200. This confirms the bug is specifically about missing validation on the vectors parameter during collection creation, not a general API issue.",
+          "observed": "Collection with proper vectors config: Creation HTTP 200, point upsert HTTP 200 (success). Collection without vectors config: Creation HTTP 200, point upsert HTTP 400 (error). The inconsistency proves this is a validation gap, not by-design behavior.",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_vectors_check' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}}' && curl -X PUT 'http://localhost:6333/collections/test_vectors_check/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on clean Qdrant container, consistent behavior",
+            "Concurrency/race conditions - synchronous sequential operations",
+            "Request parameter typos - minimal payload tested",
+            "API semantic misunderstanding - Qdrant collections are fundamentally vector stores; requiring vectors config is core semantics"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": null,
+        "note": "Bug matches qdrant-parameter-validation-numeric-boundary shape from bug_shapes.json (though this is config validation, not numeric boundary). The blindspot_indicators include 'Parameter validation on filter/condition APIs' - this is the same class of issue: missing validation on API input parameters. No specific by_design_pattern matches - this is a genuine validation gap, not accepted behavior."
+      },
+      "root_cause_if_confirmed": "missing_parameter_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Qdrant allows creating collections with empty/missing vectors config (PUT /collections/{name} with only {\"shard_number\": 1} returns HTTP 200), but such collections are fundamentally broken - they cannot store points with vectors (subsequent PUT /collections/{name}/points returns HTTP 400 'Not existing vector name error:'). Source code analysis (validate_vectors.rs lines 36-37) shows the validation gap: validate_batch_vectors returns Ok(()) when vectors_config.get_params returns None instead of rejecting the operation. Contract state constraint qdrant_state_create_collection_001 requires 'collection is fully initialized and ready for operations' after creation, which is violated when vectors config is missing. This is a Type1_IllegalSuccess - the API accepts invalid input (collection without vectors config) and returns success (HTTP 200), but the resulting object cannot perform its core function. Control test with proper vectors config succeeds, confirming this is a validation gap, not by-design.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_state_create_collection_001: 'Atomic collection creation. After 200 response, collection is fully initialized and ready for operations.'",
+          "source_implements_check": false,
+          "api_observed_value": "PUT /collections/{name} with empty vectors config returns HTTP 200, but collection cannot store points (subsequent point upsert fails with HTTP 400)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "A vector database collection without vector configuration cannot perform its primary function (storing and querying vectors). This is a semantic constraint: vectors config is required for any collection that will store vector data.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling - the error message 'Not existing vector name error: ' is cryptic and occurs after the collection was successfully created. No by-design comments or constants found in source code explaining that empty vectors config is acceptable."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED (B and C also confirm, but A alone is sufficient)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_parameter_validation": 1
+    }
+  }
+}

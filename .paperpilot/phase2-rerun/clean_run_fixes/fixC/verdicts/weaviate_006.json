@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_006",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with property tokenization=\\\"\\\" (empty string)",
+          "observed": "API returns HTTP 200 with collection created. Tokenization field shows \\\"word\\\" in response - the empty string was accepted and silently defaulted to \\\"word\\\" instead of being rejected as invalid.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}' | grep -o '\"tokenization\":\"[^\"]*\"'; curl -s -X GET http://localhost:18080/v1/schema/TestClass | python -c \"import sys, json; data=json.load(sys.stdin); print('Tokenization:', data['properties'][0]['tokenization'])\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: API accepts empty string as valid input for tokenization field - FALSE. Empty string should be rejected like other invalid values.",
+            "Assumption: Empty string is equivalent to field not provided - FALSE. The request explicitly includes tokenization field with empty string value, which should be validated."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_schema_create_003",
+            "assertion: properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+            "Empty string \\\"\\\" is NOT in the allowed enum set, therefore violates the contract assertion."
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "tokenization",
+            "setPropertyDefaultTokenization",
+            "validatePropertyTokenization",
+            "PropertyTokenizationWord"
+          ],
+          "files_examined": [
+            "usecases/schema/class.go",
+            "usecases/schema/validation.go",
+            "usecases/schema/property.go",
+            "entities/schema/tokenization.go"
+          ],
+          "source_excerpt": "// usecases/schema/class.go lines 747-768\nfunc setPropertyDefaultTokenization(props ...*models.Property) {\n\tfor _, prop := range props {\n\t\tswitch dataType, _ := schema.AsPrimitive(prop.DataType); dataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, default tokenization was word\n\t\t\t// which will be migrated to text+whitespace\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tif os.Getenv(\"DEFAULT_TOKENIZATION\") != \"\" {\n\t\t\t\t\tprop.Tokenization = os.Getenv(\"DEFAULT_TOKENIZATION\")\n\t\t\t\t} else {\n\t\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t\t}\n\t\t\t}\n\t\tdefault:\n\t\t\t// tokenization not supported for other data types\n\t\t}\n\t}\n}\n\n// usecases/schema/class.go lines 1093-1142\nfunc (h *Handler) validatePropertyTokenization(tokenization string, propertyDataType schema.PropertyDataType) error {\n\tif propertyDataType.IsPrimitive() {\n\t\tprimitiveDataType := propertyDataType.AsPrimitive()\n\n\t\tswitch primitiveDataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, will be migrated to DataTypeText/DataTypeTextArray\n\t\t\tswitch tokenization {\n\t\t\tcase models.PropertyTokenizationField, models.PropertyTokenizationWord:\n\t\t\t\treturn nil\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tswitch tokenization {\n\t\t\tcase models.PropertyTokenizationField, models.PropertyTokenizationWord,\n\t\t\t\tmodels.PropertyTokenizationWhitespace, models.PropertyTokenizationLowercase,\n\t\t\t\tmodels.PropertyTokenizationTrigram:\n\t\t\t\treturn nil\n\t\t\tcase models.PropertyTokenizationGse:\n\t\t\t\tif !entcfg.Enabled(os.Getenv(\"USE_GSE\")) && !entcfg.Enabled(os.Getenv(\"ENABLE_TOKENIZER_GSE\")) {\n\t\t\t\t\treturn fmt.Errorf(\"the GSE tokenizer is not enabled; set 'ENABLE_TOKENIZER_GSE' to 'true' to enable\")\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t// ... other cases ...\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"tokenization '%s' is not allowed for data type '%s'\", tokenization, primitiveDataType)\n\t\tdefault:\n\t\t\tif tokenization == \"\" {\n\t\t\t\treturn nil\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"tokenization is not allowed for data type '%s'\", primitiveDataType)\n\t\t}\n\t\treturn fmt.Errorf(\"tokenization '%s' is not allowed for data type '%s'\", tokenization, primitiveDataType)\n\t}\n\n\tif tokenization == \"\" {\n\t\treturn nil\n\t}\n\treturn fmt.Errorf(\"tokenization is not allowed for reference data types\")\n}",
+          "call_chain_traced": "POST /schema → setPropertyDefaults() → setPropertyDefaultTokenization() → sets prop.Tokenization = \\\"word\\\" when empty string → validatePropertyTokenization() now validates \\\"word\\\" which passes",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: setPropertyDefaultTokenization() 在 validatePropertyTokenization() 之前执行，将空字符串 \\\"\\\" 替换为 \\\"word\\\"，导致验证时跳过了空字符串检查。验证函数在 lines 1137 会对不匹配的 tokenization 返回错误，但此时 tokenization 已被修改为 \\\"word\\\"，通过了所有 switch case 检查。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with explicitly invalid tokenization (e.g., \\\"invalid_value\\\") to confirm validation works for other invalid inputs",
+          "observed": "API correctly rejects \\\"invalid_value\\\" with error: \\\"properties.0.tokenization in body should be one of [word lowercase whitespace field trigram gse kagome_kr kagome_ja gse_ch]\\\". This proves validation logic exists and works for non-empty invalid values, but empty string bypasses validation due to pre-validation defaulting.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"invalid_value\"}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise: Not applicable - running in standard Docker container",
+            "Concurrency/race: Not applicable - single request",
+            "Request parameter typo: Empty string is intentional, not a typo",
+            "API semantics misunderstanding: Contract clearly states tokenization must be in enum set"
+          ],
+          "surviving": "none - all mundane explanations excluded"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Accepting invalid parameter values on write endpoints (e.g. empty vectors, invalid types) with per-item success status",
+        "note": "候选匹配 bug shape BS-004 (Parameter Validation Issues in Request Parsing)，属于请求解析阶段的参数验证缺陷"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: weaviate_type_schema_create_003 - properties[].tokenization must be a valid enum value",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Tokenization is an enum parameter - must match one of the defined values, cannot be empty string",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract + physical violations override behavioral gracefulness)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Empty string tokenization violates explicit contract constraint (must be valid enum) and physical constraint (enum parameters must match defined values, not be empty). Source code confirms this is a validation ordering bug: setPropertyDefaultTokenization() runs before validatePropertyTokenization(), silently converting empty string to \\\"word\\\". While behavior is graceful (defaults to sensible value), this masks input validation bugs and violates contract. This matches historical pattern BS-004 (Parameter Validation Issues in Request Parsing)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_ordering_bug": 1
+    }
+  }
+}

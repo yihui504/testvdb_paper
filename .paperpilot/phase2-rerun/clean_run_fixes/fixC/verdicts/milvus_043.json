@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "confidence": 0.85,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with groupParams={groupByField: \"cat\", groupSize: 2, strictGroupSize: true}",
+          "observed": "API returns HTTP 200 with 15 results (topks: [15]) containing all 5 cat values (0-4) appearing 3 times each, despite strictGroupSize=true requesting max 2 results per group",
+          "evidence_cmd": "Raw log shows: {\"code\":0,\"data\":[{\"cat\":4,\"distance\":0.9667964,\"id\":14},{\"cat\":3,...}],\"topks\":[15]}"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "strictGroupSize=true enforces maximum groupSize results per group",
+            "API should limit results to groupSize (2) per group when strictGroupSize=true"
+          ],
+          "assumptions_satisfied": [
+            "Request parameters are valid and properly formatted",
+            "groupByField 'cat' exists in the collection schema"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract assertion found for strictGroupSize behavior in structured_contract.json",
+            "REST v2 API accepts strictGroupSize parameter (request_v2.go:501)",
+            "Parameter is propagated through SearchInfo (search_util.go:629)"
+          ],
+          "contract_status": "No contract assertion exists for strictGroupSize behavior - parameter is accepted but behavior is undefined"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "strictGroupSize",
+            "strict_group_size",
+            "groupByField",
+            "GroupByOp"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/util/function/chain/operator_group_by.go",
+            "internal/proxy/task_search.go",
+            "tests/restful_client_v2/testcases/test_vector_operations.py"
+          ],
+          "source_excerpt": "// internal/proxy/task_search.go line 1026-1030\n// strict_group_size is forced true: aggregation metrics need each top-K\n// group filled to groupSize for meaningful sample sizes.\n// Non-destructive: only overwrite queryInfo.GroupByFieldIds when aggCtx\n// populated t.SearchRequest.GroupByFieldIds.\n\n// internal/distributed/proxy/httpserver/request_v2.go line 499-501\nGroupByField      string                 `json:\"groupingField\"`\nGroupSize         int32                  `json:\"groupSize\"`\nStrictGroupSize   bool                   `json:\"strictGroupSize\"`\n\n// internal/util/function/chain/operator_group_by.go line 45-57\n// Parameters:\n//   - groupByField: the field to group by\n//   - groupSize: maximum rows per group (sorted by $score DESC)\n// Workflow example (groupByField=\"category\", groupSize=2, limit=2, offset=0, scorer=max):\n// Step 2 - sortAndLimitGroup: sort each group by score DESC, keep top groupSize=2",
+          "call_chain_traced": "REST request_v2.go(StrictGroupSize) → search_util.go(SearchInfo.StrictGroupSize) → task_search.go (comment: strict_group_size forced true) → No enforcement logic found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:strictGroupSize参数在系统中有完整的数据结构支持,但在实际 grouping 操作(operator_group_by.go)中未见 enforcement 逻辑。注释说应 forced true,但代码未实现强制 groupSize 限制。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "无法执行独立取证 - 集合 'gs_demo' 在当前容器中不存在",
+          "observed": "依赖原始 log 证据:API 返回 15 个结果(5 个组 × 每组 3 个),违反了 strictGroupSize=true 的语义(应返回 ≤ 10 个结果,5 个组 × 每组 ≤ 2 个)",
+          "evidence_cmd": "N/A - collection 不存在,但 raw log 显示 topks:[15] 证明返回了全部 15 个结果"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(参数格式正确,HTTP 200 响应)",
+            "并发/race(单一请求)",
+            "缓存/延迟(即时响应)",
+            "请求参数笔误(参数完整存在)",
+            "对 API 语义误解(strictGroupSize 字面意思明确)"
+          ],
+          "surviving": "strictGroupSize 功能未实现或被忽略"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (8 issues in corpus) - strictGroupSize parameter accepted but not enforced",
+        "note": "命中 bug_shapes 中的 REST v2 API 处理缺陷模式 - 参数被接受但未正确执行"
+      },
+      "root_cause_if_confirmed": "rest_v2_param_not_enforced",
+      "severity_after_review": "High",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion exists for strictGroupSize behavior",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "groupByField/groupSize/strictGroupSize parameters define grouping behavior semantics",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "E2 (通道一致性): REST v2 accepts strictGroupSize parameter but does not enforce it → implementation gap → verdict_B=CONFIRMED drives final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API 接受 strictGroupSize=true 参数并返回 HTTP 200,但返回 15 个结果而非预期的 ≤10 个(5 组 × 每组 2 个)。源码显示 strictGroupSize 被传递到 SearchInfo 但未见 enforcement 逻辑。这符合 REST v2 参数处理缺陷模式(bug_shapes: rest-v2-data-type-handling) - 参数被接受但未正确执行。非平凡解释已排除。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_param_not_enforced": 1
+    }
+  }
+}

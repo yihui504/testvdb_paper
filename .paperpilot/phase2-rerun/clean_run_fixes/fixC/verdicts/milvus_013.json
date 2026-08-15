@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: abc",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":[]} - API accepts non-numeric timeout header without error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: abc' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'API 应该拒绝无效 Request-Timeout 值'的前提，但该前提在源码中不成立",
+            "假设 Request-Timeout 必须是严格校验的数值参数，但实际实现采用宽松解析策略"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "collections+list endpoint (milvus_behavioral_collections_list_001): 'returns 200 on success with list of collection names'",
+            "No explicit constraint in structured_contract.json requiring Request-Timeout header validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "Request-Timeout",
+            "HTTPHeaderRequestTimeout",
+            "strconv.ParseInt",
+            "timeoutSecond"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/timeout_middleware.go",
+            "internal/http/constant.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/timeout_middleware.go lines 182-186\n\ttimeout := paramtable.Get().HTTPCfg.RequestTimeoutMs.GetAsDuration(time.Millisecond)\n\ttimeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\n\tif err == nil {\n\t\ttimeout = time.Duration(timeoutSecond) * time.Second\n\t}\n\n关键实现细节: ParseInt 失败时(err != nil)，代码直接使用默认 timeout，静默忽略无效值而非返回错误。",
+          "call_chain_traced": "Request-Timeout header → timeoutMiddleware (line 183) → strconv.ParseInt (line 183) → if err == nil (line 184) → 使用默认 timeout 或解析值",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: timeout_middleware.go 对 Request-Timeout 使用宽松解析策略 - ParseInt 失败时静默回退到默认配置值，不抛出 400 错误。这是有意的设计选择而非缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: -5 and Request-Timeout: 999999999999999999999999999999",
+          "observed": "负值 -5 返回 timeout 错误(code:10001)，超大值返回 200 - 说明 ParseInt 会解析成功，负值会触发 timeout 但非参数校验错误;超大值会被接受但实际执行时会用默认 timeout",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: -5' -d '{}'; curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: 999999999999999999999999999999' -d '{}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(容器正常运行)",
+            "并发/race(单请求测试)",
+            "请求参数笔误(这是有意测试无效输入)",
+            "API 语义误解(源码显示是宽松设计)"
+          ],
+          "surviving": "by_design_graceful_degradation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002",
+        "developer_quote": "rollback from 3.0 to 2.6 not supported - index store path version incompatibility",
+        "note": "虽然 BDP-002 不是直接关于 timeout，但体现了维护者对'不支持的操作不报错，采用优雅降级'的设计哲学。Rest v2 timeout header 处理遵循相同模式 - 无效值不被拒绝，而是回退到默认行为。"
+      },
+      "root_cause_if_fp": "by_design_graceful_degradation",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "无明确契约要求 Request-Timeout header 必须被严格校验",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "无客观物理约束要求 timeout header 必须是有效数值",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL AND verdict_B=NEUTRAL AND verdict_C=REFUTED → final=REFUTED (E5: 契约无相关 assertion 且无客观物理约束，行为优雅且有源码证据)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Milvus REST v2 API 对 Request-Timeout header 采用宽松解析策略:当 ParseInt('abc', 10, 64) 失败时，代码显式使用默认 timeout 配置而非返回 400 参数错误。这是源码 timeout_middleware.go:183-186 的有意设计(err == nil 判断后覆盖 timeout)，实现了优雅降级而非严格校验。实测证实: abc 返回 200(使用默认 timeout)，-5 返回 code:10001(timeout 执行超时，非参数校验失败)，999... 返回 200(解析成功但执行时用默认值)。契约无明确要求 header 校验，维护者设计哲学倾向于'不支持的操作优雅降级'，因此原 oracle 的'参数校验缺失'指控不成立。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "by_design_graceful_degradation": 1
+    }
+  }
+}

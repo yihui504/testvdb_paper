@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_qdrant_004/points with 3-dim vector into 4-dim collection",
+          "observed": "API correctly rejected with HTTP 400 BAD_REQUEST: 'Wrong input: Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_qdrant_004/points?wait=true -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claims 'API accepts invalid Type Confusion values without returning 4xx'",
+            "Reality: API REJECTED the invalid input with HTTP 400 (correct 4xx status)",
+            "The defect's core assertion is factually incorrect"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - 'id type is integer (uint64) or UUID string; vector type is array of floats or object of named vectors'",
+            "assertion_id: qdrant_behavioral_008 - '200 with ranked results; 4XX on invalid params'",
+            "Contract explicitly states API should return 4XX for invalid parameters"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ 1.18.0",
+          "grep_queries": [
+            "vector.*dimension|expected.*dim",
+            "WrongVectorDimension",
+            "BadInput.*400"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/collection/src/operations/types.rs",
+            "src/actix/helpers.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/mod.rs lines 192-202\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n// lib/collection/src/operations/types.rs lines 1107-1109\nOperationError::WrongVectorDimension { .. } => Self::BadInput {\n    description: err.to_string(),\n},\n// src/actix/helpers.rs line 245\nStorageError::BadInput { .. } => http::StatusCode::BAD_REQUEST,",
+          "call_chain_traced": "VectorRef::Dense → check_vector_against_config → OperationError::WrongVectorDimension → CollectionError::BadInput → StorageError::BadInput → HTTP 400 BAD_REQUEST",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code confirms explicit dimension validation exists and returns 400 for mismatches"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - Defect's claim is directly refuted by Step 1 (clean repro showed 400, not acceptance)",
+          "observed": "API correctly rejected invalid input with 400 status"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Race conditions",
+            "Cache/optimization delays",
+            "Request parameter typos"
+          ],
+          "surviving": "defect_assertion_incorrect - The oracle's core claim 'API accepts invalid values without 4xx' is simply false; API behavior is correct"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any by_design_pattern or rejection_pattern. The API works as designed."
+      },
+      "root_cause_if_fp": "defect_assertion_incorrect",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 1.0,
+      "rationale": "The defect claims 'API accepts invalid Type Confusion values without returning 4xx', but clean reproduction on the running container demonstrates the API correctly validates vector dimensions and returns HTTP 400 BAD_REQUEST with explicit error message 'Wrong input: Vector dimension error: expected dim: 4, got 3'. Source code grounding confirms explicit dimension validation in lib/segment/src/common/mod.rs:192-202 (check_vector_against_config function), proper error propagation through OperationError::WrongVectorDimension → CollectionError::BadInput → StorageError::BadInput → HTTP 400 BAD_REQUEST. This is not a bug; it's correct API behavior validating input as documented in contract qdrant_behavioral_008 ('4XX on invalid params')."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"defect_assertion_incorrect": 1}
+  }
+}

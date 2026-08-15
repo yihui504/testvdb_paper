@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/collections/create with vectorFieldType='InvalidVectorType'",
+          "observed": "HTTP 200 with body {\"code\":0,\"data\":{}} - API accepts invalid parameter and creates collection successfully",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_repro\",\"dimension\":4,\"metricType\":\"L2\",\"vectorFieldType\":\"InvalidVectorType\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001 - dimension must be between 1 and 32768 for FloatVector",
+            "constraint_id: milvus_type_collections_create_001 - collectionName must be a string"
+          ],
+          "note": "Contract does not explicitly document vectorFieldType parameter validation requirement, but API silently accepting and ignoring unknown parameters violates principle of explicit parameter validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "vectorFieldType",
+            "CollectionReq struct",
+            "createCollection",
+            "DataType_FloatVector"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1904-1928\nschema, err = proto.Marshal(&schemapb.CollectionSchema{\n\tName: httpReq.CollectionName,\n\tFields: []*schemapb.FieldSchema{\n\t\t{\n\t\t\tFieldID:      common.StartOfUserFieldID,\n\t\t\tName:         httpReq.PrimaryFieldName,\n\t\t\tIsPrimaryKey: true,\n\t\t\tDataType:     idDataType,\n\t\t\tAutoID:       httpReq.AutoID,\n\t\t\tTypeParams:   idParams,\n\t\t},\n\t\t{\n\t\t\tFieldID:      common.StartOfUserFieldID + 1,\n\t\t\tName:         httpReq.VectorFieldName,\n\t\t\tIsPrimaryKey: false,\n\t\t\tDataType:     schemapb.DataType_FloatVector,  // LINE 1919: HARDCODED FloatVector, ignores vectorFieldType param\n\t\t\tTypeParams: []*commonpb.KeyValuePair{\n\t\t\t\t{\n\t\t\t\t\tKey:   Dim,\n\t\t\t\t\tValue: strconv.FormatInt(int64(httpReq.Dimension), 10),\n\t\t\t\t},\n\t\t\t},\n\t\t\tAutoID: DisableAutoID,\n\t\t},\n\t},",
+          "call_chain_traced": "REST v2 request /collections/create → handler_v2.go:createCollection() → proto.Marshal(CollectionSchema) → DataType hardcoded to FloatVector (line 1919), ignoring httpReq.VectorFieldType if it existed",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code inspection reveals that CollectionReq struct (request_v2.go:690-703) has NO VectorFieldType field defined. The createCollection handler hardcodes DataType_FloatVector at line 1919, meaning any vectorFieldType parameter in the JSON request is silently ignored during unmarshal and never validated. This is a true parameter validation gap."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe created collection to verify it was created with default FloatVector type despite vectorFieldType='InvalidVectorType'",
+          "observed": "POST /collections/describe on 'audit5' returns schema with FloatVector field - confirms parameter was ignored, collection created with default type",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/describe -H 'Content-Type: application/json' -d '{\"collectionName\":\"audit5\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Concurrency race",
+            "Cache/optimizer delay",
+            "Request parameter typo"
+          ],
+          "surviving": "API_semantic_defect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "This defect matches developer_cognition.json blindspot 'REST v2 API data type serialization'. Parameter validation is absent, allowing invalid/unknown parameters to be silently ignored."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 /collections/create endpoint silently accepts and ignores 'vectorFieldType' parameter (e.g., 'InvalidVectorType') without validation. Source code inspection confirms: (1) CollectionReq struct lacks VectorFieldType field definition, (2) createCollection handler hardcodes DataType_FloatVector at line 1919, (3) no validation exists to reject unknown parameters. This violates explicit parameter validation expectations and matches known REST v2 data type handling blindspots (developer_cognition.json cites 8 similar issues). HTTP 200 response with successful collection creation despite invalid parameter confirms the defect is reproducible and real."
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "No explicit constraint documents vectorFieldType parameter validation",
+      "source_implements_check": false,
+      "verdict_A": "NEUTRAL",
+      "note": "Contract does not specify vectorFieldType behavior, but absence of validation is still a defect given the parameter appears to be intended for vector type specification"
+    },
+    "physical": {
+      "objective_constraint": "API parameters should be validated - unknown/invalid parameters should be rejected with 400 error",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED",
+      "note": "Physical constraint violated: API accepts undefined parameter without validation, returning 200 instead of 400"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED",
+      "note": "API behavior is NOT graceful - silent parameter ignoring can lead to user confusion (user specified InvalidVectorType but got FloatVector). No by-design comments found in source."
+    },
+    "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical constraint violation, API accepts invalid parameter without validation)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/upsert with string id: {\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}",
+          "observed": "REST v2 accepts string id for Int64 primary key field, returns HTTP 200 with upsertCount=1, upsertIds=[100]",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_validated": [
+            "REST v2 should reject type-inconsistent data (Int64 field should reject string values)",
+            "REST v2 and gRPC should enforce consistent type validation"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_type_int64_001: dataType == Int64 (scalar field type constraint)",
+            "entities+upsert endpoint requires schema-consistent data types"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "convertIDsToSchemapbIDs",
+            "Int64.*case.*string",
+            "checkAndSetData",
+            "anyToColumns"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 258-293\nfunc convertIDsToSchemapbIDs(ids []interface{}, pkField *schemapb.FieldSchema) (*schemapb.IDs, error) {\n\tswitch pkField.DataType {\n\tcase schemapb.DataType_Int64:\n\t\tint64IDs := make([]int64, 0, len(ids))\n\t\tfor i, id := range ids {\n\t\t\tvar int64ID int64\n\t\t\tswitch v := id.(type) {\n\t\t\tcase int64:\n\t\t\t\tint64ID = v\n\t\t\tcase int:\n\t\t\t\tint64ID = int64(v)\n\t\t\tcase float64:\n\t\t\t\tif v != math.Trunc(v) {\n\t\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"invalid int64 id at index %d: %v has fractional part\", i, v)\n\t\t\t\t}\n\t\t\t\tint64ID = int64(v)\n\t\t\tcase string:\n\t\t\t\t// Try to parse string as int64\n\t\t\t\tparsed, err := strconv.ParseInt(v, 10, 64)\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn nil, merr.WrapErrParameterInvalidErr(err, \"invalid int64 id at index %d: %v\", i, id)\n\t\t\t\t}\n\t\t\t\tint64ID = parsed\n\t\t\tdefault:\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"invalid id type at index %d: expected int64, got %T\", i, id)\n\t\t\t}\n\t\t\tint64IDs = append(int64IDs, int64ID)\n\t\t}\n\t\treturn &schemapb.IDs{IdField: &schemapb.IDs_IntId{IntId: &schemapb.LongArray{Data: int64IDs}}}, nil\n\t}\n}\n\n// lines 639-644 (checkAndSetData function)\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result",
+          "call_chain_traced": "REST v2 upsert → handler_v2.go:upsert() → checkAndSetData() → json.Number().Int64() performs silent string-to-int64 conversion → convertIDsToSchemapbIDs() lines 275-281 explicitly parses string IDs",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 在 utils.go 的 convertIDsToSchemapbIDs 和 checkAndSetData 函数中显式实现了 string→int64 类型转换(line 275-281 'case string' 分支与 line 640 json.Number转换),这解释了为何 REST v2 接受字符串 ID 而 gRPC 拒绝"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Channel consistency test: same upsert request via REST v2 (string id) vs gRPC (pymilvus)",
+          "observed": "REST v2 upsert with string id='100' → HTTP 200 success; gRPC upsert with string id='101' → DataNotMatchException: '{id} field should be a int64, but got a {<class 'str'>} instead'. REST query returns upserted data but gRPC query cannot find records inserted via REST with string IDs (data visibility inconsistency across channels)",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.upsert(collection_name='test_type_coercion', data=[{'id': '101', 'vector': [0.5, 0.5, 0.5, 0.5]}])\" → gRPC rejects string ID; REST accepts it"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/filesystem) - reproducible across clean runs",
+            "Request parameter typo - intentional test with string type",
+            "API semantic misunderstanding - schema clearly defines Int64 type"
+          ],
+          "surviving": "cross_channel_type_validation_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "REST_v2_data_type_handling",
+        "note": "直击盲点: developer_cognition.json 明确标注 'REST v2 API data type serialization - 8 issues in corpus' 且 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)'"
+      },
+      "root_cause_if_true": "cross_channel_type_validation_inconsistency",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "E2 通道不一致裁决准绳触发: REST v2 与 gRPC 对同一输入(字符串 ID)行为相反(REST v2 接受并成功 upsert,gRPC 拒绝并抛出 DataNotMatchException),且源码显示 REST v2 在 utils.go convertIDsToSchemapbIDs 函数中显式实现了 string→int64 转换(line 275-281 case string 分支),这无声实现构成类型验证缺失的真缺陷。bug_shapes.json 显示此类 'REST_v2_data_type_handling' 问题在历史 issue 中有 26 个实例(confidence=0.95),developer_cognition.json 明确指出 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)'。按 E2 证据冲突消解次序,通道不一致优先于契约缺位,判定 CONFIRMED。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "Int64 primary key field must receive int64 type values (constraint_id: milvus_type_int64_001)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Int64 field has type constraint - string is not a valid Int64 representation in schema definition",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "E2 (Channel Consistency) triggered: REST v2 accepts string IDs, gRPC rejects them → cross-channel inconsistency itself is defect evidence, verdict direction CONFIRMED (even though implementation is explicit in utils.go, it's silent implementation without intent declaration, does NOT trigger E3)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "cross_channel_type_validation_inconsistency": 1
+    }
+  }
+}

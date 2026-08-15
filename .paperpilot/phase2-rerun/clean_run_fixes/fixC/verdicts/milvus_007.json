@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_007",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with data=[[]] (empty vector array)",
+          "observed": "API returns HTTP 200 with code=1801, message='can only accept json format request, error: dimension: 8, but length of []float: 0: invalid parameter[expected=FloatVector][actual=[[]]]'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_test\", \"dbName\": \"default\", \"data\": [[]], \"limit\": 3, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion depends on 'data must be non-empty' assumption: The request sends data=[[]] which is a 2D array containing an empty 1D array. This is semantically different from data=[] (no vectors) or data=[[0.1,...]] (valid vectors). The API explicitly validates inner array length against dimension and rejects length 0."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 - 'data must be array of float arrays, annsField must be a vector field, limit must be positive integer'",
+            "assertion_id: milvus_range_entities_search_001 - 'vector dimensions in data must match collection vector dimension'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": [
+            "serializeFloatVectors",
+            "dimension.*but length of []float",
+            "entities.*search"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/request.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, lines 1221-1237\nfunc serializeFloatVectors(vectorStr string, dataType schemapb.DataType, dimension, bytesLen int64, fpArrayToBytesFunc func([]float32) []byte) ([][]byte, error) {\n\tvar fp32Values [][]float32\n\terr := json.Unmarshal([]byte(vectorStr), &fp32Values)\n\tif err != nil {\n\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr, err.Error())\n\t}\n\tvalues := make([][]byte, 0, len(fp32Values))\n\tfor _, vectorArray := range fp32Values {\n\t\tif int64(len(vectorArray)) != dimension {\n\t\t\treturn nil, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(dataType)], vectorStr,\n\t\t\t\tfmt.Sprintf(\"dimension: %d, but length of []float: %d\", dimension, len(vectorArray)))\n\t\t}\n\t\tvectorBytes := fpArrayToBytesFunc(vectorArray)\n\t\tvalues = append(values, vectorBytes)\n\t}\n\treturn values, nil\n}",
+          "call_chain_traced": "SearchRequest handler → serializeFloatVectors (utils.go:1229-1231) → explicit dimension check: 'if int64(len(vectorArray)) != dimension' → returns WrapErrParameterInvalid for mismatched lengths including 0",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: serializeFloatVectors 函数在 utils.go:1229-1231 处显式检查每个向量的长度是否等于集合维度。当传入 [[]] 时，内层数组长度为 0，不等于 dimension=8，触发参数校验错误。这是故意的输入验证，而非缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test valid search with properly dimensioned vector to contrast with empty vector behavior",
+          "observed": "Valid search with data=[[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]] returns HTTP 200 code=0 with empty result set (expected since collection is empty). Empty array [[]] correctly rejected with dimension mismatch error (0 vs 8).",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"repro_test\", \"dbName\": \"default\", \"data\": [[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]], \"limit\": 3, \"outputFields\": [\"id\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (tested on clean container)",
+            "Concurrent operations (single-threaded test)",
+            "Request parameter typo (verified exact JSON structure)",
+            "API semantics misunderstanding (confirmed with source code)"
+          ],
+          "surviving": "input_validation_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns，但源码显示这是显式的参数校验逻辑，属于常规输入验证"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "milvus_007 声称entities+search端点接受data=[[]]（空向量数组）为违规。经复现与源码接地证实：(1) Step 1实测显示API明确返回1801错误码，提示'dimension: 8, but length of []float: 0'；(2) Step 3.5源码分析发现serializeFloatVectors函数(utils.go:1229-1231)显式检查每个向量长度必须等于集合维度，长度0不满足dimension=8故拒绝；(3) Step 4反向证伪显示相同端点对正确维度向量([[0.1...0.1]])正常返回空结果集，证明这是参数维度校验而非缺陷。此行为符合REST API参数验证惯例：空向量长度与集合维度不匹配应被拒绝。因此判定为FALSE_POSITIVE，根因是mundane_api_semantics（正常输入验证逻辑被误读为缺陷）。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

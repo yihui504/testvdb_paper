@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search collectionName=dev_review_test_nprobe data=[[1.0,2.0,3.0,4.0]] limit=3 searchParams={\"nprobe\": 0}",
+          "observed": "HTTP 200 with search results [{\"distance\":24.3,\"id\":0},{\"distance\":24.3,\"id\":1},{\"distance\":24.3,\"id\":2}] - API accepts nprobe=0 without error",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"dev_review_test_nprobe\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 3, \"searchParams\": {\"nprobe\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion depends on parameter validation being performed by REST v2 API",
+            "Assumption that nprobe values are validated against physical constraints (nprobe >= 1 for IVF)",
+            "Assumption that API would reject physically meaningless values like nprobe=0 or nprobe=-1"
+          ],
+          "evidence": "Raw requests show API accepts nprobe=0, nprobe=-1, nprobe=999999 without any validation error. Tested: curl with nprobe=-1 returned HTTP 200, curl with nprobe=999999 returned HTTP 200"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit nprobe validation constraint found in structured_contract.json for entities+search endpoint",
+            "contract mentions searchParams as optional object but does not specify nprobe range validation requirements"
+          ],
+          "note": "Absence of explicit contract constraint means no contractual requirement exists, but physical constraints still apply"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "nprobe",
+            "generateSearchParams",
+            "searchParams.*validate",
+            "validateSearchParam",
+            "CheckSearchParams"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/search_util.go",
+            "internal/querynodev2/mock_data.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/utils.go\nLines: 2192-2247\nFunction: generateSearchParams\n\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter merging logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// need to exposure ParamRoundDecimal in req?\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}\n\n**CRITICAL**: Function does NOT validate parameter values. It only converts values to strings with fmt.Sprintf(\"%v\", value) and returns them. No range checking for nprobe or any search parameter.",
+          "call_chain_traced": "REST v2 Search Request → handler_v2.go:search() (line 1528) → generateSearchParams() → utils.go:2241 (no validation, just string formatting) → passed through to query execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms REST v2 API layer performs NO validation of nprobe or any search parameter values. Parameters are blindly passed through as formatted strings."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Independent verification: tested nprobe=-1 and nprobe=999999, both returned HTTP 200 with search results",
+          "observed": "All invalid nprobe values (0, -1, 999999) accepted by API without error. Bug consequence (acceptance of invalid values) is consistently observable.",
+          "note": "Reverse falsification FAILED - defect is real, not a false positive"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - tested on current running container",
+            "Concurrent/race conditions - single-threaded sequential test",
+            "Request parameter typo - 'nprobe' is correct parameter name",
+            "API semantics misunderstanding - nprobe=0 is physically meaningless for IVF indexes (must probe >= 1 partition)"
+          ],
+          "surviving": "param_validation_deficiency_in_rest_v2_layer",
+          "note": "No mundane explanation found. This is a genuine parameter validation gap."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_source": "bug_shapes.json shape_id: rest-v2-data-type-handling (Type1_IllegalSuccess) and developer_cognition.json blindspot_indicators",
+        "note": "Defect matches known pattern where REST v2 API fails to validate parameters that gRPC path validates. Milvus maintainers explicitly treat this as a defect class."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API accepts physically invalid nprobe values (0, -1, 999999) without any validation. Source code confirms generateSearchParams() function performs NO parameter value validation - it only formats values as strings and passes them through. For IVF indexes, nprobe must be >= 1 (physical constraint: cannot probe 0 or negative partitions). This matches the 'rest-v2-data-type-handling' bug shape (Type1_IllegalSuccess) where REST v2 API fails to properly validate data types/parameter ranges that gRPC path rejects. Defect is CONFIRMED.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit nprobe validation constraint found in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "nprobe >= 1 for IVF index search (physical constraint - must probe at least 1 partition)",
+          "api_accepts_violation": true,
+          "api_observed_values": "nprobe=0 (invalid), nprobe=-1 (invalid), nprobe=999999 (unreasonably large) - all accepted with HTTP 200",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "evidence": "No source comments or intent markers indicate unvalidated nprobe acceptance is intentional",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation: nprobe < 1 for IVF) → final=CONFIRMED (C cannot override B, verdict_A=NEUTRAL doesn't block)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_deficiency_in_rest_v2_layer": 1
+    }
+  }
+}

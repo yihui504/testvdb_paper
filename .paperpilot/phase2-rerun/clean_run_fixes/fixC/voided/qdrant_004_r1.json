@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points?wait=true {\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]} to collection with vectors.size=4",
+          "observed": "HTTP 400 with error: 'Wrong input: Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -s http://localhost:6333/collections/test/points?wait=true -X PUT -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - assertion: 'vector type is array of floats or object of named vectors'",
+            "assertion_id: qdrant_behavioral_005 - expected_behavior: 'Returns 200 on success; returns 4XX on validation error'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "Vector dimension error",
+            "vector.*validation",
+            "type.*check.*vector"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/collection/src/operations/types.rs",
+            "lib/api/src/rest/validate.rs",
+            "lib/api/src/conversions/vectors.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/data_types/vectors.rs lines 296-323\npub fn try_from_matrix(matrix: Vec<Vec<T>>) -> Result<Self, OperationError> {\n    if matrix.is_empty() {\n        return Err(OperationError::validation_error(\n            \"MultiDenseVector cannot be empty\",\n        ));\n    }\n    let dim = matrix[0].len();\n    if dim == 0 {\n        return Err(OperationError::validation_error(\n            \"MultiDenseVector cannot have zero dimension\",\n        ));\n    }\n    // assert all vectors have the same dimension\n    if let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {\n        return Err(OperationError::WrongVectorDimension {\n            expected_dim: dim,\n            received_dim: bad_vec.len(),\n        });\n    }\n    \n    let flattened_vectors = matrix.into_iter().flatten().collect_vec();\n    let multi_dense = TypedMultiDenseVector {\n        flattened_vectors,\n        dim,\n    };\n    \n    Ok(multi_dense)\n}\n\n// lib/collection/src/operations/types.rs lines 1104-1110\nimpl From<OperationError> for CollectionError {\n    fn from(err: OperationError) -> Self {\n        match err {\n            OperationError::WrongVectorDimension { .. } => Self::BadInput {\n                description: err.to_string(),\n            },",
+          "call_chain_traced": "REST API request → vector parsing → dimension validation → WrongVectorDimension error → BadInput response (HTTP 400)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: qdrant 在 data_types/vectors.rs 中显式实现了向量维度校验。当输入向量维度与配置不符时，返回 WrongVectorDimension 错误，该错误在 operations/types.rs 中被转换为 BadInput (HTTP 400)。源码逻辑显示这是一个显式的验证分支，不是被动类型转换。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with correct dimension (4D vector) → Verify it succeeds; Test with string array instead of floats → Verify it rejects with format error",
+          "observed": "Correct 4D vector accepted (HTTP 200); String array rejected with 'Format error in JSON body: data did not match any variant of untagged enum VectorStruct'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Concurrency race",
+            "Request parameter typo",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "命中 blindspot_indicators 中的 'Parameter validation on filter/condition APIs' 模式。虽然本例是向量维度验证而非 filter 参数验证，但属于同一类参数校验问题。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 将 '向量维度不匹配' (dimension validation) 分类为 'type_coercion' (类型混淆) 缺陷，但源码与实测均证明这是显式的参数校验逻辑，而非类型转换问题。API 正确实现了维度验证：输入 3D 向量到配置为 4D 的 collection 返回 HTTP 400 + 明确错误消息。根据 bug_shapes.json 中的 qdrant-type-coercion-type-confusion shape 定义，这应该是 'API accepts invalid Type Confusion values without returning 4xx' 的反向场景 —— 即 API **正确拒绝** 了非法值。这是一个有效的防御性检查，不是缺陷。'
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (id 0-100)",
+          "observed": "HTTP 200 OK, insertCount: 101, insertIds: [0,1,2,...,100] - API accepted 101 entities successfully",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d @/tmp/insert_101.json"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Contract constraint exists: milvus_range_entities_insert_001 states len(data) <= 100 with confidence 1.0",
+            "Raw request contains 101 entities (id 0-100)",
+            "Raw response shows HTTP 200 with insertCount=101"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "constraint_id": "milvus_range_entities_insert_001",
+          "assertion_text": "len(data) <= 100",
+          "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "maxEntitiesPerInsert",
+            "100.*entities",
+            "insert.*limit",
+            "NumRows.*len",
+            "CollectionDataReq"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/proxy/validate_util.go",
+            "internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/handler_v2.go, Lines 1241-1277\n\nfunc (h *HandlersV2) insert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionDataReq)\n\treq := &milvuspb.InsertRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t}\n\tc.Set(ContextRequest, req)\n\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tbody, _ := c.Get(gin.BodyBytesKey)\n\tvar validDataMap map[string][]bool\n\thttpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, false)\n\tif err != nil {\n\t\tlog.Ctx(ctx).Warn(\"high level restful api, fail to deal with insert data\", zap.Error(err), zap.String(\"body\", string(body.([]byte))))\n\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode:    merr.Code(merr.ErrInvalidInsertData),\n\t\t\tHTTPReturnMessage: merr.ErrInvalidInsertData.Error() + \", error: \" + err.Error(),\n\t\t})\n\t\treturn nil, err\n\t}\n\n\t// CRITICAL: No validation of len(httpReq.Data) <= 100 here\n\treq.NumRows = uint32(len(httpReq.Data))  // Line 1267: Direct assignment without limit check\n\treq.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)\n\tif err != nil {\n\t\tlog.Ctx(ctx).Warn(\"high level restful api, fail to deal with insert data\", zap.Any(\"data\", httpReq.Data), zap.Error(err))\n\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode:    merr.Code(merr.ErrInvalidInsertData),\n\t\t\tHTTPReturnMessage: merr.ErrInvalidInsertData.Error() + \", error: \" + err.Error(),\n\t\t})\n\t\treturn nil, err\n\t}\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Insert\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Insert(reqCtx, req.(*milvuspb.InsertRequest))\n\t})\n\t// ... response handling\n}",
+          "call_chain_traced": "REST v2 /entities/insert → handler_v2.insert() → req.NumRows = uint32(len(httpReq.Data)) → proxy.Insert() → NO VALIDATION",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code analysis confirms no len(data) <= 100 validation exists in REST v2 insert handler. The constraint is not enforced."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter 'id >= 0' and limit=250",
+          "observed": "Query returned 201 entities (100 from first batch + 101 from second batch), confirming all entities were actually stored in database",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_limit_repro\",\"filter\":\"id >= 0\",\"outputFields\":[\"id\"],\"limit\":250}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded_explanations": [
+            "Environment noise: Running in standard Docker container, no filesystem/platform issues",
+            "Concurrency/race: Single-threaded sequential test execution",
+            "Cache/optimization delay: Immediate verification via query confirms persistence",
+            "Request parameter typo: Payload correctly formatted with 101 entity objects",
+            "API semantic misunderstanding: Constraint explicitly documented in contract with assertion len(data) <= 100"
+          ],
+          "matched_cognition_signals": [
+            "blindspot_indicators[0]: 'REST v2 API data type serialization - 8 issues in corpus' - This is a REST v2 validation gap"
+          ]
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "len(data) <= 100 per constraint milvus_range_entities_insert_001 (confidence: 1.0, endpoint: entities+insert)",
+          "assertion_text_quoted": "len(data) <= 100",
+          "api_observed_value": "API accepted 101 entities and returned HTTP 200 with insertCount=101",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint - the 100 entity limit is an arbitrary API design choice, not a mathematical or physical necessity",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling - API simply accepts oversized payload without validation. No by-design comments or constants found indicating this is intentional behavior."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED → final=CONFIRMED (C cannot override A; contract violation takes precedence)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[0]",
+        "pattern_id": "rest-v2-data-type-handling",
+        "pattern_name": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "matched_blindspot_areas": [
+          "REST_v2_data_types"
+        ],
+        "note": "This defect matches the known REST v2 validation gap blindspot. Milvus maintainers have historically treated REST v2 input validation issues as genuine defects (see historical instances 52232, 52230, 52229, 52212, 52188, 52154)."
+      },
+      "root_cause_if_confirmed": "rest_v2_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "The REST v2 /entities/insert endpoint accepts 101 entities when the contract constraint explicitly states len(data) <= 100. Source code analysis (handler_v2.go:1267) confirms no validation exists - the handler directly assigns req.NumRows = uint32(len(httpReq.Data)) without checking the limit. Independent verification via query confirmed all 201 entities (100+101) were successfully stored. This is a confirmed parameter validation defect in the REST v2 API layer. The matched blindspot pattern (REST_v2_data_type_handling) and lack of by-design indicators confirm this is a genuine bug, not expected behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_validation_gap": 1
+    }
+  }
+}

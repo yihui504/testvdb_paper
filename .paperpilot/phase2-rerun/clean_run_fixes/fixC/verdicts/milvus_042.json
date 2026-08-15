@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with {\"collectionName\": \"test_vec_str_review\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}",
+          "observed": "REST v2 returns HTTP 200 with insertCount=1, accepting string-encoded JSON vector",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_vec_str_review\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_assert_insert_success_001 (entities+insert should return insertCount > 0)",
+            "constraint_id: milvus_contract_data_visibility_001 (inserted entities should be retrievable)"
+          ],
+          "note": "No explicit REST v2 constraint rejecting string-encoded vector fields"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "func checkAndSetData",
+            "DataType_FloatVector",
+            "json.Unmarshal.*vectorArray"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 542-552\n\t\t\t\tcase schemapb.DataType_FloatVector:\n\t\t\t\t\tif dataString == \"\" {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n\t\t\t\t\t}\n\t\t\t\t\tvar vectorArray []float32\n\t\t\t\t\terr := json.Unmarshal([]byte(dataString), &vectorArray)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = vectorArray",
+          "call_chain_traced": "REST v2 insert → handler_v2.go:1563 (h.insert) → handler_v2.go:1579 (checkAndSetData) → utils.go:543-552 (json.Unmarshal accepts string or array)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 在 utils.go checkAndSetData 函数中，对 FloatVector 字段调用 json.Unmarshal([]byte(dataString), &vectorArray)。当 dataString=\\\"[0.1,0.2,0.3,0.4]\\\" (字符串形式的 JSON)时，json.Unmarshal 成功解析，导致 REST v2 无声接受字符串向量。无类型检查防止此行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "pymilvus gRPC insert with string vector: client.insert('test_vec_str_review', [{'id': 1, 'vector': '[0.5,0.6,0.7,0.8]'}])",
+          "observed": "gRPC rejects with DataNotMatchException: \\\"{vector} field should be a float_vector, but got a {<class 'str'>} instead.\\\" - E2 channel inconsistency confirmed",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.insert('test_vec_str_review', [{'id': 1, 'vector': '[0.5,0.6,0.7,0.8]'}])\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（非 POSIX 文件系统 / Windows / Docker 限制）",
+            "并发 race（无并发操作）",
+            "缓存/优化器延迟（同步操作）",
+            "请求参数笔误（payload 格式正确但语义错误）",
+            "API 语义误解（字符串向量非标准语义）"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "命中 blindspot_indicators: REST v2 与 gRPC 对同一输入行为分歧，维护者视此类跨通道不一致为缺陷并修复"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - no explicit REST v2 constraint rejecting string-encoded vector fields",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "FloatVector field schema requires float32 array type, not string",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Silent type coercion is not graceful - it creates dangerous cross-channel inconsistency"
+        },
+        "evidence_conflict_resolution": {
+          "evidence_type": "E2",
+          "rule_applied": "E2 (通道一致性裁决准绳): REST v2 与 gRPC 对同一输入行为相反(一方接受、一方拒绝) → 该不一致本身即缺陷证据",
+          "outcome": "方向 CONFIRMED - 即使实现是无声的(json.Unmarshal 显式转换), 它是无声实现, 不触发 E3"
+        },
+        "aggregation_applied": "E2 evidence type triggered: REST v2 accepts string vector, gRPC rejects it → cross-channel inconsistency = defect",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_json_unmarshal_accepts_string_vector",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "E2 通道不一致：REST v2 通过 json.Unmarshal([]byte(dataString), &vectorArray) 接受字符串向量 \\\"[0.1,0.2,0.3,0.4]\\\"，而 gRPC(pymilvus) 拒绝同类输入并报错 \\\"{vector} field should be a float_vector, but got a {<class 'str'>} instead.\\\"。源码 utils.go:543-552 确认 REST v2 无类型检查防止此行为。此非 by-design（无声实现，无意图声明），而是真实缺陷。符合 developer_cognition.json blindspot: \\\"REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)\\\"。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_json_unmarshal_accepts_string_vector": 1
+    }
+  }
+}

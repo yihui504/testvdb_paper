@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collection schema defining text_field as VarChar, payload includes text_field: 12345 (integer)",
+          "observed": "HTTP 200 returned, insert succeeded with insertCount=1. Query confirms integer 12345 stored in VarChar field as number 12345 (not string '12345')",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"dev_review_milvus_006\",\"data\":[{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"text_field\":12345}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/query -d '{\"collectionName\":\"dev_review_milvus_006\",\"filter\":\"id in [1,2]\",\"outputFields\":[\"text_field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_entities_insert_001 - assertion: 'data field types match collection schema'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["checkAndSetData", "anyToColumns", "DataType_VarChar", "fieldValue.String"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 325-332, 581-582\n\nfieldValue := gjson.Get(data.Raw, fieldName)\nif partialUpdate && !fieldValue.Exists() {\n    // Skip fields that are not provided in partial update\n    continue\n}\n\ndataString := fieldValue.String()  // <-- Converts ANY gjson value to string representation\n...\n\ncase schemapb.DataType_VarChar:\n    reallyData[fieldName] = dataString  // <-- Accepts string WITHOUT type validation\ncase schemapb.DataType_String:\n    reallyData[fieldName] = dataString",
+          "call_chain_traced": "HTTP POST /entities/insert → handler_v2.go:1220 insert() → checkAndSetData() → line 331 fieldValue.String() converts number to '12345' → line 581-582 VarChar case accepts without validation → silent type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert 在 checkAndSetData 函数中对 VarChar/String 字段未做原始 JSON 类型校验。fieldValue.String() 把任何 JSON 值(包括数字、布尔、数组)都转成字符串,直接存入 VarChar 字段。这违反了契约 'data field types match collection schema'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query confirms data stored as integer 12345, not string '12345'. Subsequent queries return the coerced integer value, violating type semantics",
+          "observed": "Query response: {\"id\":2,\"text_field\":12345} - integer stored in VarChar column, not converted to string '12345'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟", "请求参数笔误", "API 语义误解"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types. Symptoms include: Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK.",
+        "note": "命中 bug_shapes.json 的 'rest-v2-data-type-handling' 模式(shape_id: rest-v2-data-type-handling, confidence: 0.95)。维护者明确标注 REST v2 API 数据类型序列化问题是高频缺陷区域(26 个历史实例)。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "源码接地确认了 REST v2 insert 在 checkAndSetData 函数中存在系统性类型验证缺失:line 331 调用 fieldValue.String() 将任何 JSON 类型转换为字符串表示,然后在 VarChar/String 分支(line 581-582)直接接受而未校验原始 JSON 类型。实测证实:insert payload 包含 text_field: 12345 (整数)被成功存入 VarChar 列,返回 200。这直接违反了契约约束 milvus_type_entities_insert_001('data field types match collection schema')。命中 bug_shapes.json 的 rest-v2-data-type-handling 模式,该模式包含 26 个历史实例且 confidence=0.95,表明这是维护者已知的高频盲区。Step 4 证伪失败(query 返回整数 12345 而非字符串 '12345')。无平凡解释可排除。因此判定为 TRUE DEFECT。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

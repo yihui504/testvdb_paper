@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_002",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={'nprobe': 0}",
+          "observed": "API returns HTTP 200 with search results, no error for nprobe=0",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient(uri='http://localhost:19530'); client.search(collection_name='test', data=[[0.1]*8], limit=3, search_params={'nprobe': 0})\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "IVF index with nlist=8 exists (index creation in log showed params.nlist=8)",
+            "nprobe parameter controls how many IVF partitions to probe during search",
+            "Physical constraint: 1 <= nprobe <= nlist for IVF indexes (nprobe=0 is semantically meaningless, nprobe > nlist exceeds available partitions)"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit nprobe range constraint found in structured_contract.json",
+            "entities+search endpoint documented but searchParams validation not specified",
+            "Constraint gap: REST v2 API layer lacks parameter range validation"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "nprobe",
+            "searchParams",
+            "generateSearchParams",
+            "validateSearchParams"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "tests/python_client/common/common_params.py"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2076-2126\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\t// ... no validation of nprobe range ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST v2 SearchReqV2.searchParams (map) → generateSearchParams() → KeyValuePair[] → proxy.Search() → queryNode (no nprobe validation at any layer)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source接地发现: generateSearchParams() 只做类型转换，完全不校验参数范围。nprobe作为IVF索引关键参数，应该有 1<=nprobe<=nlist 的范围校验，但源码中完全缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test nprobe=0,1,8,100 to observe if API validates range",
+          "observed": "nprobe=0: ACCEPTED (returns IDs [0,1,2]) | nprobe=1: ACCEPTED (returns IDs [0,1,2]) | nprobe=8: ACCEPTED (returns IDs [0,1,2]) | nprobe=100 (>nlist): ACCEPTED (returns IDs [0,1,2]) - No error for any value",
+          "evidence_cmd": "python -c \"client.search(collection_name='test', data=[[0.1]*8], limit=3, search_params={'nprobe': 100}) # returns 200 with nprobe > nlist\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/Milvus container running normally)",
+            "Request parameter typo (nprobe correctly specified)",
+            "API semantic misunderstanding (IVF nprobe clearly defined in docs)",
+            "Concurrent operations (single-threaded test)",
+            "By-design behavior (no source code comments or constants indicating nprobe=0 is intentional)"
+          ],
+          "surviving": "missing_parameter_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "nprobe validation gap matches REST v2 blindspot pattern: 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects'. Mainteners treat cross-channel inconsistency as defect."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "IVF index search parameter nprobe lacks range validation in REST v2 API. Physical constraint requires 1 <= nprobe <= nlist (8 in this case), but API accepts nprobe=0 (semantically invalid: 'probe 0 partitions') and nprobe=100 (exceeds nlist). Source code confirms generateSearchParams() in utils.go performs no validation. This is a true Type1_IllegalSuccess bug.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - no explicit nprobe constraint in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "IVF index: nprobe ∈ [1, nlist]. nprobe=0 means probe 0 partitions (nonsensical). nprobe > nlist exceeds available partitions (invalid). nlist=8 in this test.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation: nprobe=0 is semantically invalid for IVF) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_parameter_validation": 1
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.search(collection_name='test_unloaded', data=[[0.1, 0.2, 0.3, 0.4]], anns_field='vector', limit=5)",
+          "observed": "MilvusException: (code=100, message=collection not found[database=default][collection=test_unloaded])",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); result = client.search(collection_name='test_unloaded', data=[[0.1, 0.2, 0.3, 0.4]], anns_field='vector', limit=5); print('Search result:', result)\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Collection exists (was created in REQ 2-3) but is not loaded. Search request is valid with required parameters (collectionName, data, annsField, limit)."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001",
+            "assertion: collection is loaded AND index exists on annsField"
+          ],
+          "note": "State constraint milvus_state_entities_search_001 explicitly requires: 'Collection must be loaded; index must exist on annsField' (source: https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "ErrCollectionNotFound",
+            "ErrCollectionNotLoaded",
+            "collection not loaded",
+            "collection not found"
+          ],
+          "files_examined": [
+            "pkg/util/merr/errors.go",
+            "pkg/util/merr/utils.go",
+            "internal/proxy/channels_mgr.go",
+            "internal/querycoordv2/meta/collection_manager.go"
+          ],
+          "source_excerpt": "// pkg/util/merr/errors.go lines 64-67\n// Collection related\nErrCollectionNotFound                      = newMilvusError(\"collection not found\", 100, false)\nErrCollectionNotLoaded                     = newMilvusError(\"collection not loaded\", 101, false)\n\n// pkg/util/merr/utils.go lines 514-520\nfunc WrapErrCollectionNotLoaded(collection any, msg ...string) error {\n\terr := wrapFields(ErrCollectionNotLoaded, value(\"collection\", collection))\n\tif len(msg) > 0 {\n\t\terr = errors.Wrap(err, strings.Join(msg, \"->\"))\n\t}\n\treturn err\n}",
+          "call_chain_traced": "Search operation → getCollectionInfo → check if loaded → if not loaded: should return ErrCollectionNotLoaded (code 101) → actual: returns ErrCollectionNotFound (code 100)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms Milvus has separate error codes: ErrCollectionNotFound (code 100) vs ErrCollectionNotLoaded (code 101). The proxy layer should distinguish between 'collection does not exist' vs 'collection exists but not loaded', but the search path returns code 100 (not found) instead of code 101 (not loaded) for unloaded collections."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Load collection first, then search: client.load_collection(collection_name='test_unloaded'); then search again",
+          "observed": "After loading collection, search succeeds with HTTP 200, confirming the collection exists but was simply unloaded. The original error message was misleading."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Windows/Docker work fine)",
+            "Request parameter typo (all required params present)",
+            "Concurrent race (sequential single-threaded test)",
+            "Cache/consistency delay (immediate error response)",
+            "API semantics misunderstanding (clear load requirement in contract)"
+          ],
+          "surviving": "none",
+          "note": "All mundane explanations excluded. This is a genuine diagnostic quality issue."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "While developer_cognition.json lists 'REST v2 API data type serialization' and 'Segment state machine violations' as blindspots, this specific error code misdiagnostic (returning 'not found' instead of 'not loaded') is a diagnostic quality issue that falls outside known by_design patterns. The contract explicitly requires collection to be loaded, so this is not by-design behavior."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Confirmed defect in error diagnostic quality. Milvus has separate error codes for 'collection not found' (code 100) and 'collection not loaded' (code 101). When attempting to search an unloaded but existing collection, the API incorrectly returns code 100 ('collection not found') instead of the more accurate code 101 ('collection not loaded'). This misleads users about the actual problem and available remediation. The contract explicitly states 'Collection must be loaded' for search (milvus_state_entities_search_001), and source code confirms both error codes exist, indicating this is a diagnostic bug in the error path selection logic."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

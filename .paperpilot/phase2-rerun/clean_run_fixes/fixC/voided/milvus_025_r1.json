@@ -1,0 +1,72 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_reproduction": {
+          "timestamp": "2025-08-15T20:58:00Z",
+          "target_db": "milvus 2.6.17",
+          "endpoint": "entities+insert",
+          "test_method": "REST v2 HTTP POST /v2/vectordb/entities/insert",
+          "payload_size": 101 entities (IDs 0-100),
+          "expected_behavior": "HTTP 400 error or rejection for exceeding documented maximum of 100 entities",
+          "actual_behavior": "HTTP 200 OK with insertCount: 101, insertIds: [0-100]",
+          "evidence": "Successfully inserted 101 entities when constraint milvus_range_entities_insert_001 asserts len(data) <= 100"
+        },
+        "premise_audit": {
+          "constraint_id": "milvus_range_entities_insert_001",
+          "constraint_source": "C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/structured_contract.json",
+          "constraint_text": "Max 100 entities per single insert call via REST API",
+          "constraint_assertion": "len(data) <= 100",
+          "confidence": 1.0,
+          "validation_status": "PREMISE_VALID - Constraint exists in contract and is violated by implementation"
+        },
+        "contract_comparison": {
+          "documented_limit": "Max 100 entities per single insert call via REST API (milvus_range_entities_insert_001)",
+          "actual_limit": "No enforcement limit found - accepts arbitrary number of entities",
+          "discrepancy": "Contract enforces len(data) <= 100 but implementation accepts >100 entities",
+          "test_results": {
+            "pymilvus_sdk": "insert_count: 101 for 101 entities",
+            "rest_v2_http": "HTTP 200 OK, insertCount: 101, insertIds: [0-100]"
+          }
+        },
+        "source_grounding": {
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "File: internal/distributed/proxy/httpserver/request_v2.go, Line 328-333:\ntype CollectionDataReq struct {\n\tDbName         string                    `json:\"dbName\"`\n\tCollectionName string                    `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                    `json:\"partitionName\"`\n\tData           []map[string]interface{}  `json:\"data\" binding:\"required\"`\n\tPartialUpdate  bool                      `json:\"partialUpdate\"`\n}\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, Line 229-231:\nrouter.POST(EntityCategory+InsertAction, restfulSizeMiddleware(timeoutMiddleware(wrapperPost(func() any {\n\t\treturn &CollectionDataReq{}\n\t}, wrapperTraceLog(h.insert))), false))\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, Line 1267:\nreq.NumRows = uint32(len(httpReq.Data))",
+          "validation_logic": "No validation logic found to enforce len(data) <= 100 constraint. The Data field uses only 'required' binding validator with no size limits. The insert handler (line 1241-1313) directly assigns len(httpReq.Data) to req.NumRows without checking upper bounds.",
+          "root_cause": "Missing validation constraint in CollectionDataReq.Data field definition - should include validator tag like `binding:\"required,max=100\"` or explicit check in handler function"
+        },
+        "reverse_falsification": {
+          "attempted_counterexamples": [
+            "Test with 1 entity: Succeeds (expected)",
+            "Test with 50 entities: Succeeds (expected)",
+            "Test with 100 entities: Succeeds (expected)",
+            "Test with 101 entities: Succeeds (SHOULD FAIL per contract)",
+            "Test with 150 entities: Would likely succeed (no upper bound enforcement found)"
+          ],
+          "boundary_analysis": "The documented boundary at 100 entities exists in contract but is NOT enforced in code. No evidence of any upper limit validation in the insert path.",
+          "falsification_status": "CANNOT_FALSIFY - All evidence confirms the defect exists. The implementation lacks the documented constraint."
+        },
+        "trivial_exclusions": {
+          "check_documentation_errors": "Reviewed structured_contract.json - constraint milvus_range_entities_insert_001 is clearly stated with confidence 1.0 and source_status 'reachable'. This is not a documentation error.",
+          "check_by_design": "No evidence in bug_shapes.json or developer_cognition.json indicating this is intentional behavior. REST v2 API data type handling issues are explicitly listed as blindspots (bug_shapes shape_id: rest-v2-data-type-handling, 26 historical instances).",
+          "check_version_specific": "Version 2.6.17 is current stable release. No evidence this limitation was intentionally removed.",
+          "check_alternate_paths": "Both pymilvus SDK and REST v2 HTTP paths exhibit the same behavior - accepts >100 entities.",
+          "exclusions_result": "None of the exclusion criteria apply. This is a genuine param_validation defect."
+        }
+      },
+      "perspective_analysis": {
+        "contract_perspective": "VIOLATED - Structured contract milvus_range_entities_insert_001 explicitly states 'Max 100 entities per single insert call via REST API' with assertion 'len(data) <= 100'. Implementation accepts 101+ entities.",
+        "implementation_perspective": "MISSING_VALIDATION - CollectionDataReq.Data field definition (request_v2.go:332) lacks size constraint validation. No upper bound check exists in insert handler (handler_v2.go:1241-1313) before assigning req.NumRows = uint32(len(httpReq.Data)).",
+        "behavioral_perspective": "ILLEGAL_SUCCESS - System returns HTTP 200 OK with successful insertion of 101 entities (insertCount: 101, insertIds: [0-100]) when it should reject with HTTP 400 for violating documented constraint.",
+        "aggregate_assessment": "CONFIRMED - All three perspectives indicate Type1_IllegalSuccess defect. REST v2 param_validation failure where implementation accepts values exceeding documented range constraint."
+      }
+    }
+  ]
+}

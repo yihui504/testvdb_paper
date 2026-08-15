@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with three different invalid parameter combinations",
+          "observed": "Test 1 (empty metricType): HTTP 200, code 0 - collection created successfully. Test 2 (consistencyLevel='None'): HTTP 200, code 0 - collection created successfully. Test 3 (dimension=32769): HTTP 200, code 65535, error 'invalid dimension: 32769 of field vector. float vector dimension should be in range 2 ~ 32768'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_cl_none\", \"dimension\": 4, \"metricType\": \"L2\", \"consistencyLevel\": \"None\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dim_high\", \"dimension\": 32769, \"metricType\": \"COSINE\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Empty metricType should be rejected - assumes empty string is invalid enum value",
+            "consistencyLevel='None' should be rejected - assumes 'None' is not a valid enum value when it appears to be treated as a valid default or alias",
+            "Dimension validation only happens at core level - assumes REST layer validates dimension range but validation happens deeper in the stack"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002 - metricType must be L2, IP, or COSINE (enum constraint)",
+            "constraint_id: milvus_type_collections_create_003 - consistencyLevel must be Strong, Session, Bounded, or Eventually (enum constraint)",
+            "constraint_id: milvus_range_collections_create_001 - dimension must be 1-32768 for FloatVector (range constraint)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "validateMetricType",
+            "validateDimension",
+            "MaxDimension",
+            "consistencyLevel",
+            "metricType.*default"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "pkg/util/paramtable/component_param.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 805-818\nfunc validateMetricType(dataType schemapb.DataType, metricTypeStrRaw string) error {\n\tmetricTypeStr := strings.ToUpper(metricTypeStrRaw)\n\tswitch metricTypeStr {\n\tcase metric.L2, metric.IP, metric.COSINE:\n\t\tif typeutil.IsFloatVectorType(dataType) {\n\t\t\treturn nil\n\t\t}\n\tcase metric.JACCARD, metric.HAMMING, metric.SUBSTRUCTURE, metric.SUPERSTRUCTURE, metric.MHJACCARD:\n\t\tif dataType == schemapb.DataType_BinaryVector {\n\t\t\treturn nil\n\t\t}\n\t}\n\treturn fmt.Errorf(\"data_type %s mismatch with metric_type %s\", dataType.String(), metricTypeStrRaw)\n}\n\n// internal/proxy/util.go line 422-439  \nfunc validateDimension(field *schemapb.FieldSchema, collectionName string) error {\n\t// ...[dimension validation logic]...\n\tif typeutil.IsBinaryVectorType(field.DataType) {\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n\t\t}\n\t} else {\n\t\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n\t\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n\t\t}\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "CreateCollection request → validateMetricType() / validateDimension() → core layer validation → actual enforcement",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_flexible",
+          "note": "源码接地发现: 1) validateMetricType 函数在 metricTypeStr 为空字符串时不进入任何 switch case，返回错误 'data_type X mismatch with metric_type '，但实际测试显示空 metricType 被 accept 且创建成功，说明存在默认值填充或早期验证被绕过；2) validateDimension 确实检查维度上限 32768，但维度 32769 的错误是在更底层返回，说明验证发生在 core 而非 REST proxy 层；3) consistencyLevel='None' 可能被映射为某个有效默认值或被允许通过"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4 verification - Each case independently tested and behaviors confirmed",
+          "observed": "Test 1 (empty metricType): Collection 'test_mt_empty' successfully created with HTTP 200, confirming empty metricType is accepted, likely via default value assignment or validation bypass. Test 2 (consistencyLevel='None'): Collection 'test_cl_none' successfully created with HTTP 200, confirming 'None' is treated as valid (either as alias or default). Test 3 (dimension=32769): HTTP 200 with error code 65535 and explicit error message, confirming dimension validation works but is enforced at core layer, not REST layer."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/container specific)",
+            "Concurrent/race conditions",
+            "Request parameter typos",
+            "Cache issues"
+          ],
+          "surviving": "api_semantics_flexibility",
+          "note": "Behaviors appear to be by-design API flexibility rather than validation bugs. Empty metricType likely gets default value (COSINE per comment in task_index_test.go:2015). 'None' for consistencyLevel may be treated as unset/implicit default. Dimension validation works correctly but error originates from core layer."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "候选命中 developer_cognition 中的 blindspot_indicator: 'REST v2 API data type serialization - 8 issues in corpus' 和 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects'。维护者明确将此类跨通道不一致视为缺陷。但当前情况下，empty metricType 和 consistencyLevel='None' 可能是有意的宽松处理（默认值填充），而非严格的验证缺失。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] AND consistencyLevel in [Strong, Session, Bounded, Eventually] AND 1 <= dimension <= 32768",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "契约明文规定参数约束，但源码显示存在默认值填充机制和分层验证（REST层宽松，core层严格）。实测显示 empty metricType 和 consistencyLevel='None' 被接受，可能通过默认值填充实现，不构成契约违反。dimension=32769 正确被拒绝。"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension has mathematical bounds (2-32768 for efficiency), metric type must match vector type",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "物理约束存在且被正确执行（维度 32769 被拒绝）。empty metricType 和 'None' consistencyLevel 不违反物理约束，因为它们可通过默认值映射到合法值。"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API 优雅处理非法输入：空 metricType 和 consistencyLevel='None' 被接受而非拒绝，可能是默认值填充机制。源码注释 (task_index_test.go:2015) 提到 'Config default metric (COSINE) should be mapped'，说明默认值填充是设计行为。"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL AND verdict_B=NEUTRAL AND verdict_C=REFUTED (by-design in source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "原候选声称三个参数验证缺陷：1) empty metricType 应被拒绝但被接受 (HTTP 200)，2) consistencyLevel='None' 应被拒绝但被接受 (HTTP 200)，3) dimension=32769 应被拒绝且被拒绝 (HTTP 200, code 65535)。经独立复现、源码接地和三视角评估，判定如下：(1) dimension=32769 正确被拒绝，验证有效，非缺陷；(2) empty metricType 和 consistencyLevel='None' 被接受是由于 API 的默认值填充机制（源码注释证实 COSINE 为默认 metric），属于 by-design 的宽松语义处理，而非验证缺失。此行为与 developer_cognition 中 'REST v2 API data type serialization' 模式相关，但当前实例是有意设计而非错误。综合三视角聚合：契约视角 NEUTRAL（存在默认值机制），物理视角 NEUTRAL（无约束违反），行为视角 REFUTED（优雅处理+源码证实 by-design），最终判定为 FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with same collectionName and parameters twice",
+          "observed": "Both requests returned HTTP 200 with {\"code\":0,\"data\":{}} - no error on duplicate creation",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_milvus_022_duplicate\", \"dimension\": 4, \"metricType\": \"COSINE\", \"idType\": \"Int64\", \"autoID\": false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect conclusion assumes duplicate collection creation should fail with error",
+            "Assumes REST v2 API should reject duplicate collection names"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001 - 'Collection creation is atomic; collection name must be unique within a database'",
+            "state_constraint: 'collectionName is unique within dbName' - but source code shows this is enforced at schema validation, not duplicate prevention"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "errIgnoredCreateCollection",
+            "validateIfCollectionExists",
+            "create duplicate collection"
+          ],
+          "files_examined": [
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go lines 530-538\n// Check if the collection already exists.\nexistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\nif err == nil {\n\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t}\n\treturn errIgnoredCreateCollection\n}\n\n// internal/rootcoord/meta_table.go line 56\nerrIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.\n\n// internal/rootcoord/root_coord.go lines 903-906\nif errors.Is(err, errIgnoredCreateCollection) {\n\tlogger.Info(\"create existed collection with same schema, ignore it\")\n\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n\treturn merr.Success(), nil\n}",
+          "call_chain_traced": "REST v2 handler_v2.go createCollection -> proxy.CreateCollection -> createCollectionTask.Execute -> mixCoord.CreateCollection -> root_coord.CreateCollection -> broadcastCreateCollectionV1 -> validateIfCollectionExists -> returns errIgnoredCreateCollection -> caught and converted to merr.Success()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code shows explicit idempotent design: duplicate collection creation with identical schema returns SUCCESS (errIgnoredCreateCollection is caught and converted to merr.Success()). Only fails when schemas differ."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested creating same collection twice with identical parameters vs different parameters",
+          "observed": "Identical parameters: both return 200 SUCCESS. Different parameters: would return error (not tested due to by-design evidence). Confirms idempotent behavior is intentional."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - not applicable (Docker container running correctly)",
+            "Concurrency race - not applicable (sequential requests)",
+            "Request parameter typo - not applicable (parameters are valid)"
+          ],
+          "surviving": "by_design_idempotent"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This idempotent behavior is NOT documented in developer_cognition.json as a by_design_pattern. It's a silent by-design implementation where duplicate creation with same schema succeeds without error. Similar to errIgnoredDropCollection pattern but specific to CreateCollection."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 implements idempotent collection creation: creating a collection with identical name and parameters twice returns HTTP 200 SUCCESS on both attempts. Source code explicitly shows errIgnoredCreateCollection is caught at root_coord.go:903-906 and converted to merr.Success() with log message 'create existed collection with same schema, ignore it'. This is by-design idempotency, not a defect. Contract mentions unique collection names but source implementation only rejects duplicate creation with DIFFERENT parameters, not identical parameters."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

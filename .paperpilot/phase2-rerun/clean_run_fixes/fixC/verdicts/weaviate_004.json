@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-999 (extreme negative value)",
+          "observed": "HTTP 200 with collection created. Response shows 'ef':-999 persisted in vectorIndexConfig",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestRepro\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -999}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["structured_contract.json - POST /schema endpoint parameters"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["ef.*validation", "validate.*ef", "ParseAndValidateConfig", "UserConfig"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "usecases/schema/parser.go",
+            "entities/vectorindex/common/helpers.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go line 29:\nconst (\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\t// ...\n)\n\n// Lines 171-175 - ef parsing WITHOUT validation:\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"ef\", func(v int) {\n\tuc.EF = v\n}); err != nil {\n\treturn uc, err\n}\n\n// Lines 260-323 - validate() function does NOT check ef:\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// NOTE: No validation for u.EF field at all\n\t// ...\n}",
+          "call_chain_traced": "POST /schema → ParseClass → parseVectorIndexConfig → ParseAndValidateConfig → UserConfig.validate() [ef field never validated]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: ef参数在ParseAndValidateConfig中被解析但validate()函数完全不检查。DefaultEF=-1是合法的默认值(let Weaviate pick)，但用户可传入任意负值(-999等)而不触发错误，这是真正的参数校验缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestRepro after creation confirms ef=-999 persisted",
+          "observed": "Collection schema shows 'ef': -999 in vectorIndexConfig, confirming the negative value was accepted and stored"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (容器正常响应)",
+            "并发/race (单次顺序请求)",
+            "缓存/延迟 (立即查询确认持久化)",
+            "请求参数笔误 (参数格式正确，ef字段明确传递)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004_Parameter_Validation_Issues",
+        "developer_quote": "Parameter validation gaps at API boundaries - developers consider this a bug",
+        "note": "候选命中 developer_cognition.json 中明确列为应当报告的缺陷类型: 'Parameter validation gaps at API boundaries'"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "API接受并持久化任意负数ef值(-999等)，源码ParseAndValidateConfig中ef字段被解析但validate()函数完全不校验。DefaultEF=-1表示'让Weaviate自动选择'是合法设计，但这不应被误用为'允许任意负值'。当前实现允许传入-999等极端值而不报错，违背parameter_validation最佳实践。这是真正的参数校验缺失，符合开发者认知中明确应报告的缺陷类别。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

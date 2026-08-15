@@ -1,0 +1,79 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug/points/search {vector: [0.1,0.2,0.3,0.4], limit: 3, params: {hnsw_ef: 0}}",
+          "observed": "HTTP 200 OK with search result [{id:1,score:1.0}] - API accepts hnsw_ef=0 without error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_hnsw_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_search_points_006 - 'hnsw_ef parameter is applicable only when exact=false'",
+            "assertion_id: qdrant_behavioral_008 - 'Returns 200 with array of scored points (descending by score); returns 4XX on invalid params'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": ["hnsw_ef", "search_params", "check_strict_mode", "search_max_hnsw_ef"],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/collection/src/operations/verification/mod.rs",
+            "lib/collection/src/operations/verification/search.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs lines 590-617 - SearchParams struct definition shows hnsw_ef: Option<usize> with no min-range validation. lib/collection/src/operations/verification/mod.rs lines 331-370 - check_strict_mode only validates upper bound search_max_hnsw_ef, not lower bound. No explicit range validation (hnsw_ef >= 1) exists in source code. Validation is ONLY against strict_mode_config.search_max_hnsw_ef upper limit if configured.",
+          "call_chain_traced": "SearchParams.hnsw_ef -> check_strict_mode() -> check_limit_opt(hnsw_ef, search_max_hnsw_ef) -> ONLY validates upper bound, not lower bound",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code analysis confirms hnsw_ef is Option<usize> with no minimum validation. Only serde deserialization rejects negative values. API accepts hnsw_ef=0 per test evidence."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with hnsw_ef=-1 (negative value)",
+          "observed": "HTTP 400 with error 'invalid value: integer -1, expected usize' - Serde JSON deserialization rejects negative values at parse time, confirming hnsw_ef type is usize (unsigned)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_hnsw_bug/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": -1}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (not applicable - single Docker container)",
+            "Concurrency race (not applicable - single sequential request)",
+            "Request parameter typo (clearly specified hnsw_ef: 0)",
+            "API semantics misunderstanding (by-design behavior confirmed via source code)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": "Parameter Validation issues where Numeric Boundary validation is missing",
+        "note": "Candidate matches bug shape pattern, but source analysis confirms this is by-design lenient parameter validation, not a true defect."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Source grounding and live testing confirm: (1) hnsw_ef=0 accepted by API returning HTTP 200 + valid search results; (2) Source code defines hnsw_ef as Option<usize> with only serde rejecting negative values (-1 returns 400), no explicit minimum validation; (3) check_strict_mode only validates upper bound search_max_hnsw_ef if configured in strict_mode_config, not lower bound; (4) Contract qdrant_range_search_points_006 states 'hnsw_ef applicable when exact=false' without specifying numeric range. From HNSW algorithm semantics, ef=0 is meaningless (beam size 0) but not illegal input - system handles gracefully. This is by-design lenient parameter validation, not a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}
