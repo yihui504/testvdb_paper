@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with string ID '100' for Int64 primary key field",
+          "observed": "HTTP 200 OK with upsertCount:1, upsertIds:[100]. Query confirms vector updated to [0.9,0.9,0.9,0.9]. REST v2 API silently coerced string '100' to int64 100, violating schema type contract.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_tc\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 - dataType == Int64 (primary key field type constraint)",
+            "constraint_id: milvus_state_pk_exactly_one_001 - collection MUST have exactly one primary key field of type Int64 or VarChar"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "case schemapb.DataType_Int64:",
+            "strconv.ParseInt",
+            "json.Number(dataString).Int64()",
+            "convertIDsToSchemapbIDs"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go:639-644 (checkAndSetData function)\ncase schemapb.DataType_Int64:\n    result, err := json.Number(dataString).Int64()\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\n\n// File: internal/distributed/proxy/httpserver/utils.go:275-281 (convertIDsToSchemapbIDs function)\ncase string:\n    // Try to parse string as int64\n    parsed, err := strconv.ParseInt(v, 10, 64)\n    if err != nil {\n        return nil, merr.WrapErrParameterInvalidErr(err, \"invalid int64 id at index %d: %v\", i, id)\n    }\n    int64ID = parsed",
+          "call_chain_traced": "REST v2 upsert request → checkAndSetData() → case DataType_Int64 → json.Number(dataString).Int64() [SILENT COERCION] → anyToColumns() → UpsertRequest",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现类型强制转换逻辑:REST v2在checkAndSetData函数(L639-644)和convertIDsToSchemapbIDs函数(L275-281)中对Int64主键字段进行了隐式字符串到整数转换。使用json.Number(dataString).Int64()和strconv.ParseInt(v,10,64)将字符串'100'成功转为int64 100,绕过了schema类型检查。这是真缺陷(contract要求主键类型严格匹配,但源码允许自动转换)。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query the upserted entity with id==100 to verify the update occurred",
+          "observed": "Query returned id=100 with vector=[0.9,0.9,0.9,0.9], confirming the string ID '100' was successfully coerced to int64 100 and the upsert operation executed. No type rejection occurred as expected by schema contract."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on clean container",
+            "Race condition - single-threaded sequential operations",
+            "Request parameter typo - explicit string '100' was intentional test case",
+            "API semantic misunderstanding - schema clearly defines Int64 primary key"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types: Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "缺陷命中developer_cognition.json中的blindspot_indicators:'REST v2 API data type serialization - 8 issues in corpus'。这确实是维护者已知的REST v2类型处理缺陷领域。"
+      },
+      "root_cause_if_confirmed": "rest_v2_type_coercion_in_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确证:REST v2 handler在utils.go的checkAndSetData(L639-644)和convertIDsToSchemapbIDs(L275-281)函数中对Int64主键字段实施了隐式类型强制转换(json.Number().Int64()/strconv.ParseInt),允许字符串ID'100'绕过schema类型检查成功执行upsert。实测复现成功:HTTP 200响应+upsertCount确认+query验证向量已更新,证明类型转换生效。违反约束milvus_type_int64_001(dataType==Int64的严格类型要求)和milvus_state_pk_exactly_one_001(主键字段类型必须严格匹配)。此属Type1_IllegalSuccess:API应拒绝类型不匹配请求但通过静默类型转换成功执行。命中cognition blindspot(rest-v2-data-type-handling),维护者已知REST v2序列化问题但未修复Int64主键类型校验漏洞。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_type_coercion_in_validation": 1
+    }
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "dataType == Int64 (constraint_id: milvus_type_int64_001) - primary key field MUST be Int64 type",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Int64 primary key field should only accept integer values, not string representations",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm the violation)",
+    "final_verdict": "CONFIRMED"
+  }
+}

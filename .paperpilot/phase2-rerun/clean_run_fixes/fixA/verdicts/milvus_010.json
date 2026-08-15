@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/create with properties={\"collection.ttl.seconds\": -100}",
+          "observed": "API returns HTTP 200 with code 0, accepting negative TTL -100",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\": \"test_ttl_neg\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' | jq ."
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Consistent validation across endpoints — Create accepts -100 TTL (200) but Alter rejects it with error 1100",
+            "Parameter format consistency — properties.collection.ttl.seconds not processed by Create"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004",
+            "assertion: ttlSeconds >= 0",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "validateCollectionTTL",
+            "collection.ttl.seconds",
+            "ttlSeconds"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "internal/proxy/task.go:359-373\n\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\ninternal/distributed/proxy/httpserver/handler_v2.go:2019-2024\n\nif _, ok := httpReq.Params[\"ttlSeconds\"]; ok {\n\treq.Properties = append(req.Properties, &commonpb.KeyValuePair{\n\t\tKey:   common.CollectionTTLConfigKey,\n\t\tValue: fmt.Sprintf(\"%v\", httpReq.Params[\"ttlSeconds\"]),\n\t})\n}",
+          "call_chain_traced": "CreateCollection HTTP handler -> createCollection handler (line 2019) -> only processes httpReq.Params[\"ttlSeconds\"] -> ignores properties.collection.ttl.seconds -> validateCollectionTTL exists in task.go:359 but never processes properties from JSON -> negative TTL accepted",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：Create handler只处理httpReq.Params['ttlSeconds']（第2019行），但raw request发送的是properties.collection.ttl.seconds。validateCollectionTTL函数存在于task.go:359-373，正确验证范围[-1, 3155760000]，但在Create路径中从未被触发，因为properties键未被解析。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /collections/describe for created collection to check if TTL was stored",
+          "observed": "Describe returns properties list with only timezone:UTC — collection.ttl.seconds was NOT stored, meaning the negative value was ignored rather than validated"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issues (standard Docker)",
+            "Concurrency/race (sequential operations)",
+            "Cache latency (immediate response)",
+            "API misunderstanding (contract is clear: ttlSeconds >= 0)"
+          ],
+          "surviving": "validation_gap_in_create_endpoint"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This defect matches the blindspot pattern: REST v2 endpoint accepting values that should be rejected, with inconsistent validation across endpoints (Create vs Alter)."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "ttlSeconds >= 0 (constraint_id: milvus_range_collections_create_004)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "ttlSeconds >= 0",
+          "api_observed_value": "Create accepts -100 via properties (HTTP 200)",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "TTL represents time-to-live in seconds; physical lower bound is -1 (special value for no TTL); values < -1 are semantically invalid",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "source_evidence": "validateCollectionTTL function exists but is not triggered for properties key in Create"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (A/B contract/physical violations confirmed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "这是一个真缺陷。源码接地发现：Create endpoint只处理ttlSeconds参数（handler_v2.go:2019），但raw request发送的是properties.collection.ttl.seconds。validateCollectionTTL函数存在且正确实现（task.go:359-373，范围[-1, 3155760000]），但从未在Create路径中被调用，因为JSON properties键未被解析。Alter endpoint正确验证并拒绝-100 TTL（返回error 1100: 'TTL out of range'），证明验证逻辑存在但Create endpoint缺少参数映射。违反契约约束milvus_range_collections_create_004（ttlSeconds >= 0）和物理约束（TTL不能<-1秒）。非平凡解释：不是环境、并发或缓存问题，而是真实的验证不一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_gap_in_create_endpoint": 1
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_029",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with limit=0 and with dimension-mismatched vector",
+          "observed": "REQ 5 (limit=0): HTTP 200 with {\"code\":65535,\"message\":\"topk [0] is invalid, it should be in range [1, 16384], but got 0\"} - Proper error returned\nREQ 6 (64-dim vector in 4-dim collection): HTTP 200 with {\"code\":1801,\"message\":\"can only accept json format request, error: dimension: 4, but length of []float: 64: invalid parameter[expected=FloatVector]\"} - Proper error returned",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H Content-Type:application/json -d '{\"collectionName\":\"test\",\"data\":[[1.0,2.0,3.0,4.0]],\"limit\":0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "API should validate limit parameter",
+            "API should reject limit=0 as invalid",
+            "API should reject dimension mismatch between query vector and collection schema"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 - 'limit must be positive integer' (assertion: limit > 0)",
+            "constraint_id: milvus_range_entities_search_001 - 'vector dimensions in data must match collection vector dimension'",
+            "constraint_id: milvus_range_entities_search_002 - 'limit + offset must be < 16384'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["validateLimit", "topk.*invalid.*range", "limit.*validation", "TopKLimit"],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task_search.go",
+            "tests/python_client/milvus_client_v2/test_milvus_client_search_invalid.py"
+          ],
+          "source_excerpt": "// File: internal/proxy/util.go, lines 199-208\nfunc validateLimit(limit int64, largeTopKEnabled bool) error {\n\ttopKLimit := Params.QuotaConfig.TopKLimit.GetAsInt64()\n\tif largeTopKEnabled {\n\t\ttopKLimit = Params.QuotaConfig.LargeTopKLimit.GetAsInt64()\n\t}\n\tif limit <= 0 || limit > topKLimit {\n\t\treturn fmt.Errorf(\"it should be in range [1, %d], but got %d\", topKLimit, limit)\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "validateLimit() is called from internal/proxy/search_util.go with topK parameter, checking limit <= 0 || limit > topKLimit (16384 by config)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:validateLimit函数在util.go中正确实现了limit参数校验,要求limit必须在[1, topKLimit]范围内。当limit=0时,函数返回错误\"it should be in range [1, %d], but got %d\"。此校验在search_util.go中被调用,确保搜索请求的limit/topk参数有效。API行为符合契约要求。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "N/A - Step 1 already confirmed proper error responses are returned for invalid inputs",
+          "observed": "API correctly rejects invalid inputs (limit=0 and dimension mismatch) with proper error codes and messages. No bug to falsify."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [],
+          "surviving": "api_validates_inputs_correctly"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何by_design或rejection模式。候选现象(limit=0和维度不匹配被正确拒绝)实际上是API按契约正常工作的表现,而非缺陷。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "milvus_029声称的'违规'实际上是API按契约正确工作的表现:\n\n1. **limit=0请求**: API返回HTTP 200 with error code 65535和消息'topk [0] is invalid, it should be in range [1, 16384], but got 0'。这是正确的行为,因为契约(milvus_type_entities_search_001)明确要求'limit must be positive integer'且'limit > 0'。源码中validateLimit函数(C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/proxy/util.go:199-208)正确实现了此校验:当limit <= 0时返回错误。\n\n2. **维度不匹配请求**: API返回HTTP 200 with error code 1801和消息'dimension: 4, but length of []float: 64: invalid parameter[expected=FloatVector]'。这也是正确的行为,因为契约(milvus_range_entities_search_001)要求'vector dimensions in data must match collection vector dimension'。\n\n两项'违规'均为API按契约正确拒绝无效输入的表现,属于正常的参数校验行为,而非缺陷。原oracle误将这些正确的错误响应当作'违规'来报告,导致误报。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

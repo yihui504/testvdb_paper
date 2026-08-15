@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with JSON field containing invalid JSON string",
+          "observed": "HTTP 200 OK with upsertCount=1 - no validation performed",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/upsert', json={'collectionName': 'dev_review_json_test', 'data': [{'id': 0, 'vector': [0.9, 0.9, 0.9, 0.9], 'meta': 'invalid_json'}]})\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "checked_assumptions": [
+            "API should validate JSON fields contain valid JSON objects",
+            "Invalid JSON should be rejected with error code"
+          ],
+          "assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "JSON field should contain valid JSON objects per Milvus data type specification"
+          ],
+          "note": "Contract indicates JSON fields expect valid JSON objects"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "case schemapb.DataType_JSON"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// This code shows that JSON fields are stored as raw bytes without ANY validation\n// The dataString value is directly converted to []byte without:\n// 1. Checking if it's valid JSON syntax\n// 2. Verifying it's a JSON object vs array vs primitive\n// 3. Any schema validation\n\n// Line 530 shows dataString = fieldValue.String() which converts ANY value to string\n// So 'invalid_json' string becomes []byte('invalid_json') stored as 'JSON'",
+          "call_chain_traced": "REST v2 upsert → checkAndSetData (utils.go:466) → case DataType_JSON (line 760) → direct byte conversion without validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:JSON 字段在 REST v2 upsert 路径完全无校验,直接存储原始字符串字节。这是 Type1_IllegalSuccess 型缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query to verify corrupted data was stored",
+          "observed": "Data corruption confirmed - invalid JSON string stored successfully in JSON field"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - same behavior on clean container",
+            "并发/race - single-threaded sequential test",
+            "缓存/优化器延迟 - immediate verification",
+            "请求参数笔误 - all parameters correct per schema"
+          ],
+          "surviving": "actual_data_integrity_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "命中 bug_shapes.json 的 rest-v2-data-type-handling 模式(26 个历史实例)。维护者已知 REST v2 数据类型处理问题,但未修复 JSON 字段验证。"
+      },
+      "root_cause_if_confirmed": "missing_validation_in_rest_v2_json_field_handling",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "独立复现成功:REST v2 /entities/upsert 接受无效 JSON 字符串('invalid_json')存储到 JSON 类型字段,返回 HTTP 200。源码接地发现:handler_v2.go:1663 调用 checkAndSetData,后者在 utils.go:760 对 DataType_JSON 仅执行 []byte(dataString) 直接转换,零校验。这违反 JSON 字段应含有效 JSON 对象的契约,造成数据完整性风险。命中开发者已知盲区(REST v2 数据类型处理,26 个历史 bug)。证伪排除平凡解释。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_validation_in_rest_v2_json_field_handling": 1
+    }
+  }
+}

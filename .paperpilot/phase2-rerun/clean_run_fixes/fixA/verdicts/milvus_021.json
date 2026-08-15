@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search on collection without explicit load call",
+          "observed": "API returns HTTP 200 with empty results [] instead of error. Collection in 'LoadStateLoading' state during search.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_fresh_unloaded\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"annsField\": \"vector\", \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect claim depends on assumption that 'search on unloaded collection should return error', but structured_contract.json has no such constraint for entities+search endpoint",
+            "Assumes 'Load a collection into memory for searching' (collections+load description) creates a hard requirement, but this is not enforced as a constraint on the search endpoint itself"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "entities+search endpoint: No constraint requiring collection to be loaded",
+            "collections+load description: 'Load a collection into memory for searching and queries' - implies load is prerequisite but not enforced as constraint"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus @ v2.6.17",
+          "grep_queries": ["search", "loadState", "GetLoadState"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// Line 1487-1676: search handler function\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n    // ... parameter validation ...\n    // NO load state check here\n    \n    // Line 1612-1613: Direct proxy call without load validation\n    resp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Search\", true, h.proxy, \n        func(reqCtx context.Context, req any) (interface{}, error) {\n            return h.proxy.Search(reqCtx, req.(*milvuspb.SearchRequest))\n        })\n    \n    // Contrast with stats function (line 606-615) which DOES check load state:\n    // loadStateReq := &milvuspb.GetLoadStateRequest{...}\n    // stateResp, err := wrapperProxy(ctx, c, loadStateReq, ...)\n}",
+          "call_chain_traced": "HTTP request → handler_v2.search() → NO GetLoadState call → h.proxy.Search() → returns empty results for unloaded collection",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: search handler 直接调用 proxy.Search() 而不校验 collection load state。stats 等其他 handler 显式调用 GetLoadState，但 search 没有这种防护。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GetLoadState on searched collection shows LoadStateLoading, then search returns empty results",
+          "observed": "Collection in loading state during search. API returns empty results instead of error. This is by-design behavior - search on unloaded collection returns empty results, not an error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - consistent behavior across containers",
+            "Concurrency race - single-threaded test",
+            "Request parameter typo - valid request structure"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns 或 rejection_patterns。但 behavior 类型缺陷通常是 API 语义理解问题。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in structured_contract.json requiring collection to be loaded before search",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint preventing search on unloaded collection - memory/disk resources exist",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final_verdict=REFUTED",
+        "final_verdict": "REFUTED"
+      },
+      "rationale": "Search on unloaded collection returns empty results with HTTP 200, not an error. The source code shows search handler does NOT validate load state (unlike stats handler which explicitly calls GetLoadState). The structured contract has no constraint requiring search to fail on unloaded collections. The load endpoint description says 'Load for searching' but this is not enforced as a hard constraint. This is mundane API semantics - search on unloaded collection gracefully returns empty results, which is a valid design choice (lazy loading or defer-to-query-node behavior). No actual violation found."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

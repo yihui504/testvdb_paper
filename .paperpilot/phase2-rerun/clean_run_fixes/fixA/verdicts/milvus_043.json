@@ -1,0 +1,79 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.strictGroupSize=true, groupParams.groupSize=2",
+          "observed": "API accepts strictGroupSize parameter but ignores it completely. With groupSize=2 and strictGroupSize=true, groups with 3 items are returned (cat=1 has 3 results: ids 1,2,3), violating the strict size requirement.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_gs\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"annsField\": \"vector\", \"limit\": 15, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}, \"outputFields\": [\"cat\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API accepts strictGroupSize in groupParams but behavior is undefined - parameter is silently ignored"],
+          "note": "No explicit contract assertion found, but parameter is documented in API and accepted by request parser"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["strictGroupSize", "GetStrictGroupSize", "groupSize"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search_util.go",
+            "internal/util/reduce/reduce_info.go",
+            "internal/util/function/chain/operator_group_by.go",
+            "internal/querynodev2/segments/search_reduce.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 501\nStrictGroupSize   bool                   `json:\"strictGroupSize\"`\n\n// internal/proxy/search_util.go line 96-101\nfunc (r *rankParams) GetStrictGroupSize() bool {\n\tif r != nil {\n\t\treturn r.strictGroupSize\n\t}\n\treturn false\n}\n\n// internal/util/reduce/reduce_info.go - NOTICE: strictGroupSize is NOT in ResultInfo struct!\ntype ResultInfo struct {\n\tnq                  int64\n\ttopK                int64\n\tmetricType          string\n\tpkType              schemapb.DataType\n\toffset              int64\n\tgroupSize           int64  // Only groupSize is present\n\tisAdvance           bool\n\tgroupByFieldIds     []int64\n\tisSearchAggregation bool\n}\n\n// internal/util/function/chain/operator_group_by.go - Grouping logic that should use strictGroupSize\n// Groups are built and trimmed to groupSize, but strictGroupSize flag is never checked!",
+          "call_chain_traced": "SearchReqV2.StrictGroupSize → parseSearchInfo → rankParams.GetStrictGroupSize() → extract only, never used in reduce → ResultInfo missing strictGroupSize field → GroupByOp Execute() never sees the flag",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Critical finding: strictGroupSize is extracted from HTTP request (line 501 request_v2.go) and passed through rankParams/groupByInfo getters, BUT: (1) ResultInfo struct (reduce/reduce_info.go) does NOT have a strictGroupSize field, (2) GroupByOp.Execute() never checks the flag, (3) No validation logic enforces strict group size. Parameter is a no-op."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify strictGroupSize has no effect by testing with groups that should be rejected",
+          "observed": "Test data: cat=1 has 3 items (ids 1,2,3), cat=2 has 2 items (ids 4,5). With groupSize=2, strictGroupSize=true should reject cat=1 group. Actual: All 3 items from cat=1 are returned. strictGroupSize=false returns same results. Parameter has zero effect."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - tested on clean Milvus v3.0.0 container",
+            "Request parameter typo - parameter is correctly spelled and accepted",
+            "API misunderstanding - documentation clearly indicates strictGroupSize should enforce group size limits"
+          ],
+          "surviving": "parameter_accepted_but_not_implemented"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "This defect hits the 'REST v2 data type handling' blindspot - parameter is parsed but validation logic missing. Matches historical pattern where REST v2 layer accepts parameters that aren't properly validated."
+      },
+      "root_cause_if_true": "parameter_accepted_but_not_implemented",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "The strictGroupSize parameter is a documented API feature that is completely non-functional. Source code tracing proves: (1) Parameter is parsed from HTTP request (request_v2.go:501), (2) Extracted via GetStrictGroupSize() methods (search_util.go:96-101), (3) BUT never passed to reduce layer (ResultInfo missing field), (4) Never checked in GroupByOp.Execute(). Groups with size > groupSize are returned regardless of strictGroupSize value. This is a clear Type1_IllegalSuccess - API accepts configuration parameter but silently ignores it, violating user expectations."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_accepted_but_not_implemented": 1
+    }
+  },
+  "self_check": "PASSED"
+}

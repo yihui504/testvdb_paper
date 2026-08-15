@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_015",
+      "endpoint": "indexes+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/collections/create {\"collectionName\": \"test_defect_case\"} (missing dimension) → POST http://localhost:19530/v2/vectordb/indexes/create {\"collectionName\": \"test_defect_case\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}]}",
+          "observed": "Collection creation fails with HTTP 200 body {\"code\":1100,\"message\":\"dimension is required for quickly create collection(default metric type: COSINE): invalid parameter[expected=collectionName & dimension][actual=collectionName]\"}. Index creation on non-existent collection fails with HTTP 200 body {\"code\":100,\"message\":\"collection not found[database=default][collection=test_defect_case]\"}",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_defect_case\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/indexes/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_defect_case\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect claim assumes that attempting to create an index on a non-existent collection is a bug",
+            "The defect oracle likely assumed that index creation should succeed even when the collection doesn't exist, or that the error response format was incorrect"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_indexes_create_001 - assertion: 'collection exists AND field exists in schema'",
+            "assertion_id: milvus_behavioral_indexes_create_001 - expected_behavior: 'returns 400 with message \"invalid index type\" if index_type is not supported'",
+            "doc_quote from structured_contract.json: '200 on success; 400 on invalid params'"
+          ],
+          "note": "Contract explicitly requires collection existence as a precondition for CreateIndex via state_constraint milvus_state_indexes_create_001"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "createIndexTask",
+            "PreExecute",
+            "GetCollectionID",
+            "collection not found"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/task_index.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_index.go lines 670-682\nfunc (cit *createIndexTask) PreExecute(ctx context.Context) error {\n\tcollName := cit.req.GetCollectionName()\n\n\tcollID, err := globalMetaCache.GetCollectionID(ctx, cit.req.GetDbName(), collName)\n\tif err != nil {\n\t\treturn err  // Returns error when collection not found\n\t}\n\tcit.collectionID = collID\n\n\tcollInfo, err := globalMetaCache.GetCollectionInfo(ctx, cit.req.GetDbName(), cit.req.GetCollectionName(), cit.collectionID)\n\tif err != nil {\n\t\treturn err  // Also validates collection exists\n\t}\n\tcit.collectionProperties = collInfo.properties\n\t...\n}",
+          "call_chain_traced": "REST request → handler_v2.createIndex → proxy.CreateIndex → createIndexTask.PreExecute → globalMetaCache.GetCollectionID (validates collection exists)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:CreateIndex 操作在 createIndexTask.PreExecute 中严格验证 collection 存在性，通过 globalMetaCache.GetCollectionID() 在执行前就拦截不存在的 collection，这是符合契约的正确行为"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with valid collection creation flow to prove API works correctly when preconditions are met",
+          "observed": "Step 1: Create collection with dimension → HTTP 200 {\"code\":0,\"data\":{}} (success). Step 2: Create index on existing collection → HTTP 200 {\"code\":65535,\"message\":\"CreateIndex failed: at most one distinct index is allowed per field\"} (different error proving index creation reached validation stage, not collection existence check). Step 3: Create index on non-existent collection → HTTP 200 {\"code\":100,\"message\":\"collection not found[database=default][collection=nonexistent_collection]\"} (correct error for violated precondition)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"valid_test\", \"dimension\": 128, \"vectorFieldName\": \"vector\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/indexes/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"valid_test\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (none - clean Docker environment)",
+            "Concurrency race (none - sequential requests)",
+            "Request parameter typo (request format is correct, collection name is valid but collection doesn't exist)",
+            "API semantics misunderstanding (appears to be the root cause - treating precondition validation as a bug)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "pattern_id": "RP-001",
+        "note": "Matches rejection_pattern RP-001: the behavior (rejecting index creation on non-existent collection) is the expected system behavior as per the state constraint contract. Developers would classify this as 'expected_behavior' and reject."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collection exists AND field exists in schema (constraint_id: milvus_state_indexes_create_001)",
+          "source_implements_check": true,
+          "api_observed_value": "CreateIndex on non-existent collection returns HTTP 200 with code=100 'collection not found'",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "N/A - no physical constraint violation, this is a state precondition",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED AND verdict_C=REFUTED → final=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "The candidate claims that attempting to create an index on a non-existent collection is a defect. However, Step 1 (clean reproduction) shows the API correctly returns an error 'collection not found' when the collection doesn't exist. Step 3.5 (source grounding) confirms this is intentional behavior - createIndexTask.PreExecute explicitly validates collection existence via globalMetaCache.GetCollectionID() before proceeding. The contract (milvus_state_indexes_create_001) explicitly requires 'collection exists' as a precondition. This matches developer cognition pattern RP-001 (expected behavior rejection). The error response is appropriate and the validation is working as designed. No defect exists."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

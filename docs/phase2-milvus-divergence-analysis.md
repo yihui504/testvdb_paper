@@ -59,18 +59,22 @@ qdrant/weaviate 的样本更多落在"客观可判"现象（维度不匹配 422�
 
 视角 C 的判据 = "行为优雅 + 源码显式 = by-design"，在层 2 的错位下系统性偏向 REFUTED。
 
-### 层 4 — 锚点缺失：milvus intelligence 态度信号近乎为零
+### 层 4 — 锚点不完整：现象级盲点存在，裁决准绳缺失（2026-08-15 修正）
 
-| vendor | by_design | not_bugs | blindspots | clean 正确率 |
-|--------|-----------|----------|------------|--------------|
-| qdrant | 2 | 0 | **10**（含"Parameter validation on filter/condition APIs"疑 bug 锚点） | 0.72 |
-| weaviate | 0 | 0 | 0 | 0.70 |
-| milvus | 2（均与 REST v2 无关：Storage V3 snapshot / rollback） | 0 | **0** | **0.44** |
+初版本报告误查 intel 顶层键得出"blindspots=0"；实际位于 `developer_cognition_signals.blindspot_indicators`：
 
-qdrant reviewer 判 9373/9523 FP 时直接引用了 by_design pattern（"HNSW approximation duplicates,
-should_report: false"）——有锚点。milvus reviewer 面对灰区时**没有任何维护者态度先验**，
-视角 C 只能靠模型直觉。weaviate intel 也空但正确率高，佐证层 4 是放大器而非独立成因：
-**灰区 case 多（层1）× 态度锚点空（层4）** 才是 milvus 独有的双重命中。
+| vendor | blindspots（内层） | 内容性质 | clean 正确率 |
+|--------|--------------------|----------|--------------|
+| qdrant | 10 | 含明确方向准绳（"HNSW approximation duplicates → should_report: false"） | 0.72 |
+| weaviate | 0 | 无 | 0.70 |
+| milvus | 6 | **现象级**（"REST v2 data type serialization - 8 issues"、"Segment state machine" 等），无数值/方向准绳 | **0.44** |
+
+milvus reviewer 实际引用了 "REST v2 data type serialization" 盲点（多份 clean 判词 cognition_match
+命中），**但盲点是现象描述而非裁决准绳**——它说"这里常出问题"，不说"什么算 bug、什么不算"。
+qdrant 的锚点直接携带方向（should_report: false），reviewer 判 9523 FP 时一字引用。真正的差异是：
+**milvus intel 缺"维护者裁决准绳"——尤其"REST v2 接受而 gRPC 拒绝 = 不一致 = 缺陷"**
+（4 个 TP_FIXED_PR 的 fix 依据全是它，issue 标题明写 "gRPC rejects"）。
+当视角 C 的"源码显式 by-design"解读与现象级盲点冲突时，前者胜出。
 
 ## 3. 微观实证：同一源码行，四轮相反结论
 

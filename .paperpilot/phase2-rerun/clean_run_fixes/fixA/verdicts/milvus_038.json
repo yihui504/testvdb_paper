@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupingField='vector' (invalid field type - vector instead of scalar)",
+          "observed": "REST API accepts invalid request (HTTP 200/2001), fails at query executor with: 'unsupported data type VECTOR_FLOAT for group by operator'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -d '{\"collectionName\":\"test_groupby\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupingField\":\"vector\",\"groupSize\":1}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "REST API validates that groupingField refers to a scalar field (not a vector field)"
+          ],
+          "note": "The defect relies on the assumption that REST layer performs field type validation before query execution. This assumption is VIOLATED - REST accepts groupingField='vector' without validating it's a scalar field type."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint found in structured_contract.json for groupingField field type validation"
+          ],
+          "note": "Contract is silent on groupingField validation, but the semantic invariant is that group-by operations require scalar fields (by definition of group-by aggregation)."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "SearchReqV2 struct",
+            "groupingField",
+            "GroupSize",
+            "handler_v2.go search validation"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp"
+          ],
+          "source_excerpt": "From internal/distributed/proxy/httpserver/request_v2.go:491-501:\n\ntype SearchReqV2 struct {\n\tDbName            string                 `json:\"dbName\"`\n\tCollectionName    string                 `json:\"collectionName\" binding:\"required\"`\n\tData              []interface{}          `json:\"data\"`\n\tIds               []interface{}          `json:\"ids\"`\n\tAnnsField         string                 `json:\"annsField\"`\n\tPartitionNames    []string               `json:\"partitionNames\"`\n\tFilter            string                 `json:\"filter\"`\n\tGroupByField      string                 `json:\"groupingField\"`  // NO FIELD TYPE VALIDATION\n\tGroupSize         int32                  `json:\"groupSize\"`\n\tStrictGroupSize   bool                   `json:\"strictGroupSize\"`\n\t...\n}\n\nFrom internal/core/src/exec/operator/search-groupby/SearchGroupByOperator.cpp:169:\n// Runtime check that should have been at REST layer:\nthrow segcore::unsupported_error(\"unsupported data type VECTOR_FLOAT for group by operator\");",
+          "call_chain_traced": "REST handler (handler_v2.go) → SearchReqV2 struct parsing → NO type validation → query execution → SearchGroupByOperator.cpp runtime failure",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms REST layer accepts groupingField without field type validation. Validation only occurs at runtime in C++ segcore layer."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test valid groupingField='color' (scalar field) vs invalid groupingField='vector' (vector field)",
+          "observed": "Invalid groupingField='vector' returns HTTP 2001 with 'unsupported data type VECTOR_FLOAT for group by operator', while valid groupingField='color' succeeds with HTTP 200. Confirms the defect: REST layer should reject invalid field types before query execution.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\":\"test_groupby\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupingField\":\"color\",\"groupSize\":1}' (valid case)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Windows/Docker) - reproduced on clean env",
+            "Race condition - deterministic failure",
+            "Request parameter typo - parameter name is correct",
+            "API misunderstanding - group-by by definition requires scalar fields"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This defect does NOT match any by_design_patterns or rejection_patterns from developer_cognition.json. REST v2 accepting invalid field types is not documented as expected behavior. Blindspot indicator 'REST v2 API data type serialization not validated' (26 issues in corpus) REINFORCES confidence this is a real bug pattern."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "REST API accepts groupingField='vector' (a vector field) when group-by operations semantically require scalar fields. The request passes REST validation but fails at query execution with 'unsupported data type VECTOR_FLOAT for group by operator'. This is a clear REST layer validation gap - field type validation for groupingField is missing, allowing invalid requests to reach the query executor. The defect is confirmed because: (1) REST should validate groupingField is a scalar field type, not a vector field, (2) Source code in handler_v2.go shows no validation for groupingField field type, (3) Runtime check in SearchGroupByOperator.cpp confirms group-by cannot handle vector types, (4) This matches the known blindspot pattern 'REST v2 API data type serialization not validated' (26 historical issues in corpus).",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None found in structured_contract.json - contract is silent on groupingField field type validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Group-by aggregation semantically requires scalar fields (cannot group by vector data type)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violation + poor error handling)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_field_type_validation_missing": 1
+    }
+  },
+  "self_check": "PASSED"
+}

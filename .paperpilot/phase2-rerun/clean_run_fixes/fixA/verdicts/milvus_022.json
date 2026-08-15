@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create (collectionName=test_dup, dimension=4, metricType=COSINE, idType=Int64, autoID=false) twice sequentially",
+          "observed": "Both requests succeeded with HTTP 200, code=0, data={}",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dup\",\"dimension\":4,\"metricType\":\"COSINE\",\"idType\":\"Int64\",\"autoID\":false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumed duplicate collection creation should fail with 400 'collection already exists'",
+            "Oracle violated by-design idempotent create semantics: if collection exists with same schema, return success (ignored create)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001",
+            "assertion: 'collection creation is atomic AND collectionName is unique within dbName'",
+            "Source document explicitly states collectionName must be unique within database"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["errIgnoredCreateCollection", "duplicate collection", "collection already exists"],
+          "files_examined": [
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/root_coord.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/meta_table.go line 56\nerrIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.\n\n// internal/rootcoord/root_coord.go lines 903-906\nif errors.Is(err, errIgnoredCreateCollection) {\n    logger.Info(\"create existed collection with same schema, ignore it\")\n    metrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n    return merr.Success(), nil\n}\n\n// internal/rootcoord/create_collection_task.go lines 522-540\nfunc (t *createCollectionTask) validateIfCollectionExists(ctx context.Context) error {\n    // Check if the collection already exists.\n    existedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n    if err == nil {\n        newCollInfo := newCollectionModel(t.header, t.body, 0)\n        if equal := existedCollInfo.Equal(*newCollInfo); !equal {\n            return fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n        }\n        return errIgnoredCreateCollection\n    }\n    return nil\n}",
+          "call_chain_traced": "CreateCollection -> validateIfCollectionExists -> GetCollectionByName -> if exists && same schema -> return errIgnoredCreateCollection -> root_coord.go catches error -> logs 'create existed collection with same schema, ignore it' -> returns merr.Success() (HTTP 200)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:Milvus 明确实现了幂等创建逻辑(idempotent create)——当集合已存在且 schema 相同时,返回成功而非报错。这是有意的设计决策,用于支持分布式环境下的容错和重试机制。代码注释明确说明'create collection with same schema, so it can be ignored'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has after duplicate create",
+          "observed": "has=true confirmed collection exists and is in valid state; duplicate create did not corrupt state",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/has -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dup\",\"dbName\":\"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题(Docker 容器正常运行)",
+            "并发冲突(串行执行,无 race)",
+            "请求参数错误(payload 完整合法)",
+            "API 语义误解(误认为幂等创建是 bug)"
+          ],
+          "surviving": "by_design_idempotent_create"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "命中 developer_cognition.json 的 RP-001 (expected_behavior) 模式。Milvus 团队将幂等创建视为预期行为,而非缺陷。这符合分布式系统中常见的容错设计模式。"
+      },
+      "root_cause_if_fp": "by_design_idempotent_create",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码接地证实这是 Milvus 的有意设计:幂等创建(idempotent create)机制。当集合已存在且 schema 相同时,返回 HTTP 200 成功而非 400 错误。源码注释明确说明'create collection with same schema, so it can be ignored'(meta_table.go:56),并在 root_coord.go:903-906 处理该场景为成功。这符合分布式系统的容错设计原则,支持客户端重试而不产生副作用。原 oracle 断言'重复创建应失败'与源码实现相违背。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "by_design_idempotent_create": 1
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_011",
+      "endpoint": "entities+query",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter=null, filter=\"\", and no filter parameter",
+          "observed": "All three variations returned HTTP 200 with data [{\"id\":1},{\"id\":2}] - identical results",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_coll\", \"filter\": null, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim assumes filter=null, filter=\"\", and missing filter should be treated differently (as invalid inputs)",
+            "The defect assumes these variations should trigger validation errors or different query behavior",
+            "The defect assumes \"filter must be a valid boolean expression\" means null/empty are invalid rather than meaning \"no filter\""
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_query_001 - assertion: 'filter is a valid boolean expression'",
+            "constraint_id: milvus_range_entities_query_001 - assertion: 'limit + offset < 16384'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "expr == \"\"",
+            "filter.*validation",
+            "QueryRequest.*filter",
+            "createPlan"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/proxy/task_query.go",
+            "internal/parser/planparserv2/cwrapper/milvus_plan_parser.h"
+          ],
+          "source_excerpt": "// internal/proxy/task_query.go line 281-290\nfunc createCntPlan(expr string, schemaHelper *typeutil.SchemaHelper, exprTemplateValues map[string]*schemapb.TemplateValue) (*planpb.PlanNode, error) {\n\tif expr == \"\" {\n\t\treturn &planpb.PlanNode{\n\t\t\tNode: &planpb.PlanNode_Query{\n\t\t\t\tQuery: &planpb.QueryPlanNode{\n\t\t\t\t\tPredicates: nil,\n\t\t\t\t\tIsCount:    true,\n\t\t\t\t},\n\t\t\t},\n\t\t}, nil\n\t}\n\t// ... planparser call\n}",
+          "call_chain_traced": "QueryRequest.filter → handler.go handleQuery() → task_query.go createPlan() → createCntPlan(): if expr==\"\" return plan with Predicates:nil (no filter)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: empty filter string (expr==\"\") explicitly returns plan with Predicates:nil, meaning 'no filter' is intentional design. This is consistent across filter=null, filter=\"\", and missing filter - all are treated as 'query all entities'."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: All three filter variations (null, empty string, omitted) returned identical results (both records id=1 and id=2), proving they are semantically equivalent in Milvus query semantics.",
+          "observed": "No evidence of data loss, incorrect filtering, or validation failure. The behavior is consistent: absent/empty filter = return all entities."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, filesystem)",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "Caching/optimizer delays"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns。但从 bug_shapes.json 的 'rest-v2-data-type-handling' 模式看，REST v2 API 在数据类型处理上确实存在宽松处理（如 null/empty 统一对待），符合历史模式。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: milvus_type_entities_query_001 - assertion: 'filter is a valid boolean expression'",
+          "source_implements_check": false,
+          "api_observed_value": "filter=null, filter=\"\", and missing filter all return HTTP 200 with all entities (no validation error)",
+          "api_violates_assertion": false,
+          "verdict_A": "NEUTRAL",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint violated - filter being null/empty/omitted doesn't violate mathematical/physical laws",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final_verdict=REFUTED (by-design in source: empty/null filter = 'no filter' is intentional)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 /entities/query endpoint treats filter=null, filter=\"\", and missing filter as semantically equivalent to 'query all entities'. Source code (task_query.go:281) explicitly implements this: when expr==\"\" returns plan with Predicates:nil, meaning no filter. This is by-design behavior consistent with standard query API semantics where absent/empty filter returns all results. The defect claim incorrectly assumes these should be treated as validation errors, but they are valid inputs meaning 'apply no filtering constraint'. No contract assertion is violated, no physical constraint broken, and the behavior is graceful and intentional per source code."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

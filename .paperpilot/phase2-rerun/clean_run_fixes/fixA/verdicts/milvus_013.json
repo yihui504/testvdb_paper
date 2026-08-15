@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: 'abc' (non-numeric string)",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":[\"test_coll\"]} - request succeeds normally",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: abc' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'Request-Timeout header 应该被验证为数字'的前提，但API契约从未规定此header必须为数字类型",
+            "源码显示ParseInt失败时静默fallback到默认配置，这是合法的优雅降级设计"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No constraint exists for Request-Timeout header validation in structured_contract.json",
+            "REST v2 API documentation (collections+list endpoint) makes no mention of Request-Timeout header requirements",
+            "This is an internal implementation detail, not a documented API contract"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "Request-Timeout",
+            "RequestTimeout",
+            "timeout_middleware",
+            "ParseInt"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/timeout_middleware.go",
+            "internal/http/constant.go",
+            "pkg/util/paramtable/http_param.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/timeout_middleware.go lines 182-186\n\ttimeout := paramtable.Get().HTTPCfg.RequestTimeoutMs.GetAsDuration(time.Millisecond)\n\ttimeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\n\tif err == nil {\n\t\ttimeout = time.Duration(timeoutSecond) * time.Second\n\t}\n\t// If ParseInt fails (err != nil), code silently uses default timeout from paramtable\n\t// This is intentional graceful fallback behavior",
+          "call_chain_traced": "Request-Timeout header → strconv.ParseInt (line 183) → if err == nil (line 184) → override timeout; else → silent fallback to default",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：Request-Timeout header 的 ParseInt 解析失败时，代码**有意设计**为静默fallback到默认超时配置（paramtable.Get().HTTPCfg.RequestTimeoutMs），这是优雅降级设计，非缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: -1 (negative) and 0 (zero)",
+          "observed": "Both invalid numeric values return HTTP 408 with {\"code\":10001,\"message\":\"request timeout\"} - API treats negative/zero as actual timeout values (0s or negative duration → immediate timeout), not as validation errors",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Request-Timeout: -1' -d '{}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（否）",
+            "并发race（否）",
+            "缓存延迟（否）",
+            "请求参数笔误（否）"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "命中拒绝模式 RP-001: REST v2 API headers 未在契约中明文规定，实现层采用优雅降级（ParseInt 失败时使用默认值）属于expected behavior，维护者不会修复"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Request-Timeout header 非REST v2 API文档化参数，源码采用优雅降级设计（ParseInt 失败时fallback到默认超时），这是合法的内部实现行为。原始断言依赖'header必须被验证'的隐含前提，但该前提无契约支撑。实测显示非数字值（'abc'）被静默忽略（API正常响应），负数/零被当作实际超时值触发408 timeout，均非validation失败。属平凡API语义误读。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

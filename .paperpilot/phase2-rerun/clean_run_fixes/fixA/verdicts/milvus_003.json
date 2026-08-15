@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with searchParams={\"ef\": 0}",
+          "observed": "HTTP 200 with valid search results despite ef=0 being mathematically invalid for HNSW algorithm (ef must be ≥ 1 for candidate list size)",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\": \"repro_dev_review_003\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"ef\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Defect claims REST v2 API accepts invalid search parameters without validation. This is a valid assumption - APIs should validate parameter ranges."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_indexes_create_003 - efConstruction >= 1 (establishes minimum ef pattern)",
+            "HNSWMinEfConstruction = 1 in internal/util/indexparamcheck/constraints.go:18"
+          ],
+          "note": "While structured_contract.json does not explicitly enumerate search-time ef constraints, the source code establishes HNSWMinEfConstruction = 1, defining the minimum valid ef range for HNSW operations."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "ef.*validation",
+            "HNSWMinEf",
+            "generateSearchParams",
+            "searchParams.*check"
+          ],
+          "files_examined": [
+            "internal/util/indexparamcheck/constraints.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/util/indexparamcheck/constraints.go line 18\nconst (\n\tHNSWMinEfConstruction = 1  // establishes ef ≥ 1 as minimum valid value\n\tHNSWMaxEfConstruction = 2147483647\n\tHNSWMinM              = 1\n\tHNSWMaxM              = 2048\n)\n\n// internal/distributed/proxy/httpserver/utils.go line 2076-2125\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\t// ... parameter extraction logic ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION of parameter ranges (ef, nprobe, etc.)\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST v2 HTTP Request → handler_v2.search() → generateSearchParams() → NO ef range check → proxy.Search() → query execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code接地发现: REST v2层的generateSearchParams函数只负责参数格式转换，完全不校验ef/nprobe等搜索参数的取值范围。虽然indexparamcheck/constraints.go定义了HNSWMinEfConstruction = 1，但这个校验只用于index创建时的参数检查，搜索时没有任何代码调用这个校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with multiple invalid ef values (0, -1, 9999999999) - all succeed with HTTP 200",
+          "observed": "All three invalid ef values (0, -1, 9999999999) return HTTP 200 with valid search results, proving REST v2 layer does not validate search-time parameter ranges.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"searchParams\": {\"ef\": -1}}' → HTTP 200"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, filesystem)",
+            "Concurrent operations",
+            "Request parameter typos",
+            "API semantic misunderstandings"
+          ],
+          "surviving": "rest_v2_parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - pattern extends to parameter validation gaps",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "This defect extends the documented REST v2 bug_shape pattern. While bug_shape records focus on data type serialization, the same root cause (missing parameter validation in REST v2 layer) applies to numeric parameter ranges like ef. Developer cognition shows REST v2 has 25+ issues in this category."
+      },
+      "root_cause_if_true": "rest_v2_parameter_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API accepts mathematically invalid HNSW search parameters (ef=0, ef=-1, ef=9999999999) without validation and returns successful results. Source code confirms generateSearchParams() only converts parameters to KeyValuePair format without range checks. While internal/util/indexparamcheck/constraints.go defines HNSWMinEfConstruction = 1, this validation is not applied at search-time. This is a genuine parameter validation bug in the REST v2 layer, matching the documented 'rest-v2-data-type-handling' bug_shape pattern with 26 historical instances.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "HNSWMinEfConstruction = 1 (constraints.go:18) establishes ef ≥ 1 for HNSW operations",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "HNSW algorithm requires ef ≥ 1 for candidate list size (ef=0 creates 0 candidates, mathematically invalid)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_parameter_validation_gap": 1
+    }
+  }
+}

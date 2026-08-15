@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_030",
+      "endpoint": "users+create",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/users/create with password='12345678' (8 chars) vs password='123456' (6 chars) vs password='12345' (5 chars)",
+          "observed": "6-char password succeeds (HTTP 200, code 0), 5-char fails with 'invalid password length: 5 out of range 6 <= value <= 72', confirming actual bounds are [6, 72], not [8, 64]",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/users/create -d '{\"userName\":\"testuser_6char\",\"password\":\"123456\"}' && curl -X POST http://localhost:19530/v2/vectordb/users/create -d '{\"userName\":\"testuser_5char\",\"password\":\"12345\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_validated": [
+            "API response accurately reflects server-side password validation logic",
+            "Error message with explicit bounds (6 <= value <= 72) is authoritative",
+            "Multiple test runs confirm consistent behavior across boundary values"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_users_create_001 - states '8 <= len(password) <= 64'",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/User%20(v2)/Update%20Password.md",
+            "confidence: 1.0 in contract but actual implementation differs"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "invalid password length",
+            "MinPasswordLength",
+            "MaxPasswordLength",
+            "ValidatePassword"
+          ],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "pkg/util/paramtable/component_param.go",
+            "pkg/util/paramtable/component_param_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 1306-1313\nfunc ValidatePassword(password string) error {\n\tif len(password) < Params.ProxyCfg.MinPasswordLength.GetAsInt() || len(password) > Params.ProxyCfg.MaxPasswordLength.GetAsInt() {\n\t\treturn merr.WrapErrParameterInvalidRange(Params.ProxyCfg.MinPasswordLength.GetAsInt(),\n\t\t\tParams.ProxyCfg.MaxPasswordLength.GetAsInt(),\n\t\t\tlen(password), \"invalid password length\")\n\t}\n\treturn nil\n}\n\n// pkg/util/paramtable/component_param.go lines 2089-2118\np.MinPasswordLength = ParamItem{\n\tKey:          \"proxy.minPasswordLength\",\n\tDefaultValue: \"6\",\n\tVersion:      \"2.0.0\",\n\tPanicIfEmpty: true,\n}\n\np.MaxPasswordLength = ParamItem{\n\tKey:          \"proxy.maxPasswordLength\",\n\tDefaultValue: \"72\", // bcrypt max length\n\tVersion:      \"2.0.0\",\n\tFormatter: func(v string) string {\n\t\tn := getAsInt(v)\n\t\tif n <= 0 || n > 72 {\n\t\t\treturn \"72\"\n\t\t}\n\t\treturn v\n\t},\n\tPanicIfEmpty: true,\n}",
+          "call_chain_traced": "users+create endpoint -> ValidatePassword() -> Params.ProxyCfg.MinPasswordLength/MaxPasswordLength -> defaults to 6/72",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:契约声称8-64字符，但源码显示实际实现是6-72字符。MinPasswordLength默认值=6，MaxPasswordLength默认值=72（bcrypt限制）。这是文档与实现的不匹配。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Boundary consistency test with 7 password lengths (5/6/7/8/39/64/72/73 chars)",
+          "observed": "Validation consistently enforced at actual bounds: len=6 to len=72 succeeds, len<6 or len>72 fails with explicit error message 'invalid password length: X out of range 6 <= value <= 72'. No evidence of doc-specified [8,64] bounds in implementation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (consistent across multiple runs)",
+            "Configuration override (uses default 6/72 values)",
+            "API version mismatch (v2 REST API tested matches contract version)",
+            "Race condition (deterministic validation logic)"
+          ],
+          "surviving": "documentation_mismatch"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的 by_design_patterns。此缺陷是纯粹的文档与实现不匹配，非设计意图。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_range_users_create_001: 8 <= len(password) <= 64",
+          "source_implements_check": true,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "8 <= len(password) <= 64",
+          "api_observed_value": "API accepts len=6 and len=72 passwords, returns 200 with code 0",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "None (password length is arbitrary policy, not physical constraint)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API behavior is inconsistent with documented contract - returns success for values outside documented range"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "文档约束(milvus_range_users_create_001)明确声明密码长度必须是8-64字符，但源码分析与实测表明实际实现接受6-72字符。源码显示MinPasswordLength=6, MaxPasswordLength=72(受bcrypt限制)。这是典型的文档与实现不匹配缺陷，属于doc_mismatch类型。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

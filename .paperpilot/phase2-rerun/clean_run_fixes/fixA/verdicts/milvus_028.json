@@ -1,0 +1,96 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with {\"collectionName\": \"test_mt_empty_dev\", \"dimension\": 4, \"metricType\": \"\"}",
+          "observed": "HTTP 200 with code:0 - API accepted empty metricType and auto-filled with COSINE default",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_mt_empty_dev\", \"dimension\": 4, \"metricType\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Original defect claim assumes empty metricType should be rejected, but API has explicit default fallback behavior"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_collections_create_002 - metricType must be L2, IP, or COSINE"],
+          "note": "Contract specifies enum values but does not explicitly prohibit empty string - API has default fallback to COSINE"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["metricType", "DefaultMetricType", "collections/create"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2066-2068\nif len(httpReq.Schema.Fields) == 0 {\n    if len(httpReq.MetricType) == 0 {\n        httpReq.MetricType = DefaultMetricType  // Auto-fill empty metricType with COSINE\n    }\n    createIndexReq := &milvuspb.CreateIndexRequest{\n        DbName:         dbName,\n        CollectionName: httpReq.CollectionName,\n        FieldName:      httpReq.VectorFieldName,\n        IndexName:      httpReq.VectorFieldName,\n        ExtraParams:    []*commonpb.KeyValuePair{{Key: common.MetricTypeKey, Value: httpReq.MetricType}},\n    }",
+          "call_chain_traced": "CreateCollection handler → check if schema fields empty → check if metricType empty → auto-fill with DefaultMetricType (COSINE) → CreateIndex",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly shows empty metricType is by-design behavior: API auto-fills with DefaultMetricType (COSINE) for quick-setup collections without explicit schema"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/describe to verify actual metricType assigned",
+          "observed": "Describe response shows metricType: \"COSINE\" was auto-filled - collection was successfully created with valid default metric type, not an invalid state",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/describe\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_mt_empty_dev\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["API has explicit default fallback for empty metricType - this is intentional graceful degradation"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior - examples: 'uneven vchannel distribution', 'memory imbalance' - design may prioritize usability over strict validation",
+        "note": "Hits rejection pattern RP-001: expected behavior. API auto-fills empty metricType with valid default (COSINE) for quick-setup mode, which is documented convenience behavior."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] (constraint_id: milvus_type_collections_create_002)",
+          "source_implements_check": false,
+          "api_observed_value": "API auto-filled empty metricType with COSINE (valid enum value)",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED",
+          "note": "Contract requires metricType to be one of [L2, IP, COSINE]. Empty string is not in enum, but API auto-fills with COSINE before validation. Final state uses valid value."
+        },
+        "physical": {
+          "objective_constraint": "metricType must be valid enum value for index creation",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED",
+          "note": "No physical constraint violation - API ensures valid metricType is used via default fallback"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API gracefully handles empty metricType with explicit default fallback (DefaultMetricType = COSINE) at handler_v2.go:2067-2068. This is intentional convenience behavior for quick-setup collections."
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED → final=REFUTED (all perspectives agree this is expected API behavior)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "This is a false positive. The API has explicit by-design behavior to auto-fill empty metricType with COSINE default for quick-setup collections. Source code at handler_v2.go:2067-2068 shows: 'if len(httpReq.MetricType) == 0 { httpReq.MetricType = DefaultMetricType }'. This is intentional convenience behavior, not a validation defect. The collection was successfully created with valid metricType (COSINE as confirmed by describe response), representing expected API semantics over strict parameter validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

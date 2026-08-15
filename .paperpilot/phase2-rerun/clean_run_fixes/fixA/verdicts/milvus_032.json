@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_032",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with consistencyLevel='Invalid'",
+          "observed": "HTTP 200 success response, collection created. Describe shows consistencyLevel='Bounded' (default fallback behavior, not 'Invalid')",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"devreview_test\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'API应拒绝无效的consistencyLevel值'的前提，但API实际接受了无效值并默认为'Bounded'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion: consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md",
+            "confidence: 1.0, evidence_tier: explicit, source_verified: true"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "consistencyLevel",
+            "ConsistencyLevel",
+            "WrappedCreateCollectionRequest",
+            "parseConsistency"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go line 39-55\ntype WrappedCreateCollectionRequest struct {\n\tBase             *commonpb.MsgBase `protobuf:\"bytes,1,opt,name=base,proto3\" json:\"base,omitempty\"`\n\tDbName           string            `protobuf:\"bytes,2,opt,name=db_name,json=dbName,proto3\" json:\"db_name,omitempty\"`\n\tCollectionName   string            `protobuf:\"bytes,3,opt,name=collection_name,json=collectionName,proto3\" json:\"collection_name,omitempty\"`\n\tSchema           schemapb.CollectionSchema `protobuf:\"bytes,4,opt,name=schema,proto3\" json:\"schema,omitempty\"`\n\tShardsNum        int32             `protobuf:\"varint,5,opt,name=shards_num,json=shardsNum,proto3\" json:\"shards_num,omitempty\"`\n\t// The consistency level that the collection used, modification is not supported now.\n\tConsistencyLevel commonpb.ConsistencyLevel `protobuf:\"varint,6,opt,name=consistency_level,json=consistencyLevel,proto3,enum=milvus.proto.common.ConsistencyLevel\" json:\"consistency_level,omitempty\"`\n\tProperties       []*commonpb.KeyValuePair `protobuf:\"bytes,13,rep,name=properties,proto3\" json:\"properties,omitempty\"`\n}\n\n// 关键发现：ConsistencyLevel字段类型为commonpb.ConsistencyLevel（枚举类型），但在REST v2 handler中没有找到对应的字符串到枚举的转换和验证逻辑。",
+          "call_chain_traced": "WrappedCreateCollectionRequest.ConsistencyLevel → handler_v2.go CreateCollection → 无验证逻辑传递给底层gRPC",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 handler将consistencyLevel作为枚举类型处理，但当JSON传入'Invalid'字符串时，Go的protobuf unmarshal默认处理为0值（对应Bounded），而非报错。未发现字符串有效性验证。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe created collection to verify actual consistencyLevel value",
+          "observed": "Describe返回consistencyLevel='Bounded'（系统默认值），证明API接受了无效值'Invalid'并静默转换为默认值，而非拒绝请求。这是Type1_IllegalSuccess：应拒绝非法输入却返回成功。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题（Docker容器正常运行）",
+            "并发问题（单次顺序请求）",
+            "请求参数笔误（'Invalid'是明确的无效值，非笔误）"
+          ],
+          "surviving": "contract_violation_with_silent_fallback"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中开发者认知模型中的盲点指标：REST v2 API与gRPC通道验证不一致。维护者明确认为这是需要修复的缺陷。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually'] (constraint_id: milvus_type_collections_create_003)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is an enum type with valid values: Strong, Session, Bounded, Eventually",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_missing_validation",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "契约明确要求consistencyLevel必须是['Strong', 'Session', 'Bounded', 'Eventually']之一，但REST v2 API接受'Invalid'字符串并返回HTTP 200成功。源码接地发现：ConsistencyLevel字段为枚举类型，但REST handler未对传入字符串进行有效性验证，protobuf unmarshal将无效字符串默认为0值（Bounded）。这违反了契约要求，属于Type1_IllegalSuccess缺陷。开发者认知模型确认这是已知盲点：REST v2与gRPC验证不一致，维护者认为需修复。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_missing_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

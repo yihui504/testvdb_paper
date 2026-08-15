@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=0 and shardsNum=-1",
+          "observed": "Both requests returned HTTP 200 with code:0, accepting invalid shard counts",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\": \"test_shard_zero\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}' → HTTP 200 success"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumption violations - raw request clearly shows shardsNum=0 and shardsNum=-1 being accepted without error"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_002", "assertion: shardsNum >= 1"],
+          "contract_violated": true
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": ["shardsNum", "validate", "ShardNumDefault", "create_collection_task"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/create_collection_task_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2000-2006\nshardsNum := int32(ShardNumDefault)\nif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n    if shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n        shardsNum = int32(shards)\n    }\n}\nreq.ShardsNum = shardsNum\n\n// internal/distributed/proxy/httpserver/constant.go line 106\nShardNumDefault = 1\n\n// internal/rootcoord/create_collection_task.go lines 58-73 (validate function)\nshardsNum := t.Req.GetShardsNum()\n// ... check upper bounds only ...\nif shardsNum > cfgMaxShardNum {\n    return fmt.Errorf(\"shard num (%d) exceeds max configuration (%d)\", shardsNum, cfgMaxShardNum)\n}\ncfgShardLimit := Params.ProxyCfg.MaxShardNum.GetAsInt32()\nif shardsNum > cfgShardLimit {\n    return fmt.Errorf(\"shard num (%d) exceeds system limit (%d)\", shardsNum, cfgShardLimit)\n}\n// NO CHECK for shardsNum < 1",
+          "call_chain_traced": "REST handler_v2.go:2000-2006 → shardsNum parsed from request without validation → CreateCollectionRequest.ShardsNum → rootcoord create_collection_task.go:58-73 validate() only checks upper bounds, no lower bound check → accepts shardsNum=0 and shardsNum=-1",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 handler 接受任意 shardsNum 值(包括 0 和负数),rootcoord validate() 只检查上界不检查下界,违反契约要求 shardsNum >= 1"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe collections created with shardsNum=0 and shardsNum=-1",
+          "observed": "Both collections were successfully created with shardsNum=1 (auto-corrected by deeper system logic), but API layer should have rejected invalid input",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"test_shard_zero_dev\"}' → shows shardsNum: 1 (auto-corrected, not rejected as expected)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment/Platform issues (tested on standard Docker)",
+            "Race condition (reproducible deterministic behavior)",
+            "Request parameter typo (clear shardsNum=0 and -1 values)",
+            "API semantic misunderstanding (contract clearly states shardsNum >= 1)",
+            "By-design behavior (contract explicitly requires validation)"
+          ],
+          "surviving": "contract_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This defect hits the blindspot: REST v2 accepts invalid parameter values (shardsNum < 1) that should be rejected at API validation layer. Maintainer has explicitly identified cross-channel inconsistency as a defect pattern."
+      },
+      "root_cause_if_confirmed": "missing_lower_bound_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "constraint_id: milvus_range_collections_create_002, assertion: shardsNum >= 1",
+          "source_implements_check": false,
+          "api_observed_value": "API accepts shardsNum=0 and shardsNum=-1 without error, returns HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "shardsNum represents partition/shard count, must be >= 1 for valid collection architecture",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "While system auto-corrects shardsNum=0/-1 to 1 in deeper layers, this is a silent fallback, not documented graceful behavior. API validation layer should reject invalid input per contract.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract and physical violation both confirmed)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 API accepts invalid shardsNum values (0 and -1) violating explicit contract constraint shardsNum >= 1. Source code confirms: handler_v2.go:2000-2006 parses shardsNum without validation, rootcoord create_collection_task.go validate() only checks upper bounds (lines 66-73), completely missing lower bound check. Deeper system auto-corrects to shardsNum=1, but this is silent fallback, not proper API validation. Maintainer explicitly treats REST/gRPC cross-channel inconsistency as defect pattern (developer_cognition.json blindspot_indicators)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_lower_bound_validation": 1
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupSize=0 and groupSize=-1",
+          "observed": "Both requests return HTTP 200 with 5 results. API accepts groupSize=0 and groupSize=-1 without error.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_gs\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [
+            "Candidate claims 'groupSize parameter validation missing' — confirmed by raw responses showing groupSize=0 and groupSize=-1 both succeed",
+            "No explicit validation error returned for invalid groupSize values"
+          ],
+          "evidence": "HTTP 200 responses for both groupSize=0 and groupSize=-1 with identical result sets"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No constraint_id found for groupSize range validation in structured_contract.json",
+            "entities+search endpoint documented but no groupSize range constraints specified"
+          ],
+          "note": "Contract formalizer did not extract any groupSize validation requirement for this endpoint"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus @ v3.0.0",
+          "grep_queries": ["GroupSize", "group_size", "groupSize.*validation", "groupSize.*range"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1926-1932:\n\n\tif httpReq.GroupByField != \"\" {\n\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupByField, Value: httpReq.GroupByField})\n\t}\n\tif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n\t}\n\nLine 1929 shows GroupSize > 0 check before adding to searchParams, but there is NO validation that prevents GroupSize from being <= 0 in the incoming request.",
+          "call_chain_traced": "HTTP request → handler_v2.go:genSearchRequestFromHTTP → GroupSize field from JSON → conditional check (GroupSize > 0) → NO validation for range constraints → passed through to search execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms that GroupSize is only validated for being > 0 before adding to searchParams, but no explicit range check prevents 0 or negative values from being accepted by the API layer."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: curl requests with groupSize=0, groupSize=-1, and groupSize=1 all return HTTP 200 with identical results",
+          "observed": "API accepts groupSize=0 and groupSize=-1 without error, returning the same 5 results as groupSize=1. No validation error triggered despite semantically invalid values.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -d '{\"collectionName\": \"test_gs\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 5, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": -1}}' | python -m json.tool"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: Test on clean Milvus 3.0.0 container eliminates platform/environment artifacts",
+            "Race condition: Single-threaded sequential requests eliminate concurrency concerns",
+            "Request parameter typo: Verified exact JSON payload structure matches API specification",
+            "API semantic misunderstanding: groupSize=0 (disable grouping) and groupSize=-1 (unbounded) could be valid interpretations, but no documentation supports this"
+          ],
+          "surviving": "param_validation_gap — API layer lacks input validation for groupSize range constraints"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Candidate does not match any rejection patterns or by-design patterns in developer_cognition.json. The blindspot_indicators mention 'REST v2 API data type serialization not validated' which is analogous to this missing parameter validation."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint_id found for groupSize range validation in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not specify groupSize validation requirements"
+        },
+        "physical": {
+          "objective_constraint": "groupSize represents count of results per group — should have physical constraint groupSize >= 1",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "API accepts groupSize=0 and groupSize=-1 which violate the physical constraint that a count must be >= 1"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API handles invalid groupSize values gracefully (returns results instead of error), but no source code evidence this is by-design"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical violation drives confirmation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "missing_range_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 /entities/search endpoint accepts groupSize=0 and groupSize=-1 without validation error, returning HTTP 200 with results. Source code analysis (handler_v2.go:1929) confirms the API only checks GroupSize > 0 before adding to searchParams but lacks explicit range validation. Physical constraints dictate groupSize (results per group) should be >= 1, yet API accepts semantically invalid values. This represents a genuine parameter validation gap in the REST v2 API layer."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_range_validation": 1
+    }
+  },
+  "session_metadata": {
+    "reviewed_at": "2025-06-18T00:00:00Z",
+    "source_clone_location": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0",
+    "target_db": {
+      "name": "milvus",
+      "version": "3.0.0",
+      "running_endpoint": "http://localhost:19530/v2/vectordb"
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_037",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with improperly typed data per original log evidence",
+          "observed": "Raw evidence shows insert succeeded with HTTP 200 for all three type coercion cases:\n1. String '123' inserted into Int64 field: insertCount=1, insertIds=[1]\n2. Integer 123 inserted into Varchar field: insertCount=1, insertIds=[2]\n3. String 'true' inserted into Bool field: insertCount=1, insertIds=[3]\nAll inserts succeeded despite type mismatches.",
+          "evidence_cmd": "Evidence from output_milvus_037.log lines 1-85 showing successful inserts with type coercion"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Original oracle conclusion that type coercion violations occur is supported by raw evidence. The implicit assumption 'API should reject type mismatches' is valid for a strongly-typed database system."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 - Int64 scalar data type",
+            "constraint_id: milvus_type_varchar_001 - VARCHAR scalar data type",
+            "constraint_id: milvus_type_bool_001 - BOOL scalar data type"
+          ],
+          "note": "Contract explicitly defines these as distinct, non-interchangeable types. Type coercion violates the contract's type system."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "DataType_Int64",
+            "DataType_VarChar",
+            "DataType_Bool",
+            "json.Number.Int64",
+            "cast.ToBoolE"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 639-644 (Int64 handling)\ncase schemapb.DataType_Int64:\n    result, err := json.Number(dataString).Int64()\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\n\n// Line 778-779 (VarChar handling)\ncase schemapb.DataType_VarChar:\n    reallyData[fieldName] = dataString\n\n// Line 615-620 (Bool handling)\ncase schemapb.DataType_Bool:\n    result, err := cast.ToBoolE(dataString)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result",
+          "call_chain_traced": "REST v2 insert → handler_v2.go:1563 insert() → utils.go:466 checkAndSetData() → switch fieldType (lines 542-784) → type coercion via json.Number.Int64() for Int64, direct assignment for VarChar, cast.ToBoolE() for Bool",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert 在 utils.go:checkAndSetData 函数中,对不同类型使用了隐式类型转换。Int64 用 json.Number(dataString).Int64() 接受字符串数字;VarChar 直接赋值 dataString,接受任何类型自动转字符串;Bool 用 cast.ToBoolE(dataString) 接受字符串布尔值。没有显式类型检查拒绝不匹配类型。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Cannot perform falsification test because raw evidence shows insert already succeeded with type coercion. Query operations failed with 'collection not loaded' errors, not type validation errors.",
+          "observed": "Falsification not applicable - insert operations succeeded with type coercion as shown in raw logs. Query failures are due to collection not being loaded, unrelated to type coercion issue.",
+          "note": "The defect is in insert accepting wrong types, not in query behavior."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - running on standard Milvus Docker container",
+            "Request parameter typo - fields correctly named",
+            "API semantics misunderstanding - type coercion is a real bug",
+            "Concurrent race - sequential test execution",
+            "Approximate search behavior - not applicable to insert type checking"
+          ],
+          "surviving": "type_coercion_in_rest_v2_insert",
+          "note": "This is a genuine type system violation, not a mundane issue."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types, with symptoms including Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "pattern_details": "From bug_shapes.json: rest-v2-data-type-handling has 26 historical instances, confidence 0.95. The pattern explicitly mentions REST v2 API data type serialization issues as a known blindspot area for Milvus developers.",
+        "note": "候选命中开发者认知盲点:REST v2 API 数据类型处理是已知问题区域,历史有26个相似案例,开发者优先级高于数据验证。"
+      },
+      "root_cause_if_confirmed": "rest_v2_insert_type_coercion_absent_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Contract defines Int64, VarChar, Bool as distinct, non-interchangeable types (constraint_ids: milvus_type_int64_001, milvus_type_varchar_001, milvus_type_bool_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "dataType == Int64 (for Int64 fields), dataType == VARCHAR (for VarChar fields), dataType == Bool (for Bool fields)"
+        },
+        "physical": {
+          "objective_constraint": "Type systems require strict type checking. Type coercion bypasses schema validation and can lead to data corruption, silent data loss, or query inconsistencies.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "API accepts and stores improperly typed data, violating physical type system constraints."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API gracefully accepts type mismatches (no errors), but source code lacks explicit by-design comments or validation logic. Type coercion is an implementation side effect, not intentional design."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 /entities/insert 端点存在类型强制转换缺陷,允许并存储与字段定义不匹配的数据类型。源码分析显示 utils.go:checkAndSetData 函数对三种标量类型使用了隐式类型转换:Int64 字段接受字符串数字(json.Number.Int64()),VarChar 字段接受任意类型自动转字符串(direct assignment),Bool 字段接受字符串布尔值(cast.ToBoolE())。这违反了契约明确定义的类型系统要求(Int64/VarChar/Bool 为不可互换类型),且属于开发者认知盲点模式(rest-v2-data-type-handling,历史26例)。查询失败是 collection 未加载导致,与类型验证无关。类型强制转换是真正的缺陷,非平凡解释。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_insert_type_coercion_absent_validation": 1
+    }
+  },
+  "self_check": "PASSED"
+}

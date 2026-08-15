@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_018",
+      "endpoint": "collections+rename",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/rename with conflicting newCollectionName (test_rename_dst_milvus018 already exists)",
+          "observed": "HTTP 200 with code=65535, message='duplicated new collection name default:test_rename_dst_milvus018 with other collection name or alias'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/rename' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rename_src_milvus018\", \"newCollectionName\": \"test_rename_dst_milvus018\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Rename request has valid source collection (test_rename_src_milvus018 exists)",
+            "Target collection name already exists (test_rename_dst_milvus018 exists)",
+            "Expected behavior: API should reject duplicate names with error"
+          ],
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_rename_001",
+            "assertion: 'source collection exists AND new collection name does NOT exist'"
+          ],
+          "assertion_text_quoted": "Collection must exist; new name must not already exist"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "CheckIfCollectionRenamable",
+            "duplicated new collection name",
+            "renameCollection"
+          ],
+          "files_examined": [
+            "internal/rootcoord/ddl_callbacks_alter_collection_name.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/root_coord.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/meta_table.go lines 1126-1131\n\t// check new collection already exists\n\tcoll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\n\tif coll != nil {\n\t\tlog.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n\t\treturn fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n\t}",
+          "call_chain_traced": "REST v2 handler (handler_v2.go:777) -> proxy.RenameCollection -> rootCoord.RenameCollection (root_coord.go:2705) -> broadcastAlterCollectionForRenameCollection (ddl_callbacks_alter_collection_name.go:19) -> CheckIfCollectionRenamable (meta_table.go:1094) -> duplicate check at line 1128 returns error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:MetaTable.CheckIfCollectionRenamable() 在 1128 行明确检查新名称冲突,返回错误 'duplicated new collection name'。这是契约要求的状态约束校验,源码正确实现了该检查。但API仍接受该请求并返回 HTTP 200(code=65535),这是真正的缺陷 — 违反状态约束的请求应返回 HTTP 400 而非 200。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collection state after failed rename attempt",
+          "observed": "Source collection test_rename_src_milvus018 still exists with original name; destination collection test_rename_dst_milvus018 unchanged; no data loss or state corruption occurred",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rename_src_milvus018\", \"dbName\": \"default\"}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/has' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_rename_dst_milvus018\", \"dbName\": \"default\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker/container)",
+            "Concurrency race (single-threaded test)",
+            "Request parameter typo (verified valid collection names)",
+            "API semantics misunderstanding (clear duplicate name conflict)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns 或 rejection_patterns。根据 developer_cognition.json,REST v2 API 数据类型验证问题(blindspot_indicators)和状态机违例(areas_with_repeated_issues 中的 Segment Management 类模式)都是开发团队关注的盲点。本缺陷属于 REST v2 层的状态约束验证缺陷,与已知的 REST v2 数据类型处理问题类似,应报告。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_state_collections_rename_001: 'source collection exists AND new collection name does NOT exist'",
+          "source_implements_check": true,
+          "api_observed_value": "POST /collections/rename with duplicate newCollectionName returns HTTP 200 with code=65535 (should be HTTP 400)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Collection names within a database must be unique (naming uniqueness invariant)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation: HTTP 200 instead of 400 for state constraint violation) + verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus collections+rename API 违反契约约束 milvus_state_collections_rename_001。当尝试将集合重命名为已存在的名称时,API 返回 HTTP 200 带错误码 65535,而非预期的 HTTP 400。源码显示 MetaTable.CheckIfCollectionRenamable() 正确检测到冲突并返回错误,但 REST v2 处理层将其包装在 HTTP 200 响应中,违反了 REST API 规范(状态约束违例应为 4xx 错误)。这是 Type1_IllegalSuccess 类缺陷 — 请求应被拒绝但返回成功状态码。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

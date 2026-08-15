@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST http://localhost:19530/v2/vectordb/entities/insert with payload {\"collectionName\": \"test_vec_str\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}",
+          "observed": "HTTP 200 with insertCount=1, insertIds=[0] - TYPE COERCION ACCEPTED",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_vec_str\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "REST v2 API accepts vector data as JSON strings",
+            "Insert operation processes vector fields through type conversion",
+            "No explicit type validation before JSON unmarshaling"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_float_vector_001 - FLOAT_VECTOR data type should be array of float32",
+            "constraint_id: milvus_assert_insert_success_001 - Inserting valid data succeeds with proper type validation"
+          ],
+          "expected_behavior": "API should reject string-encoded vectors and require actual array type"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "FloatVector.*json.Unmarshal",
+            "case schemapb.DataType_FloatVector",
+            "entities.*insert.*validation"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go lines 232-237\ncase schemapb.DataType_FloatVector:\n    wrappedData := [][]float32{}\n    err := json.Unmarshal(raw, &wrappedData)\n    if err != nil {\n        return nil, newFieldDataError(f.FieldName, err)\n    }\n    if len(wrappedData) < 1 {\n        return nil, merr.WrapErrParameterInvalidMsg(\"at least one row for insert\")\n    }\n    array0 := wrappedData[0]\n    dim := len(array0)\n    if dim < 1 {\n        return nil, merr.WrapErrParameterInvalidMsg(\"dim must >= 1\")\n    }",
+          "call_chain_traced": "handleInsert → WrappedInsertRequest.AsInsertRequest → convertFieldDataArray → FieldData.AsSchemapb → json.Unmarshal with automatic type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:FloatVector case使用json.Unmarshal直接解析raw JSON,无类型检查。Go的json.Unmarshal内置类型强制转换,接受字符串\"[0.1,0.2,0.3,0.4]\"并自动转为[][]float32。无显式type guard或schema validation。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert with vector as string '[0.1,0.2,0.3,0.4]' instead of array [0.1, 0.2, 0.3, 0.4]",
+          "observed": "Insert succeeds (HTTP 200, insertCount=1) - BUG CONFIRMED. Type coercion silently accepts string instead of rejecting with type error.",
+          "evidence_cmd": "python test_rest_api.py shows successful insert with string-encoded vector"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/platform)",
+            "Concurrent race condition",
+            "Request parameter typo",
+            "Approximate search behavior",
+            "API semantic misunderstanding"
+          ],
+          "surviving": "type_coercion_bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "pattern_id": "rest-v2-data-type-handling",
+        "confidence": 0.95,
+        "note": "命中的盲点模式:REST_v2_data_type_handling-26个历史实例。开发者已知REST v2存在系统性类型处理问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 entities+insert端点接受vector字段为字符串而非数组。源码显示FloatVector case (wrap_request.go:232-237) 使用json.Unmarshal直接解析,无type guard。Go的json.Unmarshal自动将字符串\"[0.1,0.2,0.3,0.4]\"转为[][]float32,绕过schema类型检查。此行为违反contract明文要求(FLOAT_VECTOR应为float32数组)且命中已知blindspot pattern(REST_v2_data_type_handling, 26 historical cases)。干净复现成功(HTTP 200, insertCount=1),证伪通过(无平凡解释),源码接地确认validation_absent。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

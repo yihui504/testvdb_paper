@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with text_field=12345 (integer) on VarChar field",
+          "observed": "Insert succeeded (HTTP 200), query returned text_field=12345 as integer - type coercion occurred",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_devreview_milvus006\", \"data\": [{\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"text_field\": 12345}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "REST v2 API should validate data types before insert",
+            "VarChar fields should reject non-string values",
+            "JSON unmarshal should fail for type mismatch"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 - 'data field types match collection schema'",
+            "assertion_id: milvus_behavioral_entities_insert_002 - 'returns 400 on schema mismatch'"
+          ],
+          "contract_violated": true,
+          "expected_behavior": "400 error on field type mismatch",
+          "actual_behavior": "200 success with silent type coercion"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "DataType_VarChar",
+            "convertFieldData",
+            "json.Unmarshal",
+            "AsInsertRequest"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go line 141-155\n\tcase schemapb.DataType_VarChar:\n\t\tdata := []string{}\n\t\terr := json.Unmarshal(raw, &data)\n\t\tif err != nil {\n\t\t\treturn nil, newFieldDataError(f.FieldName, err)\n\t\t}\n\t\tret.Field = &schemapb.FieldData_Scalars{\n\t\t\tScalars: &schemapb.ScalarField{\n\t\t\t\tData: &schemapb.ScalarField_StringData{\n\t\t\t\t\tStringData: &schemapb.StringArray{\n\t\t\t\t\t\tData: data,\n\t\t\t\t\t},\n\t\t\t\t},\n\t\t\t},\n\t\t}",
+          "call_chain_traced": "handleInsert() → WrappedInsertRequest.AsInsertRequest() → convertFieldDataArray() → FieldData.AsSchemapb() → json.Unmarshal(raw, &data) for VarChar",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:VarChar字段使用 json.Unmarshal(raw, &data) 直接反序列化到[]string，但Go的json.Unmarshal对类型不匹配会执行自动类型转换而非报错。例如JSON数字12345会被自动转换为字符串\"12345\"。这是Go json包的标准行为，但在数据库语义下这是bug - 应该拒绝类型不匹配而非隐式转换。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Query with filter to verify stored data type",
+          "observed": "Query returned text_field as integer 12345, confirming coercion occurred in storage layer"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, Windows, filesystem)",
+            "Concurrency race (single-threaded test)",
+            "Request parameter typo (well-formed JSON)",
+            "API semantic misunderstanding (contract clear)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus (developer_cognition.json blindspot_indicators)",
+        "note": "命中开发者认知盲点:REST v2 API数据类型序列化问题在历史issue中反复出现(52232, 52230, 52229等)，表明这是已知的高频问题区域。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_insert_001: data field types match collection schema",
+          "assertion_text_quoted": "data field types match collection schema",
+          "source_implements_check": false,
+          "api_observed_value": "insert with text_field=12345 (integer) succeeded HTTP 200",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "VarChar field must store string data only",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "虽然json.Unmarshal的行为优雅(自动类型转换避免panic)，但源码中没有任何注释表明这是有意设计。相反，这是Go json库的默认行为，在数据库语义下应该被显式拒绝而非隐式接受。"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "json.Unmarshal_type_coercion",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Milvus REST v2 insert端点在VarChar字段上执行了隐式类型转换：当传入JSON数字(如12345)到字符串字段时，Go的json.Unmarshal自动将其转为字符串'12345'并成功插入。这违反了契约(milvus_type_entities_insert_001)明确要求的'data field types match collection schema'，且破坏了数据库类型安全性。源码wrap_request.go:141-155显示VarChar处理直接使用json.Unmarshal(raw, &data)到[]string，依赖json库的自动类型转换而非严格验证。属于开发者认知中的高频盲点区域(REST v2数据类型序列化，历史issue 52232/52230/52229)。复现步骤确认：create collection → insert with integer to VarChar → 200 success → query returns coerced value。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "json.Unmarshal_type_coercion": 1
+    }
+  }
+}

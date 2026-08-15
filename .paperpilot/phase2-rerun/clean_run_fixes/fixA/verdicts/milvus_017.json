@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "endpoint": "aliases+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /aliases/list with collectionName='' returns all aliases in database",
+          "observed": "API returns 200 with list of all aliases when collectionName is empty string; returns filtered list when collectionName specifies a valid collection",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/aliases/list -H 'Content-Type: application/json' -d '{\"collectionName\": \"\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original test assumed 'alias' field name for aliases+create, but source uses 'aliasName'",
+            "Original test expected aliases+list to fail with empty collectionName, but contract specifies it as optional"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "structured_contract.json line 1299: collectionName required=false for aliases+list",
+            "structured_contract.json line 1300: description 'Filter by collection' indicates optional filtering"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "OptionalCollectionNameReq",
+            "AliasCollectionReq",
+            "listAlias",
+            "binding:required"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go lines 145-156\ntype OptionalCollectionNameReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\"`  // NO binding:\"required\" tag\n}\n\n// internal/distributed/proxy/httpserver/request_v2.go lines 672-676\ntype AliasCollectionReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\" binding:\"required\"`  // HAS binding:\"required\"\n\tAliasName      string `json:\"aliasName\" binding:\"required\"`         // HAS binding:\"required\"\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 299\nrouter.POST(AliasCategory+ListAction, timeoutMiddleware(wrapperPost(func() any { return &OptionalCollectionNameReq{} }, wrapperTraceLog(h.listAlias))))\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 302\nrouter.POST(AliasCategory+CreateAction, timeoutMiddleware(wrapperPost(func() any { return &AliasCollectionReq{} }, wrapperTraceLog(h.createAlias))))",
+          "call_chain_traced": "aliases+list → OptionalCollectionNameReq (no required validation) → listAlias handler → passes empty collectionName to gRPC → returns all aliases",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source confirms aliases+list intentionally accepts empty collectionName as optional filter parameter. Validation error in original test was due to using 'alias' instead of 'aliasName' field for aliases+create."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with both empty and specific collectionName values to verify correct filtering behavior",
+          "observed": "Empty collectionName returns all aliases in database; specific collectionName returns only aliases for that collection. This confirms the API works as designed per contract."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Request parameter naming error (alias vs aliasName)",
+            "Misunderstanding of optional vs required parameters"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This candidate does not match any known rejection patterns or by-design patterns from developer_cognition.json. The issue is a test implementation error using wrong field name."
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Original test used incorrect field name 'alias' instead of 'aliasName' for aliases+create request, causing validation errors. The aliases+list API correctly accepts empty collectionName as an optional filter parameter, which matches the contract specification (required: false) and source implementation (OptionalCollectionNameReq struct without binding:'required' tag). API behavior is correct and by-design."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_param_typo": 1
+    }
+  }
+}

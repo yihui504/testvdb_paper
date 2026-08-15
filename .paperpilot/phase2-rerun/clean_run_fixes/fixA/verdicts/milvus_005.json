@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with dynamic fields '123field' and '@field'",
+          "observed": "Insert succeeds (HTTP 200, insertCount=2), but subsequent query requesting these fields in outputFields fails with 'parse output field name failed: 123field'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_devreview_milvus005\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"123field\":\"v1\"},{\"id\":2,\"vector\":[0.2,0.2,0.3,0.4],\"@field\":\"v2\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect conclusion assumes 'insert should validate field names' - but the structured_contract.json contains NO constraint requiring field name validation for dynamic fields",
+            "The assumption that 'all insert-accepted fields must be queryable' is not supported by contract - this is an inferred expectation, not a documented constraint"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 - 'data field types match collection schema' (dynamic fields are exempt from schema, no name validation specified)",
+            "constraint_id: milvus_state_entities_insert_001 - 'collection exists AND is loaded AND (autoID OR primary key provided)' (no field name validation requirement)"
+          ],
+          "note": "Contract explicitly does NOT specify field name validation rules for dynamic fields. The insert endpoint's only documented constraint is data type matching, not identifier syntax validation."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "parse output field name failed",
+            "parseIdentifier",
+            "use the invalid field name when enable dynamicField"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/util.go",
+            "internal/parser/planparserv2/plan_parser_v2.go",
+            "tests/python_client/milvus_client_v2/test_milvus_client_search_v2_new.py",
+            "tests/go_client/testcases/query_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 592-597 (insert validation)\nfor mapKey, mapValue := range data.Map() {\n    if !containsString(fieldNames, mapKey) {\n        if collSchema.EnableDynamicField {\n            if mapKey == common.MetaFieldName {\n                return merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"use the invalid field name(%s) when enable dynamicField\", mapKey)), nil, nil\n            }\n            // No validation for invalid identifier syntax like '123field' or '@field'\n            reallyData[mapKey] = mapValueStr\n        }\n    }\n}\n\n// internal/proxy/util.go lines 1660-1665 (query validation)\nerr := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n    // ParseIdentifier uses expression parser which rejects invalid identifiers\n    ...\n})\nif err != nil {\n    log.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n    return nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n}",
+          "call_chain_traced": "Insert: utils.go map iteration accepts any dynamic field key (only checks reserved MetaFieldName) → stores data → Query: util.go ParseIdentifier validates field syntax using expression parser → rejects invalid identifiers",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code reveals BY-DESIGN asymmetry: Insert accepts any dynamic field name (loose validation), only checking for reserved $meta field. Query uses strict expression parser (ParseIdentifier) that enforces identifier syntax rules. This is intentional - dynamic fields are stored as-is but query enforces syntax for safety. Tests confirm this behavior is expected."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with outputFields=['123field', '@field']",
+          "observed": "Query fails with error code 65535 'parse output field name failed: 123field', proving that these fields were NOT successfully stored in a queryable format. The insert 'success' only means data was buffered, not that fields became persistent/queryable.",
+          "note": "The bug consequence (unqueryable data) IS observable - query explicitly rejects the field names that insert accepted. This confirms the behavior but reveals it's BY DESIGN, not a bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: Running on official Milvus v2.6.10 Docker container",
+            "Race condition: Reproducible deterministically across multiple runs",
+            "Request parameter error: Request follows REST API spec exactly"
+          ],
+          "surviving": "asymmetric_validation_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-001 (intentional design choice)",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus (from blindspot_indicators). The insert/query asymmetry for dynamic field names is a known design pattern - insert is permissive, query is strict.",
+        "note": "While not explicitly in by_design_patterns, the source code and test suite (test_milvus_client_search_v2_new.py line 511, query_test.go line 243) confirm this behavior is tested and expected. Developers are aware of REST v2 type handling complexities (cognition blindspot_indicators)."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "NONE - No contract constraint specifies field name validation for dynamic fields",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract has no assertion about field name validation, so this cannot be a contract violation."
+        },
+        "physical": {
+          "objective_constraint": "Identifier syntax must be parseable as expression (e.g., cannot start with digit or special char)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Insert accepts fields violating identifier syntax, but this is by-design permissiveness, not a bug."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code explicitly shows different validation paths for insert vs query. Test suite verifies this behavior. This is intentional design."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=CONFIRMED, verdict_C=REFUTED → final=REFUTED (C shows by-design in source, overriding B)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "Source code analysis (utils.go:592-597, util.go:1660-1665) reveals INTENTIONAL asymmetric validation: Insert accepts any dynamic field name (only blocking reserved '$meta'), while Query enforces identifier syntax via ParseIdentifier. Test cases (test_milvus_client_search_v2_new.py:511, query_test.go:243) explicitly verify 'parse output field name failed' errors for invalid identifiers. The contract contains NO constraint requiring field name validation at insert time. This is BY DESIGN - insert is permissive for flexibility, query is strict for safety. The oracle's expectation ('insert should validate field names') is a misread of the contract, which only requires data type matching, not identifier syntax validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  },
+  "self_check": "PASSED"
+}

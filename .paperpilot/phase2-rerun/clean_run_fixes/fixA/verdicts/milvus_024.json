@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/delete with filter='id > 0' and ids=[1,2,3]",
+          "observed": "HTTP 200, deleteCount=1, operation completed successfully",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/delete' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_del_review3\", \"filter\": \"id > 0\", \"ids\": [1, 2, 3]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes including 'ids' field is an error, but this field is simply ignored (not part of CollectionFilterReq struct)",
+            "Conclusion depends on 'ids' being rejected as invalid parameter, but Go's JSON binding silently ignores unknown fields by default"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_delete_001 - 'filter must be a valid boolean expression'",
+            "constraint_id: milvus_state_entities_delete_001 - 'delete is irreversible'",
+            "constraint_id: milvus_behavioral_entities_delete_001 - 'Delete returns 400 on invalid filter expression'",
+            "endpoint parameters: collectionName (required), dbName (optional), filter (required), partitionName (optional) - NO 'ids' parameter defined"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "CollectionFilterReq struct",
+            "entities.*delete handler",
+            "ShouldBindBodyWith",
+            "filter.*ids"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 317-323\ntype CollectionFilterReq struct {\n\tDbName         string                 `json:\"dbName\"`\n\tCollectionName string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                 `json:\"partitionName\"`\n\tFilter         string                 `json:\"filter\" binding:\"required\"`\n\tExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n\n// NOTE: No 'ids' field in struct - JSON binding silently ignores unknown fields by default",
+          "call_chain_traced": "POST /entities/delete -> wrapperPost() -> ShouldBindBodyWith(req, binding.JSON) -> CollectionFilterReq struct (ignores 'ids') -> h.delete() -> DeleteRequest with Expr field only",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: CollectionFilterReq 结构体没有 'ids' 字段，只有 Filter 字段。Go 的默认 JSON binding 行为是静默忽略未知字段，不会报错。这是 Go 标准库行为，不是 bug。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/query after deletion to verify data integrity",
+          "observed": "Query returns empty set, confirming delete operation succeeded correctly - no data corruption or state violation",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_del_review3\", \"outputFields\": [\"id\"], \"filter\": \"id in [1,2,3]\"}'"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment or concurrency issues - reproducible on clean environment",
+            "API misconfiguration - default REST v2 behavior",
+            "Data consistency issues - verified with independent query"
+          ],
+          "surviving": "request_param_typo"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns 或 rejection_patterns。这是对 Go JSON binding 默认行为的误解 - 静默忽略未知字段是标准行为，不是缺陷。"
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 将请求中包含的 'ids' 字段视为缺陷，但实际上：1) CollectionFilterReq 结构体明确定义了只接受 collectionName/dbName/filter/partitionName 四个参数，没有 'ids' 字段；2) Go 的标准 JSON binding 库默认静默忽略未知字段，这是预期行为而非 bug；3) 删除操作仍然正确执行，filter 'id > 0' 成功匹配并删除了 id=1 的实体；4) 独立查询验证删除成功，无数据损坏。这是对 Go JSON 语义的误解，类似 'with_payload' 遗漏参数的场景。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "request_param_typo": 1
+    }
+  }
+}

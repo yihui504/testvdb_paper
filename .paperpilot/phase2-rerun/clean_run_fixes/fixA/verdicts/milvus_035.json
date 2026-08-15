@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with Int64 primary key field receiving string value 'abc'",
+          "observed": "HTTP 200 with error code 1804: 'strconv.ParseInt: parsing \\\"abc\\\": invalid syntax: invalid parameter[expected=Int64][actual=abc]'",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_pk\",\"data\":[{\"id\":\"abc\",\"vector\":[0.5,0.5,0.5,0.5]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "Oracle conclusion directly observable: REST v2 API accepts string value for Int64 field and attempts coercion via strconv.ParseInt, which fails for non-numeric strings. No hidden assumptions."
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 - dataType == Int64",
+            "constraint_id: milvus_enum_datatype_int64_022 - dataType == 'INT64'",
+            "assertion_id: milvus_assert_insert_success_001 - Inserting valid data succeeds"
+          ],
+          "note": "Structured contract explicitly defines Int64 as a distinct data type. Insert endpoint expects data matching schema types."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "DataType_Int64",
+            "ParseInt.*invalid syntax",
+            "checkAndSetData",
+            "strconv.ParseInt",
+            "InsertEntities"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/utils_test.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/utils.go, Lines 639-644\n\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result",
+          "call_chain_traced": "InsertEntities handler (handler_v2.go:1563) → checkAndSetData (utils.go:466) → case DataType_Int64 (utils.go:639) → json.Number(dataString).Int64() → strconv.ParseInt via go-json parsing",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_tolerates_string_input",
+          "note": "Source code shows REST v2 layer uses json.Number(dataString).Int64() which attempts to coerce string to Int64. This allows numeric strings (like '123') to succeed (they're parsed correctly) but fails for non-numeric strings (like 'abc'). The validation is present but permissive: it accepts string type input and attempts coercion rather than rejecting type mismatch upfront."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST with numeric string id='123' (should succeed) vs alphabetic string id='abc' (should fail)",
+          "observed": "Numeric string '123' succeeds with HTTP 200, returning insertCount=1 and insertIds=[123]. Alphabetic string 'abc' fails with error 1804 and strconv.ParseInt error message.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_pk\",\"data\":[{\"id\":\"123\",\"vector\":[0.1,0.2,0.3,0.4]}]}' → success; same with 'abc' → error 1804"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment: Docker container healthy, REST v2 endpoint responding normally",
+            "Concurrency: Single-threaded test, no race conditions",
+            "Request format: Valid JSON per structured contract",
+            "API semantics: Not a by-design behavior - REST v2 should validate input types before attempting coercion"
+          ],
+          "surviving_explanation": "Type coercion is intentional but inconsistent with strong typing expectations. The permissive validation that allows numeric strings to succeed while rejecting non-numeric strings creates a fuzzy type boundary that violates strong typing principles."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_id": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "This defect matches the known REST v2 data type handling blindspot pattern from bug_shapes.json. Historical instances show this is a recognized problem area where REST v2 fails to properly validate types before attempting coercion."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Int64 fields require integer values per milvus_type_int64_001 (dataType == Int64)",
+          "source_implements_check": true,
+          "check_allows_coercion": true,
+          "verdict_A": "CONFIRMED",
+          "note": "Source shows validation exists but is permissive: accepts string input and attempts coercion via json.Number.Int64(). This violates strict type contract that Int64 fields should receive integer types, not strings. REST v2 accepts strings (with coercion attempt) while gRPC would reject type mismatch at proto level."
+        },
+        "physical": {
+          "objective_constraint": "Int64 type semantically represents 64-bit signed integer, not arbitrary string",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: Int64 has mathematical definition as integer range [-2^63, 2^63-1]. Accepting string 'abc' violates this semantic constraint. Error after coercion attempt doesn't negate the type boundary violation."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "error_message_quality": "Clear - 'strconv.ParseInt: parsing \"abc\": invalid syntax' explicitly identifies the problem",
+          "verdict_C": "CONFIRMED",
+          "note": "API returns error for invalid coercion (good), but the design of accepting string for Int64 field at all is problematic. Error handling is adequate but doesn't excuse the permissive input handling."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 insert endpoint accepts string values for Int64 primary key fields and attempts type coercion via json.Number(dataString).Int64() in utils.go:639-644. While numeric strings succeed ('123' → parsed as 123), non-numeric strings ('abc') trigger strconv.ParseInt errors. This permissive validation violates strong typing contracts: the structured contract defines Int64 as a distinct type, and the API should reject string inputs for Int64 fields rather than attempting coercion. Source code confirms this is intentional but problematic behavior, not a transient error. The pattern matches known REST v2 data type handling blindspot (8 historical issues)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

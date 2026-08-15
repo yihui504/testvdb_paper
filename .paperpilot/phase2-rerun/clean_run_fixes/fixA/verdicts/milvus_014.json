@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_014",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /collections/create with dim=1 (below contract lower bound of 1) and dim=32768 (at upper bound)",
+          "observed": "dim=1 fails with error 'should be in range 2 ~ 32768', dim=2 succeeds, dim=32768 succeeds, dim=32769 fails with 'should be in range 2 ~ 32768'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"schema\": {\"fields\": [{\"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 1}}]}}' -> returns code 65535 error: 'should be in range 2 ~ 32768'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Contract claims 'dimension must be 1-32768', but actual API enforces '2 ~ 32768'",
+            "Candidate likely assumed contract assertion was correct without verifying actual API behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001, assertion: '1 <= dimension <= 32768', confidence: 1.0"
+          ],
+          "note": "Contract itself contains the error - it states lower bound is 1 when actual implementation enforces 2"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "invalid dimension.*dimension should be in range",
+            "MaxDimension.*32768",
+            "if dim <= 1"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/util.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/pkg/util/paramtable/component_param.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/proxy/util.go line 421-436\nif dim <= 1 {\n\treturn fmt.Errorf(\"invalid dimension: %d. should be in range 2 ~ %d\", dim, Params.ProxyCfg.MaxDimension.GetAsInt())\n}\n\n// for dense vector field, dim will be limited by max_dimension\nif typeutil.IsBinaryVectorType(field.DataType) {\n\tif dim%8 != 0 {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be multiple of 8. \", dim, field.GetName())\n\t}\n\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64()*8 {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. binary vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt()*8)\n\t}\n} else {\n\tif dim > Params.ProxyCfg.MaxDimension.GetAsInt64() {\n\t\treturn fmt.Errorf(\"invalid dimension: %d of field %s. float vector dimension should be in range 2 ~ %d\", dim, field.GetName(), Params.ProxyCfg.MaxDimension.GetAsInt())\n\t}\n}",
+          "call_chain_traced": "CreateCollection REST request -> validateDimension() -> MaxDimension param (default 32768) -> error message shows '2 ~ 32768'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_and_correct",
+          "note": "Source code definitively enforces dim > 1 (line 421), not dim >= 1. Contract assertion is incorrect."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "N/A - no independent verification needed for range validation bug",
+          "observed": "Step 1 clean reproduction already falsified the candidate - API correctly rejects dim=1, contradicting contract claim that dim=1 should be accepted"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (verified on clean Milvus 2.6.16 container)",
+            "Concurrent operation (single-threaded test)",
+            "Request parameter typo (exact syntax from raw log)"
+          ],
+          "surviving": "contract_formalizer_error"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Not a by-design pattern - this is a contract documentation error, not a behavior the maintainers intentionally chose"
+      },
+      "root_cause_if_fp": "contract_formalizer_hallucination",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The candidate is a FALSE POSITIVE caused by contract formalizer error. Contract constraint milvus_range_collections_create_001 asserts '1 <= dimension <= 32768', but actual Milvus 2.6.16 implementation enforces '2 <= dimension <= 32768'. Source code at internal/proxy/util.go:421 explicitly checks 'if dim <= 1' and returns error. Live reproduction confirms: dim=1 rejected, dim=2 accepted, dim=32768 accepted, dim=32769 rejected. The 'bug' exists only in the formalized contract documentation, not in the actual API behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_formalizer_hallucination": 1
+    }
+  }
+}

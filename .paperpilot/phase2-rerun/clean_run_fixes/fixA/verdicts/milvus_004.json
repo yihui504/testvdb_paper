@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_004",
+      "endpoint": "entities+delete",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/delete {\"collectionName\": \"test_repro\", \"dbName\": \"default\", \"filter\": \"age in [10, 5]\"}",
+          "observed": "HTTP 200, response: {\"code\":0,\"data\":{\"deleteCount\":1}}. Query verification shows only age=10 was deleted (age=5 never existed in collection). Original collection had ages [0,10,20,30,40]. After delete, remaining ages: [0,20,30,40].",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -d '{\"collectionName\":\"test_repro\",\"dimension\":8,\"metricType\":\"L2\"}' && curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"test_repro\",\"data\":[{\"id\":0,\"vector\":[0.1,...],\"age\":0},{\"id\":1,\"age\":10},{\"id\":2,\"age\":20},{\"id\":3,\"age\":30},{\"id\":4,\"age\":40}]}' && curl -X POST http://localhost:19530/v2/vectordb/entities/delete -d '{\"collectionName\":\"test_repro\",\"filter\":\"age in [10,5]\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: Filter expression 'age in [10, 5]' should validate that ALL values in the IN list exist in the collection - MILVIOLATED. Milvus treats IN clauses as OR conditions: 'age == 10 OR age == 5'. Since age=5 doesn't exist, it matches only age=10.",
+            "Assumption 2: deleteCount should equal number of values in IN list - MILVIOLATED. deleteCount reflects actual matches (1), not input values (2).",
+            "Assumption 3: IN operator validates value existence before execution - MILVIOLATED. No pre-validation exists; it's a runtime filter."
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_expr_001 - filter is a boolean expression, not a validation directive",
+            "endpoint: POST /entities/delete - 'filter' parameter description: 'boolean expression for filtering entities to delete'",
+            "API behavior: filter is declarative, not prescriptive. 'age in [10,5]' means 'delete rows WHERE age IN (10,5)', not 'validate ages 10 and 5 exist then delete them'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "DeleteRequest.*expr",
+            "CreateRetrievePlanArgs",
+            "IsAlwaysTruePlan",
+            "expr.*ParseExpr",
+            "in.*\\["
+          ],
+          "files_examined": [
+            "internal/proxy/impl.go",
+            "internal/proxy/task_delete.go",
+            "internal/parser/planparserv2/plan_parser_v2.go",
+            "internal/parser/planparserv2/logical_expr_visitor.go",
+            "internal/util/exprutil/expr_checker.go"
+          ],
+          "source_excerpt": "// internal/proxy/task_delete.go line 266-317\nfunc (dr *deleteRunner) Init(ctx context.Context) error {\n\tlog := log.Ctx(ctx)\n\tvar err error\n\n\tcollName := dr.req.GetCollectionName()\n\tif err := validateCollectionName(collName); err != nil {\n\t\treturn ErrWithLog(log, \"Invalid collection name\", err)\n\t}\n\n\tdb, err := globalMetaCache.GetDatabaseInfo(ctx, dr.req.GetDbName())\n\tif err != nil {\n\t\treturn merr.WrapErrAsInputErrorWhen(err, merr.ErrDatabaseNotFound)\n\t}\n\tdr.dbID = db.dbID\n\n\tdr.collectionID, err = globalMetaCache.GetCollectionID(ctx, dr.req.GetDbName(), collName)\n\tif err != nil {\n\t\treturn ErrWithLog(log, \"Failed to get collection id\", merr.WrapErrAsInputErrorWhen(err, merr.ErrCollectionNotFound))\n\t}\n\n\tdr.schema, err = globalMetaCache.GetCollectionSchema(ctx, dr.req.GetDbName(), collName)\n\tif err != nil {\n\t\treturn ErrWithLog(log, \"Failed to get collection schema\", err)\n\t}\n\n\tcolInfo, err := globalMetaCache.GetCollectionInfo(ctx, dr.req.GetDbName(), collName, dr.collectionID)\n\tif err != nil {\n\t\treturn ErrWithLog(log, \"Failed to get collection info\", err)\n\t}\n\tcolTimezone := getColTimezone(colInfo)\n\tvisitorArgs := &planparserv2.ParserVisitorArgs{Timezone: colTimezone}\n\n\tstart := time.Now()\n\tdr.plan, err = planparserv2.CreateRetrievePlanArgs(dr.schema.schemaHelper, dr.req.GetExpr(), dr.req.GetExprTemplateValues(), visitorArgs)\n\tif err != nil {\n\t\tmetrics.ProxyParseExpressionLatency.WithLabelValues(strconv.FormatInt(paramtable.GetNodeID(), 10), \"delete\", metrics.FailLabel).Observe(float64(time.Since(start).Milliseconds()))\n\t\treturn merr.WrapErrAsInputError(merr.WrapErrParameterInvalidMsg(\"failed to create delete plan: %v\", err))\n\t}\n\tmetrics.ProxyParseExpressionLatency.WithLabelValues(strconv.FormatInt(paramtable.GetNodeID(), 10), \"delete\", metrics.SuccessLabel).Observe(float64(time.Since(start).Milliseconds()))\n\n\tif planparserv2.IsAlwaysTruePlan(dr.plan) {\n\t\treturn merr.WrapErrAsInputError(merr.WrapErrParameterInvalidMsg(\"delete plan can't be empty or always true : %s\", dr.req.GetExpr()))\n\t}",
+          "call_chain_traced": "DeleteRequest.expr → CreateRetrievePlanArgs → parses filter as boolean expression → validates not-always-true → NO value-existence validation for IN clauses",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:deleteRunner.Init()只做了expression parsing验证(非空、非always-true),完全没有对IN子句的值做存在性校验。'age in [10,5]'被解析为OR逻辑(age==10 OR age==5),运行时匹配存在的值(10),不存在的(5)简单跳过。这是by design的filter语义,不是bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query {\"collectionName\": \"test_repro\", \"filter\": \"age in [0,10,20,30,40]\", \"outputFields\": [\"id\",\"age\"]}",
+          "observed": "Post-delete query returned ages [0,20,30,40]. age=10 was deleted (existed in IN list). age=5 was never in collection, so no deletion expected. Result: 1 deletion (age=10) is CORRECT for filter 'age in [10,5]'. Expected deletions: rows WHERE age=10 OR age=5. Only age=10 existed → 1 row deleted. No violation found."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 (Docker/文件系统)",
+            "并发race (单线程操作)",
+            "缓存延迟 (wait=false后即查)",
+            "请求参数笔误"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "命中的盲点区域:REST v2 API处理(虽然这是REST v2,但filter解析逻辑在gRPC/REST间共享)。developer_cognition显示REST v2 API层存在数据类型/序列化问题,但本case属filter语义理解偏差,非数据类型bug。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Milvus DELETE的filter参数是声明式布尔表达式,非规范性校验指令。'age in [10,5]'在SQL/向量数据库中的标准语义是'WHERE age IN (10,5)',即找出age=10或age=5的行并删除,而非'验证10和5都存在后删除'。实测证明:仅age=10存在→删除1条(age=10),age=5不存在→不删除→total deleteCount=1。这与标准SQL/向量数据库的IN语义完全一致,不构成defect。初申判定为bug是因对filter语义期望错误(期望IN做存在性校验),但API契约/源码/实际行为三重证据均表明这是by-design的正确行为。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

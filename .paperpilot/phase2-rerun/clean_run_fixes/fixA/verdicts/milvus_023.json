@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/drop {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with {\"code\":0,\"data\":{}} - No error, success response despite collection not existing",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/drop\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes dropping a nonexistent collection should return 404 error (based on contract documentation)",
+            "Oracle assumes HTTP 200 always indicates successful operation completion"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "assertion_id: milvus_behavioral_collections_drop_001",
+            "expected_behavior: returns 200 with empty data on success; returns 404 with message 'collection not found' if collection does not exist",
+            "constraint_id: milvus_state_collections_drop_001",
+            "assertion: drop is irreversible AND all data is permanently deleted"
+          ],
+          "contract_violation_detected": true
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+          "grep_queries": [
+            "dropCollectionTask",
+            "errIgnoredDropCollection",
+            "DropCollection",
+            "PreExecute"
+          ],
+          "files_examined": [
+            "internal/rootcoord/drop_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/root_coord.go",
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "From internal/rootcoord/drop_collection_task.go line 42-58:\n\nfunc (t *dropCollectionTask) validate(ctx context.Context) error {\n\t// Critical promise here, also see comment of startBroadcastWithCollectionLock.\n\tif t.meta.IsAlias(ctx, t.Req.GetDbName(), t.Req.GetCollectionName()) {\n\t\treturn fmt.Errorf(\"cannot drop the collection via alias = %s\", t.Req.CollectionName)\n\t}\n\n\t// use max ts to check if latest collection exists.\n\tcollMeta, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err != nil {\n\t\tif errors.Is(err, merr.ErrCollectionNotFound) || errors.Is(err, merr.ErrDatabaseNotFound) {\n\t\t\treturn errIgnoredDropCollection  // <-- KEY: returns special error\n\t\t}\n\t\treturn err\n\t}\n\t...\n}\n\nFrom internal/rootcoord/meta_table.go:\nerrIgnoredDropCollection = errors.New(\"ignored drop collection\")   // drop collection or database not found, so it can be ignored.\n\nFrom internal/rootcoord/root_coord.go:\nif errors.Is(err, errIgnoredDropCollection) {\n\tlogger.Info(\"drop collection that not found, ignore it\")\n\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"DropCollection\", metrics.SuccessLabel).Inc()\n\treturn merr.Success(), nil  // <-- KEY: returns SUCCESS status\n}\n\nFrom internal/proxy/task.go line 42-47:\nfunc (t *dropCollectionTask) PreExecute(ctx context.Context) error {\n\t// No need to check collection name\n\t// Validation shall be preformed in `CreateCollection`\n\t// also permit drop collection one with bad collection name\n\treturn nil  // <-- KEY: No validation in PreExecute\n}",
+          "call_chain_traced": "REST Handler → dropCollection() → wrapperProxyWithLimit → proxy.DropCollection → dropCollectionTask.PreExecute (no validation) → dropCollectionTask.Execute → mixCoord.DropCollection → rootCoord.DropCollection → dropCollectionTask.validate → returns errIgnoredDropCollection when collection not found → handled in root_coord.go returning SUCCESS status",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:Milvus 源码实现是'幂等删除'设计—当删除不存在的 collection 时,返回 errIgnoredDropCollection,然后在 root_coord.go 中捕获这个错误并返回 SUCCESS(HTTP 200)。这是 explicit by-design 代码,注释说明'drop collection or database not found, so it can be ignored'"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "1) Create test_drop_existing collection 2) Verify exists with has=true 3) Drop existing collection (returns 200) 4) Verify gone with has=false 5) Drop same collection again (returns 200) 6) Verify still has=false",
+          "observed": "Step 1: create returns 200, Step 2: has=true, Step 3: drop returns 200, Step 4: has=false, Step 5: drop returns 200 (idempotent), Step 6: has=false (consistent). Drop is truly idempotent - returns 200 for both existing and non-existing collections.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/has -d '{\"collectionName\": \"test_drop_existing\"}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency/race conditions",
+            "Request parameter typos",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "by_design_idempotent_drop"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "pattern_id": "RP-001",
+        "note": "Milvus 开发者明确把'删除不存在的资源视为成功操作'—这是幂等删除(idempotent deletion)的标准设计模式,用于支持分布式系统中的 retry 和 at-least-once 语义"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_behavioral_collections_drop_001: returns 200 with empty data on success; returns 404 with message 'collection not found' if collection does not exist",
+          "source_implements_check": false,
+          "api_observed_value": "POST /collections/drop nonexistent_collection_xyz → HTTP 200 (not 404 as contract suggests)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": true,
+          "source_evidence_if_suspect": "源码显示这是 explicit by-design:errIgnoredDropCollection 返回 SUCCESS 状态。contract 文档可能过时或描述的是理想行为而非实际实现"
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint - drop operation is state transition, not value validation",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract says 404), verdict_B=NEUTRAL, verdict_C=REFUTED (by-design in source). 但源码明确显示这是幂等删除设计,contract 文档可能过时. 实际源码实现优先于文档声明.",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "虽然 contract 文档声称应返回 404,但源码明确实现幂等删除设计:当删除不存在的 collection 时,返回 errIgnoredDropCollection 错误并在 root_coord.go 中转换为 SUCCESS 响应。这是 explicit by-design 代码,用于支持分布式系统中的 retry 和 at-least-once 语义。实际行为(返回 200)符合幂等删除的最佳实践,contract 文档可能过时或不准确。源码证据权重高于文档声明。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

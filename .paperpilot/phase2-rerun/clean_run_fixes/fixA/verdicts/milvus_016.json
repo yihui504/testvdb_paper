@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"ef\": -1} and searchParams={\"nprobe\": 0}",
+          "observed": "API accepts invalid search parameter values (ef=-1, nprobe=0) and returns HTTP 200 with search results",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\": \"test_hnsw_ef\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"ef\": -1}}' returns HTTP 200 with results"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate claims 'searchParams validation missing' assumes that REST v2 API should validate parameter ranges (ef >= 1, nprobe >= 1)",
+            "Conclusion assumes invalid values (ef=-1, nprobe=0) are violations, but REST v2 API contract does NOT specify these range constraints",
+            "Implicit assumption that searchParams are validated at API gateway level rather than deferred to query execution engine"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_indexes_create_003 (efConstruction >= 1) - applies to INDEX creation, NOT search parameters",
+            "entities+search endpoint has NO constraints specifying ef or nprobe ranges in searchParams",
+            "contract shows searchParams as generic object with no documented range validation requirements"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["searchParams", "nprobe", "ef", "param.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2192-2247\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter merging logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO RANGE VALIDATION for ef, nprobe, or other search parameters\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "SearchRequest.searchParams -> generateSearchParams() -> NO validation -> pass-through to query execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 API层对searchParams完全不验证范围(ef/nprobe等),直接透传到查询引擎。contract中无范围约束断言。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: search with ef=-1 and nprobe=0 both execute successfully and return valid results",
+          "observed": "No error or validation failure observed. API processes requests normally despite technically invalid parameter values (ef should be >= 1, nprobe should be >= 1 per algorithm semantics)",
+          "evidence_cmd": "Multiple test runs confirmed HTTP 200 responses with search results for both ef=-1 and nprobe=0"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker container正常运行)",
+            "Race conditions (same request reproducible)",
+            "Request parameter typos (explicitly set invalid values)"
+          ],
+          "surviving": "param_validation_deferred_to_query_engine - REST v2 API层故意不做参数验证,将范围检查委托给底层查询引擎"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns,但属'参数验证分层设计'的架构决策"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "contract误读:候选声称存在ef/nprobe参数范围验证缺失,但(1)REST v2 API契约中无此类约束断言;(2)源码证实generateSearchParams()函数完全不验证范围,直接透传;(3)efConstruction>=1约束仅适用于索引创建(milvus_range_indexes_create_003),不适用于search参数。REST v2设计为API gateway层不做范围检查,委托给查询执行引擎。这是合法的架构选择,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

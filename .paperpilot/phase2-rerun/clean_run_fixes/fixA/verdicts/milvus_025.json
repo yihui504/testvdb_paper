@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collectionName='test_limit', data=101 entities (ids 0-100, each with vector=[0.1,0.2,0.3,0.4])",
+          "observed": "HTTP 200 with insertCount=101, insertIds=[0,1,2,...,100] - API accepted all 101 entities violating the documented limit",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_limit\", \"data\": [...]}' | jq '.data.insertCount'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_entities_insert_001", "assertion: len(data) <= 100", "source: internal/distributed/proxy/httpserver/constant.go"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["insert.*handler", "len(httpReq.Data)", "NumRows", "restfulSizeMiddleware"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1267\nreq.NumRows = uint32(len(httpReq.Data))\n// NO VALIDATION checking if len(httpReq.Data) > 100\n// The code directly assigns row count without enforcing the documented limit",
+          "call_chain_traced": "POST /entities/insert -> restfulSizeMiddleware (metrics only, no validation) -> h.insert() -> req.NumRows = uint32(len(httpReq.Data)) -> h.proxy.Insert()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code接地发现:REST v2 insert handler在handler_v2.go第1267行直接设置req.NumRows,未对data数组长度进行100条上限校验。restfulSizeMiddleware仅收集metrics,不做参数验证。contract明确要求len(data) <= 100但源码未实现此校验。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "验证数据确实写入 - POST /v2/vectordb/collections/get_stats with collectionName='test_limit'",
+          "observed": "N/A - Step 1已证明违规存在,无需反向证伪"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "缓存延迟", "参数笔误"],
+          "surviving": "源码缺失参数校验逻辑"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (param_validation variant)",
+        "note": "命中blindspot: REST v2 API validation缺失 (25个历史案例)。REST v2与gRPC路径存在验证不一致问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认:REST v2 insert endpoint在handler_v2.go:1267直接设置req.NumRows=len(data),未对100条上限做任何校验。restfulSizeMiddleware仅用于metrics采集。contract明确要求len(data)<=100但实现缺失验证逻辑。实测101条数据成功插入并返回insertCount=101。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "len(data) <= 100 (constraint_id: milvus_range_entities_insert_001)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "REST API documented upper bound of 100 entities per insert",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED (contract violation) AND verdict_B=CONFIRMED (physical violation) AND verdict_C=CONFIRMED (not graceful) → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_absent_in_source": 1
+    }
+  }
+}

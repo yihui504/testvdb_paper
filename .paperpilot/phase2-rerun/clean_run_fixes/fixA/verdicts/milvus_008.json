@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search WITHOUT annsField on single-vector-field collection",
+          "observed": "Search succeeded with HTTP 200, returning correct results: [id=0,1,2] with distance=1.0 and full vector data",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -d '{\"collectionName\":\"repro_test_dev_review\",\"data\":[[0.1,0.1,0.1,0.1]],\"limit\":3,\"outputFields\":[\"*\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["Candidate assumes annsField is required parameter, but source code shows it's optional (no binding:'required' in SearchReqV2 struct)", "Candidate assumes search without annsField is an error, but source code shows auto-detection logic for single vector field collections"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["entities+search endpoint: annsField parameter exists but is NOT marked as required in structured_contract.json", "No constraint exists stating annsField must be provided for single-vector-field collections"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": ["annsField", "SearchReqV2 struct", "generatePlaceholderGroup", "search without annsField"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 333-353\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tData             []interface{}          `json:\"data\"`\n\tIds              []interface{}          `json:\"ids\"`\n\tAnnsField        string                 `json:\"annsField\"`  // NO binding:\"required\" - OPTIONAL PARAMETER\n\t...\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1420-1444\nfunc generatePlaceholderGroup(ctx context.Context, body string, collSchema *schemapb.CollectionSchema, fieldName string) ([]byte, error) {\n\tvar err error\n\tvar vectorField *schemapb.FieldSchema\n\tif len(fieldName) == 0 {  // AUTO-DETECTION LOGIC for empty annsField\n\t\tfor _, field := range collSchema.Fields {\n\t\t\tif typeutil.IsVectorType(field.DataType) {\n\t\t\t\tif len(fieldName) == 0 {\n\t\t\t\t\tfieldName = field.Name  // AUTO-SELECT first vector field\n\t\t\t\t\tvectorField = field\n\t\t\t\t} else {\n\t\t\t\t\treturn nil, errors.New(\"search without annsField, but already found multiple vector fields: [\" + fieldName + \", \" + field.Name + \",,,]\")\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t} else {\n\t\tfor _, field := range collSchema.Fields {\n\t\t\tif field.Name == fieldName && typeutil.IsVectorType(field.DataType) {\n\t\t\t\tvectorField = field\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\t}\n\tif vectorField == nil {\n\t\treturn nil, errors.New(\"cannot find a vector field named: \" + fieldName)\n\t}\n\t...\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1581-1591\n// Search by vectors (existing logic)\nsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: proxy.AnnsFieldKey, Value: httpReq.AnnsField})\nbody, _ := c.Get(gin.BodyBytesKey)\nplaceholderGroup, err := generatePlaceholderGroup(ctx, string(body.([]byte)), collSchema, httpReq.AnnsField)\nif err != nil {\n\tlog.Ctx(ctx).Warn(\"high level restful api, search with vector invalid\", zap.Error(err))\n\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\tHTTPReturnCode:    merr.Code(merr.ErrIncorrectParameterFormat),\n\t\tHTTPReturnMessage: merr.ErrIncorrectParameterFormat.Error() + \", error: \" + err.Error(),\n\t})\n\treturn nil, err\n}",
+          "call_chain_traced": "SearchReqV2.AnsnField (optional) → search() handler → generatePlaceholderGroup() → auto-detects single vector field when annsField empty",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: annsField 在 SearchReqV2 结构体中未标记为 required(binding:'required'缺失),generatePlaceholderGroup 函数包含明确的自动检测逻辑:当 annsField 为空时,自动选择第一个向量字段。仅当存在多个向量字段且未提供 annsField 时才报错。这是 milvus 的 by-design 行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter to verify returned results match actual data",
+          "observed": "Query verification confirms ids [0,1,2] exist with vectors [0.1,0.1,0.1,0.1] - search results are CORRECT, not malformed",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -d '{\"collectionName\":\"repro_test_dev_review\",\"filter\":\"id in [0,1,2]\",\"outputFields\":[\"id\",\"vector\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "API semantics misunderstood: annsField is OPTIONAL for single-vector-field collections (by-design auto-detection)",
+            "Request parameter missing: Not a bug - annsField is designed to be optional when unambiguous",
+            "Expected behavior violation: No contract or documentation states annsField is required"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何 by_design 或 rejection 模式。但源代码明确显示这是 by-design 行为。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "milvus_008 声称搜索请求缺少必需的 annsField 参数导致违规,但源代码接地发现:1) SearchReqV2 结构体中 annsField 未标记为 required;2) generatePlaceholderGroup 函数包含明确的单向量字段自动检测逻辑,当 annsField 为空时自动选择第一个向量字段;3) 仅当集合存在多个向量字段且未提供 annsField 时才报错;4) 实测验证搜索返回正确结果。这是 milvus 为简化单向量字段集合使用而设计的 API 语义,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}
