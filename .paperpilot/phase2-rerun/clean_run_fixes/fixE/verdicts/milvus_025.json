@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with collectionName='test_limit', data=101 entities (id: 0-100, each with vector)",
+          "observed": "HTTP 200 with insertCount=101 and insertIds=[0,1,2,...,100] — API successfully inserted 101 entities despite contract constraint",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_limit\",\"data\":[{\"id\":0,\"vector\":[0.1,0.2,0.3,0.4]},...,{\"id\":100,\"vector\":[0.1,0.2,0.3,0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Raw request explicitly contained 101 entity objects in the data array (verified by counting JSON objects)",
+            "Collection exists and is properly loaded (insert succeeded with insertCount=101)",
+            "Vector dimension matches collection dimension (4D, no dimension error returned)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_insert_001",
+            "assertion_text: len(data) <= 100",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "func.*Insert.*InsertRequest",
+            "len(data).*100",
+            "NumRows.*validation",
+            "entities.*limit.*100"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/handler.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/distributed/proxy/httpserver/wrap_request.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/proxy/impl.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler.go line 335-346\nfunc (h *Handlers) handleInsert(c *gin.Context) (interface{}, error) {\n\twrappedReq := WrappedInsertRequest{}\n\terr := shouldBind(c, &wrappedReq)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\", errBadRequest, err)\n\t}\n\treq, err := wrappedReq.AsInsertRequest()\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"%w: convert body to pb failed: %v\", errBadRequest, err)\n\t}\n\treturn h.proxy.Insert(c, req)\n}\n\n// internal/proxy/impl.go line 2533-2580 (Insert function)\nfunc (node *Proxy) Insert(ctx context.Context, request *milvuspb.InsertRequest) (*milvuspb.MutationResult, error) {\n\tctx, sp := otel.Tracer(typeutil.ProxyRole).Start(ctx, \"Proxy-Insert\")\n\tdefer sp.End()\n\n\tif err := merr.CheckHealthy(node.GetStateCode()); err != nil {\n\t\treturn &milvuspb.MutationResult{Status: merr.Status(err)}, nil\n\t}\n\n\tlog := log.Ctx(ctx).With(\n\t\tzap.String(\"role\", typeutil.ProxyRole),\n\t\tzap.String(\"collection\", request.CollectionName),\n\t\tzap.Int(\"len(FieldsData)\", len(request.FieldsData)),\n\t\tzap.Uint32(\"NumRows\", request.NumRows),\n\t)\n\t// NO VALIDATION of NumRows <= 100 found in this function\n\tit := &insertTask{\n\t\tctx:       ctx,\n\t\tCondition: NewTaskCondition(ctx),\n\t\tinsertMsg: &msgstream.InsertMsg{\n\t\t\tInsertRequest: &msgpb.InsertRequest{\n\t\t\t\tFieldsData: request.FieldsData,\n\t\t\t\tNumRows:    uint64(request.NumRows),\n\t\t\t\t// NumRows is passed through WITHOUT any range check\n\t\t\t},\n\t\t},\n\t}\n}",
+          "call_chain_traced": "handleInsert (handler.go) → AsInsertRequest (wrap_request.go, no validation) → h.proxy.Insert (impl.go line 2533) → insertTask creation (NumRows passed through unchecked)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert 处理链(handleInsert→proxy.Insert)完全未对 NumRows 执行范围检查。contract 声称 len(data)<=100 但源码无此校验逻辑,直接透传给下游。这是真正的 Type1_IllegalSuccess 缺陷。"
+        },
+        "falsification": {
+          "pass": false,
+          "note": "无需证伪—复现已成功证明违规存在(101 entities 成功插入)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "请求参数错误(data array 确实包含 101 个对象)",
+            "Collection 未加载或不存在(insert 成功说明 collection 存在)",
+            "维度不匹配(vector dim=4 匹配 collection schema)",
+            "权限问题(HTTP 200 说明无 auth 错误)",
+            "数据类型错误(insert 成功说明 schema 匹配)"
+          ],
+          "surviving_explanation": "null",
+          "root_cause": "源码缺失 NumRows <= 100 范围校验"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中 blindspot: REST v2 与 gRPC 验证不一致是已知问题域。维护者明确将此类跨通道不一致视为缺陷并会修复。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "len(data) <= 100 (constraint_id: milvus_range_entities_insert_001)",
+          "assertion_text_quoted": "len(data) <= 100",
+          "api_observed_value": "insert with 101 entities succeeded (HTTP 200, insertCount=101)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "100 is a documented REST v2 API batch size limit for insert",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": "N/A",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "合同明文规定 len(data)<=100(milvus_range_entities_insert_001),实测 API 成功接受 101 entities 并返回 HTTP 200 + insertCount=101。源码接地证实:REST v2 insert 处理链(handler.go handleInsert → impl.go Insert)完全不检查 NumRows 范围,直接透传。这是典型的 Type1_IllegalSuccess(非法成功)—违反契约的输入未被拒绝。无平凡解释可排除。命中 developer_cognition 的 REST v2 盲点模式,维护者明确将此类跨通道验证不一致视为缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_absent_in_source": 1
+    }
+  }
+}

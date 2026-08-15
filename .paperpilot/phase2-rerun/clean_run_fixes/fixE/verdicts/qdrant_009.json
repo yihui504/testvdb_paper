@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with vectors={}, then PUT /collections/XXX/points with vector array",
+          "observed": "Collection creation succeeds with vectors={}. Point insertion with vector array fails with 400: 'Wrong input: Not existing vector name error'",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/dev_review_test -d '{\"vectors\": {}}'; curl -X PUT http://localhost:6333/collections/dev_review_test/points?wait=true -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes that a collection created with vectors={} should accept vector data via upsert",
+            "Oracle treats empty vectors config as 'payload-only mode' when it actually means 'no named vectors configured'",
+            "Oracle expects unnamed vector array to work when collection has no vector config"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_state_create_collection_001 - 'Collection creation accepts configuration literally; a collection created without vector config is valid for payload-only use, vector errors surface on first vector operation'",
+            "constraint_id: qdrant_type_upsert_points_003 - 'id type is integer (uint64) or UUID string; vector type is array of floats or object of named vectors; payload type is key-value object'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["check_named_vectors", "vector_name_not_exists", "PointStruct.*vector.*required", "VectorStruct"],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/segment/entry.rs",
+            "lib/segment/src/segment/segment_ops.rs",
+            "lib/api/src/rest/schema.rs",
+            "lib/api/src/rest/validate.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 1400-1411\n#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]\n#[serde(rename_all = \"snake_case\")]\npub struct PointStruct {\n    /// Point id\n    pub id: PointIdType,\n    /// Vectors\n    #[serde(alias = \"vectors\")]\n    #[validate(nested)]\n    pub vector: VectorStruct,  // REQUIRED field - no Option\n    /// Payload values (optional)\n    pub payload: Option<Payload>,\n}\n\n// lib/segment/src/common/mod.rs line 149-170\npub fn check_named_vectors(\n    vectors: &NamedVectors,\n    segment_config: &SegmentConfig,\n) -> OperationResult<()> {\n    for (vector_name, vector_data) in vectors.iter() {\n        check_vector(vector_name, &vector_data.into(), segment_config)?;\n    }\n    Ok(())\n}\n\nfn get_vector_config_or_error<'a>(\n    vector_name: &VectorName,\n    segment_config: &'a SegmentConfig,\n) -> OperationResult<&'a VectorDataConfig> {\n    segment_config\n        .vector_data\n        .get(vector_name)\n        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))  // Error source\n}",
+          "call_chain_traced": "PointStruct.vector (required) → upsert request → check_named_vectors → get_vector_config_or_error → vector_data.get(vector_name) returns None → OperationError::vector_name_not_exists",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: PointStruct 的 vector 字段是必需的(非 Option),且 check_named_vectors 会验证传入的 vector 名称是否在 segment_config.vector_data 中存在。vectors={} 的 collection 空的 vector_data HashMap,导致任何 vector 查找失败,抛出 VectorNameNotExists 错误。这是按设计工作的,不是 bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to insert point without vector field into empty-vectors collection",
+          "observed": "REST API schema validation rejects request with 'missing field `vector`' before it even reaches segment validation - vector is REQUIRED in PointStruct",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/XXX/points -d '{\"points\": [{\"id\": 2, \"payload\": {\"color\": \"red\"}}]}' returns 400 'missing field `vector`'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not an environment issue",
+            "Not a concurrency race",
+            "Not a caching/timing issue"
+          ],
+          "surviving": "API semantics by design - vector field is required in PointStruct regardless of collection config"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant_state_create_collection_001",
+        "developer_quote": "Collection creation accepts configuration literally; a collection created without vector config is valid for payload-only use, vector errors surface on first vector operation",
+        "note": "The developer stance explicitly states that collections without vector config are 'valid for payload-only use' but 'vector errors surface on first vector operation' - this 400 error IS the expected surface behavior."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "This is NOT a defect - it's by-design API behavior. The Oracle misunderstood Qdrant's empty-vectors collection semantics: 1) PointStruct.vector is a REQUIRED field in REST schema (non-Optional), 2) vectors={} means 'no named vectors configured' not 'payload-only mode', 3) attempting to insert vector data into a collection with no vector config correctly fails with VectorNameNotExists error. The contract constraint qdrant_state_create_collection_001 explicitly warns 'vector errors surface on first vector operation' for collections without vector config. The oracle's assertion that this should succeed is incorrect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

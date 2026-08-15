@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/batch with upsert operation containing 3 points, where point 6 has invalid vector dimension (3 instead of 4)",
+          "observed": "HTTP 400 with error 'Wrong input: Vector dimension error: expected dim: 4, got 3'. Collection count remained at 3 points (no new points added, including valid points 4 and 5)",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_batch2/points/batch' -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}' && curl -s -X POST 'http://localhost:6333/collections/test_batch2/points/count' -H 'Content-Type: application/json' -d '{\"exact\": true}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_state_batch_update_007 - assertion: 'Batch update operations may be partially applied on failure; atomicity is not guaranteed; clients must retry to reach a consistent state'",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["batch.*operations", "Vector dimension error", "do_batch_update_points"],
+          "files_examined": [
+            "src/common/update.rs (lines 772-915)",
+            "src/common/validate_vectors.rs (lines 1-154)",
+            "lib/collection/src/operations/point_ops.rs"
+          ],
+          "source_excerpt": "// src/common/update.rs lines 803-912\nfor operation in operations {\n    let current_update_result = match operation {\n        UpdateOperation::Upsert(operation) => {\n            let (result, usage) = do_upsert_points(\n                toc_provider.clone(),\n                collection_name.clone(),\n                operation.upsert,\n                internal_params,\n                params,\n                auth.clone(),\n                inference_params.clone(),\n                hw_measurement_acc.clone(),\n            )\n            .await?;  // <-- This '?' causes entire batch to fail on first error\n\n            inference_usage.merge_opt(usage);\n            result\n        }\n        // ... other operations follow same pattern with '.await?'\n    };\n\n    results.push(current_update_result);\n}\n\nOk((results, inference_usage.into_non_empty()))",
+          "call_chain_traced": "POST /collections/{name}/points/batch → do_batch_update_points (update.rs:772) → do_upsert_points (update.rs:806) → validate_vector_dimensions (validate_vectors.rs:13) → Returns Err → '.await?' propagates error → entire batch fails",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: do_batch_update_points 函数在第803-912行顺序处理每个 operation。当任一 operation 的 do_upsert_points 失败时(如第816行的 .await?),整个批次立即失败并返回错误,后续 operations 不会执行。这实现了'fail-fast'语义,而非 contract 声称的'partially applied'行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verified by checking point count after batch failure: POST /collections/test_batch2/points/count with exact=true returned count=3 (original points 1,2,3). None of the new points (4,5,6) were added, proving no partial application occurred.",
+          "observed": "Count check confirmed: HTTP 200 with {\"result\":{\"count\":3}}. Valid points 4 and 5 were NOT added despite having correct dimensions, confirming batch is atomic (fail-fast), not partially applied as contract suggests."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Docker, platform) - ruled out by clean repro",
+            "Race condition - ruled out by single-threaded sequential processing",
+            "Request parameter typo - ruled out, request format correct"
+          ],
+          "surviving": "contract_misread"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns[0].pattern",
+        "developer_quote": "Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design) (maintainers: 'batch operations are not promissed to be atomic')",
+        "note": "此候选命中 developer_cognition.json 中明确声明的 by-design 模式。开发者明确指出 'batch operations are not promised to be atomic',并建议用户 'must assume partial application and retry'。这表明当前行为(虽然实际源码显示是 fail-fast)属于 by-design 范畴,不是 bug。"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 可能误解了 contract 中 'partially applied' 的含义。Contract 明确说明 'Batch operations are NOT promised to be atomic; clients must retry',而实测和源码都显示当前实现是 fail-fast(任一 operation 失败则整批失败)。这与 contract 声明并不矛盾—— contract 说的是'不承诺原子性',而非'必须支持部分应用'。维护者已明确此行为是 by-design,用户应据此设计重试逻辑。无违规。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_state_batch_update_007: 'Batch update operations may be partially applied on failure; atomicity is not guaranteed; clients must retry to reach a consistent state'",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract 使用 'may be partially applied'(允许),而非 'must be partially applied'(要求)。实测为 fail-fast 并不违反此声明,因为 contract 只是不承诺原子性,并未要求必须支持部分应用。"
+        },
+        "physical": {
+          "objective_constraint": "No objective physical constraint for batch operations",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "developer_cognition.json 明确声明 'Batch operations are not promised to be atomic' 并建议用户 assume partial application and retry。源码虽显示 fail-fast 实现,但这是符合 contract 声明的(by-design),不是 bug。"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final_verdict=REFUTED (此非契约/物理违反,而是维护者明确的 by-design 行为)",
+        "final_verdict": "REFUTED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

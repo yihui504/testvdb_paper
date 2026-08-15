@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_018",
+      "endpoint": "collections+rename",
+      "defect_type": "Type4_StateLogicViolation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/rename {collectionName: test_rename_src, newCollectionName: test_rename_dst, dbName: default}",
+          "observed": "REQ 5: HTTP 200 with code 65535, message: 'duplicated new collection name default:test_rename_dst with other collection name or alias' - correctly rejected rename to existing collection name",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/collections/rename -X POST -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_rename_src\",\"newCollectionName\":\"test_rename_dst\",\"dbName\":\"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_rename_001 (source collection exists AND new collection name does NOT exist)",
+            "endpoint_registry: '200 on success; 400 if new name already exists'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["CheckIfCollectionRenamable", "renameCollection", "duplicated new collection name"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/ddl_callbacks_alter_collection_name.go",
+            "internal/rootcoord/meta_table.go"
+          ],
+          "source_excerpt": "internal/rootcoord/meta_table.go line 1126-1131:\n// check new collection already exists\ncoll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\nif coll != nil {\n    log.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n    return fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n}",
+          "call_chain_traced": "REST v2 rename handler → broadcastAlterCollectionForRenameCollection → CheckIfCollectionRenamable → getCollectionByNameInternal checks for existing collection/alias with target name",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:CheckIfCollectionRenamable 函数在第 1126-1131 行明确检查新集合名称是否已存在。如果新名称已被现有集合或别名占用，返回错误 'duplicated new collection name'。这是按设计的状态验证逻辑。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证场景：REQ 5 拒绝重命名到已存在的集合名 test_rename_dst (HTTP 200 code 65535)，REQ 6 确认 test_rename_dst 已存在，REQ 11 再次拒绝同名的重命名请求 (HTTP 200 code 65535)，证明系统正确执行了状态检查逻辑",
+          "observed": "API 正确拒绝了重命名到已存在集合名的请求，返回明确错误信息 'duplicated new collection name default:test_rename_dst with other collection name or alias'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "proper_state_validation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "命中维护者拒绝模式 RP-001 (expected_behavior)：系统正确检查并拒绝了无效状态转换（重命名到已存在的集合名）。这是符合设计预期的正确行为，不是缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "milvus_018 声称的重命名违规实际上是系统的正确状态验证行为。源码分析（CheckIfCollectionRenamable 函数 meta_table.go:1126-1131）显示系统在第 1126-1131 行明确检查新集合名称是否已被现有集合或别名占用。测试日志 REQ 5 和 REQ 11 都显示 API 正确拒绝了重命名到已存在的集合名 test_rename_dst，返回 HTTP 200 with code 65535 和错误信息 'duplicated new collection name default:test_rename_dst with other collection name or alias'。契约 milvus_state_collections_rename_001 明确规定 'source collection exists AND new collection name does NOT exist'。系统行为完全符合契约和源码设计，属于正确的状态验证逻辑，而非缺陷。这命中了 developer_cognition.json 中的 RP-001 拒绝模式（expected behavior）。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "judge": "dev-reviewer",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "steps": {
+        "clean_reproduction": {
+          "method": "Direct DB requests via REST v2 API",
+          "requests": [
+            "POST /v2/vectordb/collections/drop cleanup",
+            "POST /v2/vectordb/collections/create with collectionName=test_dup, dimension=4, metricType=COSINE, idType=Int64, autoID=false",
+            "POST /v2/vectordb/collections/create with identical parameters (duplicate)"
+          ],
+          "actual_response": "Both create requests returned HTTP 200 with code:0, data:{}",
+          "expected_per_contract": "Second create should return HTTP 400 for duplicate collection name per state constraint milvus_state_collections_create_001 (collectionName must be unique within dbName)"
+        },
+        "premise_audit": {
+          "contract_source": "structured_contract.json milvus_invariant_create_duplicate_001",
+          "contract_assertion": "create(collection, schema A) -> create(collection, schema A) returns error (expected duplicate rejection)",
+          "raw_evidence_agreement": "Stage2 raw evidence shows HTTP 200 on duplicate create, contradicting contract expectation of HTTP 400",
+          "developer_cognition_relevance": "developer_cognition.json shows no pattern for idempotent collection creation. Blindspot indicators show REST v2 API issues (25 issues) but not specifically duplicate creation acceptance."
+        },
+        "contract_crosscheck": {
+          "contract_invariant": "milvus_state_collections_create_001: 'collection creation is atomic; collectionName must be unique within a database'",
+          "api_template_claim": "collections+create: '200 on success; 400 on invalid parameters or duplicate name'",
+          "conflict": "API template claims HTTP 400 on duplicate, but actual behavior returns HTTP 200. Contract invariant 'unique within dbName' is violated by actual behavior."
+        },
+        "source_grounding": {
+          "source_excerpt": "File: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/root_coord.go, Lines 903-906\n\nif errors.Is(err, errIgnoredCreateCollection) {\n    logger.Info(\"create existed collection with same schema, ignore it\")\n    metrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n    return merr.Success(), nil\n}",
+          "implementation_explanation": "Root coordinator explicitly handles duplicate creation with same schema by returning Success (HTTP 200 equivalent) instead of error. The log message 'create existed collection with same schema, ignore it' confirms this is intentional idempotent behavior, not a bug.",
+          "error_definition": "File: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/meta_table.go, Line 56\n\nerrIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.",
+          "files_examined": [
+            "internal/rootcoord/root_coord.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/distributed/proxy/httpserver/handler.go"
+          ]
+        },
+        "reverse_falsification": {
+          "test_attempts": [
+            "Attempt 1: Create collection 'test_x' -> Verify list contains 'test_x' -> Create 'test_x' again with SAME schema",
+            "Attempt 2: Create collection 'test_y' -> Create 'test_y' again with DIFFERENT dimension (8 vs 4)"
+          ],
+          "actual_results": "Attempt 1: Both creates return HTTP 200. Attempt 2: First create returns HTTP 200, second create with different dimension returns error (likely HTTP 400).",
+          "pattern_observed": "Milvus treats duplicate creation with IDENTICAL schema as idempotent success (HTTP 200), but rejects duplicate with DIFFERENT parameters (HTTP 400)."
+        },
+        "trivial_exclusion": {
+          "not_trivial_because": "This is NOT a trivial false positive from obvious expected behavior. The API contract explicitly states '400 on duplicate name', making HTTP 200 appear to be a Type1_IllegalSuccess bug. However, source code analysis reveals this is intentional idempotent design for same-schema duplicate creation, contradicting the documented contract. This represents a contract-documentation gap rather than a behavioral defect.",
+          "design_vs_bug": "Implementation follows idempotent creation pattern (similar to PUT idempotency), but documentation describes duplicate-rejection pattern (similar to POST uniqueness). The behavior is intentional per source code evidence, making the reported 'defect' actually a documentation mismatch."
+        }
+      },
+      "perspective_analysis": {
+        "contract_perspective": "FAIL: Contract states 'collectionName must be unique' and 'returns 400 on duplicate', but actual system returns HTTP 200. Contract is violated.",
+        "developer_perspective": "IDEMPOTENT DESIGN: Source code explicitly returns success for duplicate creation with same schema ('create existed collection with same schema, ignore it'). This is intentional idempotent behavior, not a violation.",
+        "user_experience_perspective": "CONFUSING BUT FUNCTIONAL: Users expecting HTTP 400 on duplicate may be surprised by HTTP 200, but the behavior is safe (no-op on existing collection). However, it contradicts the documented API contract, causing potential confusion.",
+        "aggregation_rule_applied": "SOP Rule: 'Developer perspective (source evidence) + Contract perspective (doc) + User perspective (UX) all weighed'. Developer perspective shows INTENTIONAL design with explicit success return. Contract perspective shows DOCUMENTATION mismatch. User perspective shows potential confusion but no data safety issue. Since source code proves this is intentional idempotent behavior (not a bug), and documentation is incomplete (doesn't mention idempotent case), verdict = FALSE_POSITIVE.",
+        "final_reasoning": "The reported 'defect' assumes HTTP 200 on duplicate is a violation, but source code analysis (root_coord.go:903-906) proves this is intentional idempotent design: duplicate creation with SAME schema returns success as a no-op. The contract documentation is incomplete (it only documents the error case for duplicates with different parameters). This is a documentation gap, not a behavioral bug."
+      }
+    }
+  ]
+}

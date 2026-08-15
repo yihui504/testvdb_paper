@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_dev_review/points/search with {\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}",
+          "observed": "API returned HTTP 200 OK with result: [{\"id\":1,\"version\":1,\"score\":1.0}]. Search request with hnsw_ef=0 succeeded without error.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_hnsw_dev_review/points/search\" -H \"Content-Type: application/json\" -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect claim depends on the assumption that 'hnsw_ef parameter is applicable only when exact=false' (from contract constraint qdrant_range_search_points_006)",
+            "The claim assumes that hnsw_ef=0 is an invalid or disallowed value",
+            "The claim assumes the API should reject hnsw_ef when exact is not explicitly set to false"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_search_points_006 - 'hnsw_ef parameter is applicable only when exact=false'",
+            "constraint_id: qdrant_state_search_points_009 - 'When exact=true, search uses brute-force; when exact=false, search uses HNSW'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "hnsw_ef",
+            "SearchParams",
+            "search_max_hnsw_ef",
+            "check_strict_mode"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/collection/src/collection_manager/segments_searcher.rs",
+            "lib/collection/src/operations/verification/mod.rs",
+            "lib/storage/src/content_manager/conversions.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/types.rs line 590-617\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash)]\n#[serde(rename_all = \"snake_case\")]\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\n    /// Search without approximation. If set to true, search may run long but with exact results.\n    #[serde(default)]\n    pub exact: bool,\n\n    /// Quantization params\n    #[serde(default)]\n    #[validate(nested)]\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub quantization: Option<QuantizationSearchParams>,\n\n    /// If enabled, the engine will only perform search among indexed or small segments.\n    /// Using this option prevents slow searches in case of delayed index, but does not\n    /// guarantee that all uploaded vectors will be included in search results\n    #[serde(default)]\n    pub indexed_only: bool,\n\n    /// ACORN search params\n    #[serde(default)]\n    #[validate(nested)]\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub acorn: Option<AcornSearchParams>,\n}\n\n// lib/collection/src/collection_manager/segments_searcher.rs line 711-724\nlet top = if use_sampling {\n    let ef_limit = search_params\n        .params\n        .and_then(|p| p.hnsw_ef)\n        .or_else(|| get_hnsw_ef_construct(segment_config, search_params.vector_name));\n    sampling_limit(\n        search_params.top,\n        ef_limit,\n        segment_points,\n        segment_query_context.available_point_count(),\n    )\n} else {\n    search_params.top\n};",
+          "call_chain_traced": "SearchRequest.params.hnsw_ef → SearchParams struct (Optional field, no validation) → segments_searcher.rs (optional usage, no range check) → No validation enforcing 'only applicable when exact=false'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: SearchParams结构中hnsw_ef是Option<usize>类型(可选参数),没有任何验证逻辑检查其与exact参数的关系。segments_searcher.rs中hnsw_ef被可选性地使用,但没有强制执行'h仅当exact=false时适用'的约束。源码显示这是by-design的宽松处理,不是bug。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Tested multiple scenarios: (1) search without hnsw_ef - HTTP 200 OK, (2) search with hnsw_ef=0 and exact=true - HTTP 200 OK, (3) search with hnsw_ef=0 and exact=false - HTTP 200 OK",
+          "observed": "All variations returned HTTP 200 OK with identical results. The API does NOT reject or behave differently based on the combination of hnsw_ef and exact parameters. This contradicts the contract claim that hnsw_ef is 'only applicable when exact=false'. The actual implementation accepts hnsw_ef regardless of exact value."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment or platform issues",
+            "Concurrency or race conditions",
+            "Caching or optimization delays",
+            "Request parameter typos"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "命中blindspot_indicator: 'Parameter validation on filter/condition APIs' - 开发者认知表明参数验证边界是已知盲点。但本案中,源码显示宽松处理是by-design而非遗漏验证。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "原oracle声称'hnsw_ef参数仅当exact=false时适用'违反契约,但源码接地证明这是by-design的API语义:SearchParams中hnsw_ef为Optional字段,segments_searcher.rs中可选使用,无强制验证exact=false的前置条件。实际测试证实API接受任意hnsw_ef值(包括0)且与exact参数无关。契约约束qdrant_range_search_points_006描述的是文档层面的'预期用法'(applicable when),而非强制校验规则。源码与实测均表明这是宽松的API设计,非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}
