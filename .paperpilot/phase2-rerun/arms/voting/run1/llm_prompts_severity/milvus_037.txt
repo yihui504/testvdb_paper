@@ -1,0 +1,196 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_037",
+ "endpoint": "entities+insert",
+ "defect_type": "type_coercion",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_state_insert_collection_001",
+    "endpoint": "entities+insert",
+    "type": "state_constraint",
+    "description": "Insert requires existing collection",
+    "assertion": "collection MUST exist before insert",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_insert_then_get_001",
+    "endpoint": "entities+insert",
+    "description": "Inserted entities should be retrievable",
+    "source_url": "https://milvus.io/docs/insert-update.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_assert_insert_success_001",
+    "endpoint": "entities+insert",
+    "description": "Inserting valid data succeeds",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collection+create",
+    "kind": "state_constraints",
+    "description": "Primary key constraint",
+    "assertion": "Exactly one primary field per collection with type Int64 or VarChar",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "INT64 scalar data type",
+    "assertion": "dataType == Int64",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "BOOL scalar data type",
+    "assertion": "dataType == Bool",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "VARCHAR scalar data type",
+    "assertion": "dataType == VARCHAR",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST insert string '123' into INT64 field -> http=200, code=0",
+   "[c1_q] query int64_f -> http=200, code=101, message: collection not loaded",
+   "[c2] REST insert int 123 into VarChar field -> http=200, code=0",
+   "[c2_q] query varchar_f -> http=200, code=101, message: collection not loaded",
+   "[c3] REST insert string 'true' into BOOL field -> http=200, code=0",
+   "[c3_q] query bool_f -> http=200, code=101, message: collection not loaded"
+  ],
+  "log_file": "output_milvus_037.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_037", "vote": "is_defect", "grade": "A", "score": 9, "evidence_summary": "REST insert accepted type mismatches: string '123' for Int64 field, integer 123 for VarChar field, and string 'true' for Bool field, all with HTTP 200 and code=0", "rationale": "Type1 contract violations: the schema defines int64_f as Int64, varchar_f as VarChar, and bool_f as Bool; the REST endpoint accepted incorrect types for each field (string for Int64, int for VarChar, string for Bool) and auto-coerced them, violating strict type enforcement"}
+[output log full text: output_milvus_037.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 1, "vector": [0.1, 0.2, 0.3, 0.4], "int64_f": "123"}]}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[1]}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==1", "outputFields": ["int64_f"]}
+=== RESP 2 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359099812566979]"}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 2, "vector": [0.1, 0.2, 0.3, 0.4], "varchar_f": 123}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[2]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==2", "outputFields": ["varchar_f"]}
+=== RESP 4 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359099812566979]"}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 3, "vector": [0.1, 0.2, 0.3, 0.4], "bool_f": "true"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[3]}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==3", "outputFields": ["bool_f"]}
+=== RESP 6 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359099812566979]"}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 1, "vector": [0.1, 0.2, 0.3, 0.4], "int64_f": "123"}]}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[1]}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==1", "outputFields": ["int64_f"]}
+=== RESP 8 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359869997930433]"}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 2, "vector": [0.1, 0.2, 0.3, 0.4], "varchar_f": 123}]}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[2]}}
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==2", "outputFields": ["varchar_f"]}
+=== RESP 10 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359869997930433]"}
+
+=== REQ 11 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_coerce", "data": [{"id": 3, "vector": [0.1, 0.2, 0.3, 0.4], "bool_f": "true"}]}
+=== RESP 11 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[3]}}
+
+=== REQ 12 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_coerce", "filter": "id==3", "outputFields": ["bool_f"]}
+=== RESP 12 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359869997930433]"}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_037", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

@@ -1,0 +1,65 @@
+{
+ "defect_id": "weaviate_010",
+ "endpoint": "DELETE /batch/objects",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_range_batch_delete_001",
+    "endpoint": "DELETE /batch/objects",
+    "type": "range_constraint",
+    "description": "max deletions per request = QUERY_MAXIMUM_RESULTS (default 10000)",
+    "assertion": "deleted count <= QUERY_MAXIMUM_RESULTS",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "POST /schema",
+    "kind": "type_constraints",
+    "description": "class field must be CamelCase (capital first letter, alphanumeric only)",
+    "assertion": "class matches regex ^[A-Z][a-zA-Z0-9]*$",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /schema",
+    "kind": "type_constraints",
+    "description": "properties[].dataType must be array of valid types or class references",
+    "assertion": "properties[].dataType is array of strings; first-capital values are class references",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] POST schema BoundaryTestBatchDelete -> http=200",
+   "[c2] batch delete with class but missing where -> http=500, body: validate: empty match.where clause",
+   "[c3] batch delete with empty match {} -> http=500, body: validate: empty match.class clause"
+  ],
+  "log_file": "output_weaviate_010.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.38.2"
+ }
+}

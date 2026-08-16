@@ -1,0 +1,135 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "weaviate_010",
+ "endpoint": "DELETE /batch/objects",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_range_batch_delete_001",
+    "endpoint": "DELETE /batch/objects",
+    "type": "range_constraint",
+    "description": "max deletions per request = QUERY_MAXIMUM_RESULTS (default 10000)",
+    "assertion": "deleted count <= QUERY_MAXIMUM_RESULTS",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "POST /schema",
+    "kind": "type_constraints",
+    "description": "class field must be CamelCase (capital first letter, alphanumeric only)",
+    "assertion": "class matches regex ^[A-Z][a-zA-Z0-9]*$",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /schema",
+    "kind": "type_constraints",
+    "description": "properties[].dataType must be array of valid types or class references",
+    "assertion": "properties[].dataType is array of strings; first-capital values are class references",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] POST schema BoundaryTestBatchDelete -> http=200",
+   "[c2] batch delete with class but missing where -> http=500, body: validate: empty match.where clause",
+   "[c3] batch delete with empty match {} -> http=500, body: validate: empty match.class clause"
+  ],
+  "log_file": "output_weaviate_010.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.38.2"
+ }
+}
+[execution_results.json (session-level, your candidate is weaviate_010)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "weaviate_010",
+    "log_file": "output_weaviate_010.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "weaviate_010": "=== REQ 1 ===\nDELETE http://localhost:18080/v1/schema/BoundaryTestBatchDelete\n=== RESP 1 ===\nstatus: 200\nbody: \n\n=== REQ 2 ===\nPOST http://localhost:18080/v1/schema\npayload: {\"class\": \"BoundaryTestBatchDelete\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"title\", \"dataType\": [\"text\"]}]}\n=== RESP 2 ===\nstatus: 200\nbody: {\"class\":\"BoundaryTestBatchDelete\",\"invertedIndexConfig\":{\"bm25\":{\"b\":0.75,\"k1\":1.2},\"cleanupIntervalSeconds\":60,\"stopwords\":{\"additions\":null,\"preset\":\"en\",\"removals\":null},\"usingBlockMaxWAND\":true},\"multiTenancyConfig\":{\"autoTenantActivation\":false,\"autoTenantCreation\":false,\"enabled\":false},\"properties\":[{\"dataType\":[\"text\"],\"indexFilterable\":true,\"indexRangeFilters\":false,\"indexSearchable\":true,\"name\":\"title\",\"tokenization\":\"word\"}],\"shardingConfig\":{\"virtualPerPhysical\":128,\"desiredCount\":1,\"actualCount\":1,\"desiredVirtualCount\":128,\"actualVirtualCount\":128,\"key\":\"_id\",\"strategy\":\"hash\",\"function\":\"murmur3\"},\"vectorIndexConfig\":{\"skip\":false,\"cleanupIntervalSeconds\":300,\"maxConnections\":32,\"efConstruction\":128,\"ef\":-1,\"dynamicEfMin\":100,\"dynamicEfMax\":500,\"dynamicEfFactor\":8,\"vectorCacheMaxObjects\":1000000000000,\"flatSearchCutoff\":40000,\"distance\":\"cosine\",\"pq\":{\"enabled\":false,\"bitCompression\":false,\"segments\":0,\"centroids\":256,\"trainingLimit\":100000,\"encoder\":{\"type\":\"kmeans\",\"distribution\":\"log-normal\"}},\"bq\":{\"enabled\":false},\"sq\":{\"enabled\":false,\"trainingLimit\":100000,\"rescoreLimit\":20},\"rq\":{\"enabled\":false,\"bits\":8,\"rescoreLimit\":20},\"filterStrategy\":\"acorn\",\"multivector\":{\"enabled\":false,\"muvera\":{\"enabled\":false,\"ksim\":4,\"dprojections\":16,\"repetitions\":10},\"aggregation\":\"maxSim\"},\"skipDefaultQuantization\":false,\"trackDefaultQuantization\":false},\"vectorIndexType\":\"hnsw\",\"vectorizer\":\"none\",\"replicationConfig\":{\"deletionStrategy\":\"TimeBasedResolution\",\"factor\":1,\"asyncEnabled\":false}}\n\n\n=== REQ 3 ===\nDELETE http://localhost:18080/v1/batch/objects\npayload: {\"match\": {\"class\": \"BoundaryTestBatchDelete\"}, \"output\": \"minimal\"}\n=== RESP 3 ===\nstatus: 500\nbody: {\"error\":[{\"message\":\"validate: empty match.where clause\"}]}\n\n\n=== REQ 4 ===\nDELETE http://localhost:18080/v1/batch/objects\npayload: {\"match\": {}, \"output\": \"minimal\"}\n=== RESP 4 ===\nstatus: 500\nbody: {\"error\":[{\"message\":\"validate: empty match.class clause\"}]}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_weaviate_010.log]
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/BoundaryTestBatchDelete
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "BoundaryTestBatchDelete", "vectorizer": "none", "properties": [{"name": "title", "dataType": ["text"]}]}
+=== RESP 2 ===
+status: 200
+body: {"class":"BoundaryTestBatchDelete","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":[{"dataType":["text"],"indexFilterable":true,"indexRangeFilters":false,"indexSearchable":true,"name":"title","tokenization":"word"}],"shardingConfig":{"virtualPerPhysical":128,"desiredCount":1,"actualCount":1,"desiredVirtualCount":128,"actualVirtualCount":128,"key":"_id","strategy":"hash","function":"murmur3"},"vectorIndexConfig":{"skip":false,"cleanupIntervalSeconds":300,"maxConnections":32,"efConstruction":128,"ef":-1,"dynamicEfMin":100,"dynamicEfMax":500,"dynamicEfFactor":8,"vectorCacheMaxObjects":1000000000000,"flatSearchCutoff":40000,"distance":"cosine","pq":{"enabled":false,"bitCompression":false,"segments":0,"centroids":256,"trainingLimit":100000,"encoder":{"type":"kmeans","distribution":"log-normal"}},"bq":{"enabled":false},"sq":{"enabled":false,"trainingLimit":100000,"rescoreLimit":20},"rq":{"enabled":false,"bits":8,"rescoreLimit":20},"filterStrategy":"acorn","multivector":{"enabled":false,"muvera":{"enabled":false,"ksim":4,"dprojections":16,"repetitions":10},"aggregation":"maxSim"},"skipDefaultQuantization":false,"trackDefaultQuantization":false},"vectorIndexType":"hnsw","vectorizer":"none","replicationConfig":{"deletionStrategy":"TimeBasedResolution","factor":1,"asyncEnabled":false}}
+
+
+=== REQ 3 ===
+DELETE http://localhost:18080/v1/batch/objects
+payload: {"match": {"class": "BoundaryTestBatchDelete"}, "output": "minimal"}
+=== RESP 3 ===
+status: 500
+body: {"error":[{"message":"validate: empty match.where clause"}]}
+
+
+=== REQ 4 ===
+DELETE http://localhost:18080/v1/batch/objects
+payload: {"match": {}, "output": "minimal"}
+=== RESP 4 ===
+status: 500
+body: {"error":[{"message":"validate: empty match.class clause"}]}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "weaviate_010", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

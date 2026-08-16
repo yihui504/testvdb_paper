@@ -1,0 +1,144 @@
+{
+ "defect_id": "milvus_007",
+ "endpoint": "entities+search",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "type_constraint",
+    "description": "filter must be a valid boolean expression string",
+    "assertion": "filter is a valid boolean expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_get_001",
+    "endpoint": "entities+get",
+    "type": "type_constraint",
+    "description": "id must match the collection primary key type (Int64 or VarChar)",
+    "assertion": "id type matches collection primary key type",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "type_constraint",
+    "description": "data must be array of float arrays, annsField must be a vector field, limit must be positive integer",
+    "assertion": "data is array[array[float]] AND annsField is a vector field AND limit > 0",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "vector dimensions in data must match collection vector dimension",
+    "assertion": "vector dimension == collection dimension",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_search_002",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "limit + offset must be < 16384",
+    "assertion": "limit + offset < 16384",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "state_constraint",
+    "description": "Deleted entities cannot be recovered",
+    "assertion": "delete is irreversible",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "state_constraint",
+    "description": "Collection must be loaded; index must exist on annsField",
+    "assertion": "collection is loaded AND index exists on annsField",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_search_001",
+    "endpoint": "entities+search",
+    "description": "Search returns 400 on vector dimension mismatch",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_delete_001",
+    "endpoint": "entities+delete",
+    "description": "Delete returns 400 on invalid filter expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_get_001",
+    "endpoint": "entities+get",
+    "description": "Get entities returns 400 if id type mismatches collection schema",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+drop",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+load",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string for load",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Load.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+rename",
+    "kind": "type_constraints",
+    "description": "collectionName and newCollectionName must be non-empty strings",
+    "assertion": "collectionName is non-empty string AND newCollectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Rename.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "partitions+create",
+    "kind": "type_constraints",
+    "description": "partitionName must be a non-empty string",
+    "assertion": "partitionName is non-empty string",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "databases+drop",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "200 on success; 400 if not empty or is default",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] empty query vector -> MilvusException code=65535 (server message: ...vector type must be the same, field vector - type VECTOR_FLOAT, search info type VECTOR_SPARSE_U32_F32...)"
+  ],
+  "log_file": "output_milvus_007.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.10"
+ }
+}

@@ -1,0 +1,137 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_040",
+ "endpoint": "entities+insert",
+ "defect_type": "semantics",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_state_insert_collection_001",
+    "endpoint": "entities+insert",
+    "type": "state_constraint",
+    "description": "Insert requires existing collection",
+    "assertion": "collection MUST exist before insert",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_insert_then_get_001",
+    "endpoint": "entities+insert",
+    "description": "Inserted entities should be retrievable",
+    "source_url": "https://milvus.io/docs/insert-update.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_assert_insert_success_001",
+    "endpoint": "entities+insert",
+    "description": "Inserting valid data succeeds",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "JSON scalar data type",
+    "assertion": "dataType == JSON",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Supported data type: JSON",
+    "assertion": "dataType == 'JSON'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Valid dataType value: JSON",
+    "assertion": "dataType == 'JSON'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST insert plain-string into JSON field -> http=200, code=0",
+   "[c2] gRPC insert plain string -> DataNotMatchException code=1, message: Invalid JSON string",
+   "[c_q] query meta -> http=200, code=0, data: id=100 meta=plain_string",
+   "[c_grpc_get] gRPC get -> error: unexpected character (REST-written value unreadable)"
+  ],
+  "log_file": "output_milvus_040.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_040", "vote": "is_defect", "grade": "A", "score": 9, "evidence_summary": "REST insert accepts plain string value for JSON field type without validation, while gRPC correctly rejects the same operation with Invalid JSON string error", "rationale": "clear Type1 violation: the REST API should validate that JSON fields contain valid JSON structures, but it accepts a plain string and returns success, violating type constraints while gRPC correctly rejects the invalid data format"}
+[output log full text: output_milvus_040.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "repro_<tracked>", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "schema": {"autoId": false, "enableDynamicField": false, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}, {"fieldName": "meta", "dataType": "JSON"}]}}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "indexParams": [{"fieldName": "vector", "metricType": "COSINE", "indexType": "AUTOINDEX"}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "repro_<tracked>", "dbName": "default"}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "data": [{"id": 100, "vector": [0.1, 0.2, 0.3, 0.4], "meta": "plain_string"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[100]}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_040", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

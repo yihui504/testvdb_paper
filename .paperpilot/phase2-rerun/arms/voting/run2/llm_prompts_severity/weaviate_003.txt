@@ -1,0 +1,206 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "weaviate_003",
+ "endpoint": "/schema",
+ "defect_type": "param_validation",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_type_schema_create_001",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "class field must be CamelCase",
+    "assertion": "properties.class matches /^[A-Z][a-zA-Z0-9]*$/",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_002",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "vectorIndexType must be one of allowed index types",
+    "assertion": "properties.vectorIndexType in {hnsw, flat, dynamic, bwes}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_003",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "properties[].tokenization must be a valid enum value",
+    "assertion": "properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "type": "type_constraint",
+    "description": "Tenant.activityStatus on create must be ACTIVE or INACTIVE",
+    "assertion": "body[].activityStatus in {ACTIVE, INACTIVE}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_tenants_update_001",
+    "endpoint": "/schema/{className}/tenants PUT",
+    "type": "type_constraint",
+    "description": "Tenant.activityStatus on update must be ACTIVE, INACTIVE, or OFFLOADED",
+    "assertion": "body[].activityStatus in {ACTIVE, INACTIVE, OFFLOADED}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "type": "type_constraint",
+    "description": "searchable.algorithm must be blockmax (WAND->BlockMax migration only; downgrade rejected)",
+    "assertion": "body.searchable.algorithm == 'blockmax'",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_range_schema_replication_001",
+    "endpoint": "/schema POST",
+    "type": "range_constraint",
+    "description": "replicationConfig.factor is an integer (default 1)",
+    "assertion": "replicationConfig.factor >= 1",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.85
+   },
+   {
+    "constraint_id": "weaviate_state_schema_delete_001",
+    "endpoint": "/schema/{className} DELETE",
+    "type": "state_constraint",
+    "description": "deleting a collection permanently deletes all data objects in the collection",
+    "assertion": "after DELETE /schema/{className}, GET /objects?class={className} returns empty",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_tenants_delete_001",
+    "endpoint": "/schema/{className}/tenants DELETE",
+    "type": "state_constraint",
+    "description": "deleting tenants permanently deletes all tenant data",
+    "assertion": "after DELETE tenants, GET tenant returns 404 and its data is gone",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_state_schema_update_001",
+    "endpoint": "/schema/{className} PUT",
+    "type": "state_constraint",
+    "description": "PUT does NOT add properties (use POST /schema/{className}/properties) and does NOT rename",
+    "assertion": "PUT /schema/{className} does not change properties count or names",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_state_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "type": "state_constraint",
+    "description": "index update triggers async reindex (202); 409 if conflicting reindex running; 503 if distributed tasks disabled",
+    "assertion": "PUT returns 202 (submitted) | 409 (conflict) | 503 (disabled)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_001",
+    "endpoint": "/schema POST",
+    "description": "creating collection with disallowed vectorIndexType returns 422 RestrictionViolationResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_002",
+    "endpoint": "/schema POST",
+    "description": "exceeding collections/shards usage limit returns 429 UsageLimitExceededResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "description": "downgrading from blockmax algorithm is rejected",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "assertion_id": "weaviate_behavioral_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "description": "exceeding tenant usage limit returns 429 with limit: tenants",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "/replication/scale GET",
+    "kind": "range_constraints",
+    "description": "replicationFactor must be at least 1",
+    "assertion": "replicationFactor >= 1",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   }
+  ],
+  "api_template": {
+   "endpoint": "/replication/scale",
+   "method": "GET",
+   "description": null,
+   "doc_quote": "Get replication scale plan; replicationFactor min 1",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": null,
+  "log_file": "output_weaviate_003.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.37.4"
+ }
+}
+[evidence vote]
+{"defect_id": "weaviate_003", "vote": "not_defect", "grade": "D", "score": 0, "evidence_summary": "Schema creation with replication factor=-1 returns 200; GET shows normalized value factor=1, API gracefully clamps invalid value to valid range", "rationale": "The API handles the invalid replication factor (-1) gracefully by normalizing it to 1 (minimum valid value); while it could reject the value explicitly, the current behavior of auto-correction is reasonable and doesn't cause functional issues"}
+[output log full text: output_weaviate_003.log]
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/TestRep
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "TestRep", "vectorizer": "none", "replicationConfig": {"factor": -1}, "vectorIndexConfig": {"distance": "cosine"}, "properties": [{"name": "text", "dataType": ["text"]}]}
+=== RESP 2 ===
+status: 200
+body: {"class":"TestRep","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":[{"dataType":["text"],"indexFilterable":true,"indexRangeFilters":false,"indexSearchable":true,"name":"text","tokenization":"word"}],"replicationConfig":{"asyncEnabled":false,"deletionStrategy":"TimeBasedResolution","factor":1},"shardingConfig":{"virtualPerPhysical":128,"desiredCount":1,"actualCount":1,"desiredVirtualCount":128,"actualVirtualCount":128,"key":"_id","strategy":"hash","function":"murmur3"},"vectorIndexConfig":{"skip":false,"cleanupIntervalSeconds":300,"maxConnections":32,"efConstruction":128,"ef":-1,"dynamicEfMin":100,"dynamicEfMax":500,"dynamicEfFactor":8,"vectorCacheMaxObjects":1000000000000,"flatSearchCutoff":40000,"distance":"cosine","pq":{"enabled":false,"bitCompression":false,"segments":0,"centroids":256,"trainingLimit":100000,"encoder":{"type":"kmeans","distribution":"log-normal"}},"bq":{"enabled":false},"sq":{"enabled":false,"trainingLimit":100000,"rescoreLimit":20},"rq":{"enabled":false,"bits":8,"rescoreLimit":20},"filterStrategy":"acorn","multivector":{"enabled":false,"muvera":{"enabled":false,"ksim":4,"dprojections":16,"repetitions":10},"aggregation":"maxSim"},"skipDefaultQuantization":false,"trackDefaultQuantization":false},"vectorIndexType":"hnsw","vectorizer":"none"}
+
+
+=== REQ 3 ===
+GET http://localhost:18080/v1/schema/TestRep
+=== RESP 3 ===
+status: 200
+body: {"class":"TestRep","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":[{"dataType":["text"],"indexFilterable":true,"indexRangeFilters":false,"indexSearchable":true,"name":"text","tokenization":"word"}],"replicationConfig":{"asyncEnabled":false,"deletionStrategy":"TimeBasedResolution","factor":1},"shardingConfig":{"actualCount":1,"actualVirtualCount":128,"desiredCount":1,"desiredVirtualCount":128,"function":"murmur3","key":"_id","strategy":"hash","virtualPerPhysical":128},"vectorIndexConfig":{"bq":{"enabled":false},"cleanupIntervalSeconds":300,"distance":"cosine","dynamicEfFactor":8,"dynamicEfMax":500,"dynamicEfMin":100,"ef":-1,"efConstruction":128,"filterStrategy":"acorn","flatSearchCutoff":40000,"maxConnections":32,"multivector":{"aggregation":"maxSim","enabled":false,"muvera":{"dprojections":16,"enabled":false,"ksim":4,"repetitions":10}},"pq":{"bitCompression":false,"centroids":256,"enabled":false,"encoder":{"distribution":"log-normal","type":"kmeans"},"segments":0,"trainingLimit":100000},"rq":{"bits":8,"enabled":false,"rescoreLimit":20},"skip":false,"skipDefaultQuantization":false,"sq":{"enabled":false,"rescoreLimit":20,"trainingLimit":100000},"trackDefaultQuantization":false,"vectorCacheMaxObjects":1000000000000},"vectorIndexType":"hnsw","vectorizer":"none"}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "weaviate_003", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

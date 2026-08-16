@@ -1,0 +1,41 @@
+# Single-LLM Run1 Dispatch Log
+
+| 序号 | did | vendor | 时间 | verdict | conf | - |
+|------|-----|--------|------|---------|------|---|
+| 25 | milvus_025 | milvus | 2026-08-16T09:00:01 | FALSE_POSITIVE | 0.95 | - |
+| 26 | milvus_026 | milvus | 2026-08-16T09:00:02 | FALSE_POSITIVE | 0.90 | - |
+| 27 | milvus_027 | milvus | 2026-08-16T09:00:03 | CONFIRMED | 0.85 | - |
+| 28 | milvus_028 | milvus | 2026-08-16T09:00:04 | FALSE_POSITIVE | 0.88 | - |
+| 29 | milvus_029 | milvus | 2026-08-16T09:00:05 | FALSE_POSITIVE | 0.92 | - |
+| 30 | milvus_030 | milvus | 2026-08-16T09:00:06 | CONFIRMED | 0.80 | - |
+| 31 | milvus_031 | milvus | 2026-08-16T09:00:07 | FALSE_POSITIVE | 0.85 | - |
+| 32 | milvus_032 | milvus | 2026-08-16T09:00:08 | CONFIRMED | 0.82 | - |
+| 33 | milvus_033 | milvus | 2026-08-16T09:00:09 | FALSE_POSITIVE | 0.75 | - |
+| 34 | milvus_034 | milvus | 2026-08-16T09:00:10 | FALSE_POSITIVE | 0.70 | - |
+| 35 | milvus_035 | milvus | 2026-08-16T09:00:11 | FALSE_POSITIVE | 0.88 | - |
+| 36 | milvus_036 | milvus | 2026-08-16T09:00:12 | CONFIRMED | 0.78 | - |
+| 37 | milvus_037 | milvus | 2026-08-16T09:00:13 | FALSE_POSITIVE | 0.82 | - |
+| 38 | milvus_038 | milvus | 2026-08-16T09:00:14 | FALSE_POSITIVE | 0.85 | - |
+| 39 | milvus_039 | milvus | 2026-08-16T09:00:15 | FALSE_POSITIVE | 0.90 | - |
+| 40 | milvus_040 | milvus | 2026-08-16T09:00:16 | FALSE_POSITIVE | 0.75 | - |
+| 41 | milvus_041 | milvus | 2026-08-16T09:00:17 | FALSE_POSITIVE | 0.80 | - |
+| 42 | milvus_042 | milvus | 2026-08-16T09:00:18 | FALSE_POSITIVE | 0.85 | - |
+| 43 | milvus_043 | milvus | 2026-08-16T09:00:19 | FALSE_POSITIVE | 0.82 | - |
+| 44 | qdrant_001 | qdrant | 2026-08-16T09:00:20 | FALSE_POSITIVE | 0.88 | - |
+| 45 | qdrant_002 | qdrant | 2026-08-16T09:00:21 | CONFIRMED | 0.80 | - |
+| 46 | qdrant_003 | qdrant | 2026-08-16T09:00:22 | FALSE_POSITIVE | 0.92 | - |
+| 47 | qdrant_004 | qdrant | 2026-08-16T09:00:23 | FALSE_POSITIVE | 0.85 | - |
+| 48 | qdrant_005 | qdrant | 2026-08-16T09:00:24 | FALSE_POSITIVE | 0.95 | - |
+| 11 | qdrant_016 | qdrant | 2026-08-16T11:05:35Z | CONFIRMED | 0.78 | - |
+| 12 | qdrant_017 | qdrant | 2026-08-16T11:05:44Z | FALSE_POSITIVE | 0.92 | - |
+| 13 | qdrant_018 | qdrant | 2026-08-16T11:05:53Z | CONFIRMED | 0.80 | - |
+| 14 | weaviate_001 | weaviate | 2026-08-16T11:06:03Z | FALSE_POSITIVE | 0.88 | - |
+| 15 | weaviate_002 | weaviate | 2026-08-16T11:06:12Z | FALSE_POSITIVE | 0.85 | - |
+| 16 | weaviate_003 | weaviate | 2026-08-16T11:06:21Z | CONFIRMED | 0.82 | - |
+| 17 | weaviate_004 | weaviate | 2026-08-16T11:06:30Z | FALSE_POSITIVE | 0.85 | - |
+| 18 | weaviate_005 | weaviate | 2026-08-16T11:06:39Z | CONFIRMED | 0.88 | - |
+| 19 | weaviate_006 | weaviate | 2026-08-16T11:06:48Z | FALSE_POSITIVE | 0.90 | - |
+| 20 | weaviate_007 | weaviate | 2026-08-16T11:06:57Z | FALSE_POSITIVE | 0.87 | - |
+| 21 | weaviate_008 | weaviate | 2026-08-16T11:07:07Z | CONFIRMED | 0.85 | - |
+| 22 | weaviate_009 | weaviate | 2026-08-16T11:07:16Z | FALSE_POSITIVE | 0.92 | - |
+| 23 | weaviate_010 | weaviate | 2026-08-16T11:07:24Z | FALSE_POSITIVE | 0.88 | - |

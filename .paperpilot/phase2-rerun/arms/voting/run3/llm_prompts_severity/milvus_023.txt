@@ -1,0 +1,110 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_023",
+ "endpoint": "collections+drop",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_collections_drop_001",
+    "endpoint": "collections+drop",
+    "type": "type_constraint",
+    "description": "collectionName must be a non-empty string",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_collections_drop_001",
+    "endpoint": "collections+drop",
+    "type": "state_constraint",
+    "description": "Drop is irreversible; all data in the collection is permanently deleted",
+    "assertion": "drop is irreversible AND all data is permanently deleted",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_collections_drop_001",
+    "endpoint": "collections+drop",
+    "description": "Drop collection returns 200 on success; dropping a non-existent collection is treated as idempotent success (200, empty data)",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+drop",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+load",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string for load",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Load.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+rename",
+    "kind": "type_constraints",
+    "description": "collectionName and newCollectionName must be non-empty strings",
+    "assertion": "collectionName is non-empty string AND newCollectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Rename.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "partitions+create",
+    "kind": "type_constraints",
+    "description": "partitionName must be a non-empty string",
+    "assertion": "partitionName is non-empty string",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] drop non-existent collection -> http=200, code=0"
+  ],
+  "log_file": "output_milvus_023.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.17"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_023", "vote": "not_defect", "grade": "D", "score": 0, "evidence_summary": "Drop of non-existent collection succeeded with HTTP 200", "rationale": "No evidence of contract violation - the system correctly implements idempotent drop as documented: 'dropping a non-existent collection is treated as idempotent success (200, empty data)'"}
+[output log full text: output_milvus_023.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "nonexistent_collection_xyz", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_023", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

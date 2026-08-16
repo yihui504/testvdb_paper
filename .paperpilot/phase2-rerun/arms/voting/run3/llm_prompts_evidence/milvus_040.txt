@@ -1,0 +1,153 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "milvus_040",
+ "endpoint": "entities+insert",
+ "defect_type": "semantics",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_state_insert_collection_001",
+    "endpoint": "entities+insert",
+    "type": "state_constraint",
+    "description": "Insert requires existing collection",
+    "assertion": "collection MUST exist before insert",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_insert_then_get_001",
+    "endpoint": "entities+insert",
+    "description": "Inserted entities should be retrievable",
+    "source_url": "https://milvus.io/docs/insert-update.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_assert_insert_success_001",
+    "endpoint": "entities+insert",
+    "description": "Inserting valid data succeeds",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "JSON scalar data type",
+    "assertion": "dataType == JSON",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Supported data type: JSON",
+    "assertion": "dataType == 'JSON'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Valid dataType value: JSON",
+    "assertion": "dataType == 'JSON'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST insert plain-string into JSON field -> http=200, code=0",
+   "[c2] gRPC insert plain string -> DataNotMatchException code=1, message: Invalid JSON string",
+   "[c_q] query meta -> http=200, code=0, data: id=100 meta=plain_string",
+   "[c_grpc_get] gRPC get -> error: unexpected character (REST-written value unreadable)"
+  ],
+  "log_file": "output_milvus_040.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[execution_results.json (session-level, your candidate is milvus_040)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "milvus_040",
+    "log_file": "output_milvus_040.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "milvus_040": "=== REQ 1 ===\nPOST http://localhost:19530/v2/vectordb/collections/drop\npayload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\"}\n=== RESP 1 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 2 ===\nPOST http://localhost:19530/v2/vectordb/collections/create\npayload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\", \"schema\": {\"autoId\": false, \"enableDynamicField\": false, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 4}}, {\"fieldName\": \"meta\", \"dataType\": \"JSON\"}]}}\n=== RESP 2 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 3 ===\nPOST http://localhost:19530/v2/vectordb/indexes/create\npayload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"COSINE\", \"indexType\": \"AUTOINDEX\"}]}\n=== RESP 3 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 4 ===\nPOST http://localhost:19530/v2/vectordb/collections/load\npayload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\"}\n=== RESP 4 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 5 ===\nPOST http://localhost:19530/v2/vectordb/entities/insert\npayload: {\"collectionName\": \"repro_<tracked>\", \"dbName\": \"default\", \"data\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}\n=== RESP 5 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":1,\"insertIds\":[100]}}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_milvus_040.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "repro_<tracked>", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "schema": {"autoId": false, "enableDynamicField": false, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}, {"fieldName": "meta", "dataType": "JSON"}]}}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "indexParams": [{"fieldName": "vector", "metricType": "COSINE", "indexType": "AUTOINDEX"}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "repro_<tracked>", "dbName": "default"}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "repro_<tracked>", "dbName": "default", "data": [{"id": 100, "vector": [0.1, 0.2, 0.3, 0.4], "meta": "plain_string"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[100]}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_040", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

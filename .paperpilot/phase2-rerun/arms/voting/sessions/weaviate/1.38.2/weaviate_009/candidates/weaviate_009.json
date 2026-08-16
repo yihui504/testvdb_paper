@@ -1,0 +1,105 @@
+{
+ "defect_id": "weaviate_009",
+ "endpoint": "POST /batch/objects",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_type_object_id_001",
+    "endpoint": "POST /objects",
+    "type": "type_constraint",
+    "description": "id must be valid UUID format (v4 or v7)",
+    "assertion": "id matches UUID regex (version 4 or 7)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_object_vector_001",
+    "endpoint": "POST /objects",
+    "type": "type_constraint",
+    "description": "vector must be array of floats",
+    "assertion": "vector is array of number (float)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_batch_idempotent_001",
+    "endpoint": "POST /batch/objects",
+    "type": "state_constraint",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_batch_reject_all_001",
+    "endpoint": "POST /batch/objects",
+    "type": "state_constraint",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_post_object_exists_001",
+    "endpoint": "POST /objects",
+    "description": "POST fails with error if id already exists (use PUT to replace or PATCH to update)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_batch_reject_partial_001",
+    "endpoint": "POST /batch/objects",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "DELETE /schema/{className}",
+    "kind": "state_constraints",
+    "description": "permanently deletes all data objects and references (cascade delete)",
+    "assertion": "deleting collection cascades to all objects and references",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "assertion",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] POST schema BatchVectorBugRepro -> http=200",
+   "[c2] control: singular POST with vector=[] -> http=200",
+   "[c3] batch with empty-vector item -> http=200, per-item statuses=None"
+  ],
+  "log_file": "output_weaviate_009.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.38.2"
+ }
+}

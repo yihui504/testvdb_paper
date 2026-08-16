@@ -1,0 +1,175 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "weaviate_009",
+ "endpoint": "POST /batch/objects",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_type_object_id_001",
+    "endpoint": "POST /objects",
+    "type": "type_constraint",
+    "description": "id must be valid UUID format (v4 or v7)",
+    "assertion": "id matches UUID regex (version 4 or 7)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_object_vector_001",
+    "endpoint": "POST /objects",
+    "type": "type_constraint",
+    "description": "vector must be array of floats",
+    "assertion": "vector is array of number (float)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_batch_idempotent_001",
+    "endpoint": "POST /batch/objects",
+    "type": "state_constraint",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_batch_reject_all_001",
+    "endpoint": "POST /batch/objects",
+    "type": "state_constraint",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_post_object_exists_001",
+    "endpoint": "POST /objects",
+    "description": "POST fails with error if id already exists (use PUT to replace or PATCH to update)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_batch_reject_partial_001",
+    "endpoint": "POST /batch/objects",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "assertion": "usage limit exceeded rejects entire batch, no partial success",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "state_constraints",
+    "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)",
+    "assertion": "batch create is idempotent; existing UUIDs are replaced",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "DELETE /schema/{className}",
+    "kind": "state_constraints",
+    "description": "permanently deletes all data objects and references (cascade delete)",
+    "assertion": "deleting collection cascades to all objects and references",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "POST /batch/objects",
+    "kind": "assertion",
+    "description": "429 WHOLE BATCH rejected (no partial fill)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] POST schema BatchVectorBugRepro -> http=200",
+   "[c2] control: singular POST with vector=[] -> http=200",
+   "[c3] batch with empty-vector item -> http=200, per-item statuses=None"
+  ],
+  "log_file": "output_weaviate_009.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.38.2"
+ }
+}
+[execution_results.json (session-level, your candidate is weaviate_009)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "weaviate_009",
+    "log_file": "output_weaviate_009.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "weaviate_009": "=== REQ 1 ===\nDELETE http://localhost:18080/v1/schema/BatchVectorBugRepro\n=== RESP 1 ===\nstatus: 200\nbody: \n\n=== REQ 2 ===\nPOST http://localhost:18080/v1/schema\npayload: {\"class\": \"BatchVectorBugRepro\", \"vectorizer\": \"none\", \"vectorIndexType\": \"hnsw\", \"vectorIndexConfig\": {\"distance\": \"cosine\"}}\n=== RESP 2 ===\nstatus: 200\nbody: {\"class\":\"BatchVectorBugRepro\",\"invertedIndexConfig\":{\"bm25\":{\"b\":0.75,\"k1\":1.2},\"cleanupIntervalSeconds\":60,\"stopwords\":{\"additions\":null,\"preset\":\"en\",\"removals\":null},\"usingBlockMaxWAND\":true},\"multiTenancyConfig\":{\"autoTenantActivation\":false,\"autoTenantCreation\":false,\"enabled\":false},\"properties\":null,\"shardingConfig\":{\"virtualPerPhysical\":128,\"desiredCount\":1,\"actualCount\":1,\"desiredVirtualCount\":128,\"actualVirtualCount\":128,\"key\":\"_id\",\"strategy\":\"hash\",\"function\":\"murmur3\"},\"vectorIndexConfig\":{\"skip\":false,\"cleanupIntervalSeconds\":300,\"maxConnections\":32,\"efConstruction\":128,\"ef\":-1,\"dynamicEfMin\":100,\"dynamicEfMax\":500,\"dynamicEfFactor\":8,\"vectorCacheMaxObjects\":1000000000000,\"flatSearchCutoff\":40000,\"distance\":\"cosine\",\"pq\":{\"enabled\":false,\"bitCompression\":false,\"segments\":0,\"centroids\":256,\"trainingLimit\":100000,\"encoder\":{\"type\":\"kmeans\",\"distribution\":\"log-normal\"}},\"bq\":{\"enabled\":false},\"sq\":{\"enabled\":false,\"trainingLimit\":100000,\"rescoreLimit\":20},\"rq\":{\"enabled\":false,\"bits\":8,\"rescoreLimit\":20},\"filterStrategy\":\"acorn\",\"multivector\":{\"enabled\":false,\"muvera\":{\"enabled\":false,\"ksim\":4,\"dprojections\":16,\"repetitions\":10},\"aggregation\":\"maxSim\"},\"skipDefaultQuantization\":false,\"trackDefaultQuantization\":false},\"vectorIndexType\":\"hnsw\",\"vectorizer\":\"none\",\"replicationConfig\":{\"deletionStrategy\":\"TimeBasedResolution\",\"factor\":1,\"asyncEnabled\":false}}\n\n\n=== REQ 3 ===\nPOST http://localhost:18080/v1/objects\npayload: {\"class\": \"BatchVectorBugRepro\", \"properties\": {\"name\": \"control-singular\"}, \"vector\": []}\n=== RESP 3 ===\nstatus: 200\nbody: {\"class\":\"BatchVectorBugRepro\",\"creationTimeUnix\":1786647802626,\"id\":\"472773d8-7342-495c-9ea5-8d57c46fee08\",\"lastUpdateTimeUnix\":1786647802626,\"properties\":{\"name\":\"control-singular\"}}\n\n\n=== REQ 4 ===\nPOST http://localhost:18080/v1/batch/objects\npayload: {\"objects\": [{\"class\": \"BatchVectorBugRepro\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"properties\": {\"name\": \"valid-item\"}, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"class\": \"BatchVectorBugRepro\", \"id\": \"22222222-2222-4222-8222-222222222222\", \"properties\": {\"name\": \"bad-empty-vector\"}, \"vector\": []}]}\n=== RESP 4 ===\nstatus: 200\nbody: [{\"class\":\"BatchVectorBugRepro\",\"creationTimeUnix\":1786647802646,\"id\":\"11111111-1111-4111-8111-111111111111\",\"lastUpdateTimeUnix\":1786647802646,\"properties\":{\"name\":\"valid-item\"},\"vector\":[0.1,0.2,0.3,0.4],\"deprecations\":null,\"result\":{\"status\":\"SUCCESS\"}},{\"class\":\"BatchVectorBugRepro\",\"creationTimeUnix\":1786647802646,\"id\":\"22222222-2222-4222-8222-222222222222\",\"lastUpdateTimeUnix\":1786647802646,\"properties\":{\"name\":\"bad-empty-vector\"},\"deprecations\":null,\"result\":{\"status\":\"SUCCESS\"}}]\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_weaviate_009.log]
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/BatchVectorBugRepro
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "BatchVectorBugRepro", "vectorizer": "none", "vectorIndexType": "hnsw", "vectorIndexConfig": {"distance": "cosine"}}
+=== RESP 2 ===
+status: 200
+body: {"class":"BatchVectorBugRepro","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":null,"shardingConfig":{"virtualPerPhysical":128,"desiredCount":1,"actualCount":1,"desiredVirtualCount":128,"actualVirtualCount":128,"key":"_id","strategy":"hash","function":"murmur3"},"vectorIndexConfig":{"skip":false,"cleanupIntervalSeconds":300,"maxConnections":32,"efConstruction":128,"ef":-1,"dynamicEfMin":100,"dynamicEfMax":500,"dynamicEfFactor":8,"vectorCacheMaxObjects":1000000000000,"flatSearchCutoff":40000,"distance":"cosine","pq":{"enabled":false,"bitCompression":false,"segments":0,"centroids":256,"trainingLimit":100000,"encoder":{"type":"kmeans","distribution":"log-normal"}},"bq":{"enabled":false},"sq":{"enabled":false,"trainingLimit":100000,"rescoreLimit":20},"rq":{"enabled":false,"bits":8,"rescoreLimit":20},"filterStrategy":"acorn","multivector":{"enabled":false,"muvera":{"enabled":false,"ksim":4,"dprojections":16,"repetitions":10},"aggregation":"maxSim"},"skipDefaultQuantization":false,"trackDefaultQuantization":false},"vectorIndexType":"hnsw","vectorizer":"none","replicationConfig":{"deletionStrategy":"TimeBasedResolution","factor":1,"asyncEnabled":false}}
+
+
+=== REQ 3 ===
+POST http://localhost:18080/v1/objects
+payload: {"class": "BatchVectorBugRepro", "properties": {"name": "control-singular"}, "vector": []}
+=== RESP 3 ===
+status: 200
+body: {"class":"BatchVectorBugRepro","creationTimeUnix":1786647802626,"id":"472773d8-7342-495c-9ea5-8d57c46fee08","lastUpdateTimeUnix":1786647802626,"properties":{"name":"control-singular"}}
+
+
+=== REQ 4 ===
+POST http://localhost:18080/v1/batch/objects
+payload: {"objects": [{"class": "BatchVectorBugRepro", "id": "11111111-1111-4111-8111-111111111111", "properties": {"name": "valid-item"}, "vector": [0.1, 0.2, 0.3, 0.4]}, {"class": "BatchVectorBugRepro", "id": "22222222-2222-4222-8222-222222222222", "properties": {"name": "bad-empty-vector"}, "vector": []}]}
+=== RESP 4 ===
+status: 200
+body: [{"class":"BatchVectorBugRepro","creationTimeUnix":1786647802646,"id":"11111111-1111-4111-8111-111111111111","lastUpdateTimeUnix":1786647802646,"properties":{"name":"valid-item"},"vector":[0.1,0.2,0.3,0.4],"deprecations":null,"result":{"status":"SUCCESS"}},{"class":"BatchVectorBugRepro","creationTimeUnix":1786647802646,"id":"22222222-2222-4222-8222-222222222222","lastUpdateTimeUnix":1786647802646,"properties":{"name":"bad-empty-vector"},"deprecations":null,"result":{"status":"SUCCESS"}}]
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "weaviate_009", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

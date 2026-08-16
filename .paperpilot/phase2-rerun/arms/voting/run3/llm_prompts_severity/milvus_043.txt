@@ -1,0 +1,156 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_043",
+ "endpoint": "entities+search",
+ "defect_type": "semantics",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_range_hnsw_ef_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "ef parameter for HNSW search",
+    "assertion": "ef in [1, 2147483647]",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_ivf_nprobe_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "IVF nprobe must be in range [1, nlist]",
+    "assertion": "nprobe >= 1 AND nprobe <= nlist",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_ivf_flat_nprobe_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "nprobe parameter for IVF_FLAT search",
+    "assertion": "nprobe in [1, nlist]",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_ivf_pq_nprobe_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "nprobe parameter for IVF_PQ search",
+    "assertion": "nprobe in [1, nlist]",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_ivf_sq8_nprobe_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "nprobe parameter for IVF_SQ8 search",
+    "assertion": "nprobe in [1, nlist]",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_scann_nprobe_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "nprobe parameter for SCANN search",
+    "assertion": "nprobe in [1, nlist]",
+    "source_url": "https://milvus.io/docs/index.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_search_load_001",
+    "endpoint": "entities+search",
+    "type": "state_constraint",
+    "description": "Search requires collection to be loaded",
+    "assertion": "collection MUST be loaded before search",
+    "source_url": "https://milvus.io/docs/single-vector-search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_search_requires_load_001",
+    "endpoint": "entities+search",
+    "type": "state_constraint",
+    "description": "Collection must be loaded before searching",
+    "assertion": "collection.load_state == 'loaded' before search",
+    "source_url": "https://milvus.io/docs/single-vector-search.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_assert_search_empty_001",
+    "endpoint": "entities+search",
+    "description": "Searching empty collection returns empty results",
+    "source_url": "https://milvus.io/docs/single-vector-search.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+create",
+    "kind": "state_constraints",
+    "description": "Collection must have exactly one primary key",
+    "assertion": "isPrimary MUST be true for exactly one field",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST search with strictGroupSize=true, groupSize=5 -> http=200, code=0, returned 15 results",
+   "[c1_grpc] gRPC search with strict_group_size -> returned 15 results"
+  ],
+  "log_file": "output_milvus_043.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_043", "vote": "not_defect", "grade": "D", "score": 0, "evidence_summary": "HTTP 200 response for search with strictGroupSize=true and groupSize=2, returning 15 results successfully", "rationale": "Log shows API accepting search with groupSize=2, strictGroupSize=true with code=0 and returning 15 results across 5 groups (cat values 0-4); no documented constraint in expected contract_constraints specifies exact strictGroupSize behavior or requires groups to have exactly groupSize results, and API handles the request successfully, indicating this is acceptable behavior"}
+[output log full text: output_milvus_043.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "gs_demo", "data": [[0.5, 0.5, 0.5, 0.5]], "limit": 15, "groupParams": {"groupByField": "cat", "groupSize": 2, "strictGroupSize": true}, "outputFields": ["cat"]}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"cat":4,"distance":0.9667964,"id":14},{"cat":3,"distance":0.964861,"id":13},{"cat":2,"distance":0.96265984,"id":12},{"cat":1,"distance":0.96018463,"id":11},{"cat":0,"distance":0.95742714,"id":10},{"cat":4,"distance":0.9543795,"id":9},{"cat":3,"distance":0.9510345,"id":8},{"cat":2,"distance":0.9473851,"id":7},{"cat":1,"distance":0.943425,"id":6},{"cat":0,"distance":0.9391486,"id":5},{"cat":4,"distance":0.93455064,"id":4},{"cat":3,"distance":0.929627,"id":3},{"cat":2,"distance":0.92437416,"id":2},{"cat":1,"distance":0.91878945,"id":1},{"cat":0,"distance":0.9128709,"id":0}],"topks":[15]}
+
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "gs_demo", "data": [[0.5, 0.5, 0.5, 0.5]], "limit": 15, "groupParams": {"groupByField": "cat", "groupSize": 2, "strictGroupSize": true}, "outputFields": ["cat"]}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"cat":4,"distance":0.9667964,"id":14},{"cat":3,"distance":0.964861,"id":13},{"cat":2,"distance":0.96265984,"id":12},{"cat":1,"distance":0.96018463,"id":11},{"cat":0,"distance":0.95742714,"id":10},{"cat":4,"distance":0.9543795,"id":9},{"cat":3,"distance":0.9510345,"id":8},{"cat":2,"distance":0.9473851,"id":7},{"cat":1,"distance":0.943425,"id":6},{"cat":0,"distance":0.9391486,"id":5},{"cat":4,"distance":0.93455064,"id":4},{"cat":3,"distance":0.929627,"id":3},{"cat":2,"distance":0.92437416,"id":2},{"cat":1,"distance":0.91878945,"id":1},{"cat":0,"distance":0.9128709,"id":0}],"topks":[15]}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_043", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

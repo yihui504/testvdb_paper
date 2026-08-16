@@ -1,0 +1,222 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "weaviate_003",
+ "endpoint": "/schema",
+ "defect_type": "param_validation",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_type_schema_create_001",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "class field must be CamelCase",
+    "assertion": "properties.class matches /^[A-Z][a-zA-Z0-9]*$/",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_002",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "vectorIndexType must be one of allowed index types",
+    "assertion": "properties.vectorIndexType in {hnsw, flat, dynamic, bwes}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_003",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "properties[].tokenization must be a valid enum value",
+    "assertion": "properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "type": "type_constraint",
+    "description": "Tenant.activityStatus on create must be ACTIVE or INACTIVE",
+    "assertion": "body[].activityStatus in {ACTIVE, INACTIVE}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_tenants_update_001",
+    "endpoint": "/schema/{className}/tenants PUT",
+    "type": "type_constraint",
+    "description": "Tenant.activityStatus on update must be ACTIVE, INACTIVE, or OFFLOADED",
+    "assertion": "body[].activityStatus in {ACTIVE, INACTIVE, OFFLOADED}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "type": "type_constraint",
+    "description": "searchable.algorithm must be blockmax (WAND->BlockMax migration only; downgrade rejected)",
+    "assertion": "body.searchable.algorithm == 'blockmax'",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_range_schema_replication_001",
+    "endpoint": "/schema POST",
+    "type": "range_constraint",
+    "description": "replicationConfig.factor is an integer (default 1)",
+    "assertion": "replicationConfig.factor >= 1",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.85
+   },
+   {
+    "constraint_id": "weaviate_state_schema_delete_001",
+    "endpoint": "/schema/{className} DELETE",
+    "type": "state_constraint",
+    "description": "deleting a collection permanently deletes all data objects in the collection",
+    "assertion": "after DELETE /schema/{className}, GET /objects?class={className} returns empty",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_state_tenants_delete_001",
+    "endpoint": "/schema/{className}/tenants DELETE",
+    "type": "state_constraint",
+    "description": "deleting tenants permanently deletes all tenant data",
+    "assertion": "after DELETE tenants, GET tenant returns 404 and its data is gone",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_state_schema_update_001",
+    "endpoint": "/schema/{className} PUT",
+    "type": "state_constraint",
+    "description": "PUT does NOT add properties (use POST /schema/{className}/properties) and does NOT rename",
+    "assertion": "PUT /schema/{className} does not change properties count or names",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "constraint_id": "weaviate_state_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "type": "state_constraint",
+    "description": "index update triggers async reindex (202); 409 if conflicting reindex running; 503 if distributed tasks disabled",
+    "assertion": "PUT returns 202 (submitted) | 409 (conflict) | 503 (disabled)",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_001",
+    "endpoint": "/schema POST",
+    "description": "creating collection with disallowed vectorIndexType returns 422 RestrictionViolationResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_002",
+    "endpoint": "/schema POST",
+    "description": "exceeding collections/shards usage limit returns 429 UsageLimitExceededResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_index_update_001",
+    "endpoint": "/schema/{className}/indexes/{propertyName} PUT",
+    "description": "downgrading from blockmax algorithm is rejected",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   },
+   {
+    "assertion_id": "weaviate_behavioral_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "description": "exceeding tenant usage limit returns 429 with limit: tenants",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "/replication/scale GET",
+    "kind": "range_constraints",
+    "description": "replicationFactor must be at least 1",
+    "assertion": "replicationFactor >= 1",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.9
+   }
+  ],
+  "api_template": {
+   "endpoint": "/replication/scale",
+   "method": "GET",
+   "description": null,
+   "doc_quote": "Get replication scale plan; replicationFactor min 1",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": null,
+  "log_file": "output_weaviate_003.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.37.4"
+ }
+}
+[execution_results.json (session-level, your candidate is weaviate_003)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "weaviate_003",
+    "log_file": "output_weaviate_003.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "weaviate_003": "=== REQ 1 ===\nDELETE http://localhost:18080/v1/schema/TestRep\n=== RESP 1 ===\nstatus: 200\nbody: \n\n=== REQ 2 ===\nPOST http://localhost:18080/v1/schema\npayload: {\"class\": \"TestRep\", \"vectorizer\": \"none\", \"replicationConfig\": {\"factor\": -1}, \"vectorIndexConfig\": {\"distance\": \"cosine\"}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}\n=== RESP 2 ===\nstatus: 200\nbody: {\"class\":\"TestRep\",\"invertedIndexConfig\":{\"bm25\":{\"b\":0.75,\"k1\":1.2},\"cleanupIntervalSeconds\":60,\"stopwords\":{\"additions\":null,\"preset\":\"en\",\"removals\":null},\"usingBlockMaxWAND\":true},\"multiTenancyConfig\":{\"autoTenantActivation\":false,\"autoTenantCreation\":false,\"enabled\":false},\"properties\":[{\"dataType\":[\"text\"],\"indexFilterable\":true,\"indexRangeFilters\":false,\"indexSearchable\":true,\"name\":\"text\",\"tokenization\":\"word\"}],\"replicationConfig\":{\"asyncEnabled\":false,\"deletionStrategy\":\"TimeBasedResolution\",\"factor\":1},\"shardingConfig\":{\"virtualPerPhysical\":128,\"desiredCount\":1,\"actualCount\":1,\"desiredVirtualCount\":128,\"actualVirtualCount\":128,\"key\":\"_id\",\"strategy\":\"hash\",\"function\":\"murmur3\"},\"vectorIndexConfig\":{\"skip\":false,\"cleanupIntervalSeconds\":300,\"maxConnections\":32,\"efConstruction\":128,\"ef\":-1,\"dynamicEfMin\":100,\"dynamicEfMax\":500,\"dynamicEfFactor\":8,\"vectorCacheMaxObjects\":1000000000000,\"flatSearchCutoff\":40000,\"distance\":\"cosine\",\"pq\":{\"enabled\":false,\"bitCompression\":false,\"segments\":0,\"centroids\":256,\"trainingLimit\":100000,\"encoder\":{\"type\":\"kmeans\",\"distribution\":\"log-normal\"}},\"bq\":{\"enabled\":false},\"sq\":{\"enabled\":false,\"trainingLimit\":100000,\"rescoreLimit\":20},\"rq\":{\"enabled\":false,\"bits\":8,\"rescoreLimit\":20},\"filterStrategy\":\"acorn\",\"multivector\":{\"enabled\":false,\"muvera\":{\"enabled\":false,\"ksim\":4,\"dprojections\":16,\"repetitions\":10},\"aggregation\":\"maxSim\"},\"skipDefaultQuantization\":false,\"trackDefaultQuantization\":false},\"vectorIndexType\":\"hnsw\",\"vectorizer\":\"none\"}\n\n\n=== REQ 3 ===\nGET http://localhost:18080/v1/schema/TestRep\n=== RESP 3 ===\nstatus: 200\nbody: {\"class\":\"TestRep\",\"invertedIndexConfig\":{\"bm25\":{\"b\":0.75,\"k1\":1.2},\"cleanupIntervalSeconds\":60,\"stopwords\":{\"additions\":null,\"preset\":\"en\",\"removals\":null},\"usingBlockMaxWAND\":true},\"multiTenancyConfig\":{\"autoTenantActivation\":false,\"autoTenantCreation\":false,\"enabled\":false},\"properties\":[{\"dataType\":[\"text\"],\"indexFilterable\":true,\"indexRangeFilters\":false,\"indexSearchable\":true,\"name\":\"text\",\"tokenization\":\"word\"}],\"replicationConfig\":{\"asyncEnabled\":false,\"deletionStrategy\":\"TimeBasedResolution\",\"factor\":1},\"shardingConfig\":{\"actualCount\":1,\"actualVirtualCount\":128,\"desiredCount\":1,\"desiredVirtualCount\":128,\"function\":\"murmur3\",\"key\":\"_id\",\"strategy\":\"hash\",\"virtualPerPhysical\":128},\"vectorIndexConfig\":{\"bq\":{\"enabled\":false},\"cleanupIntervalSeconds\":300,\"distance\":\"cosine\",\"dynamicEfFactor\":8,\"dynamicEfMax\":500,\"dynamicEfMin\":100,\"ef\":-1,\"efConstruction\":128,\"filterStrategy\":\"acorn\",\"flatSearchCutoff\":40000,\"maxConnections\":32,\"multivector\":{\"aggregation\":\"maxSim\",\"enabled\":false,\"muvera\":{\"dprojections\":16,\"enabled\":false,\"ksim\":4,\"repetitions\":10}},\"pq\":{\"bitCompression\":false,\"centroids\":256,\"enabled\":false,\"encoder\":{\"distribution\":\"log-normal\",\"type\":\"kmeans\"},\"segments\":0,\"trainingLimit\":100000},\"rq\":{\"bits\":8,\"enabled\":false,\"rescoreLimit\":20},\"skip\":false,\"skipDefaultQuantization\":false,\"sq\":{\"enabled\":false,\"rescoreLimit\":20,\"trainingLimit\":100000},\"trackDefaultQuantization\":false,\"vectorCacheMaxObjects\":1000000000000},\"vectorIndexType\":\"hnsw\",\"vectorizer\":\"none\"}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_weaviate_003.log]
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/TestRep
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "TestRep", "vectorizer": "none", "replicationConfig": {"factor": -1}, "vectorIndexConfig": {"distance": "cosine"}, "properties": [{"name": "text", "dataType": ["text"]}]}
+=== RESP 2 ===
+status: 200
+body: {"class":"TestRep","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":[{"dataType":["text"],"indexFilterable":true,"indexRangeFilters":false,"indexSearchable":true,"name":"text","tokenization":"word"}],"replicationConfig":{"asyncEnabled":false,"deletionStrategy":"TimeBasedResolution","factor":1},"shardingConfig":{"virtualPerPhysical":128,"desiredCount":1,"actualCount":1,"desiredVirtualCount":128,"actualVirtualCount":128,"key":"_id","strategy":"hash","function":"murmur3"},"vectorIndexConfig":{"skip":false,"cleanupIntervalSeconds":300,"maxConnections":32,"efConstruction":128,"ef":-1,"dynamicEfMin":100,"dynamicEfMax":500,"dynamicEfFactor":8,"vectorCacheMaxObjects":1000000000000,"flatSearchCutoff":40000,"distance":"cosine","pq":{"enabled":false,"bitCompression":false,"segments":0,"centroids":256,"trainingLimit":100000,"encoder":{"type":"kmeans","distribution":"log-normal"}},"bq":{"enabled":false},"sq":{"enabled":false,"trainingLimit":100000,"rescoreLimit":20},"rq":{"enabled":false,"bits":8,"rescoreLimit":20},"filterStrategy":"acorn","multivector":{"enabled":false,"muvera":{"enabled":false,"ksim":4,"dprojections":16,"repetitions":10},"aggregation":"maxSim"},"skipDefaultQuantization":false,"trackDefaultQuantization":false},"vectorIndexType":"hnsw","vectorizer":"none"}
+
+
+=== REQ 3 ===
+GET http://localhost:18080/v1/schema/TestRep
+=== RESP 3 ===
+status: 200
+body: {"class":"TestRep","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":[{"dataType":["text"],"indexFilterable":true,"indexRangeFilters":false,"indexSearchable":true,"name":"text","tokenization":"word"}],"replicationConfig":{"asyncEnabled":false,"deletionStrategy":"TimeBasedResolution","factor":1},"shardingConfig":{"actualCount":1,"actualVirtualCount":128,"desiredCount":1,"desiredVirtualCount":128,"function":"murmur3","key":"_id","strategy":"hash","virtualPerPhysical":128},"vectorIndexConfig":{"bq":{"enabled":false},"cleanupIntervalSeconds":300,"distance":"cosine","dynamicEfFactor":8,"dynamicEfMax":500,"dynamicEfMin":100,"ef":-1,"efConstruction":128,"filterStrategy":"acorn","flatSearchCutoff":40000,"maxConnections":32,"multivector":{"aggregation":"maxSim","enabled":false,"muvera":{"dprojections":16,"enabled":false,"ksim":4,"repetitions":10}},"pq":{"bitCompression":false,"centroids":256,"enabled":false,"encoder":{"distribution":"log-normal","type":"kmeans"},"segments":0,"trainingLimit":100000},"rq":{"bits":8,"enabled":false,"rescoreLimit":20},"skip":false,"skipDefaultQuantization":false,"sq":{"enabled":false,"rescoreLimit":20,"trainingLimit":100000},"trackDefaultQuantization":false,"vectorCacheMaxObjects":1000000000000},"vectorIndexType":"hnsw","vectorizer":"none"}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "weaviate_003", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

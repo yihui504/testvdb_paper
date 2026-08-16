@@ -1,0 +1,158 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "milvus_041",
+ "endpoint": "entities+upsert",
+ "defect_type": "type_coercion",
+ "expected": {
+  "contract_constraints": [],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "INT16 scalar data type",
+    "assertion": "dataType == Int16",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "DOUBLE scalar data type",
+    "assertion": "dataType == Double",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "BOOL scalar data type",
+    "assertion": "dataType == Bool",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Supported data type: DOUBLE",
+    "assertion": "dataType == 'DOUBLE'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST upsert string into DOUBLE field -> http=200, code=0",
+   "[c2] REST upsert string 'true' into BOOL field -> http=200, code=0",
+   "[c3] REST upsert int 1 into BOOL field -> http=200, code=0",
+   "[c4] REST upsert string '42' into INT16 field -> http=200, code=0"
+  ],
+  "log_file": "output_milvus_041.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[execution_results.json (session-level, your candidate is milvus_041)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "milvus_041",
+    "log_file": "output_milvus_041.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "milvus_041": "=== REQ 1 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"dbl_f\": \"3.14159\"}]}\n=== RESP 1 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 2 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"bool_f\": \"true\"}]}\n=== RESP 2 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 3 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"bool_f\": 1}]}\n=== RESP 3 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 4 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"i16_f\": \"42\"}]}\n=== RESP 4 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 5 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"dbl_f\": \"3.14159\"}]}\n=== RESP 5 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 6 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"bool_f\": \"true\"}]}\n=== RESP 6 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 7 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"bool_f\": 1}]}\n=== RESP 7 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\n=== REQ 8 ===\nPOST http://localhost:19530/v2/vectordb/entities/upsert\npayload: {\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"i16_f\": \"42\"}]}\n=== RESP 8 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_milvus_041.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_041", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

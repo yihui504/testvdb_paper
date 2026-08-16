@@ -1,0 +1,130 @@
+{
+ "defect_id": "milvus_005",
+ "endpoint": "entities+insert",
+ "defect_type": "doc_mismatch",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "type_constraint",
+    "description": "data must contain field values matching collection schema data types",
+    "assertion": "data field types match collection schema",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "type_constraint",
+    "description": "filter must be a valid boolean expression string",
+    "assertion": "filter is a valid boolean expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_get_001",
+    "endpoint": "entities+get",
+    "type": "type_constraint",
+    "description": "id must match the collection primary key type (Int64 or VarChar)",
+    "assertion": "id type matches collection primary key type",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "range_constraint",
+    "description": "REST insert has no fixed row-count limit; request size is bounded by payload-size limits, not by an entity count",
+    "assertion": "no fixed upper bound on len(data); inserts of any row count that fits the request payload are accepted (HTTP 200)",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_insert_002",
+    "endpoint": "entities+insert",
+    "type": "range_constraint",
+    "description": "Vector dimension must match collection dimension",
+    "assertion": "vector dimension == collection dimension",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "state_constraint",
+    "description": "Collection must exist and be loaded; if autoID is disabled, primary key must be provided",
+    "assertion": "collection exists AND is loaded AND (autoID OR primary key provided)",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "state_constraint",
+    "description": "Deleted entities cannot be recovered",
+    "assertion": "delete is irreversible",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_insert_001",
+    "endpoint": "entities+insert",
+    "description": "Insert returns insert count and IDs on success",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_insert_002",
+    "endpoint": "entities+insert",
+    "description": "Insert returns 400 on schema mismatch",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_delete_001",
+    "endpoint": "entities+delete",
+    "description": "Delete returns 400 on invalid filter expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_get_001",
+    "endpoint": "entities+get",
+    "description": "Get entities returns 400 if id type mismatches collection schema",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "resource_groups+drop",
+    "kind": "state_constraints",
+    "description": "Resource group must be empty (no nodes) before drop",
+    "assertion": "resource group has no nodes",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "resource_groups+list",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "200 with list of resource group names",
+   "match_score": 2
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] insert dynamic field names '123field'/'@field' -> http=200, code=0",
+   "[c1_q] query field '123field' -> http=200, code=65535, message: parse output field name failed: 123field",
+   "[c2] control: insert valid field name -> http=200, code=0",
+   "[c2_q] control: query valid field -> http=200, code=101, message: collection not loaded"
+  ],
+  "log_file": "output_milvus_005.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.10"
+ }
+}

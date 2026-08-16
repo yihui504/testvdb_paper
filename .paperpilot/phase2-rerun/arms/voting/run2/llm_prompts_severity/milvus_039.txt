@@ -1,0 +1,156 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_039",
+ "endpoint": "entities+upsert",
+ "defect_type": "type_coercion",
+ "expected": {
+  "contract_constraints": [],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collection+create",
+    "kind": "state_constraints",
+    "description": "Primary key constraint",
+    "assertion": "Exactly one primary field per collection with type Int64 or VarChar",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "INT64 scalar data type",
+    "assertion": "dataType == Int64",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Valid dataType value: INT64",
+    "assertion": "dataType == 'INT64'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   },
+   {
+    "endpoint": "collections+create",
+    "kind": "assertion",
+    "description": "Primary key must be Int64 or VarChar",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST upsert string PK '100' -> http=200, code=0",
+   "[c1_q] query id=100 after string-PK upsert -> http=200, code=0, data: id=100 vector=[0.9,0.9,0.9,0.9]",
+   "[c1_grpc] gRPC upsert string PK -> DataNotMatchException code=1, message: id field should be int64, got str"
+  ],
+  "log_file": "output_milvus_039.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_039", "vote": "is_defect", "grade": "A", "score": 9, "evidence_summary": "REST upsert accepts string value '100' for Int64 primary key field and silently coerces it to integer, while gRPC correctly rejects the same type mismatch", "rationale": "clear Type1 violation: the REST API should reject type mismatches for primary key fields like gRPC does, but instead accepts string '100' and coerces it to 100, violating strict type constraints and creating inconsistent API behavior"}
+[output log full text: output_milvus_039.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_upsert_pk", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_upsert_pk", "dimension": 4}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_upsert_pk", "data": [{"id": 100, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[100]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_pk", "data": [{"id": "100", "vector": [0.9, 0.9, 0.9, 0.9]}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[100]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_upsert_pk", "filter": "id==100", "outputFields": ["id", "vector"]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"id":100,"vector":[0.9,0.9,0.9,0.9]}]}
+
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_upsert_pk", "dbName": "default"}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_upsert_pk", "dimension": 4}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_upsert_pk", "data": [{"id": 100, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[100]}}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_pk", "data": [{"id": "100", "vector": [0.9, 0.9, 0.9, 0.9]}]}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[100]}}
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_upsert_pk", "filter": "id==100", "outputFields": ["id", "vector"]}
+=== RESP 10 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"id":100,"vector":[0.9,0.9,0.9,0.9]}]}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_039", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

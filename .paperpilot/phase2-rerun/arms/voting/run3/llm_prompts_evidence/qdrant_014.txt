@@ -1,0 +1,91 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "qdrant_014",
+ "endpoint": "cluster+recover",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [],
+  "keyword_matched_segment": [],
+  "api_template": {
+   "endpoint": "cluster+recover",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Recover current peer Raft state",
+   "match_score": 3
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[setup] GET /cluster -> status=disabled",
+   "[c1] cluster recover in standalone -> status=500, body: Service internal error: Qdrant is running in standalone mode"
+  ],
+  "log_file": "output_qdrant_014.log"
+ },
+ "metadata": {
+  "vendor": "qdrant",
+  "version": "1.18.2"
+ }
+}
+[execution_results.json (session-level, your candidate is qdrant_014)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "qdrant_014",
+    "log_file": "output_qdrant_014.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "qdrant_014": "=== REQ 1 ===\nGET http://localhost:6333/cluster\n=== RESP 1 ===\nstatus: 200\nbody: {\"result\":{\"status\":\"disabled\"},\"status\":\"ok\",\"time\":2.37e-6}\n\n=== REQ 2 ===\nPOST http://localhost:6333/cluster/recover\n=== RESP 2 ===\nstatus: 500\nbody: {\"status\":{\"error\":\"Service internal error: Qdrant is running in standalone mode\"},\"time\":0.015995971}\n\n=== REQ 3 ===\nGET http://localhost:6333/cluster\n=== RESP 3 ===\nstatus: 200\nbody: {\"result\":{\"status\":\"disabled\"},\"status\":\"ok\",\"time\":3.173e-6}\n\n=== REQ 4 ===\nPOST http://localhost:6333/cluster/recover\n=== RESP 4 ===\nstatus: 500\nbody: {\"status\":{\"error\":\"Service internal error: Qdrant is running in standalone mode\"},\"time\":0.018369187}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_qdrant_014.log]
+=== REQ 1 ===
+GET http://localhost:6333/cluster
+=== RESP 1 ===
+status: 200
+body: {"result":{"status":"disabled"},"status":"ok","time":2.37e-6}
+
+=== REQ 2 ===
+POST http://localhost:6333/cluster/recover
+=== RESP 2 ===
+status: 500
+body: {"status":{"error":"Service internal error: Qdrant is running in standalone mode"},"time":0.015995971}
+
+=== REQ 3 ===
+GET http://localhost:6333/cluster
+=== RESP 3 ===
+status: 200
+body: {"result":{"status":"disabled"},"status":"ok","time":3.173e-6}
+
+=== REQ 4 ===
+POST http://localhost:6333/cluster/recover
+=== RESP 4 ===
+status: 500
+body: {"status":{"error":"Service internal error: Qdrant is running in standalone mode"},"time":0.018369187}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "qdrant_014", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

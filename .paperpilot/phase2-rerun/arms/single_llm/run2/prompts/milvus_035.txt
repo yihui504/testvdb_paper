@@ -1,0 +1,142 @@
+你是数据库缺陷判定审查员。以下是一个候选缺陷的完整材料（观察到的行为 + 契约依据）。
+基于且仅基于材料判断：该候选描述的是否为真实缺陷（CONFIRMED）或误报（FALSE_POSITIVE）。
+
+规则：
+- 只依据材料内容判断，不假设材料之外的信息
+- 契约依据是 expected 的参考；若契约条目与候选 endpoint 无关，忽略之
+- 材料中 VERDICT: UNKNOWN 行表示重放捕获无上游断言输出，非判定线索
+- 无契约依据时按观察行为本身评估
+
+输出 JSON：{{"defect_id": "...", "verdict": "CONFIRMED|FALSE_POSITIVE", "confidence": 0.0-1.0, "rationale": "一句话理由"}}
+只输出 JSON。
+
+【材料开始】
+=== 候选缺陷 milvus_035 ===
+[vendor=milvus version=3.0.0 defect_type=type_coercion endpoint=entities+insert]
+
+--- 观察到的行为（observed） ---
+观察摘要（probe 产出）：
+- [c1] REST insert string PK '123' -> http=200, code=0
+- [c1_q] query id=123 -> http=200, code=101, message: collection not loaded
+- [c1_grpc] gRPC insert string PK -> DataNotMatchException code=1, message: id field should be int64, got str
+- [c2] REST insert non-numeric string PK 'abc' -> http=200, code=1804
+- [c2_q] query id=0 -> http=200, code=101, message: collection not loaded
+
+执行日志全文（output_milvus_035.log）：
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_pk", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_pk", "schema": {"autoId": false, "enableDynamicField": false, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}]}}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "test_pk", "indexParams": [{"fieldName": "vector", "metricType": "COSINE", "indexType": "AUTOINDEX"}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_pk", "data": [{"id": "123", "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[123]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_pk", "filter": "id==123", "outputFields": ["id"]}
+=== RESP 5 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359099812566901]"}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_pk", "data": [{"id": "abc", "vector": [0.5, 0.5, 0.5, 0.5]}]}
+=== RESP 6 ===
+status: 200
+body: {"code":1804,"message":"fail to deal the insert data, error: strconv.ParseInt: parsing \"abc\": invalid syntax: invalid parameter[expected=Int64][actual=abc]"}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_pk", "filter": "id==0", "outputFields": ["id"]}
+=== RESP 7 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359099812566901]"}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_pk", "dbName": "default"}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_pk", "schema": {"autoId": false, "enableDynamicField": false, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}]}}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "test_pk", "indexParams": [{"fieldName": "vector", "metricType": "COSINE", "indexType": "AUTOINDEX"}]}
+=== RESP 10 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 11 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_pk", "data": [{"id": "123", "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 11 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[123]}}
+
+=== REQ 12 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_pk", "filter": "id==123", "outputFields": ["id"]}
+=== RESP 12 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359869997930360]"}
+
+=== REQ 13 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_pk", "data": [{"id": "abc", "vector": [0.5, 0.5, 0.5, 0.5]}]}
+=== RESP 13 ===
+status: 200
+body: {"code":1804,"message":"fail to deal the insert data, error: strconv.ParseInt: parsing \"abc\": invalid syntax: invalid parameter[expected=Int64][actual=abc]"}
+
+=== REQ 14 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_pk", "filter": "id==0", "outputFields": ["id"]}
+=== RESP 14 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359869997930360]"}
+
+
+
+--- 契约依据（expected，来自该版本 API 契约） ---
+约束条目（3 条，来自 milvus 3.0.0 契约，endpoint=entities+insert）：
+{"constraint_id": "milvus_state_insert_collection_001", "endpoint": "entities+insert", "type": "state_constraint", "description": "Insert requires existing collection", "assertion": "collection MUST exist before insert", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+{"assertion_id": "milvus_behavioral_insert_then_get_001", "endpoint": "entities+insert", "description": "Inserted entities should be retrievable", "source_url": "https://milvus.io/docs/insert-update.md", "confidence": 1.0}
+{"assertion_id": "milvus_assert_insert_success_001", "endpoint": "entities+insert", "description": "Inserting valid data succeeds", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+
+相关契约段（关键词定位 4 条）：
+{"endpoint": "collection+create", "kind": "state_constraints", "description": "Primary key constraint", "assertion": "Exactly one primary field per collection with type Int64 or VarChar", "source_url": "https://milvus.io/docs/schema.md", "confidence": 0.95}
+{"endpoint": "collections+fields+add", "kind": "type_constraints", "description": "INT64 scalar data type", "assertion": "dataType == Int64", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+{"endpoint": "collection+create", "kind": "type_constraints", "description": "Valid dataType value: INT64", "assertion": "dataType == 'INT64'", "source_url": "https://milvus.io/docs/schema.md", "confidence": 0.95}
+{"endpoint": "collections+create", "kind": "assertion", "description": "Primary key must be Int64 or VarChar", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+
+API 模板：endpoint=entities+insert doc_quote='Insert entities' source=None
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+【材料结束】

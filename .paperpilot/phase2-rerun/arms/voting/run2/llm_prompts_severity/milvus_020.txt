@@ -1,0 +1,277 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_020",
+ "endpoint": "entities+search",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "type_constraint",
+    "description": "filter must be a valid boolean expression string",
+    "assertion": "filter is a valid boolean expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_get_001",
+    "endpoint": "entities+get",
+    "type": "type_constraint",
+    "description": "id must match the collection primary key type (Int64 or VarChar)",
+    "assertion": "id type matches collection primary key type",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "type_constraint",
+    "description": "data must be array of float arrays, annsField must be a vector field, limit must be positive integer",
+    "assertion": "data is array[array[float]] AND annsField is a vector field AND limit > 0",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "vector dimensions in data must match collection vector dimension",
+    "assertion": "vector dimension == collection dimension",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_search_002",
+    "endpoint": "entities+search",
+    "type": "range_constraint",
+    "description": "limit + offset must be < 16384",
+    "assertion": "limit + offset < 16384",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "state_constraint",
+    "description": "Deleted entities cannot be recovered",
+    "assertion": "delete is irreversible",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_search_001",
+    "endpoint": "entities+search",
+    "type": "state_constraint",
+    "description": "Collection must be loaded; index must exist on annsField",
+    "assertion": "collection is loaded AND index exists on annsField",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_search_001",
+    "endpoint": "entities+search",
+    "description": "Search returns 400 on vector dimension mismatch",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_delete_001",
+    "endpoint": "entities+delete",
+    "description": "Delete returns 400 on invalid filter expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_get_001",
+    "endpoint": "entities+get",
+    "description": "Get entities returns 400 if id type mismatches collection schema",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+drop",
+    "kind": "state_constraints",
+    "description": "Drop is irreversible; all data in the collection is permanently deleted",
+    "assertion": "drop is irreversible AND all data is permanently deleted",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "200 on success with insert count and IDs; 400 on schema mismatch",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1_before] search before delete -> http=200, code=0, 10 results (id 0-9)",
+   "[c1] search after deleting ids 1-5 -> http=200, code=0, returned ids [0,1,2,3,4,5,6,7,8,9]"
+  ],
+  "log_file": "output_milvus_020.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.16"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_020", "vote": "not_defect", "grade": "D", "score": 0, "evidence_summary": "Search after deleting ids 1-5 still returns all 10 IDs; delete returns HTTP 200 with deleteCount=5", "rationale": "Per decision rule #6, PASSED with no FAILED → not_defect; API returns successful HTTP responses; potential state consistency issue but no FAILED error codes observed"}
+[output log full text: output_milvus_020.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_stale_data", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_stale_data", "dimension": 4, "metricType": "L2"}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "test_stale_data", "indexParams": [{"fieldName": "vector", "metricType": "L2", "indexType": "HNSW", "params": {"M": 16, "efConstruction": 128}}]}
+=== RESP 3 ===
+status: 200
+body: {"code":65535,"message":"CreateIndex failed: at most one distinct index is allowed per field"}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_stale_data", "data": [{"id": 0, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 1, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 2, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 3, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 4, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 5, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 6, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 7, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 8, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 9, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":10,"insertIds":[0,1,2,3,4,5,6,7,8,9]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "test_stale_data", "dbName": "default"}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/delete
+payload: {"collectionName": "test_stale_data", "filter": "id in [1,2,3,4,5]", "dbName": "default"}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"data":{"deleteCount":5}}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_stale_data", "dbName": "default"}
+=== RESP 10 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 11 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_stale_data", "dimension": 4, "metricType": "L2"}
+=== RESP 11 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 12 ===
+POST http://localhost:19530/v2/vectordb/indexes/create
+payload: {"collectionName": "test_stale_data", "indexParams": [{"fieldName": "vector", "metricType": "L2", "indexType": "HNSW", "params": {"M": 16, "efConstruction": 128}}]}
+=== RESP 12 ===
+status: 200
+body: {"code":65535,"message":"CreateIndex failed: at most one distinct index is allowed per field"}
+
+=== REQ 13 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_stale_data", "data": [{"id": 0, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 1, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 2, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 3, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 4, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 5, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 6, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 7, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 8, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 9, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 13 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":10,"insertIds":[0,1,2,3,4,5,6,7,8,9]}}
+
+=== REQ 14 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "test_stale_data", "dbName": "default"}
+=== RESP 14 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 15 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 15 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+=== REQ 16 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 16 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+=== REQ 17 ===
+POST http://localhost:19530/v2/vectordb/entities/delete
+payload: {"collectionName": "test_stale_data", "filter": "id in [1,2,3,4,5]", "dbName": "default"}
+=== RESP 17 ===
+status: 200
+body: {"code":0,"data":{"deleteCount":5}}
+
+=== REQ 18 ===
+POST http://localhost:19530/v2/vectordb/entities/search
+payload: {"collectionName": "test_stale_data", "data": [[0.1, 0.2, 0.3, 0.4]], "limit": 10, "outputFields": ["id"]}
+=== RESP 18 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"distance":0,"id":0},{"distance":0,"id":1},{"distance":0,"id":2},{"distance":0,"id":3},{"distance":0,"id":4},{"distance":0,"id":5},{"distance":0,"id":6},{"distance":0,"id":7},{"distance":0,"id":8},{"distance":0,"id":9}],"topks":[10]}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_020", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

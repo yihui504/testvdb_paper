@@ -1,0 +1,96 @@
+你是数据库缺陷判定审查员。以下是一个候选缺陷的完整材料（观察到的行为 + 契约依据）。
+基于且仅基于材料判断：该候选描述的是否为真实缺陷（CONFIRMED）或误报（FALSE_POSITIVE）。
+
+规则：
+- 只依据材料内容判断，不假设材料之外的信息
+- 契约依据是 expected 的参考；若契约条目与候选 endpoint 无关，忽略之
+- 材料中 VERDICT: UNKNOWN 行表示重放捕获无上游断言输出，非判定线索
+- 无契约依据时按观察行为本身评估
+
+输出 JSON：{{"defect_id": "...", "verdict": "CONFIRMED|FALSE_POSITIVE", "confidence": 0.0-1.0, "rationale": "一句话理由"}}
+只输出 JSON。
+
+【材料开始】
+=== 候选缺陷 milvus_041 ===
+[vendor=milvus version=3.0.0 defect_type=type_coercion endpoint=entities+upsert]
+
+--- 观察到的行为（observed） ---
+观察摘要（probe 产出）：
+- [c1] REST upsert string into DOUBLE field -> http=200, code=0
+- [c2] REST upsert string 'true' into BOOL field -> http=200, code=0
+- [c3] REST upsert int 1 into BOOL field -> http=200, code=0
+- [c4] REST upsert string '42' into INT16 field -> http=200, code=0
+
+执行日志全文（output_milvus_041.log）：
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+
+
+--- 契约依据（expected，来自该版本 API 契约） ---
+[契约中无 endpoint=entities+upsert 的约束条目]
+
+相关契约段（关键词定位 4 条）：
+{"endpoint": "collections+fields+add", "kind": "type_constraints", "description": "INT16 scalar data type", "assertion": "dataType == Int16", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+{"endpoint": "collections+fields+add", "kind": "type_constraints", "description": "DOUBLE scalar data type", "assertion": "dataType == Double", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+{"endpoint": "collections+fields+add", "kind": "type_constraints", "description": "BOOL scalar data type", "assertion": "dataType == Bool", "source_url": "https://milvus.io/docs/schema.md", "confidence": 1.0}
+{"endpoint": "collection+create", "kind": "type_constraints", "description": "Supported data type: DOUBLE", "assertion": "dataType == 'DOUBLE'", "source_url": "https://milvus.io/docs/schema.md", "confidence": 0.95}
+
+API 模板：endpoint=entities+insert doc_quote='Insert entities' source=None
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+【材料结束】

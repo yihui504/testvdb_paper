@@ -1,0 +1,142 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_041",
+ "endpoint": "entities+upsert",
+ "defect_type": "type_coercion",
+ "expected": {
+  "contract_constraints": [],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "INT16 scalar data type",
+    "assertion": "dataType == Int16",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "DOUBLE scalar data type",
+    "assertion": "dataType == Double",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+fields+add",
+    "kind": "type_constraints",
+    "description": "BOOL scalar data type",
+    "assertion": "dataType == Bool",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collection+create",
+    "kind": "type_constraints",
+    "description": "Supported data type: DOUBLE",
+    "assertion": "dataType == 'DOUBLE'",
+    "source_url": "https://milvus.io/docs/schema.md",
+    "confidence": 0.95
+   }
+  ],
+  "api_template": {
+   "endpoint": "entities+insert",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "Insert entities",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] REST upsert string into DOUBLE field -> http=200, code=0",
+   "[c2] REST upsert string 'true' into BOOL field -> http=200, code=0",
+   "[c3] REST upsert int 1 into BOOL field -> http=200, code=0",
+   "[c4] REST upsert string '42' into INT16 field -> http=200, code=0"
+  ],
+  "log_file": "output_milvus_041.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "3.0.0"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_041", "vote": "is_defect", "grade": "A", "score": 9, "evidence_summary": "HTTP 200 responses accepting wrong types for multiple scalar fields: string to Double, string/int to Bool, string to Int16", "rationale": "Log shows REST API accepting type mismatches with implicit coercion across 4 test cases: dbl_f='3.14159' (string to Double), bool_f='true' (string to Bool), bool_f=1 (int to Bool), i16_f='42' (string to Int16), all with code=0; API performs unsafe implicit type coercion instead of rejecting type mismatches for Double/Bool/Int16 fields"}
+[output log full text: output_milvus_041.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "dbl_f": "3.14159"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": "true"}]}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "bool_f": 1}]}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/entities/upsert
+payload: {"collectionName": "test_upsert_scalar", "data": [{"id": 0, "vector": [0.9, 0.9, 0.9, 0.9], "i16_f": "42"}]}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[0]}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_041", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

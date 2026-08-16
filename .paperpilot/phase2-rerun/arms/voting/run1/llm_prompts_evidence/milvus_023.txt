@@ -1,0 +1,126 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "milvus_023",
+ "endpoint": "collections+drop",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_collections_drop_001",
+    "endpoint": "collections+drop",
+    "type": "type_constraint",
+    "description": "collectionName must be a non-empty string",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_collections_drop_001",
+    "endpoint": "collections+drop",
+    "type": "state_constraint",
+    "description": "Drop is irreversible; all data in the collection is permanently deleted",
+    "assertion": "drop is irreversible AND all data is permanently deleted",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_collections_drop_001",
+    "endpoint": "collections+drop",
+    "description": "Drop collection returns 200 on success; dropping a non-existent collection is treated as idempotent success (200, empty data)",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "collections+drop",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Drop.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+load",
+    "kind": "type_constraints",
+    "description": "collectionName must be a non-empty string for load",
+    "assertion": "collectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Load.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "collections+rename",
+    "kind": "type_constraints",
+    "description": "collectionName and newCollectionName must be non-empty strings",
+    "assertion": "collectionName is non-empty string AND newCollectionName is non-empty string",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Rename.md",
+    "confidence": 1.0
+   },
+   {
+    "endpoint": "partitions+create",
+    "kind": "type_constraints",
+    "description": "partitionName must be a non-empty string",
+    "assertion": "partitionName is non-empty string",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] drop non-existent collection -> http=200, code=0"
+  ],
+  "log_file": "output_milvus_023.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.17"
+ }
+}
+[execution_results.json (session-level, your candidate is milvus_023)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "milvus_023",
+    "log_file": "output_milvus_023.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "milvus_023": "=== REQ 1 ===\nPOST http://localhost:19530/v2/vectordb/collections/drop\npayload: {\"collectionName\": \"nonexistent_collection_xyz\", \"dbName\": \"default\"}\n=== RESP 1 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_milvus_023.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "nonexistent_collection_xyz", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_023", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

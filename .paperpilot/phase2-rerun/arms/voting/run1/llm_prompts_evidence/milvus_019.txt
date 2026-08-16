@@ -1,0 +1,161 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "milvus_019",
+ "endpoint": "collections+get_stats",
+ "defect_type": "behavior",
+ "expected": {
+  "contract_constraints": [
+   {
+    "assertion_id": "milvus_behavioral_collections_get_stats_001",
+    "endpoint": "collections+get_stats",
+    "description": "Get stats returns row count and statistics",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [],
+  "api_template": {
+   "endpoint": "collections+load",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "200 on success; 404 if collection not found; 400 if no index exists on collection",
+   "match_score": 1
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] get_stats after insert+load -> http=200, code=0, rowCount=0",
+   "[c1_q] query after insert+load -> http=200, code=0, returned 5 rows (id 0-4)"
+  ],
+  "log_file": "output_milvus_019.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.16"
+ }
+}
+[execution_results.json (session-level, your candidate is milvus_019)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "milvus_019",
+    "log_file": "output_milvus_019.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "milvus_019": "=== REQ 1 ===\nPOST http://localhost:19530/v2/vectordb/collections/drop\npayload: {\"collectionName\": \"test_rowcount\", \"dbName\": \"default\"}\n=== RESP 1 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 2 ===\nPOST http://localhost:19530/v2/vectordb/collections/create\npayload: {\"collectionName\": \"test_rowcount\", \"dimension\": 4}\n=== RESP 2 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 3 ===\nPOST http://localhost:19530/v2/vectordb/entities/insert\npayload: {\"collectionName\": \"test_rowcount\", \"data\": [{\"id\": 0, \"value\": 0, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 1, \"value\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 2, \"value\": 2, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 3, \"value\": 3, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 4, \"value\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}\n=== RESP 3 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":5,\"insertIds\":[0,1,2,3,4]}}\n\n=== REQ 4 ===\nPOST http://localhost:19530/v2/vectordb/collections/load\npayload: {\"collectionName\": \"test_rowcount\", \"dbName\": \"default\"}\n=== RESP 4 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 5 ===\nPOST http://localhost:19530/v2/vectordb/collections/get_stats\npayload: {\"collectionName\": \"test_rowcount\"}\n=== RESP 5 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{\"rowCount\":0}}\n\n=== REQ 6 ===\nPOST http://localhost:19530/v2/vectordb/entities/query\npayload: {\"collectionName\": \"test_rowcount\", \"filter\": \"id>=0\", \"outputFields\": [\"id\"]}\n=== RESP 6 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":[{\"id\":0},{\"id\":1},{\"id\":2},{\"id\":3},{\"id\":4}]}\n\n\n=== REQ 7 ===\nPOST http://localhost:19530/v2/vectordb/collections/drop\npayload: {\"collectionName\": \"test_rowcount\", \"dbName\": \"default\"}\n=== RESP 7 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 8 ===\nPOST http://localhost:19530/v2/vectordb/collections/create\npayload: {\"collectionName\": \"test_rowcount\", \"dimension\": 4}\n=== RESP 8 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 9 ===\nPOST http://localhost:19530/v2/vectordb/entities/insert\npayload: {\"collectionName\": \"test_rowcount\", \"data\": [{\"id\": 0, \"value\": 0, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 1, \"value\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 2, \"value\": 2, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 3, \"value\": 3, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 4, \"value\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}\n=== RESP 9 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":{\"insertCount\":5,\"insertIds\":[0,1,2,3,4]}}\n\n=== REQ 10 ===\nPOST http://localhost:19530/v2/vectordb/collections/load\npayload: {\"collectionName\": \"test_rowcount\", \"dbName\": \"default\"}\n=== RESP 10 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{}}\n\n=== REQ 11 ===\nPOST http://localhost:19530/v2/vectordb/collections/get_stats\npayload: {\"collectionName\": \"test_rowcount\"}\n=== RESP 11 ===\nstatus: 200\nbody: {\"code\":0,\"data\":{\"rowCount\":0}}\n\n=== REQ 12 ===\nPOST http://localhost:19530/v2/vectordb/entities/query\npayload: {\"collectionName\": \"test_rowcount\", \"filter\": \"id>=0\", \"outputFields\": [\"id\"]}\n=== RESP 12 ===\nstatus: 200\nbody: {\"code\":0,\"cost\":0,\"data\":[{\"id\":0},{\"id\":1},{\"id\":2},{\"id\":3},{\"id\":4}]}\n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_milvus_019.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_rowcount", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_rowcount", "dimension": 4}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_rowcount", "data": [{"id": 0, "value": 0, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 1, "value": 1, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 2, "value": 2, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 3, "value": 3, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 4, "value": 4, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":5,"insertIds":[0,1,2,3,4]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "test_rowcount", "dbName": "default"}
+=== RESP 4 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/collections/get_stats
+payload: {"collectionName": "test_rowcount"}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"data":{"rowCount":0}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_rowcount", "filter": "id>=0", "outputFields": ["id"]}
+=== RESP 6 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"id":0},{"id":1},{"id":2},{"id":3},{"id":4}]}
+
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_rowcount", "dbName": "default"}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_rowcount", "dimension": 4}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_rowcount", "data": [{"id": 0, "value": 0, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 1, "value": 1, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 2, "value": 2, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 3, "value": 3, "vector": [0.1, 0.2, 0.3, 0.4]}, {"id": 4, "value": 4, "vector": [0.1, 0.2, 0.3, 0.4]}]}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":5,"insertIds":[0,1,2,3,4]}}
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/collections/load
+payload: {"collectionName": "test_rowcount", "dbName": "default"}
+=== RESP 10 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 11 ===
+POST http://localhost:19530/v2/vectordb/collections/get_stats
+payload: {"collectionName": "test_rowcount"}
+=== RESP 11 ===
+status: 200
+body: {"code":0,"data":{"rowCount":0}}
+
+=== REQ 12 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_rowcount", "filter": "id>=0", "outputFields": ["id"]}
+=== RESP 12 ===
+status: 200
+body: {"code":0,"cost":0,"data":[{"id":0},{"id":1},{"id":2},{"id":3},{"id":4}]}
+
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_019", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}

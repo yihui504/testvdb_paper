@@ -1,0 +1,238 @@
+You are judge-severity in the TestVDB 4-judge voting pipeline (as-shipped SOP). stage2_doc result for this candidate: DOC_PARTIAL. judge-evidence has voted. Your job: assign a severity level to this candidate per the judge-severity rules, and write your vote. (Note: severity judge covers ALL candidates regardless of evidence vote — aggregator applies gates separately. So assign severity even if evidence voted not_defect.)
+
+SEVERITY RULES (from judge-severity SOP, as-shipped):
+Rule 1 baseline by defect_type: Type1_IllegalSuccess=High, Type2_PoorDiagnostics=Medium, Type3_RuntimeFailure=Critical, Type4_StateViolation=High. (Vendor defect_type mapping: param_validation/boundary→Type1-ish, diagnostics/error-message→Type2, crash/runtime→Type3, state/consistency→Type4.)
+Rule 2 endpoint sensitivity: core data plane (search/insert/upsert/query/get) +1 level; management plane (create/delete collection, index) unchanged; ops plane (users/roles/cluster/health) -1; metadata plane (describe/list/stats) -1.
+Rule 3 batch amplification: affects batch operations +1 level; single record unchanged.
+Rule 4 evidence quality: doc_verification_result=DOC_PARTIAL → -1 level.
+Rule 4 exception: if the execution log contains crash signals (OOM/panic/capacity overflow/SIGSEGV/SIGKILL/5xx HTTP status/connection reset/container Killed) → severity forced Critical, no Rule 4 demotion, crash_auto_confirmed=true.
+By-design exclusion: log mentions jemalloc/aarch64/ARM64 platform limits → normal Rule 4.
+Rule 5 edge: endpoint type unrecognizable → default Medium confidence 0.5; single script trigger → -1 level.
+Ladder: trivial < low < medium < high < critical.
+
+INPUTS:
+[candidate]
+{
+ "defect_id": "milvus_005",
+ "endpoint": "entities+insert",
+ "defect_type": "doc_mismatch",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "milvus_type_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "type_constraint",
+    "description": "data must contain field values matching collection schema data types",
+    "assertion": "data field types match collection schema",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "type_constraint",
+    "description": "filter must be a valid boolean expression string",
+    "assertion": "filter is a valid boolean expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_type_entities_get_001",
+    "endpoint": "entities+get",
+    "type": "type_constraint",
+    "description": "id must match the collection primary key type (Int64 or VarChar)",
+    "assertion": "id type matches collection primary key type",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "range_constraint",
+    "description": "REST insert has no fixed row-count limit; request size is bounded by payload-size limits, not by an entity count",
+    "assertion": "no fixed upper bound on len(data); inserts of any row count that fits the request payload are accepted (HTTP 200)",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_range_entities_insert_002",
+    "endpoint": "entities+insert",
+    "type": "range_constraint",
+    "description": "Vector dimension must match collection dimension",
+    "assertion": "vector dimension == collection dimension",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_insert_001",
+    "endpoint": "entities+insert",
+    "type": "state_constraint",
+    "description": "Collection must exist and be loaded; if autoID is disabled, primary key must be provided",
+    "assertion": "collection exists AND is loaded AND (autoID OR primary key provided)",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "constraint_id": "milvus_state_entities_delete_001",
+    "endpoint": "entities+delete",
+    "type": "state_constraint",
+    "description": "Deleted entities cannot be recovered",
+    "assertion": "delete is irreversible",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_insert_001",
+    "endpoint": "entities+insert",
+    "description": "Insert returns insert count and IDs on success",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_insert_002",
+    "endpoint": "entities+insert",
+    "description": "Insert returns 400 on schema mismatch",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_delete_001",
+    "endpoint": "entities+delete",
+    "description": "Delete returns 400 on invalid filter expression",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   },
+   {
+    "assertion_id": "milvus_behavioral_entities_get_001",
+    "endpoint": "entities+get",
+    "description": "Get entities returns 400 if id type mismatches collection schema",
+    "source_url": "https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Get.md",
+    "confidence": 1.0
+   }
+  ],
+  "keyword_matched_segment": [
+   {
+    "endpoint": "resource_groups+drop",
+    "kind": "state_constraints",
+    "description": "Resource group must be empty (no nodes) before drop",
+    "assertion": "resource group has no nodes",
+    "source_url": "https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go",
+    "confidence": 1.0
+   }
+  ],
+  "api_template": {
+   "endpoint": "resource_groups+list",
+   "method": "POST",
+   "description": null,
+   "doc_quote": "200 with list of resource group names",
+   "match_score": 2
+  }
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] insert dynamic field names '123field'/'@field' -> http=200, code=0",
+   "[c1_q] query field '123field' -> http=200, code=65535, message: parse output field name failed: 123field",
+   "[c2] control: insert valid field name -> http=200, code=0",
+   "[c2_q] control: query valid field -> http=200, code=101, message: collection not loaded"
+  ],
+  "log_file": "output_milvus_005.log"
+ },
+ "metadata": {
+  "vendor": "milvus",
+  "version": "2.6.10"
+ }
+}
+[evidence vote]
+{"defect_id": "milvus_005", "vote": "not_defect", "grade": "D", "score": 0, "evidence_summary": "Insert with dynamic fields '123field'/'@field' returns HTTP 200; query returns HTTP 200 with code=65535 parse error, correctly rejecting invalid field names", "rationale": "Per decision rule #6, PASSED with no FAILED → not_defect; API correctly accepts insert but rejects query with invalid field names, which is expected behavior"}
+[output log full text: output_milvus_005.log]
+=== REQ 1 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_<tracked>", "dbName": "default"}
+=== RESP 1 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 2 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_<tracked>", "schema": {"autoID": false, "enableDynamicField": true, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}]}}
+=== RESP 2 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 3 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_<tracked>", "data": [{"id": 1, "vector": [0.1, 0.2, 0.3, 0.4], "123field": "v1"}, {"id": 2, "vector": [0.2, 0.2, 0.3, 0.4], "@field": "v2"}]}
+=== RESP 3 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":2,"insertIds":[1,2]}}
+
+=== REQ 4 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_<tracked>", "filter": "id in [1,2]", "outputFields": ["123field", "@field"]}
+=== RESP 4 ===
+status: 200
+body: {"code":65535,"message":"parse output field name failed: 123field"}
+
+=== REQ 5 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_<tracked>", "data": [{"id": 3, "vector": [0.3, 0.2, 0.3, 0.4], "valid_field": "ok"}]}
+=== RESP 5 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[3]}}
+
+=== REQ 6 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_<tracked>", "filter": "id==3", "outputFields": ["valid_field"]}
+=== RESP 6 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359262963438392]"}
+
+=== REQ 7 ===
+POST http://localhost:19530/v2/vectordb/collections/drop
+payload: {"collectionName": "test_<tracked>", "dbName": "default"}
+=== RESP 7 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 8 ===
+POST http://localhost:19530/v2/vectordb/collections/create
+payload: {"collectionName": "test_<tracked>", "schema": {"autoID": false, "enableDynamicField": true, "fields": [{"fieldName": "id", "dataType": "Int64", "isPrimary": true}, {"fieldName": "vector", "dataType": "FloatVector", "elementTypeParams": {"dim": 4}}]}}
+=== RESP 8 ===
+status: 200
+body: {"code":0,"data":{}}
+
+=== REQ 9 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_<tracked>", "data": [{"id": 1, "vector": [0.1, 0.2, 0.3, 0.4], "123field": "v1"}, {"id": 2, "vector": [0.2, 0.2, 0.3, 0.4], "@field": "v2"}]}
+=== RESP 9 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":2,"insertIds":[1,2]}}
+
+=== REQ 10 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_<tracked>", "filter": "id in [1,2]", "outputFields": ["123field", "@field"]}
+=== RESP 10 ===
+status: 200
+body: {"code":65535,"message":"parse output field name failed: 123field"}
+
+=== REQ 11 ===
+POST http://localhost:19530/v2/vectordb/entities/insert
+payload: {"collectionName": "test_<tracked>", "data": [{"id": 3, "vector": [0.3, 0.2, 0.3, 0.4], "valid_field": "ok"}]}
+=== RESP 11 ===
+status: 200
+body: {"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[3]}}
+
+=== REQ 12 ===
+POST http://localhost:19530/v2/vectordb/entities/query
+payload: {"collectionName": "test_<tracked>", "filter": "id==3", "outputFields": ["valid_field"]}
+=== RESP 12 ===
+status: 200
+body: {"code":101,"message":"failed to query: collection not loaded[collection=468359683278836488]"}
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+(doc_verification_result = DOC_PARTIAL for all candidates in this run — network-disabled degradation.)
+
+OUTPUT: single-line JSON only:
+{"defect_id": "milvus_005", "vote": "is_defect", "severity_level": "trivial|low|medium|high|critical", "defect_type": "<Type classification>", "crash_auto_confirmed": true|false, "rationale": "one sentence"}

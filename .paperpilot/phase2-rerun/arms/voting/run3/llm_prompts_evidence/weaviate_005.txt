@@ -1,0 +1,155 @@
+You are judge-evidence in the TestVDB 4-judge voting pipeline (as-shipped SOP). Judge-doc has already produced stage2_doc.json (this candidate: DOC_PARTIAL). Your job: review the EVIDENCE for this one candidate per the judge-evidence decision rules, and write your vote.
+
+DECISION RULES (from judge-evidence SOP, as-shipped):
+- Log contains "FAILED: Type1"/"VIOLATION" (illegal op accepted) or "FAILED: Type3"/"RuntimeFailure" (crash) → vote=is_defect, grade A, score 9
+- Log contains "FAILED: Type4"/"StateViolation" → vote=is_defect, grade B, score 7
+- PASSED with no FAILED → vote=not_defect, grade D, score 0
+- Mixed FAILED+PASSED same endpoint (intermittent) → vote=is_defect, grade C, score 5
+- Connection failure/timeout/network error → vote=not_defect (environment issue)
+- Empty log or no matching log → vote=not_defect (nothing to evaluate)
+- Log contains TypeError/AttributeError/SCRIPT_ERROR → vote=script_error
+- NOTE: this pipeline is a replay capture — logs contain raw HTTP exchanges with a neutral line "VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)" where as-shipped attack agents would print FAILED/VERDICT assertion lines. Apply semantic matching: judge whether the observed HTTP behavior (request/response/error) constitutes reproducible evidence of the claimed defect.
+- High-evidence path (contract violation with clear success/failure signal): 1 successful reproduction + clear contract violation → is_defect
+- If only a single script with no reproducibility evidence → forced not_defect; Type2_PoorDiagnostics single-script → forced not_defect
+
+INPUTS:
+[stage2_doc.json result for this candidate] doc_verification_result=DOC_PARTIAL
+[candidate defect]
+{
+ "defect_id": "weaviate_005",
+ "endpoint": "POST /schema",
+ "defect_type": "param_validation",
+ "expected": {
+  "contract_constraints": [
+   {
+    "constraint_id": "weaviate_type_schema_create_001",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "class field must be CamelCase",
+    "assertion": "properties.class matches /^[A-Z][a-zA-Z0-9]*$/",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_002",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "vectorIndexType must be one of allowed index types",
+    "assertion": "properties.vectorIndexType in {hnsw, flat, dynamic, bwes}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_schema_create_003",
+    "endpoint": "/schema POST",
+    "type": "type_constraint",
+    "description": "properties[].tokenization must be a valid enum value",
+    "assertion": "properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_type_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "type": "type_constraint",
+    "description": "Tenant.activityStatus on create must be ACTIVE or INACTIVE",
+    "assertion": "body[].activityStatus in {ACTIVE, INACTIVE}",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "constraint_id": "weaviate_range_schema_replication_001",
+    "endpoint": "/schema POST",
+    "type": "range_constraint",
+    "description": "replicationConfig.factor is an integer (default 1)",
+    "assertion": "replicationConfig.factor >= 1",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.85
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_001",
+    "endpoint": "/schema POST",
+    "description": "creating collection with disallowed vectorIndexType returns 422 RestrictionViolationResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_schema_create_002",
+    "endpoint": "/schema POST",
+    "description": "exceeding collections/shards usage limit returns 429 UsageLimitExceededResponse",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   },
+   {
+    "assertion_id": "weaviate_behavioral_tenants_create_001",
+    "endpoint": "/schema/{className}/tenants POST",
+    "description": "exceeding tenant usage limit returns 429 with limit: tenants",
+    "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json",
+    "confidence": 0.95
+   }
+  ],
+  "keyword_matched_segment": [],
+  "api_template": null
+ },
+ "observed": {
+  "raw_observation": [
+   "[c1] control: POST schema with desiredCount=0 -> http=422",
+   "[c2] POST schema with desiredCount=-1 -> http=200"
+  ],
+  "log_file": "output_weaviate_005.log"
+ },
+ "metadata": {
+  "vendor": "weaviate",
+  "version": "1.38.0"
+ }
+}
+[execution_results.json (session-level, your candidate is weaviate_005)]
+{
+ "execution_summary": {
+  "total_scripts": 1,
+  "logs": [
+   {
+    "defect_id": "weaviate_005",
+    "log_file": "output_weaviate_005.log",
+    "captured_raw_http": true
+   }
+  ]
+ },
+ "log_contents": {
+  "weaviate_005": "=== REQ 1 ===\nDELETE http://localhost:18080/v1/schema/TestZero\n=== RESP 1 ===\nstatus: 200\nbody: \n\n=== REQ 2 ===\nDELETE http://localhost:18080/v1/schema/TestNeg\n=== RESP 2 ===\nstatus: 200\nbody: \n\n=== REQ 3 ===\nPOST http://localhost:18080/v1/schema\npayload: {\"class\": \"TestZero\", \"shardingConfig\": {\"desiredCount\": 0}}\n=== RESP 3 ===\nstatus: 422\nbody: {\"allowed\":null,\"error\":[{\"message\":\"updating db: TYPE_ADD_CLASS: apply add class: create index: failed to read sharding state: invalid sharding state: physical shards unavailable\"}]}\n\n\n=== REQ 4 ===\nPOST http://localhost:18080/v1/schema\npayload: {\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}\n=== RESP 4 ===\nstatus: 200\nbody: \n\nVERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)\n"
+ }
+}
+[output log full text: output_weaviate_005.log]
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/TestZero
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+DELETE http://localhost:18080/v1/schema/TestNeg
+=== RESP 2 ===
+status: 200
+body: 
+
+=== REQ 3 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "TestZero", "shardingConfig": {"desiredCount": 0}}
+=== RESP 3 ===
+status: 422
+body: {"allowed":null,"error":[{"message":"updating db: TYPE_ADD_CLASS: apply add class: create index: failed to read sharding state: invalid sharding state: physical shards unavailable"}]}
+
+
+=== REQ 4 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "TestNeg", "shardingConfig": {"desiredCount": -1}}
+=== RESP 4 ===
+status: 200
+body: 
+
+
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+
+
+OUTPUT: single-line JSON only:
+{"defect_id": "weaviate_005", "vote": "is_defect|not_defect|script_error", "grade": "A|B|C|D", "score": 0-9, "evidence_summary": "one sentence", "rationale": "one sentence"}
