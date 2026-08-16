@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupSize=0 and groupSize=-1",
+          "observed": "Both requests succeeded (HTTP 200). groupSize=0 returned 3 results, groupSize=-1 returned 3 results. No error for invalid parameter values",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -d '{\"collectionName\":\"dev_review_036\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"vector\",\"groupSize\":0}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": false,
+          "contract_refs": ["无明确契约约束 — structured_contract.json 中没有 groupSize 的定义或断言"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupSize.*validat", "checkGroupSize", "GroupParams", "grouping.*search"],
+          "files_examined": ["internal/proxy/search_agg/context_builder.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// 搜索结果摘要:\n// internal/proxy/search_agg/context_builder.go 包含 deriveTopKAndGroupSizeChecked() 函数\n// 该函数处理内部聚合的 groupSize,但未发现 REST v2 API 层的 groupParams.groupSize 参数校验\n// 搜索 groupSize 参数校验:未找到显式的 validateGroupSize() 或类似函数",
+          "call_chain_traced": "REST v2 search request → (未找到显式参数校验) → internal search aggregation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:未找到 groupParams.groupSize 参数的显式校验代码。REST v2 handler 层无验证,直接透传参数。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "无法证伪 — 问题不是'结果错误',而是'API应该拒绝无效参数'",
+          "observed": "Bug后果是API接受非法参数值(0和-1),而不是返回错误数据"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "可能是特殊语义(groupSize=0可能表示'不分组'),但文档未说明"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "符合盲点模式:REST v2 API参数校验缺失"
+      },
+      "root_cause_if_true": "contract_misread",
+      "severity_after_review": "Medium",
+      "confidence": 0.75,
+      "rationale": "契约无明确约束,但从物理/语义约束角度,groupSize应该是正整数。API接受0和-1违反语义约束。源码接地未找到参数校验代码。符合REST v2参数校验缺失的盲点模式。CONFIRMED(较低置信度,因为0可能有特殊语义)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_016",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from.collection='nonexistent_collection_xyz'",
+          "observed": "HTTP 200 OK, 返回 test_lookup_source 中的结果 (id=4,0,3), 而非错误",
+          "evidence_cmd": "原始日志 REQ 7: lookup_from.collection='nonexistent_collection_xyz' 返回 200 OK, 结果来自 test_lookup_source"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["无 constraint 明确规定不存在集合的错误行为; 但常识: lookup_from 应验证集合存在性"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["lookup_from", "get_lookup_collection", "collection.*exist"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "lib/collection/src/operations/universal_query/collection_query.rs"],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 1118-1129\npub struct LookupLocation {\n    /// Name of the collection used for lookup\n    pub collection: String,  // 无 #[validate(...)] 注解, 无存在性验证\n    pub vector: Option<VectorNameBuf>,\n    pub shard_key: Option<ShardKeySelector>,\n}\n\n// lib/collection/src/operations/universal_query/collection_query.rs line 554-563\nif let Some(lookup_collection) = self.get_lookup_collection() {\n    lookup_other_collection = lookup_collection != collection\n};  // 仅比较名称, 不验证集合是否存在\n// 当 lookup_collection 不存在时, lookup_other_collection = true,\n// 但后续逻辑不会失败,而是回退到在当前集合中搜索",
+          "call_chain_traced": "LookupLocation.collection (String, 无验证) → get_lookup_collection() → 仅比较名称差 → 无存在性检查 → 静默回退",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地未发现 lookup_from.collection 的存在性验证。当指定不存在的集合时, API 不报错, 而是静默在当前集合中搜索, 误导用户。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 REQ 8 (使用存在的集合) 是否正确行为",
+          "observed": "REQ 8 lookup_from.collection='test_lookup_target' (存在) 返回 200 OK, 结果来自正确集合, 验证通过。对比 REQ 7 (不存在) 也返回 200, 但结果来自当前集合, 行为不一致。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns; 参数验证缺失导致误导性行为"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.80,
+      "rationale": "源码接地未发现 lookup_from.collection 的存在性验证。实测使用不存在的集合 'nonexistent_collection_xyz' 时, API 返回 200 OK 且提供结果, 但结果实际来自当前集合(test_lookup_source), 而非指定的 lookup 集合。这是误导性的优雅处理 — 用户期望从指定集合查找向量, API 却在另一个集合中搜索且不报错。应返回 404 (集合不存在) 或 400 (参数错误), 而非静默回退。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero with shard_number=0; PUT /collections/test_shard_neg with shard_number=-1",
+          "observed": "Both requests correctly rejected: shard_number=0 returned 422 'value 0 invalid, must be 1 or larger'; shard_number=-1 returned 400 'invalid value: integer `-1`, expected u32'",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_shard_zero -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001",
+            "assertion: shard_number >= 1",
+            "confidence: 1.0",
+            "evidence_tier: explicit"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ v1.18.1",
+          "grep_queries": [
+            "shard_number",
+            "range(min = 1)"
+          ],
+          "files_examined": [
+            "lib/api/src/grpc/qdrant.rs",
+            "lib/collection/src/operations/validation.rs",
+            "lib/api/build.rs"
+          ],
+          "source_excerpt": "lib/api/src/grpc/qdrant.rs line 1184-1188: /// Number of shards in the collection, default is 1 for standalone, otherwise /// equal to the number of nodes. Minimum is 1 #[prost(uint32, optional, tag = \"7\")] #[validate(range(min = 1))] pub shard_number: ::core::option::Option<u32>, lib/collection/src/operations/validation.rs line 55-67: range error handling with message generation",
+          "call_chain_traced": "CreateCollection.shard_number → #[validate(range(min = 1))] decorator → validator crate → validation.rs error formatting → HTTP 422 response with clear error message",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:shard_number 参数有明确的 #[validate(range(min = 1))] 装饰器,validation.rs 有完整的错误消息生成逻辑,实测 API 正确拒绝了 0 和 -1 两个非法值,返回了清晰的错误消息。验证逻辑完整且有效。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "反向证伪无需独立取证 — 原候选声称的是'参数验证缺失',但实测显示验证逻辑完整且正确工作,无需进一步证伪。",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "oracle_misclassification"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何 by_design 或 rejection 模式。该问题是 oracle 误分类,不是维护者明确拒绝的模式。"
+      },
+      "root_cause_if_fp": "oracle_misclassification",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "源码与实测均证伪:shard_number 参数有完整的 #[validate(range(min = 1))] 验证逻辑(validation.rs 55-67 行有错误消息生成,实测返回 422 'value 0 invalid, must be 1 or larger' 和 400 'invalid value: integer -1, expected u32'),契约明文规定 shard_number >= 1 (constraint_id: qdrant_range_create_collection_001, confidence 1.0, explicit)。该 oracle 将'有效验证'误报为'验证缺失',属误分类。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"oracle_misclassification": 1}
+  }
+}

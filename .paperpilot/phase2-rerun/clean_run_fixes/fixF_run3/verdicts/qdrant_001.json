@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points?wait=true with vector=[] returns 400 (expected), PUT /collections/test/points (no wait) with vector=[] returns 200 OK with operation_id (observed)",
+          "observed": "With wait=true: HTTP 400, 'Vector dimension error: expected dim: 4, got 0'. Without wait: HTTP 200, {operation_id: 1, status: acknowledged}. After wait: points_count=0 (operation failed silently)",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test/points?wait=true -d '{\"points\":[{\"id\":1,\"vector\":[]}]}' → 400; curl -X PUT http://localhost:6333/collections/test/points -d '{\"points\":[{\"id\":2,\"vector\":[]}]}' → 200; sleep 3; curl http://localhost:6333/collections/test | grep points_count → 0"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate labeled as 'crash' but no crash occurred - both requests returned HTTP responses (400 error message and 200 acknowledgment respectively)",
+            "Oracle likely assumed 200 OK means successful insertion, but with async operations (wait=false), 'acknowledged' status only means request was queued, not that it will succeed"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "PUT /collections/{collection_name}+points parameter 'wait' (boolean): 'Await for operation result' - wait=true performs synchronous validation, wait=false returns immediately with 'acknowledged' status",
+            "Source: structured_contract.json line 342-346: wait parameter description",
+            "API templates.md line 39-41: PUT collections+{collection_name}+points - Upsert or insert points into a collection"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": [
+            "Vector dimension error",
+            "WrongVectorDimension",
+            "check_vector_against_config",
+            "wait parameter validation"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/collection/src/operations/types.rs",
+            "tests/openapi/test_multi_vector.py"
+          ],
+          "source_excerpt": "lib/segment/src/common/mod.rs lines 173-205:\n\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n        // ... multi-vector handling ...\n    }\n}\n\nlib/collection/src/operations/types.rs line 1057-1059:\n\nOperationError::WrongVectorDimension { .. } => Self::BadInput {\n    description: format!(\"{err}\"),\n},",
+          "call_chain_traced": "PUT /points request → validation layer → check_vector_against_config (lines 173-205) → dimension check → WrongVectorDimension error → converted to BadInput (line 1057) → HTTP 400 when wait=true, or operation fails silently in background when wait=false",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_in_sync_mode_only",
+          "note": "源码接地发现:维度校验确实存在于 check_vector_against_config 函数中,但只在同步模式(wait=true)时返回 HTTP 400.异步模式(wait=false)时,校验在后台执行,失败时操作被静默丢弃,这是 Qdrant 的已知异步行为设计"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Valid vector insertion to confirm collection functionality",
+          "observed": "PUT with valid vector [0.1,0.2,0.3,0.4] (no wait) → HTTP 200 acknowledged → after 2s: points_count=1. Valid vectors succeed and are persisted. Empty vector with wait=false returns 200 acknowledged but operation fails silently (points_count stays 0). This proves the '200 OK' is not a bug but async behavior design."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue: None - running official qdrant/qdrant v1.12.1 container",
+            "Race condition: Not applicable - single-threaded sequential test",
+            "Cache/optimizer delay: Not applicable - waited 3 seconds, operation still failed",
+            "Request parameter typo: Empty vector [] is intentional test payload, not a typo"
+          ],
+          "surviving": "async_operation_acknowledgment_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)",
+        "developer_quote": "Batch operations are not promissed to be atomic",
+        "note": "Developer cognition confirms: Qdrant async operations (wait=false) return 'acknowledged' status without guarantee of success. Users must handle partial failures. This is by-design API semantics, not a bug."
+      },
+      "root_cause_if_fp": "async_operation_acknowledgment_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选被误报为'crash'类型缺陷,但实际上不存在崩溃。Raw 证据显示: (1) wait=true+空向量 → HTTP 400 明确错误(预期行为,源码 check_vector_against_config 执行维度校验并返回 WrongVectorDimension); (2) wait=false+空向量 → HTTP 200 acknowledged 状态,但3秒后查询 points_count=0(后台操作静默失败)。这是 Qdrant 的异步操作设计特性:wait=false 仅表示请求被接受,不保证成功。Developer_cognition.json 明确声明'batch operations are not promised to be atomic',async 操作预期行为包含部分失败。源码接地确认维度校验逻辑存在且在同步模式下正确工作。这不是 bug,而是 Oracle 误读了异步 API 的 'acknowledged' 语义为'成功'导致的误报。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "async_operation_acknowledgment_semantics": 1
+    }
+  }
+}

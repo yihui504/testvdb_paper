@@ -1,0 +1,82 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "/schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-1",
+          "observed": "API accepted HTTP 200, stored collection with ef=-1",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestEfnegReview\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"ef\": -1}, \"properties\": [{\"name\": \"text\", \"dataType\": [\"text\"]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["Source code comment: DefaultEF = -1 indicates 'let Weaviate pick'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ 1.37.4",
+          "grep_queries": ["DefaultEF", "ef.*-1", "let.*pick"],
+          "files_examined": ["entities/vectorindex/hnsw/config.go"],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 24-34\nconst (\n\t// Set these defaults if the user leaves them blank\n\tDefaultCleanupIntervalSeconds = 5 * 60\n\tDefaultMaxConnections         = 32\n\tDefaultEFConstruction         = 128\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\tDefaultDynamicEFMin           = 100\n\tDefaultDynamicEFMax           = 500\n\tDefaultDynamicEFFactor        = 8\n\tDefaultSkip                   = false\n\tDefaultFlatSearchCutoff       = 40000\n)",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig → SetDefaults → DefaultEF = -1 is the documented default",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly documents: DefaultEF = -1 // indicates 'let Weaviate pick'. This is a valid sentinel value for automatic EF selection, not a validation gap."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfnegReview to verify stored ef value",
+          "observed": "Stored ef=-1 (valid sentinel value for automatic EF selection)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment/Platform", "Concurrency/Race", "Caching", "Request Parameter Typo"],
+          "surviving": "valid_sentinel_value"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "expected_behavior",
+        "developer_quote": "Behaviors that match documented API specifications even if unexpected",
+        "note": "ef=-1 is a documented sentinel value meaning 'let Weaviate pick EF', not a bug"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - ef=-1 is the documented default/sentinel value",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - ef=-1 is semantically valid as 'auto' mode",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (Valid sentinel value is by-design)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Weaviate POST /schema accepts ef=-1 which is the documented DefaultEF value meaning 'let Weaviate pick'. Source code explicitly documents: 'DefaultEF = -1 // indicates \"let Weaviate pick\"'. This is a valid sentinel value for automatic EF selection, not a validation bug. Matches developer_cognition pattern 'expected behavior'. FALSE_POSITIVE."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1
+  }
+}

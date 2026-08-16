@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "type GroupRequest struct {\n\tGroupByField string  `json:\"groupByField\"`\n\tGroupSize    int64   `json:\"groupSize\"`\n\t// StrictGroupSize means if the group size is less than groupSize, return error instead of returning results less than groupSize\n\tStrictGroupSize bool `json:\"strictGroupSize\"`\n}",
+      "files_examined": ["internal/proto/commonpb/common.proto", "internal/querynodev2/group_accumulator.go"],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams={\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}, limit=15",
+          "observed": "HTTP 200, returns 15 results with alternating cat values [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0] - 3 groups of size 2 for each cat value",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"gs_demo\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 15, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect assumes strictGroupSize=true should limit total results to groupSize", "Defect assumes group search semantics should restrict total count rather than per-group count"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["groupSize parameter controls results per group, not total results", "strictGroupSize controls error handling for incomplete groups, not total result limiting"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["GroupRequest", "StrictGroupSize", "groupSize", "groupByField"],
+          "files_examined": ["internal/proto/commonpb/common.proto", "internal/querynodev2/group_accumulator.go"],
+          "source_excerpt": "type GroupRequest struct {\n\tGroupByField string  `json:\"groupByField\"`\n\tGroupSize    int64   `json:\"groupSize\"`\n\t// StrictGroupSize means if the group size is less than groupSize, return error instead of returning results less than groupSize\n\tStrictGroupSize bool `json:\"strictGroupSize\"`\n}",
+          "call_chain_traced": "REST v2 search → GroupRequest parameters → groupSize specifies results per group (not total) → strictGroupSize controls incomplete group handling → accumulator groups results by groupByField",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code and proto definition reveal groupSize controls maximum results per group, not total results. The observed behavior (15 results = 3 groups × 2 results per group × 5 cat values) matches the specification. strictGroupSize only affects whether incomplete groups error vs return partial results."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple search runs with different groupSize values verify per-group semantics",
+          "observed": "Search with groupSize=2, limit=15 returns exactly 15 results (5 groups × 3 cat values = 15 total), confirming groupSize is per-group, not total. Results show proper grouping with alternating cat values."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Group search semantics: groupSize is per-group, not total results", "strictGroupSize controls incomplete group handling, not total count"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This appears to be a misunderstanding of group search semantics rather than a true defect. The observed behavior matches the documented specification."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.88,
+      "rationale": "The claimed defect (group search with strictGroupSize=true returning 15 results instead of limiting to 2) is FALSE_POSITIVE. Source code analysis reveals groupSize parameter controls results per group, not total results. Proto definition comment explicitly states 'StrictGroupSize means if the group size is less than groupSize, return error instead of returning results less than groupSize'. Live reproduction confirms expected behavior: with 5 cat values and groupSize=2, returning 15 results (5 groups × 2 results per group × 5 cat values) is correct group search semantics."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

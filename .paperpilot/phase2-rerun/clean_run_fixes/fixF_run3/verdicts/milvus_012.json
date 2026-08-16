@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "entities+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "source_excerpt": "// C:/Users/11428/Desktop/tvdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go (query handler)\n// Query endpoint correctly validates collection existence\n// Returns error code 100 with message 'can't find collection' when collection doesn't exist\n// This is expected error handling behavior, not a defect",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_012/output_milvus_012.log"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query on non-existent collection 'some_coll'",
+          "observed": "Query fails with HTTP 200, code 100, message: 'can't find collection[database=default][collection=some_coll]'. This is proper error handling.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"some_coll\", \"filter\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Collection must exist before querying",
+            "API correctly returns error when collection not found",
+            "Error message clearly identifies the missing collection"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+query",
+            "parameter: collectionName (type: string, required: true)",
+            "precondition: Collection must exist"
+          ],
+          "note": "Error code 100 is the standard 'collection not found' error in Milvus"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "can't find collection",
+            "collection.*not.*found",
+            "code.*100"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// Query handler validates collection existence before processing\n// If collection not found, returns error code 100: 'can't find collection'\n// This is standard, expected error handling",
+          "call_chain_traced": "POST /entities/query -> handler_v2.go -> validate collection exists -> collection not found -> return error code 100",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Proper error handling for invalid input (non-existent collection). This is NOT a defect."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify error is appropriate - attempting to query non-existent collection should fail",
+          "observed": "Error is appropriate and informative. Code 100 with clear message identifies the exact problem.",
+          "evidence_cmd": "Error message correctly identifies missing collection by name and database"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "This is normal error handling",
+            "API is working as designed",
+            "Testing valid error paths is not bug finding"
+          ],
+          "surviving_explanation": "By-design: Querying non-existent collection should return error. This is mundane API semantics."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "Fits rejection pattern RP-001: returning error for non-existent collection is expected behavior"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collectionName is required. Collection must exist.",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Cannot query non-existent collection. Error is the only valid response.",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "source_evidence": "Standard error handling pattern - validate input, return descriptive error on failure.",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "All perspectives agree this is correct behavior → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "rationale": "entities/query endpoint on non-existent collection 'some_coll' returns error code 100 with message 'can't find collection[database=default][collection=some_coll]'. This is CORRECT error handling behavior. Querying a non-existent collection MUST fail. The error is clear, informative, and uses the standard error code. This is NOT a bug - it's proper validation. The test appears to be checking valid error handling rather than finding a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "// internal/rootcoord/create_collection_task.go line 530-538\n\t// Check if the collection already exists.\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection\n\t}\n\n// internal/rootcoord/meta_table.go line defines: errIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.",
+      "files_examined": [
+        "internal/rootcoord/create_collection_task.go",
+        "internal/rootcoord/meta_table.go",
+        "internal/rootcoord/root_coord.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create collectionName=test_dup_022 (twice with identical params)",
+          "observed": "Both HTTP 200: first create succeeded, second create also succeeded (idempotent behavior)",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dup_022\",\"dimension\":4,\"metricType\":\"COSINE\",\"idType\":\"Int64\",\"autoID\":false}' | jq '.code'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes second create should fail, but Milvus implements idempotent collection creation (same params = ignored success)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+create, doc_quote: '200 on success'",
+            "No contract clause specifying behavior on duplicate create with identical parameters"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["errIgnoredCreateCollection", "duplicate collection", "GetCollectionByName"],
+          "call_chain_traced": "HTTP create → createCollectionTask.PreExecute → GetCollectionByName → if exists && Equal → return errIgnoredCreateCollection (success)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source explicitly implements idempotent collection creation: 'create collection with same schema, so it can be ignored'. Different parameters would fail, identical parameters succeed with errIgnoredCreateCollection."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Second create with identical parameters returned HTTP 200 (not 400/Conflict)",
+          "observed": "Idempotent behavior confirmed - second create is ignored and returns success"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Duplicate collection with identical parameters (idempotent by design)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected_behavior",
+        "note": "Hits rejection pattern RP-001: Idempotent collection creation is expected system behavior for create operations with identical parameters."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Original defect claim: 'duplicate collection creation should fail'. Step 1 clean reproduction: both creates succeeded with HTTP 200. Step 2 assumption audit: violated - candidate assumed non-idempotent behavior. Step 3 contract grounding: no clause prohibiting duplicate creates with same params. Step 3.5 source grounding: source explicitly implements idempotent behavior via errIgnoredCreateCollection. Step 4 falsification: second create succeeds (not fails). Step 5 mundane explanation: idempotent collection creation is mundane API semantics. Verdict: FALSE_POSITIVE - this is expected idempotent behavior for collection creation with identical parameters in Milvus 2.6.17."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

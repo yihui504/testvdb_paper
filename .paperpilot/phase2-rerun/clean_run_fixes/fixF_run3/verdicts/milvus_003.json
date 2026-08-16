@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with HNSW index and searchParams={'ef': 0}",
+          "observed": "HTTP 200 OK with successful search results returned. API accepts ef=0 without error despite HNSW convention requiring ef >= 1.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.create_collection('repro_test_003', dimension=8); client.insert('repro_test_003', [{'id': i, 'vector': [0.1]*8} for i in range(10)]); client.load_collection('repro_test_003'); result = client.search('repro_test_003', data=[[0.1]*8], limit=3, search_params={'ef': 0}); print('SUCCESS with ef=0:', result[:3])\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No contract assertion explicitly validates ef parameter range for HNSW indexes"],
+          "note": "HNSW index type convention requires ef >= efConstruction during search, but REST v2 API does not enforce this"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["ef", "HNSW", "searchParams", "generateSearchParams"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2076-2116\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter merging logic with NO validation of ef range ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s...\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)",
+          "call_chain_traced": "HTTP handler_v2.go:generateSearchParams → marshall to KeyValuePair → pass to proxy.Search → NO validation of ef range for HNSW anywhere in chain",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:generateSearchParams 对所有 search_params 统一处理,未对 HNSW 特有参数 ef 做 [1, +∞) 范围校验。与 nprobe 问题相同的根本原因 - 参数校验缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: HNSW specification requires ef >= 1 for valid search behavior; API incorrectly accepts ef=0",
+          "observed": "API accepts ef=0 and returns results, violating HNSW search parameter requirements"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "request parameter typo", "API semantics misunderstanding"],
+          "surviving": "param_validation_absent"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization not validated",
+        "note": "命中 REST v2 参数校验盲点模式 - 与 nprobe 问题同源"
+      },
+      "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2076-2116\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter merging logic with NO validation of ef range ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s...\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/utils.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现成功:HNSW 索引类型下 REST v2 /entities/search 接受 searchParams.ef=0 并返回正常结果。HNSW 算法规范要求 ef >= 1 (通常 >= efConstruction),但 API 未执行此校验。源码接地显示与 nprobe 问题同根因 - generateSearchParams 未对索引类型特定参数做范围校验。这符合 developer_cognition.json 中 REST v2 参数校验盲点模式。非平凡解释已排除。确认为真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_014",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover in standalone mode",
+          "observed": "HTTP 500 Internal Server Error: 'Qdrant is running in standalone mode'",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/cluster/recover"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["无 constraint 明确规定错误码; 但同类 remove_peer API 在 standalone 模式下返回 400 Bad Request"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["recover_current_peer", "get_consensus_proposal_sender", "standalone mode", "bad_request"],
+          "files_examined": ["src/actix/api/cluster_api.rs", "lib/storage/src/content_manager/toc/mod.rs"],
+          "source_excerpt": "// src/actix/api/cluster_api.rs line 60-73\n#[post(\"/cluster/recover\")]\nfn recover_current_peer(\n    dispatcher: web::Data<Dispatcher>,\n    ActixAuth(auth): ActixAuth,\n) -> impl Future<Output = HttpResponse> {\n    helpers::time(async move {\n        auth.check_global_access(AccessRequirements::new().manage(), \"recover_current_peer\")?;\n        dispatcher.toc(&auth, &pass).request_snapshot()?;  // 调用 get_consensus_proposal_sender\n        Ok(true)\n    })\n}\n\n// lib/storage/src/content_manager/toc/mod.rs line 774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender\n        .as_ref()\n        .ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))  // 返回 500\n}\n\n// src/actix/api/cluster_api.rs line 108-110 (同类 remove_peer API)\nNone => Err(StorageError::bad_request(\n    \"Distributed mode disabled.\".to_string(),  // 返回 400\n)),",
+          "call_chain_traced": "recover_current_peer → request_snapshot → get_consensus_proposal_sender → 返回 service_error (500); 而 remove_peer 直接返回 bad_request (400)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "inconsistent_error_handling",
+          "note": "源码接地发现: 同为 standalone 模式下的 cluster API,remove_peer 返回 400 Bad Request,而 recover_current_peer 通过 get_consensus_proposal_sender 返回 500 Internal Server Error。错误码不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "确认 remove_peer 在 standalone 模式下确实返回 400",
+          "observed": "remove_peer 使用 StorageError::bad_request (400),recover_current_peer 使用 StorageError::service_error (500)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求笔误"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns; 源码显示同类 API 使用不同错误码,这是不一致的 bug"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "源码接地发现错误码不一致: 在 standalone 模式下,remove_peer API 返回 400 Bad Request ('Distributed mode disabled'),而 recover_current_peer 返回 500 Internal Server Error ('Qdrant is running in standalone mode')。两者语义相同(客户端在错误模式下调用了集群API),应统一使用 4xx 客户端错误。recover_current_peer 使用 5xx 是服务器内部错误的语义,不符合'客户端误用API'的场景。这是 HTTP 错误码不一致的真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

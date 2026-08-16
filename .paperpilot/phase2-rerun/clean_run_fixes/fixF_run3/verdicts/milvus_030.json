@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_030",
+      "endpoint": "users+create",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/users/create with password lengths of 6, 7, 8, and 5 characters",
+          "observed": "password='123456' (6 chars) -> HTTP 200 accepted (violates documented 8-64 range). password='1234567' (7 chars) -> HTTP 200 accepted (violates documented min 8). password='12345' (5 chars) -> HTTP 200 code:1100 rejected with '5 out of range 6 <= value <= 72'. Actual implementation enforces 6-72, not documented 8-64.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/users/create' -d '{\"userName\":\"testuser6\",\"password\":\"123456\"}' -> HTTP 200 accepted; curl with 5 chars -> '5 out of range 6 <= value <= 72'",
+          "raw_log_evidence": "REQ 1: password='abcdefgh'(8 chars) -> accepted; REQ 3: password='a'(1 char) -> rejected with '1 out of range 6 <= value <= 72'. Live test: 6 chars accepted, 5 chars rejected."
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_satisfied": [
+            "Contract claims password must be 8-64 characters (milvus_range_users_create_001)",
+            "Implementation actually enforces 6-72 characters (per error message and source code)",
+            "Password of 6 chars violates documented minimum of 8 but is accepted by API"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_users_create_001",
+            "assertion: '8 <= len(password) <= 64'",
+            "type: range_constraint",
+            "confidence: 1.0",
+            "source_url: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["MinPasswordLength", "MaxPasswordLength", "ValidatePassword"],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "pkg/util/paramtable/component_param.go",
+            "pkg/util/paramtable/component_param_test.go"
+          ],
+          "source_excerpt": "// pkg/util/paramtable/component_param.go line 2089-2118 (password length config)\np.MinPasswordLength = ParamItem{\n    Key:          \"proxy.minPasswordLength\",\n    DefaultValue: \"6\",  // ACTUAL MIN IS 6, NOT 8\n    Version:      \"2.0.0\",\n    PanicIfEmpty: true,\n}\np.MinPasswordLength.Init(base.mgr)\n\np.MaxPasswordLength = ParamItem{\n    Key:          \"proxy.maxPasswordLength\",\n    DefaultValue: \"72\",  // ACTUAL MAX IS 72, NOT 64\n    Version:      \"2.0.0\",\n    Formatter: func(v string) string {\n        n := getAsInt(v)\n        if n > 72 {\n            return \"72\"  // bcrypt max length\n        }\n        return v\n    },\n    PanicIfEmpty: true,\n}\np.MaxPasswordLength.Init(base.mgr)\n\n// internal/proxy/util.go line 1306-1313 (validation)\nfunc ValidatePassword(password string) error {\n    if len(password) < Params.ProxyCfg.MinPasswordLength.GetAsInt() || len(password) > Params.ProxyCfg.MaxPasswordLength.GetAsInt() {\n        return merr.WrapErrParameterInvalidRange(\n            Params.ProxyCfg.MinPasswordLength.GetAsInt(),\n            Params.ProxyCfg.MaxPasswordLength.GetAsInt(),\n            len(password), \"invalid password length\")\n    }\n    return nil\n}",
+          "call_chain_traced": "users+create → ValidatePassword() → checks MinPasswordLength(6) and MaxPasswordLength(72) → constraint claims 8-64 but config defaults to 6-72",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "doc_mismatch_found",
+          "note": "源码接地发现: 配置默认值 MinPasswordLength=6, MaxPasswordLength=72,但契约约束声明为 8-64. 实现(6-72)与文档(8-64)不一致. 密码长度 6-7 字符被接受但违反文档要求."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test actual password length boundaries in live API",
+          "observed": "password='123456'(6 chars) -> HTTP 200 ACCEPTED (should be rejected per 8-64 docs). password='12345'(5 chars) -> HTTP 200 code:1100 REJECTED with '5 out of range 6 <= value <= 72'. Implementation enforces 6-72, not 8-64.",
+          "evidence_cmd": "6-char password accepted; 5-char password rejected with range error showing 6-72. Documentation mismatch confirmed."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on clean Milvus 2.6.17)",
+            "Test design flaw (multiple tests confirm same discrepancy)",
+            "Configuration override (using default config values)",
+            "API semantic misunderstanding (behavior is consistent, just docs are wrong)"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Documentation-behavior consistency",
+        "developer_quote": "When official documentation claims a behavior or capability that the server does not exhibit (documented X, actual behavior is not-X), this is a consistency defect - maintainers' disposition is to fix it, usually by correcting the docs to match verified behavior.",
+        "note": "命中开发者认知: 文档行为一致性缺陷. 实现行为(6-72)与文档声明(8-64)不符,维护者通常会修正文档以匹配实际行为."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "8 <= len(password) <= 64 (milvus_range_users_create_001, confidence 1.0)",
+          "assertion_text_quoted": "8 <= len(password) <= 64",
+          "api_observed_value": "password='123456'(6 chars) accepted with HTTP 200. Error messages and source code show actual enforcement is 6-72, not 8-64.",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Password length has configurable bounds with defaults 6-72 (for bcrypt compatibility). Documented 8-64 is inconsistent with implementation.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_handling_details": "API validates password length correctly per implementation config (6-72), but documentation states wrong range (8-64). Behavior is correct, docs are wrong.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract doc mismatch) + verdict_B=CONFIRMED (physical config mismatch) + verdict_C=CONFIRMED (documentation wrong) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "source_excerpt": "pkg/util/paramtable/component_param.go line 2089-2118\np.MinPasswordLength = ParamItem{\n    Key: \"proxy.minPasswordLength\",\n    DefaultValue: \"6\",  // Actual min is 6, not documented 8\n}\np.MaxPasswordLength = ParamItem{\n    Key: \"proxy.maxPasswordLength\",\n    DefaultValue: \"72\",  // Actual max is 72, not documented 64\n}\n\ninternal/proxy/util.go line 1306-1313\nfunc ValidatePassword(password string) error {\n    if len(password) < MinPasswordLength || len(password) > MaxPasswordLength {\n        return error with actual bounds (6, 72)\n    }\n}",
+      "files_examined": [
+        "internal/proxy/util.go",
+        "pkg/util/paramtable/component_param.go",
+        "pkg/util/paramtable/component_param_test.go"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API accepts password='123456'(6 chars) with HTTP 200, violating documented constraint '8 <= len(password) <= 64'. Source code confirms actual bounds are MinPasswordLength=6 and MaxPasswordLength=72 (defaults in component_param.go). Error messages show '6 <= value <= 72' when rejecting invalid passwords. This is a documentation mismatch defect - implementation correctly enforces 6-72, but constraint incorrectly states 8-64. Per developer cognition, 'Documentation-behavior consistency' issues are confirmed defects (maintainers fix docs to match verified behavior)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "documentation_mismatch": 1
+    }
+  }
+}

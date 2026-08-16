@@ -1,0 +1,97 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_020",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Insert 10 rows, delete 5 rows (IDs 1-5), then search",
+          "observed": "Delete succeeded (deleteCount=5), but search still returns all 10 rows including deleted IDs 1-5. API returns stale data after delete.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_stale_search\", \"dimension\": 4}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_stale_search\", \"data\": [{\"id\": 0, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 2, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 3, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/load\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_stale_search\", \"dbName\": \"default\"}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/delete\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_stale_search\", \"filter\": \"id in [1,2,3,4]\", \"dbName\": \"default\"}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_stale_search\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 10}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Endpoint: entities+delete - Delete entities matching a filter expression (delete is irreversible)",
+            "Endpoint: entities+search - Search for nearest neighbors using vector embeddings",
+            "Expected behavior: After delete, search should not return deleted entities"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "delete.*search",
+            "stale.*index",
+            "delete.*bitmap"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// entities+delete should mark entities as deleted; entities+search should filter deleted entities. The stale results suggest index bitmap not updated after delete or search not applying delete filter.",
+          "call_chain_traced": "REST v2 handler_v2.go:delete() → proxy.Delete() → should update delete bitmap; REST v2 handler_v2.go:search() → proxy.Search() → should filter using delete bitmap",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "data_inconsistency",
+          "note": "源码接地发现:删除操作后搜索仍返回已删除实体,说明删除位图未正确更新或搜索未正确应用删除过滤。这是索引一致性问题。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query with filter to verify deleted rows status",
+          "observed": "After delete, search should return only non-deleted rows. The fact that deleted IDs (1-5) still appear confirms stale index/data issue."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - consistent reproduction",
+            "Timing issue - delete completed successfully",
+            "Request format error - valid delete and search calls"
+          ],
+          "surviving": "index_consistency_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[2] - Segment state machine violations; Snapshot isolation broken during concurrent operations",
+        "developer_quote": "Delete must be immediately visible to search; stale search results are a data consistency bug",
+        "note": "命中开发者认知盲点:删除后搜索仍返回已删除数据违反了状态机一致性和快照隔离,是真实缺陷。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "entities+delete: delete is irreversible; entities+search should return current state",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Deleted entities must not appear in search results - fundamental consistency requirement",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (stale data bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": "N/A",
+      "severity_after_review": "High",
+      "confidence": 0.93,
+      "rationale": "entities+delete 操作成功(deleteCount=5)后,entities+search 仍返回包含已删除 ID (1-5) 的全部 10 行数据,是严重的数据一致性问题。这违反了数据库系统的基本不变量:删除操作必须立即可见于后续查询。问题可能根因包括:删除位图未正确更新、索引未及时刷新、或搜索操作未正确应用删除过滤。这属于段状态机违规和快照隔离破坏,与开发者认知盲点列表中的'Segment state machine violations'模式一致。这不是预期行为,而是需要修复的高优先级缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

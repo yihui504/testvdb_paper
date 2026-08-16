@@ -1,0 +1,76 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go - CollectionFilterReq struct\ntype CollectionFilterReq struct {\n\tDbName         string                 `json:\"dbName\"`\n\tCollectionName string                 `json:\"collectionName\" binding:\"required\"`\n\tPartitionName  string                 `json:\"partitionName\"`\n\tFilter         string                 `json:\"filter\" binding:\"required\"`\n\tExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n// NOTE: No 'ids' field defined in struct - any 'ids' in JSON body is silently ignored during unmarshaling\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1202-1212\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,\n\t}\n\t// Only httpReq.Filter is used; no handling of 'ids' field",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/request_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2_test.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/delete collectionName=test_del_024, filter='id > 0', ids=[1,2,3] (both parameters provided)",
+          "observed": "HTTP 200, deleteCount=1 (only filter applied, ids array completely ignored)",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/delete -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_del_024\",\"dbName\":\"default\",\"filter\":\"id > 0\",\"ids\":[1,2,3]}' | jq '.data.deleteCount'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "API would reject mutually exclusive parameters (filter AND ids) with error instead of silently accepting both",
+            "API would either honor both parameters or explicitly reject ambiguous input - fails fast principle violated"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+delete, doc_quote: '200 on success; 400 on invalid filter expression'",
+            "No contract clause addressing behavior when both filter AND ids parameters provided (API documentation gap)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["CollectionFilterReq", "entities/delete", "filter.*ids", "delete.*ids"],
+          "call_chain_traced": "HTTP delete JSON body → unmarshal into CollectionFilterReq → only Filter field extracted → ids field discarded → DeleteRequest with only Expr",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source confirms CollectionFilterReq struct has NO 'ids' field - any 'ids' in HTTP JSON is silently discarded during JSON unmarshaling. Delete handler only uses Filter field. This violates API design principles: ambiguous/mutually exclusive parameters should be rejected with error, not silently ignored."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Delete with both filter and ids returned deleteCount based solely on filter (ids ignored) - no error despite ambiguous input",
+          "observed": "Bug confirmed: API silently ignores ids parameter, processes only filter, misleading users who expect both to be honored"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Not mundane - silent parameter ignore violates fail-fast principle and REST API best practices"
+          ],
+          "surviving": "parameter_ignored_silently"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "Matches blindspot indicator: 'REST v2 API data type serialization not validated'. This is exactly that pattern - API accepts but doesn't process 'ids' field in delete request."
+      },
+      "root_cause_if_confirmed": "parameter_ignored_silently",
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Original defect claim: 'API silently ignores ids parameter when both filter and ids provided in delete request'. Step 1 clean reproduction: HTTP 200 with deleteCount=1 (only filter honored). Step 2 assumption audit: violated - API fails fast on ambiguous input. Step 3 contract grounding: no clause handling both parameters. Step 3.5 source grounding: CollectionFilterReq struct has no 'ids' field - silently discarded during unmarshaling. Step 4 falsification: bug confirmed - ids completely ignored. Step 5 mundane explanation: not mundane - violates API design principles. Verdict: CONFIRMED - REST v2 delete endpoint silently ignores 'ids' parameter when 'filter' also present, matching 'rest-v2-data-type-handling' bug shape with 26 historical instances per bug_shapes.json."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_ignored_silently": 1}
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_type_coercion_004/points with vector dimension mismatch (size: 4, vector: [0.1, 0.2, 0.3]) without wait=true",
+          "observed": "API returned HTTP 200 with status='acknowledged' and operation_id, accepting the dimension-mismatched request without immediate error",
+          "evidence_cmd": "curl -X PUT http://localhost:6333/collections/test_type_coercion_004/points -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3]}]}' => HTTP 200 OK with acknowledged status"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论假设API应该在同步阶段拒绝维度不匹配的向量",
+            "忽略了Qdrant的异步操作架构设计"
+          ],
+          "verified_assumptions": [
+            "集合配置要求向量维度为4",
+            "提供的向量只有3个元素，维度不匹配",
+            "API在没有wait=true时返回了acknowledged状态"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: PUT collections+{collection_name}+points (asynchronous by default)",
+            "parameter: wait (boolean, controls synchronous vs asynchronous execution)"
+          ],
+          "contract_gaps": [
+            "Contract does not explicitly specify when dimension validation occurs (sync vs async phase)",
+            "No requirement that dimension errors must be reported synchronously"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "check_vector_against_config",
+            "check_named_vectors",
+            "upsert_point implementation",
+            "acknowledged vs wait handling"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/segment/entry.rs",
+            "lib/segment/src/segment_constructor/simple_segment_constructor.rs",
+            "lib/collection/src/update_handler.rs"
+          ],
+          "source_excerpt": "lib/segment/src/common/mod.rs line 188-203:\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n    }\n}\n\nNote: Dimension validation DOES exist in the code and is called during segment upsert_point operation.\n\nlib/segment/src/segment/entry.rs line 14-15:\ncheck_named_vectors(&vectors, &self.segment_config)?;\nvectors.preprocess(|name| self.config().vector_data.get(name).unwrap());\n\nNote: Validation is performed in the segment layer during actual point insertion, not during API request parsing.\n\nlib/collection/src/update_handler.rs line 45-47:\n/// Whether to wait for deferred points to be optimized before sending feedback.\n/// Only relevant when `sender` is `Some`.\npub wait_for_deferred: bool,\n\nNote: wait parameter controls whether execution is synchronous (wait=true) or asynchronous (default wait=false).\n\nDeveloper cognition (intelligence/qdrant/developer_cognition.json):\n'Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)'\n\nNote: Maintainers explicitly document that operations are asynchronous and non-atomic by design.",
+          "call_chain_traced": "API request (without wait) -> return acknowledged immediately -> async execution -> segment.upsert_point -> check_named_vectors -> check_vector_against_config -> dimension error occurs in async context -> error not reported to original client",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: 维度验证确实存在于代码中(check_vector_against_config函数),但它在segment层的异步执行阶段被调用,而非API请求解析阶段。这是Qdrant异步操作架构的intentional设计,而非验证缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify that async dimension error actually fails the insert operation by checking point count",
+          "observed": "POST /points/count returns count=0, confirming that the dimension-mismatched point was NOT actually inserted despite acknowledged response. Async validation worked correctly.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_type_coercion_004/points/count -d '{}' => {\"result\":{\"count\":0}} confirms async failure occurred."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (standard Docker Qdrant)",
+            "Concurrency/race conditions",
+            "Request parameter typo (explicit dimension mismatch)"
+          ],
+          "surviving": "API design choice - asynchronous operations with deferred error reporting is an architectural tradeoff, not a bug"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns: Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)",
+        "developer_quote": "Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design) (maintainers: 'batch operations are not promissed to be atomic')",
+        "note": "直接命中开发者的by_design声明。Qdrant明确说明批量操作(包括异步插入)不保证原子性,用户应使用wait=true来同步等待结果或使用idempotent重试机制。这是API设计的有意权衡。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "源码接地与开发者认知确认: 维度验证完整存在于segment层的异步执行路径中(check_vector_against_config函数完整实现了维度检查)。API在无wait=true时返回acknowledged而非立即错误是Qdrant异步操作架构的intentional设计,而非验证缺失。developer_cognition.json明确声明'batch operations are not promised to be atomic',这解释了异步错误延迟报告的设计权衡。count=0的证伪结果也确认异步验证确实阻止了无效数据的插入。这是API设计选择,不是bug。",
+      "source_excerpt": "lib/segment/src/common/mod.rs line 188-203:\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }\n    }\n}",
+      "files_examined": [
+        "lib/segment/src/common/operation_error.rs",
+        "lib/segment/src/common/mod.rs",
+        "lib/segment/src/segment/entry.rs",
+        "lib/segment/src/segment_constructor/simple_segment_constructor.rs",
+        "lib/collection/src/update_handler.rs"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

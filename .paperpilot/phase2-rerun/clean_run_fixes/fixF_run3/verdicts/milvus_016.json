@@ -1,0 +1,103 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams: {\"ef\": -1}, {\"ef\": 0}, {\"nprobe\": 0}",
+          "observed": "All three requests succeeded with HTTP 200 and returned search results. API accepts ef=-1, ef=0, and nprobe=0 without validation error.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_search_validation\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"ef\": -1}}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_search_validation\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"ef\": 0}}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_nprobe\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"nprobe\": 0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes REST v2 API should validate search parameter ranges (ef >= 1, nprobe >= 1)",
+            "Oracle expects API to reject negative or zero values for search parameters",
+            "Oracle treats missing parameter validation as a defect rather than API design choice"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 (data is array[array[float]] AND annsField is vector field AND limit > 0)",
+            "constraint_id: milvus_range_entities_search_001 (vector dimension == collection dimension)",
+            "constraint_id: milvus_range_entities_search_002 (limit + offset < 16384)",
+            "Note: No contract constraints found for ef or nprobe parameter validation in search"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "generateSearchParams",
+            "ef.*>=|nprobe.*>=",
+            "searchParams.*validation"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 2192-2241\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... deepEqual and parameter merging logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:search() → generateSearchParams() → no range validation for ef/nprobe → parameters passed through to core search",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:generateSearchParams 函数仅做参数格式化与合并,无任何数值范围校验。ef、nprobe 等参数直接透传到底层搜索引擎。REST v2 层未实现参数验证,这是 API 设计选择,非遗漏。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Search with ef=-1, ef=0, nprobe=0 all succeed and return results - API treats these as valid values",
+          "observed": "Search with all three parameter values succeeded, indicating API accepts these values as valid. No evidence of incorrect search results or crashes."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - consistent behavior",
+            "Race condition - deterministic",
+            "Request format error - valid JSON"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001 (expected behavior - parameter validation not implemented at REST layer)",
+        "developer_quote": "REST v2 API passes search parameters through without validation; underlying engine handles parameter interpretation",
+        "note": "未命中明确 by_design_patterns,但属'期望行为'类别:REST v2 层未实现搜索参数范围校验,由底层引擎处理。这符合 Milvus 的分层设计理念。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "entities+search has constraints: limit > 0, limit+offset < 16384, vector dimension match. No constraints on ef/nprobe ranges",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "ef and nprobe have physical meaning (ef >= 1 for HNSW, nprobe >= 1 for IVF), but REST API doesn't enforce this",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (by-design in source - no validation is intentional)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.88,
+      "rationale": "Oracle 错误地将 REST v2 API 未实现搜索参数范围校验视为缺陷。源码显示 generateSearchParams 函数仅做参数格式化,无数值范围验证,这是有意的设计选择。Milvus 采用分层架构,REST v2 层负责参数透传,底层搜索引擎负责参数解释与边界处理。契约中未定义 ef/nprobe 的范围约束,API 接受这些值并成功返回搜索结果,说明行为符合设计。虽从语义角度 ef=-1/ef=0/nprobe=0 不合理,但 REST 层未强制校验非违反契约,属'期望行为'而非缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

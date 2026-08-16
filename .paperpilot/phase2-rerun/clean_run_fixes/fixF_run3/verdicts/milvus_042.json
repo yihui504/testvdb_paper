@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "case schemapb.DataType_FloatVector:\n\t\t\t\t\tif dataString == \"\" {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n\t\t\t\t\t}\n\t\t\t\t\tvar vectorArray []float32\n\t\t\t\t\terr := json.Unmarshal([]byte(dataString), &vectorArray)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = vectorArray",
+      "files_examined": ["internal/distributed/proxy/httpserver/utils.go"],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as string: vector=\"[0.1,0.2,0.3,0.4]\"",
+          "observed": "HTTP 200, insertCount:1, insertIds:[0] - string vector accepted and parsed",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_vec_string\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect assumes vector fields only accept JSON arrays, not string representations", "Defect assumes json.Unmarshal will fail on string-encoded arrays"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint found requiring vectors to be arrays only"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_FloatVector", "json.Unmarshal", "vectorArray"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "case schemapb.DataType_FloatVector:\n\t\t\t\t\tif dataString == \"\" {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n\t\t\t\t\t}\n\t\t\t\t\tvar vectorArray []float32\n\t\t\t\t\terr := json.Unmarshal([]byte(dataString), &vectorArray)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = vectorArray",
+          "call_chain_traced": "REST v2 insert → checkAndSetData → DataType_FloatVector case → json.Unmarshal([]byte(dataString), &vectorArray) → json.Unmarshal handles both array and string-encoded array → converts to []float32",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code reveals vector field handling uses json.Unmarshal which inherently handles multiple JSON representations: direct arrays [0.1,0.2] and string-encoded arrays '[0.1,0.2]'. The standard library json.Unmarshal function parses both correctly to []float32."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert with string vector, then search to verify vector data was correctly stored and is searchable",
+          "observed": "Search with vector [0.1, 0.2, 0.3, 0.4] returns the inserted record with distance=1.0, confirming string vector was correctly parsed and stored"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["json.Unmarshal inherently handles multiple JSON representations", "Vector field accepts both array and string-encoded arrays by design"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "Filed under REST v2 data type handling, but vector string parsing via json.Unmarshal works correctly and handles both formats by design"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.93,
+      "rationale": "The claimed defect (vector as string rejected in insert) is FALSE_POSITIVE. Source code analysis reveals vector field handling uses json.Unmarshal which inherently accepts both direct arrays and string-encoded arrays. Live reproduction confirms insert with vector='[0.1,0.2,0.3,0.4]' succeeds and subsequent search returns correct results. The json.Unmarshal standard library function correctly parses JSON arrays regardless of whether they're direct values or string-encoded."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

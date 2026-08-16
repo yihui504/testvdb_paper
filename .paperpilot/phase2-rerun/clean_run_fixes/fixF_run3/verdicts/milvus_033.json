@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "type CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// Line 1919 in handler_v2.go (quick-setup mode):\nDataType: schemapb.DataType_FloatVector,\n\n// The CollectionReq struct has NO vectorFieldType field.\n// Grepping entire httpserver directory finds zero references to vectorFieldType.",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/request_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): REST v2 POST /collections/create with vectorFieldType='InvalidVectorType' returns HTTP 200 with code=0 (success). Collection is created with hardcoded FloatVector type instead of rejecting the invalid value.\n\nStep 2 (Premise Audit): Contract suggests vectorFieldType parameter should control vector data type. In quick-setup mode, valid types include FloatVector, Float16Vector, BFloat16Vector. Invalid values should be rejected.\n\nStep 3 (Contract Comparison): Actual behavior shows vectorFieldType is completely ignored. Server always creates FloatVector field regardless of input. No validation occurs.\n\nStep 4 (Source Grounding): CollectionReq struct (request_v2.go:690-703) has NO vectorFieldType field. Quick-setup handler (handler_v2.go:1919) hardcodes DataType_FloatVector. Directory-wide grep finds zero references to vectorFieldType - parameter is completely unimplemented.\n\nStep 5 (Falsification): Confirmed by testing various vectorFieldType values ('InvalidVectorType', 'Float16Vector', 'BFloat16Vector') - all result in FloatVector field. No error path exists for this parameter.\n\nStep 6 (Non-Trivial): This is NOT expected behavior. Developer cognition shows REST v2 parameter handling issues are a known blindspot (bug shape 'rest-v2-data-type-handling', 26 instances, confidence 0.95). Accepting and silently ignoring parameters creates false API surface and misleads users about available functionality."
+    }
+  ]
+}

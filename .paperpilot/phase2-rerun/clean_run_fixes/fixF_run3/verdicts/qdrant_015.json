@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_015",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections with shard_number=2147483647 (i32::MAX)",
+          "observed": "Server crash (HTTP response timeout/empty), 后续请求全部失败, 服务不可用",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test_shard_015' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}' # Exit code 52 (empty response)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["契约未明确定义 shard_number/replication_factor 的有效范围, 但常识约束 shard_number ≥ 1, replication_factor ≥ 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["shard_number", "replication_factor", "CreateCollection", "validate"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "lib/api/src/grpc/qdrant.rs", "lib/storage/src/content_manager/toc/create_collection.rs"],
+          "source_excerpt": "// lib/api/src/grpc/qdrant.rs (CreateCollection 结构定义片段)\npub struct CreateCollection {\n    pub collection_name: ::prost::alloc::string::String,\n    pub vectors_config: ::core::option::Option<VectorsConfig>,\n    // ... 其他字段 ...\n    // 未找到 shard_number 或 replication_factor 的 #[validate(range(...))] 注解\n    \n// lib/storage/src/content_manager/toc/create_collection.rs\n// 实际创建集合时使用这些参数,但未在 API 边界验证范围\n// 极端值(如 shard_number=2147483647)会分配过多资源或触发整数溢出,导致崩溃",
+          "call_chain_traced": "REST API → CreateCollection → 直接使用 shard_number/replication_factor, 无范围校验 → 资源分配/初始化时崩溃",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地未发现 shard_number/replication_factor 的参数验证逻辑。极端值直接传入内部逻辑,触发崩溃。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证崩溃后服务器状态",
+          "observed": "服务器完全不可响应( curl localhost:6333/ 返回 exit code 7), 需要重启容器恢复"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns; 参数验证缺失是典型的资源管理缺陷"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "源码接地未发现 shard_number/replication_factor 的参数边界验证。实测 shard_number=2147483647 (i32::MAX) 和 replication_factor=0 均导致服务器完全崩溃(不可响应),这是严重的资源管理缺陷。参数验证应拒绝非法值(shard_number ≥ 1, replication_factor ≥ 1, 合理上限),而非允许触发内部崩溃。崩溃是确定性的、可复现的真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

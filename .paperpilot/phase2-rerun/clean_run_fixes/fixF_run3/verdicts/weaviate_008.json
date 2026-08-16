@@ -1,0 +1,84 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_008",
+      "endpoint": "/schema/{className}/tenants",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema/{className}/tenants with activityStatus=\\\"\\\" (empty string)",
+          "observed": "HTTP 200 returned. Request sent activityStatus=\\\"\\\" but API silently accepted it instead of rejecting as invalid. Response shows tenant created but activityStatus field completely missing.",
+          "evidence_cmd": "curl -X POST 'http://localhost:18080/v1/schema/TestTenant/tenants' -H 'Content-Type: application/json' -d '[{\"name\": \"tenant_empty\", \"activityStatus\": \"\"}]'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle expects API to reject empty activityStatus as invalid input",
+            "Validation assumes activityStatus must be one of: ACTIVE, INACTIVE, OFFLOADED, HOT, COLD, FROZEN",
+            "API should return 422 for invalid activityStatus values"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema/{className}/tenants creates tenants with activityStatus: ACTIVE|INACTIVE|OFFLOADED",
+            "Invalid input should return 422 RestrictionViolationResponse"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "validateActivityStatuses",
+            "convertNewTenantNames",
+            "activityStatus.*empty"
+          ],
+          "files_examined": [
+            "usecases/schema/tenant.go",
+            "entities/models/tenant.go"
+          ],
+          "source_excerpt": "From usecases/schema/tenant.go lines 130-157:\n\nfunc (h *Handler) validateActivityStatuses(ctx context.Context, tenants []*models.Tenant,\n\tallowEmpty, allowFrozen bool,\n) error {\n\tmsgs := make([]string, 0, len(tenants))\n\n\tfor _, tenant := range tenants {\n\t\ttenant.ActivityStatus = convertNewTenantNames(tenant.ActivityStatus)\n\t\tswitch status := tenant.ActivityStatus; status {\n\t\tcase models.TenantActivityStatusHOT, models.TenantActivityStatusCOLD:\n\t\t\tcontinue\n\t\tcase models.TenantActivityStatusFROZEN:\n\t\t\tif mod := h.moduleConfig.GetByName(modsloads3.Name); mod == nil {\n\t\t\t\treturn fmt.Errorf(\n\t\t\t\t\t\"can't offload tenants, because offload-s3 module is not enabled\")\n\t\t\t}\n\n\t\t\tif allowFrozen && h.cloud != nil {\n\t\t\t\tif err := h.cloud.VerifyBucket(ctx); err != nil {\n\t\t\t\t\treturn err\n\t\t\t\t}\n\t\t\t}\n\t\t\tcontinue\n\t\tdefault:\n\t\t\t// NO DEFAULT CASE - empty string falls through without error!\n\t\t}\n\t}\n\n\tif len(msgs) > 0 {\n\t\treturn uco.NewErrInvalidUserInput(strings.Join(msgs, \", \"))\n\t}\n\treturn nil\n}\n\nFrom usecases/schema/tenant.go lines 399-410:\n\nfunc convertNewTenantNames(status string) string {\n\tif status == models.TenantActivityStatusACTIVE {\n\t\treturn models.TenantActivityStatusHOT\n\t}\n\tif status == models.TenantActivityStatusINACTIVE {\n\t\treturn models.TenantActivityStatusCOLD\n\t}\n\tif status == models.TenantActivityStatusOFFLOADED {\n\t\treturn models.TenantActivityStatusFROZEN\n\t}\n\treturn status  // EMPTY STRING IS RETURNED AS-IS!\n}",
+          "call_chain_traced": "POST /schema/{className}/tenants → validateTenants() → validateActivityStatuses() → convertNewTenantNames(\\\"\\\") [RETURNS \\\"\\\"] → switch statement [FALLS THROUGH WITHOUT DEFAULT CASE] → NO ERROR RAISED",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals parameter validation gap. convertNewTenantNames() returns empty string as-is when input doesn't match known values. The switch statement in validateActivityStatuses() lacks a default case, so empty strings fall through without triggering error. This allows invalid empty activityStatus values to be accepted instead of being rejected with 422 error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare responses: activityStatus=\\\"ACTIVE\\\" vs activityStatus=\\\"\\\"\"",
+          "observed": "activityStatus=\\\"ACTIVE\\\" → response shows activityStatus=\\\"HOT\\\" (correctly converted). activityStatus=\\\"\\\" → response has NO activityStatus field (silently ignored, not rejected). Confirms validation gap."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "By-design behavior (no source comments indicating empty status should be accepted)",
+            "API semantics (empty activityStatus has no meaning in tenant lifecycle)",
+            "Documentation (no mention of empty status being valid)"
+          ],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Matches BS-004 exactly: parameter_validation defect at request parsing layer where invalid input (empty activityStatus) is accepted instead of rejected. Also matches developer cognition blindspot: 'Input validation is often incomplete at API boundaries'."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.93,
+      "rationale": "Confirmed parameter validation gap. The POST /schema/{className}/tenants endpoint accepts activityStatus=\\\"\\\" (empty string), returns HTTP 200, and creates tenant without validating the status value. Source code analysis shows convertNewTenantNames() returns empty string as-is, and the switch statement lacks a default case to catch invalid values. The correct behavior should be 422 error rejecting empty activityStatus as invalid input. This matches BS-004 (Parameter Validation Issues) and aligns with developer cognition blindspots about incomplete input validation at API boundaries."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap": 1
+    }
+  }
+}

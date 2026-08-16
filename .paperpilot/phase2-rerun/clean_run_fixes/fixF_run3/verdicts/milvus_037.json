@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_037",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with various type mismatches: int64_f='789'(string), varchar_f=123(number)",
+          "observed": "Both inserts succeeded (HTTP 200). Query verified int64_f stored as integer 789 (not string '789'), varchar_f stored as '123' (number converted to string)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"dev_review_037b\",\"data\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"int64_f\":\"789\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["候选假设'类型不匹配应该被拒绝' — 但源码显示这是有意设计的隐式类型转换,类似JavaScript的类型转换"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["无明确契约约束类型转换行为"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkAndSetData", "json.Number", "DataType_Int64"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/proxy/validate_util.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go checkAndSetData function\n// Int64 field processing (same as milvus_035):\ncase schemapb.DataType_Int64:\n    result, err := json.Number(dataString).Int64()\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result\n// Varchar field uses dataString directly (accepts number and converts to string)",
+          "call_chain_traced": "REST v2 insert request → checkAndSetData() → type-specific conversion (Int64: json.Number(), Varchar: string conversion)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地确认:utils.go的checkAndSetData函数对多种类型执行隐式转换。Int64字段用json.Number()转换,Varchar字段直接接受数字并转字符串。这是有意设计,不是bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query returned correct data types (int64_f=789 integer, varchar_f='123' string)",
+          "observed": "没有发现数据损坏 — 所有类型转换都正确完成,存储值类型正确"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "by_design_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中blindspot(这是有意设计,不是类型校验缺失)。类似milvus_035,这是REST v2 API的友好类型转换设计。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "源码接地确认checkAndSetData()对多种类型执行隐式转换(Int64用json.Number(),Varchar直接转字符串)。这是有意设计,类似JavaScript的类型 coercion。实测验证存储值类型正确,无数据损坏。FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

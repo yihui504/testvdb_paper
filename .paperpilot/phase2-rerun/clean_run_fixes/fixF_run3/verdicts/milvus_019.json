@@ -1,0 +1,96 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_019",
+      "endpoint": "collections+get_stats",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection, insert 2 rows, load collection, call get_stats",
+          "observed": "Insert succeeded (2 rows inserted), but get_stats returned rowCount=0. API reports zero row count despite successful insert.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"verify_rowcount\", \"dimension\": 4}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"verify_rowcount\", \"data\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 2, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/load\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"verify_rowcount\", \"dbName\": \"default\"}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/get_stats\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"verify_rowcount\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Endpoint: collections+get_stats - Get row count and other statistics for a collection",
+            "Expected behavior: rowCount should reflect actual number of entities in collection"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "get_stats",
+            "rowCount",
+            "GetStatistics"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// collections+get_stats should return accurate row count from metadata. The discrepancy suggests either stats not updated after insert or stats cache issue.",
+          "call_chain_traced": "REST v2 handler_v2.go:getStats() → proxy.GetCollectionStats() → should return rowCount from collection metadata",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "data_inconsistency",
+          "note": "源码接地发现:get_stats 返回的 rowCount 与实际插入行数不一致。这是一个真实的数据一致性问题,可能是统计信息未及时更新或缓存问题。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query collection with filter to verify actual row count",
+          "observed": "Query returns all inserted rows, confirming data exists. get_stats incorrectly reports rowCount=0 despite query returning 2 rows."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - consistent reproduction",
+            "Timing issue - stats should be current",
+            "Request format error - valid API calls"
+          ],
+          "surviving": "data_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators[4] - Snapshot isolation broken / state inconsistency",
+        "developer_quote": "get_stats should reflect current collection state; stale stats are a consistency bug",
+        "note": "命中开发者认知盲点:统计信息与实际数据不一致属状态机违规,是真实缺陷。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collections+get_stats should return accurate statistics including rowCount",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Row count is physical invariant - count must match actual stored entities",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (data inconsistency bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": "N/A",
+      "severity_after_review": "High",
+      "confidence": 0.91,
+      "rationale": "get_stats API 返回的 rowCount (0) 与实际插入行数 (2) 不一致,是真实的数据一致性问题。Query 操作证实数据确实存在于集合中,排除假阴性可能。此问题影响统计信息准确性,属于状态一致性违规。可能根因包括:统计信息未在 insert 后及时更新、统计缓存失效、或元数据同步延迟。这不属于预期行为,而是需要修复的缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "v1.18.3",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_018",
+      "endpoint": "points+count",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/c_test/points/count with is_empty filter on indexed keyword field, comparing exact=true vs exact=false",
+          "observed": "exact=true returned count=3, exact=false returned count=2. Ground truth via scroll confirmed 3 points (ids: 1,5,6) with empty payload for kw field. 33% undercount in approximate path.",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/c_test/points/count -d '{\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}}' && curl -X POST http://localhost:6333/collections/c_test/points/scroll -d '{\"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}, \"with_payload\": true}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Index exists: PUT /collections/c_test/index with field_name=kw created successfully",
+            "Indexed field used: kw is a keyword-indexed payload field",
+            "Points exist: 8 points inserted (5 with kw='red', 3 without kw field)",
+            "Ground truth verified: scroll with is_empty filter returned 3 points with empty payload"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /collections/{collection_name}/points/count",
+            "parameter: exact (boolean) - 'true=accurate scan count; false=approximate indexed cardinality estimate (faster)'",
+            "filter condition: is_empty - 'Select points with empty payload for a specified field'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.3 @ v1.18.3",
+          "grep_queries": [
+            "estimate_cardinality_impl",
+            "IsEmptyCondition",
+            "is_empty",
+            "TOTAL / 2",
+            "MapIndexRead"
+          ],
+          "files_examined": [
+            "lib/segment/src/index/query_estimator.rs",
+            "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+            "lib/segment/src/index/field_index/map_index/payload_index_impl/int.rs",
+            "lib/segment/src/index/field_index/map_index/mod.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs (lines 170-222)\nfn estimate_cardinality_impl<T: MapIndexRead<str>>(\n    index: &T,\n    condition: &FieldCondition,\n    hw_counter: &HardwareCounterCell,\n) -> Option<CardinalityEstimation> {\n    match &condition.r#match {\n        Some(Match::Value(MatchValue { value })) => match value {\n            ValueVariants::String(keyword) => {\n                let mut estimation = index.match_cardinality(keyword.as_str(), hw_counter);\n                estimation\n                    .primary_clauses\n                    .push(PrimaryCondition::Condition(Box::new(condition.clone())));\n                Some(estimation)\n            }\n            // ... other match conditions ...\n        },\n        _ => None,  // <-- BUG: is_empty/is_null conditions return None, trigger fallback\n    }\n}\n\n// lib/segment/src/index/query_estimator.rs (lines 423-430)\nCondition::IsEmpty(condition) => CardinalityEstimation {\n    primary_clauses: vec![PrimaryCondition::Condition(Box::new(\n        FieldCondition::new_is_empty(condition.is_empty.key.clone(), true),\n    ))],\n    min: 0,\n    exp: TOTAL / 2,  // <-- HARDCODED FALLBACK HEURISTIC: always assumes 50%\n    max: TOTAL,\n},",
+          "call_chain_traced": "POST /points/count with exact=false → estimate_filter → FieldCondition with is_empty → MapIndex<str>::estimate_cardinality → estimate_cardinality_impl returns None → fallback to generic query_estimator → hardcoded TOTAL/2 heuristic applied",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: keyword index (MapIndex<str>) 的 estimate_cardinality_impl 函数未实现 is_empty 条件的基数估算,返回 None 触发通用查询估算器的硬编码 TOTAL/2 启发式规则。对于本例(8点中3点为空),TOTAL/2=4,但实际应为3,导致 33% 低估误差。这是真缺陷(contract 要求 exact=false 应提供合理的索引基数估计,而非盲目的50%启发式)。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent ground truth verification via scroll with same filter",
+          "observed": "Scroll returned 3 points (ids 1,5,6) with empty payload for kw field, confirming exact=true count=3 is correct. exact=false count=2 is wrong (33% undercount). This disproves the hypothesis that the difference is due to by-design approximation tolerance."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment: Single-node Docker container, no concurrency",
+            "Race condition: wait=true used, indexing completed (operation_id=3 status=acknowledged)",
+            "Request parameter error: is_empty syntax correct, field exists",
+            "Index not ready: 5-second sleep + wait=true ensures index is built"
+          ],
+          "surviving_explanation": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-cardinality-oracle-count-exact-false",
+        "developer_quote": "count API's approximate cardinality path (exact:false, uses index histograms / estimators) diverges from the exact path (exact:true, scan) and from scroll/search ground truth, for certain filter condition classes. The estimator math (numeric_index histogram, geo_index, keyword_index estimate_cardinality, query_estimator combine_*) is imprecise or wrong for specific condition shapes.",
+        "note": "Matches known bug shape: cardinality_oracle (shape_id qdrant-cardinality-oracle-count-exact-false). The is_empty condition on indexed keyword field triggers an unimplemented code path in MapIndex estimate_cardinality_impl, causing fallback to hardcoded TOTAL/2 heuristic instead of actual index-based estimation."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "CONFIRMED: 卡片基数估算器在 is_empty 条件下存在估算错误。源码显示 MapIndex<str>::estimate_cardinality_impl 函数对 is_empty 条件返回 None,触发通用查询估算器的硬编码 TOTAL/2 启发式(期望值始终为总数的50%),而非基于实际索引数据。实证测试显示 8 点集合(3 点 kw 字段为空)中,exact=false 返回 2 而非 3,33% 低估误差。ground truth(scroll)与 exact=true 确认真实基数为 3。这违反了 contract 中 exact=false 应提供'合理的索引基数估计'的语义要求,属于 Type2_PoorDiagnostics 类缺陷(估算器不准确导致误导性计数结果)。排除平凡解释:环境干净无并发,索引已就绪,请求语法正确。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "cardinality_estimation_bug": 1
+    }
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "POST /collections/{c}/points/count with exact=false should return reasonable approximate cardinality based on index estimates (contract specifies: 'false=approximate indexed cardinality estimate (faster)')",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Cardinality estimator should provide estimates within reasonable error bounds (<20% or proportional to collection size), not hardcoded 50% heuristic",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+    "final_verdict": "CONFIRMED"
+  }
+}

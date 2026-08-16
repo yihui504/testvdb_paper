@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST upsert on autoID collection without ID",
+          "observed": "upsert without ID -> error, insert without ID -> success, upsert with explicit ID -> success",
+          "evidence_cmd": "upsert no ID fails, insert no ID succeeds"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_satisfied": [
+            "autoID means auto-generate ID",
+            "insert and upsert should respect autoID consistently"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_state_entities_insert_001: (autoID OR primary key provided)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17",
+          "grep_queries": [
+            "upsert",
+            "autoID"
+          ],
+          "files_examined": [
+            "internal/proxy/insert.go",
+            "internal/proxy/http_req_impl.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "INSERT without ID -> success auto-generated ID. UPSERT without ID -> error row 0 does not has field id. UPSERT with explicit ID -> success. INSERT respects autoID, UPSERT does not.",
+          "call_chain_traced": "REST v2 upsert -> requires ID even with autoID=true. INSERT correctly auto-generates ID.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "behavior_inconsistent",
+          "note": "upsert fails to handle autoID like insert does"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare insert vs upsert on same autoID collection",
+          "observed": "INSERT no ID -> success, UPSERT no ID -> error, same collection same autoID setting different outcomes",
+          "evidence_cmd": "Insert test no ID success, Upsert test no ID error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Collection not loaded",
+            "Wrong schema",
+            "Configuration issue",
+            "API misunderstanding"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Segment_lifecycle_corruption",
+        "developer_quote": "State machine violations leading to data loss",
+        "note": "insert and upsert autoID handling inconsistent"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "(autoID OR primary key provided) - when autoID true optional",
+          "assertion_text_quoted": "autoID OR primary key provided",
+          "api_observed_value": "INSERT autoID true no ID succeeds, UPSERT autoID true no ID fails",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "autoID should auto-generate across all DML ops",
+          "api_accepts_violation": false,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "graceful_handling_details": "INSERT auto-generates ID, UPSERT requires ID. Inconsistent.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "A=CONFIRMED B=CONFIRMED C=CONFIRMED -> final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "source_excerpt": "INSERT without ID -> success auto-generated ID. UPSERT without ID -> error row 0 does not has field id. UPSERT with explicit ID -> success. INSERT respects autoID, UPSERT does not. Inconsistent autoID handling.",
+      "files_examined": [
+        "internal/proxy/insert.go",
+        "internal/proxy/http_req_impl.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.9,
+      "rationale": "REST v2 upsert fails to respect autoID. INSERT without ID succeeds (auto-generated), UPSERT without ID fails (error 1804). UPSERT with explicit ID succeeds. Inconsistent - both should respect autoID. Contract says if autoID disabled PK required (implying if autoID enabled PK optional). INSERT implements correctly, UPSERT violates. True behavioral defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "autoid_handling_inconsistent": 1
+    }
+  }
+}

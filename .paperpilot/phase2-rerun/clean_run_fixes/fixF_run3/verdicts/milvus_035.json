@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with Int64 PK field 'id', passing string value '456' instead of number",
+          "observed": "Insert succeeded (HTTP 200, insertCount=1, insertIds=[456]). Query verified stored PK value is integer 456, not string '456'",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -d '{\"collectionName\":\"dev_review_035\",\"data\":[{\"id\":\"456\",\"vector\":[0.1,0.2,0.3,0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["候选假设'string PK值应该被拒绝' — 但源码显示这是有意设计的隐式类型转换,不是校验缺失"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint: Primary key must be Int64 or VarChar (未明确禁止输入格式)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkAndSetData", "DataType_Int64", "json.Number"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/proxy/validate_util.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go checkAndSetData function\n// Line showing Int64 field processing:\ncase schemapb.DataType_Int64:\n    result, err := json.Number(dataString).Int64()\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = result",
+          "call_chain_traced": "REST v2 insert request → checkAndSetData() → json.Number(dataString).Int64() conversion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:utils.go的checkAndSetData函数明确使用json.Number(dataString).Int64()将字符串转换为Int64。这是有意设计,不是bug。非数字字符串('xyz')会正确报错1804"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query returned PK as integer 456, proving automatic type conversion works correctly",
+          "observed": "没有发现bug后果 — 数据以正确的Int64类型存储,不是字符串"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "by_design_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中blindspot(这不是类型校验缺失,而是有意设计的类型转换)。未命中by_design_pattern(未在文档中明确列出,但源码清楚显示这是设计行为)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "源码接地确认 checkAndSetData() 使用 json.Number(dataString).Int64() 进行隐式类型转换,这是有意设计。数字字符串'456'成功转换为Int64值456存储,非数字字符串'xyz'正确报错。契约未禁止字符串输入格式。最终存储值是正确的Int64类型。FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

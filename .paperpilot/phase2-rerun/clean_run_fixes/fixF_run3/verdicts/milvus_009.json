@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "confidence": 0.92,
+      "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go line 2192-2246\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... parameter merging logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// NO VALIDATION for parameter values like nprobe\n\treturn searchParams, nil\n}",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/docs/developer_guides/chap02_schema.md",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/configs/milvus.yaml"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}, {\"nprobe\": -1}, {\"nprobe\": 1000}",
+          "observed": "All three requests succeeded with HTTP 200, returning search results. nprobe=0, nprobe=-1, and nprobe=1000 all accepted without error.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_nprobe_009\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "REST v2 search endpoint accepts searchParams parameter",
+            "nprobe parameter is passed through to search engine",
+            "No runtime errors occur with invalid nprobe values"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+search (POST /v2/vectordb/entities/search)",
+            "parameter: searchParams (type: object, required: false)",
+            "doc_ref: https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md"
+          ],
+          "note": "Contract shows searchParams as generic object type with no specific nprobe constraints documented"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "nprobe",
+            "searchParams",
+            "generateSearchParams",
+            "IVF.*nprobe"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/docs/developer_guides/chap02_schema.md",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/configs/milvus.yaml"
+          ],
+          "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go line 2192-2246\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\t// ... parameter extraction and merging logic ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\t// NO VALIDATION: values are passed through as-is with fmt.Sprintf(\"%v\", value)\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "HTTP request -> handler_v2.go:generateSearchParams -> utils.go:generateSearchParams (line 2241) -> append(Key: nprobe, Value: fmt.Sprintf) -> passed to gRPC SearchRequest -> NO RANGE CHECK anywhere in chain",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "physical_constraint_found": "IVF documentation states: 'nprobe: int. 1~nlist(cpu), 1~min[2048, nlist](gpu)' - nprobe must be >= 1 and <= nlist",
+          "note": "Source code review confirms REST v2 API performs NO validation on nprobe parameter value before passing to backend. Physical constraint from IVF docs: nprobe must be between 1 and nlist (number of cluster units)."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested nprobe=0, nprobe=-1, nprobe=1000 - all succeed, violating physical constraint that nprobe must be >= 1",
+          "observed": "API accepts nprobe=0 (should select 0 cells, meaningless), nprobe=-1 (negative, physically invalid), nprobe=1000 (likely exceeds nlist for small collections). All succeed with HTTP 200.",
+          "evidence_cmd": "Multiple curl tests confirm nprobe values 0, -1, 1000 all succeed"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on clean Milvus v2.6.16 container)",
+            "Race condition (deterministic, reproducible)",
+            "Request parameter typo (parameter correctly named 'nprobe')",
+            "API semantics misunderstanding (physical constraint documented in IVF docs)"
+          ],
+          "surviving_explanation": "REST v2 API genuinely lacks parameter validation for searchParams fields like nprobe, allowing physically invalid values to reach the search engine"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - pattern includes parameter validation gaps",
+        "note": "Falls under blindspot_indicators: 'REST v2 API data type serialization - 8 issues in corpus'. nprobe validation gap matches this pattern."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion for nprobe range in structured_contract.json. Physical constraint from IVF documentation: nprobe must be 1~nlist",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "IVF index parameter nprobe must be >= 1 (can't select 0 or negative cells) and <= nlist (number of cluster units). Documented in chap02_schema.md: 'nprobe: int. 1~nlist(cpu), 1~min[2048, nlist](gpu)'",
+          "api_accepts_violation": true,
+          "observed_violations": "nprobe=0 (violates lower bound), nprobe=-1 (negative, invalid), nprobe=1000 (likely exceeds nlist for typical collections)",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "source_evidence": "No comments or logic indicating this is intentional. generateSearchParams simply formats values with fmt.Sprintf without validation.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violated) → final=CONFIRMED (C cannot override physical violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "rationale": "REST v2 entities/search endpoint accepts nprobe=0, nprobe=-1, and nprobe=1000 without validation. Source code confirms generateSearchParams() in utils.go performs NO validation, simply passes through fmt.Sprintf('%v', value). Physical constraint from IVF documentation: nprobe must be 1~nlist (number of cluster units). Accepting nprobe=0 (selects 0 cells, meaningless) or nprobe=-1 (negative) violates basic IVF index semantics. This is a true parameter validation gap in REST v2 API, consistent with blindspot pattern 'REST v2 data type handling'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "confidence": 0.85,
+      "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/timeout_middleware.go line 183-186\nfunc timeoutMiddleware(handler gin.HandlerFunc) gin.HandlerFunc {\n\t// ...\n\ttimeout := paramtable.Get().HTTPCfg.RequestTimeoutMs.GetAsDuration(time.Millisecond)\n\ttimeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\n\tif err == nil {\n\t\ttimeout = time.Duration(timeoutSecond) * time.Second\n\t}\n\t// When ParseInt fails (non-integer like '3.5' or 'abc'), err is non-nil\n\t// Code silently falls back to default timeout WITHOUT returning error\n\t// Invalid values like '3.5' and 'abc' are silently ignored rather than rejected",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/timeout_middleware.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/constant.go",
+        "C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_013/output_milvus_013.log"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout: 3.5, Request-Timeout: abc, Request-Timeout: 10",
+          "observed": "All three requests succeed with HTTP 200. Headers '3.5' (float string), 'abc' (non-numeric), and '10' (valid integer) all accepted without error.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -H 'Request-Timeout: abc' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Request-Timeout header is read by timeout middleware",
+            "Header value should be validated as integer seconds",
+            "Non-integer values should be rejected"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+list",
+            "header: Request-Timeout (expected to be integer seconds)",
+            "Note: Contract doesn't specify header validation requirements"
+          ],
+          "note": "Request-Timeout is a standard HTTP header (RFC 7231) that should be integer seconds"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "Request-Timeout",
+            "HTTPHeaderRequestTimeout",
+            "timeout.*middleware",
+            "strconv.ParseInt"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/timeout_middleware.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// timeout_middleware.go line 183-186\ntimeoutSecond, err := strconv.ParseInt(gCtx.Request.Header.Get(mhttp.HTTPHeaderRequestTimeout), 10, 64)\nif err == nil {\n    timeout = time.Duration(timeoutSecond) * time.Second\n}\n// BUG: When ParseInt fails (returns err), the code SILENTLY uses default timeout\n// It does NOT return an HTTP error to indicate invalid header value\n// Invalid values like '3.5' (float) and 'abc' (non-numeric) are ignored",
+          "call_chain_traced": "HTTP request -> timeout_middleware -> ParseInt(Request-Timeout header) -> err != nil for '3.5'/'abc' -> silently ignored -> request proceeds with default timeout",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows Request-Timeout header is parsed with strconv.ParseInt (base 10, 64-bit). ParseInt rejects '3.5' (not integer) and 'abc' (not numeric), but the middleware SILENTLY falls back to default timeout instead of returning error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test invalid header values - '3.5' (float), 'abc' (text) should be rejected",
+          "observed": "Both '3.5' and 'abc' accepted with HTTP 200. No error response. Values are silently ignored.",
+          "evidence_cmd": "Invalid header values not rejected, silent fallback to default timeout"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Header might be optional (if present, should be validated)",
+            "Silent fallback might be intentional (but invalid input should still be rejected)",
+            "Non-standard header (Request-Timeout is RFC 7231 standard)"
+          ],
+          "surviving_explanation": "Genuine validation gap: Request-Timeout header accepts invalid values without error. Should return 400 Bad Request for non-integer values."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - includes header validation gaps",
+        "note": "Fits blindspot pattern: REST v2 parameter validation issues"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion for Request-Timeout header validation",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Request-Timeout header (RFC 7231) specifies timeout in integer seconds. Values must be non-negative integers.",
+          "api_accepts_violation": true,
+          "observed_violations": "'3.5' (float, not integer), 'abc' (non-numeric) both accepted without error",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "source_evidence": "Silent fallback to default timeout when parsing fails suggests this might be intentional tolerance, but accepting invalid input without error is still a validation gap.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violated: non-integer timeout value) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "Medium",
+      "rationale": "collections/list endpoint accepts Request-Timeout header with invalid values '3.5' and 'abc' without validation. Source code shows timeout_middleware parses header with strconv.ParseInt (integer only). When ParseInt fails for '3.5' (float) or 'abc' (non-numeric), the code SILENTLY falls back to default timeout instead of returning error. RFC 7231 specifies Request-Timeout as integer seconds. Accepting invalid values without error is a validation gap. While silent fallback might be intentional tolerance, it allows invalid input through without warning users their value was ignored."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

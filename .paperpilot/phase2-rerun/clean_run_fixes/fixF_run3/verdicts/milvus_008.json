@@ -1,0 +1,113 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/search with outputFields=[\"*\"] from raw log REQ 5",
+          "observed": "HTTP 200 with results containing only id, distance, vector fields. No scalar fields returned despite wildcard syntax",
+          "evidence_cmd": "Raw log shows: {\"code\":0,\"data\":[{\"distance\":1,\"id\":0,\"vector\":[0.1,0.1,0.1,0.1]},...]}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: outputFields=[\"*\"] should return ALL fields including scalar fields",
+            "Assumption: Wildcard \"*\" has special semantic meaning in outputFields parameter",
+            "Assumption: API should expand \"*\" to match all collection field names"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_search_001 - 'data is array[array[float]] AND annsField is a vector field AND limit > 0'",
+            "NO constraint found regarding outputFields wildcard handling or expansion semantics"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": [
+            "DefaultOutputFields",
+            "SearchReqV2 struct",
+            "OutputFields.*\\*",
+            "wildcard.*outputFields"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/constant.go line 128\nDefaultOutputFields = \"*\"\n\n// internal/distributed/proxy/httpserver/request_v2.go line 333-353\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\t...\n\tOutputFields     []string               `json:\"outputFields\"`\n\t...\n}\n\nNo wildcard expansion logic found in handler_v2.go - OutputFields is treated as literal string array",
+          "call_chain_traced": "SearchReqV2.OutputFields []string → passed directly to search handler → no special \"*\" expansion logic found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: DefaultOutputFields 定义为 \"*\" 但仅作为默认值常量,SearchReqV2 结构体将 OutputFields 定义为普通字符串数组,源码中未发现对 \"*\" 通配符的任何特殊处理或展开逻辑"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Analyzed raw response from REQ 5: outputFields=[\"*\"] returned only id/distance/vector, not all scalar fields",
+          "observed": "API behavior consistent with treating \"*\" as literal field name, not wildcard. No evidence of scalar field omission bug"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "API treats outputFields=[\"*\"] as literal string array, not wildcard (mundane API semantics)",
+            "No contract requirement for wildcard expansion in outputFields parameter",
+            "Source code shows no validation or special handling for \"*\" character"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中任何 developer_cognition 模式。不属于 REST v2 数据类型处理问题、分段生命周期问题或并发问题。这是对 outputFields 参数语义的误解。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint specifies outputFields wildcard semantics or how \"*\" should be interpreted",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violated - API accepted valid request format",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (by-design behavior: API treats \"*\" as literal, not wildcard)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "原 oracle 假设 outputFields=[\"*\"] 应作为通配符展开为所有字段,但源码显示 OutputFields 仅为普通字符串数组,无任何通配符展开逻辑。Raw 响应显示 API 确实只返回了 id/distance/vector 字段,这是符合源码设计的预期行为,非缺陷。",
+      "source_excerpt": "// internal/distributed/proxy/httpserver/constant.go line 128\nDefaultOutputFields = \"*\"\n\n// internal/distributed/proxy/httpserver/request_v2.go line 333-353\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\t...\n\tOutputFields     []string               `json:\"outputFields\"`\n\t...\n}\n\nNo wildcard expansion logic found in handler_v2.go - OutputFields is treated as literal string array",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/constant.go",
+        "internal/distributed/proxy/httpserver/request_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2_test.go"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

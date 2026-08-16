@@ -1,0 +1,122 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with metricType='' and consistencyLevel='None'",
+          "observed": "Both requests returned HTTP 200 with code:0. metricType='' accepted and defaulted to COSINE; consistencyLevel='None' accepted and defaulted to Bounded.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\":\"verify_mt_empty\",\"dimension\":4,\"metricType\":\"\"}' -> {'code':0,'data':{}}; curl with consistencyLevel='None' -> HTTP 200",
+          "raw_log_evidence": "REQ 4: metricType='' -> RESP 4: status 200; REQ 5: consistencyLevel='None' -> RESP 5: status 200"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "assumptions_satisfied": [
+            "API should reject metricType not in [L2, IP, COSINE] per constraint milvus_type_collections_create_002",
+            "API should reject consistencyLevel not in [Strong, Session, Bounded, Eventually] per constraint milvus_type_collections_create_003",
+            "Empty string is not a valid enum value for metricType",
+            "None is not a valid enum value for consistencyLevel (note: None is a string value, not null)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_collections_create_002",
+            "assertion: 'metricType in [L2, IP, COSINE]'",
+            "type: type_constraint",
+            "confidence: 1.0",
+            "constraint_id: milvus_type_collections_create_003",
+            "assertion: 'consistencyLevel in [Strong, Session, Bounded, Eventually]'",
+            "type: type_constraint",
+            "confidence: 1.0"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["metricType", "consistencyLevel", "ConsistencyLevel_value"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 2008-2023 (consistencyLevel validation)\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        // Should return error but API accepted 'None' - validation bypassed or enum missing 'None'\n        HTTPAbortReturn(c, http.StatusOK, gin.H{...})\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel\n\n// NOTE: No validation found for metricType in REST v2 handler - defaults applied silently in lower layers",
+          "call_chain_traced": "REST v2 handler (handler_v2.go) → parse consistencyLevel → validate against enum map → if not found, should error → but 'None' string bypassed this. metricType has NO explicit validation in handler.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: consistencyLevel 验证逻辑存在(line 2008-2023),但 'None' 不在 enum map 中却被接受 - 可能被当作 missing param 处理而默认化. metricType 在 REST v2 handler 中完全无验证,由下层默默默认化."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe created collections to verify actual values assigned",
+          "observed": "DESCRIBE verify_mt_empty returned metricType='COSINE' (requested '', defaulted). DESCRIBE verify_cl_none returned consistencyLevel='Bounded' (requested 'None', defaulted). Collections created with silently-defaulted invalid enum values.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\":\"verify_mt_empty\"}' -> indexes[0].metricType='COSINE' (not '')"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (clean Milvus 2.6.17)",
+            "Request parameter typo (explicit empty string and 'None' string)",
+            "API semantic misunderstanding (constraints are explicit enum requirements)",
+            "By-design (contract explicitly defines valid enum values)"
+          ],
+          "surviving_explanations": []
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 26 issues in corpus. Pattern: REST v2 layer missing validation that gRPC path enforces.",
+        "note": "命中开发者认知盲点: REST v2 枚举类型校验缺失 (metricType 完全无校验, consistencyLevel 校验逻辑存在但 'None' 绕过). 属于高频 REST v2 数据类型处理问题."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "metricType in [L2, IP, COSINE] (milvus_type_collections_create_002, confidence 1.0); consistencyLevel in [Strong, Session, Bounded, Eventually] (milvus_type_collections_create_003, confidence 1.0)",
+          "assertion_text_quoted": "metricType in [L2, IP, COSINE] and consistencyLevel in [Strong, Session, Bounded, Eventually]",
+          "api_observed_value": "metricType='' (empty string) accepted, defaulted to COSINE; consistencyLevel='None' accepted, defaulted to Bounded. Both with HTTP 200.",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "metricType and consistencyLevel are enum parameters with finite valid sets. Empty string and 'None' are not valid enum values.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_handling_details": "Silently defaults invalid enum values to system defaults (COSINE for metricType, Bounded for consistencyLevel). No error returned to client.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (physical violation) → final=CONFIRMED. Graceful defaulting (C) cannot override explicit enum constraints.",
+        "final_verdict": "CONFIRMED"
+      },
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go line 2008-2023\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n    if level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n        consistencyLevel = commonpb.ConsistencyLevel(level)\n    } else {\n        err := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n            \"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n        HTTPAbortReturn(c, http.StatusOK, gin.H{...})\n        return nil, err\n    }\n}\nreq.ConsistencyLevel = consistencyLevel\n\nNOTE: No metricType validation found in REST v2 handler.",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/constant.go",
+        "internal/distributed/proxy/httpserver/wrap_request.go"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "REST v2 API accepts metricType='' (empty string) and consistencyLevel='None' (invalid enum value) with HTTP 200, violating explicit type constraints. metricType='' defaulted to COSINE; consistencyLevel='None' defaulted to Bounded. Source code shows: (1) metricType has NO validation in REST v2 handler - silent default; (2) consistencyLevel has validation logic but 'None' bypassed it (likely treated as missing and defaulted). This matches developer cognition pattern 'REST v2 data type handling' - validation gaps between REST and gRPC paths."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_enum_validation_missing": 1
+    }
+  }
+}

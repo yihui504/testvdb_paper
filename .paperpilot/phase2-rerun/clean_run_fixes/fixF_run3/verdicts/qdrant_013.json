@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_repro_013/points/query with {\"query\": null, \"limit\": 5}",
+          "observed": "HTTP 200 OK,返回所有点,score=1.0,按ID排序",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/collections/test_repro_013/points/query -H \"Content-Type: application/json\" -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["报告者假设 query=null 应该返回错误(4xx),但契约明确定义 query 为 Option<QueryInterface>,允许 None/null"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["无 constraint 禁止 query=null; API 定义: lib/api/src/rest/schema.rs:575 pub query: Option<QueryInterface>"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["query.*null", "Option<QueryInterface>", "ordered by their IDs"],
+          "files_examined": ["lib/api/src/rest/schema.rs", "src/actix/api/query_api.rs", "src/common/inference/query_requests_rest.rs", "lib/collection/src/operations/universal_query/collection_query.rs"],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 573-575\n/// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n#[validate(nested)]\npub query: Option<QueryInterface>,\n\n// src/common/inference/query_requests_rest.rs line 129-131\nlet query = query\n    .map(|q| convert_query_with_inferred(q, &inferred))\n    .transpose()?;\n\n// lib/collection/src/operations/universal_query/collection_query.rs line 36\npub query: Option<Query>,",
+          "call_chain_traced": "QueryRequestInternal.query: Option<QueryInterface> → convert_query_request_from_rest → query.map() → CollectionQueryRequest.query: Option<Query> → None 被优雅传递",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: query 字段明确定义为 Option<>,注释明确说明\"若缺失则返回按ID排序的点\"。这是 by-design 行为,不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证返回的点是否确实按ID排序且合法",
+          "observed": "返回的点(id=1,5)确实存在于集合中,按ID排序,score=1.0符合'无相似度搜索时默认分数'的语义"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns,但源码注释明确这是 by-design 行为:'If missing without prefetches, returns points ordered by their IDs'"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "源码接地发现 lib/api/src/rest/schema.rs:573 明确注释'Query to perform. If missing without prefetches, returns points ordered by their IDs'。query 字段定义为 Option<QueryInterface>,允许 None/null。这是 by-design 行为,允许用户省略 query 以获取按 ID 排序的点集(类似 scroll 的语义)。报告者误解了 query 参数的可选性,误将合法的 by-design 语义当成参数验证缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

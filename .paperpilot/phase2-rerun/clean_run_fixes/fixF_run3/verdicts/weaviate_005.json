@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with shardingConfig.desiredCount=-1",
+          "observed": "HTTP 200 returned, but collection NOT actually created (subsequent GET returns 404). API reports success while operation fails silently.",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}' && curl -X GET http://localhost:18080/v1/schema/TestNeg"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes HTTP 200 indicates successful collection creation",
+            "Oracle expects collection to be queryable after 200 response",
+            "Validation assumes negative shard counts would be rejected by API"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema returns 200 on success, 422 on RestrictionViolationResponse",
+            "weaviate_inv_collection_queryable: after POST /schema returns 200, GET /schema/{className} returns 200"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "desiredCount",
+            "ParseConfig",
+            "validate.*DesiredCount"
+          ],
+          "files_examined": [
+            "usecases/sharding/config/config.go",
+            "usecases/schema/parser.go",
+            "usecases/sharding/config/config_test.go"
+          ],
+          "source_excerpt": "From usecases/sharding/config/config.go lines 85-146:\n\nfunc ParseConfig(input interface{}, nodeCount int) (Config, error) {\n\tout := Config{}\n\tout.setDefaults(nodeCount)\n\n\tif input == nil {\n\t\treturn out, nil\n\t}\n\n\tasMap, ok := input.(map[string]interface{})\n\tif !ok || asMap == nil {\n\t\treturn out, fmt.Errorf(\"input %T-%v must be a non-nil\", input, ok)\n\t}\n\n\tif err := optionalIntFromMap(asMap, \"virtualPerPhysical\", func(v int) {\n\t\tout.VirtualPerPhysical = v\n\t}); err != nil {\n\t\treturn out, err\n\t}\n\n\tif err := optionalIntFromMap(asMap, \"desiredCount\", func(v int) {\n\t\tout.DesiredCount = v\n\t}); err != nil {\n\t\treturn out, err\n\t}\n\n\tout.DesiredVirtualCount = out.DesiredCount * out.VirtualPerPhysical\n\t// ... actual counts set equal to desired counts\n\tout.ActualCount = c.DesiredCount\n\tc.ActualVirtualCount = c.DesiredVirtualCount\n\n\tif err := out.validate(); err != nil {\n\t\treturn out, err\n\t}\n\n\treturn out, nil\n}\n\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, got: %s\", c.Key)\n\t}\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, got: %s\", c.Strategy)\n\t}\n\treturn nil // NO RANGE CHECK ON DesiredCount!",
+          "call_chain_traced": "POST /schema → Parser.parseShardingConfig() → shardingConfig.ParseConfig() → validate() [MISSING: desiredCount >= 1 check]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals that ParseConfig accepts any integer value for desiredCount without range validation. The validate() function only checks Key='_id' and Strategy='hash', but does NOT validate that DesiredCount >= 1. This allows negative values to pass through, causing downstream failures."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestNeg after POST returned 200",
+          "observed": "HTTP 404 Not Found — collection was never actually created despite 200 response. This confirms the API reports success while the operation silently fails."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (Windows/Docker not applicable)",
+            "Concurrency race (single-threaded test)",
+            "Request parameter typo (explicit desiredCount=-1)"
+          ],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Hits BS-004 pattern exactly: parameter_validation defect at request parsing layer. Also matches blindspot indicator: 'Input validation is often incomplete at API boundaries'."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Confirmed parameter validation gap. The POST /schema endpoint accepts desiredCount=-1 without validation, returns HTTP 200, but silently fails to create the collection (verified by GET returning 404). Source code analysis confirms ParseConfig() lacks range checking for desiredCount, allowing negative values to pass through to downstream systems where they cause failures. This matches BS-004 (Parameter Validation Issues) and the developer cognition blindspot about incomplete input validation at API boundaries."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap": 1
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_hnsw_bug_002/points/search with params: {hnsw_ef: 0}",
+          "observed": "API returned HTTP 200 with valid search results, accepting hnsw_ef=0 without error",
+          "evidence_cmd": "curl -X POST http://localhost:6333/collections/test_hnsw_bug_002/points/search -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 3, \"params\": {\"hnsw_ef\": 0}}' => HTTP 200 OK"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Request explicitly sets hnsw_ef parameter to 0",
+            "API processes the request without returning 4xx error",
+            "HNSW algorithm requires ef >= 1 for valid search behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: search_params_applicable_condition (hnsw_ef applicable when exact=false)",
+            "endpoint: POST collections+{collection_name}+points+search"
+          ],
+          "contract_gaps": [
+            "structured_contract.json does not specify numeric range constraint for hnsw_ef parameter",
+            "No validation requirement documented for hnsw_ef minimum value"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "hnsw_ef",
+            "SearchParams struct definition",
+            "search_with_graph ef parameter",
+            "std::cmp::max ef oversampled_top"
+          ],
+          "files_examined": [
+            "lib/segment/src/types.rs",
+            "lib/segment/src/index/hnsw_index/hnsw.rs",
+            "lib/api/src/rest/schema.rs",
+            "lib/api/src/grpc/qdrant.rs",
+            "lib/segment/src/index/hnsw_index/config.rs"
+          ],
+          "source_excerpt": "lib/segment/src/types.rs line 590-594:\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\nNote: No #[validate(...)] attribute on hnsw_ef field.\n\nlib/segment/src/index/hnsw_index/hnsw.rs line 1049-1051:\nlet ef = params\n    .and_then(|params| params.hnsw_ef)\n    .unwrap_or(self.config.ef);\n\nNote: No validation check for ef >= 1, directly uses user-provided value.\n\nlib/segment/src/index/hnsw_index/hnsw.rs line 1148:\nstd::cmp::max(ef, oversampled_top),\n\nNote: Uses max() to fallback to oversampled_top, but this doesn't validate input - it just mitigates crash.",
+          "call_chain_traced": "SearchRequest.params.hnsw_ef -> SearchParams.hnsw_ef (no validation) -> search_with_graph() -> let ef = params.and_then(...).unwrap_or() -> std::cmp::max(ef, oversampled_top)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: hnsw_ef 参数在整个调用链中没有任何数值范围验证。API 直接接受用户提供的任意 usize 值(包括0)，这是参数验证缺失的真实缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare search results with hnsw_ef=1 vs hnsw_ef=0 to detect behavioral differences",
+          "observed": "Both requests succeed (HTTP 200), but hnsw_ef=0 shows faster execution (0.000276s vs 0.001009s), suggesting degraded behavior. No 4xx error returned for invalid value.",
+          "evidence_cmd": "curl with hnsw_ef=1 => 0.001009s; curl with hnsw_ef=0 => 0.000276s. Both return valid results but API should reject ef=0 with 4xx error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (standard Docker Qdrant)",
+            "Concurrency/race conditions (single-threaded test)",
+            "Request parameter typo (explicitly set hnsw_ef: 0)",
+            "API semantic misunderstanding (HNSW ef physically requires >= 1)"
+          ],
+          "surviving": "None - this is a genuine parameter validation gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators: Parameter validation on filter/condition APIs (min_should, value_count)",
+        "developer_quote": null,
+        "note": "Falls under developer-recognized blindspot for parameter validation gaps. Maintainers explicitly list 'Parameter validation on filter/condition APIs' as a blindspot indicator, and hnsw_ef is a search parameter analogous to filter parameters."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认: hnsw_ef 参数在 REST API 解析层(SearchParams struct)和 HNSW 搜索层(search_with_graph)均无数值范围验证。HNSW 算法客观要求 ef≥1，API 接受 ef=0 违反物理约束。虽然 std::cmp::max() 代码避免了崩溃，但 API 应在参数解析层返回 4xx 错误拒绝无效值。这是真实的参数验证缺失缺陷。",
+      "source_excerpt": "lib/segment/src/types.rs line 590-594:\npub struct SearchParams {\n    /// Params relevant to HNSW index\n    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub hnsw_ef: Option<usize>,\n\nNote: No #[validate(...)] attribute on hnsw_ef field.\n\nlib/segment/src/index/hnsw_index/hnsw.rs line 1049-1051:\nlet ef = params\n    .and_then(|params| params.hnsw_ef)\n    .unwrap_or(self.config.ef);\n\nNote: No validation check for ef >= 1, directly uses user-provided value.",
+      "files_examined": [
+        "lib/segment/src/types.rs",
+        "lib/segment/src/index/hnsw_index/hnsw.rs",
+        "lib/api/src/rest/schema.rs",
+        "lib/api/src/grpc/qdrant.rs",
+        "lib/segment/src/index/hnsw_index/config.rs"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

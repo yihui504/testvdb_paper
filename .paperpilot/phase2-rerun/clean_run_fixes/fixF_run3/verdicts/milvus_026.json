@@ -1,0 +1,76 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "// internal/rootcoord/create_collection_task.go - validateSchema and PreExecute methods\n// No validation found for collection name patterns (e.g., underscore prefix, regex patterns)\n// Only checks: collection name matches schema name, field schema validation, capacity checks\n\n// internal/rootcoord/ddl_callbacks_alter_collection_name.go shows empty name validation:\n\treturn merr.WrapErrParameterInvalidMsg(\"new collection name should not be empty\")\n\treturn merr.WrapErrParameterInvalidMsg(\"old collection name should not be empty\")\n// NO validation for name patterns like underscore prefix, alphanumeric requirements, etc.\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1795-1800\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n// CollectionName passed through directly without pattern validation",
+      "files_examined": [
+        "internal/rootcoord/create_collection_task.go",
+        "internal/rootcoord/ddl_callbacks_alter_collection_name.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/request_v2.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create collectionName=_test_collection_026 (starts with underscore), dimension=128, metricType=COSINE",
+          "observed": "HTTP 200, collection created successfully",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\":\"_test_collection_026\",\"dimension\":128,\"metricType\":\"COSINE\"}' | jq '.code'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes collection names starting with underscore should be rejected, but Milvus has no such naming restriction"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+create, doc_quote: '200 on success'",
+            "No contract clause specifying naming restrictions or patterns (e.g., no underscore prefix)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["collection.*name.*valid", "underscore", "name.*pattern", "regex.*name", "invalid.*name"],
+          "call_chain_traced": "HTTP create → createCollection → CreateCollectionRequest with CollectionName → createCollectionTask.PreExecute → validateSchema → no name pattern check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source confirms no collection name pattern validation exists. Only validation is empty name check. Underscore prefixes, numbers, special characters are all allowed by design. Collection name validation is minimal (non-empty, matches schema)."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create collection with underscore prefix succeeded (not 400/error)",
+          "observed": "No naming restrictions enforced - underscore prefix allowed by design"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Collection name with underscore prefix (no naming restrictions by design)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected_behavior",
+        "note": "Hits rejection pattern RP-001: Collection names with underscores are allowed - this is expected system behavior, not a validation bug."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Original defect claim likely: 'collection names starting with underscore should be rejected'. Step 1 clean reproduction: HTTP 200, collection with underscore prefix created successfully. Step 2 assumption audit: violated - candidate assumed naming restrictions that don't exist. Step 3 contract grounding: no clause specifying name patterns. Step 3.5 source grounding: source confirms no name pattern validation - only empty name check exists. Step 4 falsification: underscore prefix allowed. Step 5 mundane explanation: no naming restrictions is mundane API semantics. Verdict: FALSE_POSITIVE - Milvus 2.6.17 has no naming restrictions on collection names beyond 'not empty'. Underscores, numbers, and special characters are allowed by design. Creating a collection named '_test_collection' is expected behavior, not a parameter validation bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

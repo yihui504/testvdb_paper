@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "endpoint": "aliases+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/aliases/list {\"collectionName\": \"\", \"dbName\": \"default\"}",
+          "observed": "Request succeeded with HTTP 200 and returned empty array: {\"code\":0,\"data\":[]}. API accepts empty collectionName parameter.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/aliases/list\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes collectionName should be required for aliases+list endpoint",
+            "Oracle expects empty collectionName to be rejected with validation error",
+            "Oracle compares aliases+list behavior with collections+describe, but these are different endpoints with different semantics"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "Endpoint: aliases+list - List aliases, optionally filtered by collection",
+            "Parameter: collectionName (type: string, required: false, description: Filter by collection)",
+            "This matches the OptionalCollectionNameReq struct which has no binding:'required' tag"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "listAlias",
+            "OptionalCollectionNameReq",
+            "aliases.*list"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 145-156\ntype OptionalCollectionNameReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\"`\n}\n\nfunc (req *OptionalCollectionNameReq) GetDbName() string {\n\treturn req.DbName\n}\n\nfunc (req *OptionalCollectionNameReq) GetCollectionName() string {\n\treturn req.CollectionName\n}\n\n// Compare with CollectionNameReq (line 62-73):\ntype CollectionNameReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\" binding:\"required\"`\n}",
+          "call_chain_traced": "REST v2 handler_v2.go:listAlias() → uses OptionalCollectionNameReq (no binding:'required') → passes collectionName to proxy.ListAliases → returns empty list when no filter specified",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:listAlias 使用 OptionalCollectionNameReq 结构体,该结构体无 binding:'required' 标签,与需要必填的 CollectionNameReq 形成对比。aliases+list 端点设计为可选过滤:不提供 collectionName 时返回所有别名,提供时返回指定集合的别名。这是有意的设计,非遗漏。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare aliases+list (empty collectionName) vs collections+describe (empty collectionName)",
+          "observed": "aliases+list with empty collectionName returns empty list (valid behavior - no aliases exist), collections+describe rejects empty collectionName (different endpoint semantics). Both behaviors are consistent with their respective contracts."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - deterministic behavior",
+            "Race condition - consistent responses",
+            "Parameter format error - valid JSON"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002 (by design - optional filtering parameter)",
+        "developer_quote": "aliases+list accepts optional collectionName filter; empty string means list all aliases in database",
+        "note": "未命中明确 by_design_patterns,但源码与契约一致显示这是有意设计:collectionName 是可选过滤参数,空值表示不过滤,返回所有别名。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "aliases+list: collectionName is optional (required: false, description: 'Filter by collection')",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint - filtering is optional by design",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.94,
+      "rationale": "Oracle 误解了 aliases+list 端点的语义。契约明确定义 collectionName 为可选参数(required: false,描述:'Filter by collection'),源码中使用 OptionalCollectionNameReq 结构体(无 binding:'required' 标签)实现这一设计。空 collectionName 表示不过滤,返回数据库中所有别名,返回空数组是因为当前没有别名,非错误行为。collections+describe 要求必填 collectionName 是因为其语义是描述特定集合,而 aliases+list 是列出别名(可按集合过滤),两者端点语义不同。这是正确实现,非遗漏。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

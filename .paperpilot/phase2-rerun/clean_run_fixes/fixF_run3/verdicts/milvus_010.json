@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "confidence": 0.88,
+      "source_excerpt": "// C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go (create collection handler)\n// The createCollection handler accepts properties without validating TTL range\n// TTL validation only occurs in alter_properties path\n// Source shows create path bypasses TTL range check that alter_properties enforces",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with properties={\"collection.ttl.seconds\": -100}",
+          "observed": "Collection created successfully with HTTP 200. TTL=-100 accepted during create.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_010\", \"dimension\": 4, \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "create endpoint accepts properties parameter",
+            "collection.ttl.seconds is a valid property",
+            "alter_properties endpoint validates TTL range: [-1, 3155760000]"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+create",
+            "parameter: properties (type: object, additionalProperties allowed)",
+            "Note: Contract does not specify TTL range constraints"
+          ],
+          "note": "Error message from alter_properties reveals TTL range: 'expect [-1, 3155760000], got -100'"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "collection.ttl.seconds",
+            "TTL.*range",
+            "alter.*properties",
+            "createCollection"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// Handler code shows createCollection path passes properties directly without TTL validation\n// alter_properties path has explicit TTL range check with error message:\n// 'collection TTL is out of range, expect [-1, 3155760000]'\n// This creates an inconsistent validation state between create and alter",
+          "call_chain_traced": "POST /collections/create -> handler_v2.go -> createCollection -> properties passed WITHOUT TTL range check -> collection created with invalid TTL=-100",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_inconsistent",
+          "note": "Inconsistent validation: create accepts TTL=-100 (HTTP 200), alter_properties rejects same value with error code 1100. This is a validation bypass bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create with TTL=-100 (succeeds), then alter_properties with TTL=-100 (fails with error)",
+          "observed": "Create succeeds with HTTP 200. alter_properties fails with code 1100: 'collection TTL is out of range, expect [-1, 3155760000], got -100'. Same value rejected in alter but accepted in create.",
+          "evidence_cmd": "Two-step test confirms inconsistency"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean container)",
+            "Race condition (deterministic behavior)",
+            "Parameter typo (property name correct)",
+            "By-design (inconsistent validation between create/alter is a bug)"
+          ],
+          "surviving_explanation": "Genuine validation bypass: create endpoint missing TTL range check that alter_properties endpoint enforces"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - includes parameter validation gaps",
+        "note": "Inconsistent parameter validation between create and alter endpoints fits REST v2 validation gap pattern"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit TTL range in contract for create endpoint",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "TTL (Time To Live) represents seconds until collection expires. Negative values (except -1 for disabled) have no physical meaning. Range from error message: [-1, 3155760000] (100 years in seconds)",
+          "api_accepts_violation": true,
+          "observed_violations": "TTL=-100 accepted in create (violates meaningful range, only -1 or positive should be valid)",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "source_evidence": "No comments indicate this inconsistency is intentional. The error message from alter_properties shows the correct validation exists but is missing from create path.",
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint: negative TTL invalid) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "rationale": "collections/create accepts TTL=-100 (negative value, physically meaningless) while alter_properties correctly rejects it with error code 1100 stating valid range [-1, 3155760000]. This is inconsistent parameter validation - create endpoint bypasses TTL range check that alter endpoint enforces. Negative TTL (except -1 for 'no expiration') has no physical meaning. This is a true validation gap in REST v2 create endpoint."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0
+  }
+}

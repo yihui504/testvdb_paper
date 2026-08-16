@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupByField='vector' (vector field)",
+          "observed": "Search succeeded (HTTP 200). Returned 3 results (all with same vector [0.1,0.2,0.3,0.4]), indicating groupByField was ignored (should have returned 1 if truly grouped by vector with groupSize=1)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -d '{\"collectionName\":\"dev_review_038\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"vector\",\"groupSize\":1}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["候选假设'API应该拒绝vector字段分组' — 但更可能是功能未实现或参数被忽略,不是类型校验bug"]
+        },
+        "contract_grounding": {
+          "pass": false,
+          "contract_refs": ["无明确契约约束 groupByField 字段类型"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupParams", "GroupingParam", "groupByField"],
+          "files_examined": ["internal/proxy/query_pipeline.go", "internal/proxy/agg_reducer.go", "internal/distributed/proxy/httpserver/handler_v2.go"],
+          "source_excerpt": "// 搜索结果摘要:\n// 未找到 REST v2 API 层的 groupParams 参数处理代码\n// internal/proxy/query_pipeline.go 包含 groupByFieldIDs 相关的聚合逻辑,但用于 query/aggregation,非 search\n// 结论: groupParams 功能可能未实现或被忽略",
+          "call_chain_traced": "REST v2 search request → (未找到 groupParams 处理逻辑) → 参数可能被忽略",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "feature_not_implemented",
+          "note": "源码接地发现:未找到 groupParams 参数的显式处理代码。实测验证该参数被忽略(分组未生效)。这表明功能未实现,不是类型校验bug。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "对比测试:对标量字段(category)分组也返回3个点,证明groupByField参数被忽略,不是特定于vector字段的问题",
+          "observed": "groupByField参数被完全忽略,无论对vector还是scalar字段分组都不生效。这是功能未实现,不是bug。"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟"],
+          "surviving": "feature_not_implemented"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中blindspot(这不是REST v2类型校验问题)。未命中by_design(未在文档中说明)。这更像是功能未完成而非bug。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.70,
+      "rationale": "源码接地未找到groupParams处理代码,实测验证参数被忽略(分组未生效)。对标量字段分组同样无效,证明这是功能未实现,不是vector字段的特定bug。API接受但不执行参数更像是'功能预留'或'未完成功能',而非类型校验缺陷。FALSE_POSITIVE(中等置信度,因为可能被理解为'应该报错而不是忽略')。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

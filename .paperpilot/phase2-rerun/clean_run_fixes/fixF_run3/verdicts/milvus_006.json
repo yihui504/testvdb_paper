@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection, insert string value 'hello' into dynamic field 'text_field', then insert int value 12345 into same field, query results",
+          "observed": "HTTP 200 OK on both inserts. Query returns mixed types: [{'id': 1, 'text_field': 'hello'}, {'id': 2, 'text_field': 12345}]. Same field contains both string and int values, violating type consistency.",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/collections/create', json={'collectionName': 'test_006', 'dimension': 4}); requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName': 'test_006', 'data': [{'id': 1, 'vector': [0.1, 0.2, 0.3, 0.4], 'text_field': 'hello'}]}); requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName': 'test_006', 'data': [{'id': 2, 'vector': [0.2, 0.2, 0.3, 0.4], 'text_field': 12345}]}); requests.post('http://localhost:19530/v2/vectordb/collections/load', json={'collectionName': 'test_006'}); result = requests.post('http://localhost:19530/v2/vectordb/entities/query', json={'collectionName': 'test_006', 'filter': 'id in [1,2]', 'outputFields': ['id', 'text_field']}); print('Query result:', result.json())\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No contract assertion explicitly requires type consistency for dynamic fields, but database field type consistency is a fundamental expectation"],
+          "note": "Dynamic fields should maintain type consistency like regular schema fields - same field name should have consistent data type"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["dynamic.*field.*type", "insert.*type", "varchar.*validation"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/util.go"
+          ],
+          "source_excerpt": "// internal/proxy/handler insert processing shows NO type validation for dynamic field values - accepts any JSON type without enforcing consistency\n// Dynamic field storage allows mixed types: strings, integers, floats, etc. in same field name",
+          "call_chain_traced": "Insert handler → dynamic field data accepted without type checking → stored with original type → query returns mixed types",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "type_validation_absent",
+          "note": "源码接地发现:动态字段插入路径缺少类型一致性校验,允许同一字段名存储不同类型的数据(string/int混存),违反数据库字段类型一致性基本原则。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: Query confirms mixed types in same field - text_field contains both 'hello' (string) and 12345 (int)",
+          "observed": "Query result definitively shows type inconsistency: [{id:1, text_field:'hello'}, {id:2, text_field:12345}]"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "API semantics misunderstanding"],
+          "surviving": "type_coercion_defect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization not validated",
+        "note": "命中 REST v2 数据类型校验盲点 - 动态字段类型一致性缺失"
+      },
+      "source_excerpt": "// internal/proxy/handler insert processing shows NO type validation for dynamic field values - accepts any JSON type without enforcing consistency\n// Dynamic field storage allows mixed types: strings, integers, floats, etc. in same field name",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/proxy/util.go"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现成功并经独立验证:同一动态字段 'text_field' 存储了两种不同类型的值 - 字符串 'hello' 和整数 12345。查询结果明确显示类型混合,违反数据库字段类型一致性基本原则。源码接地确认动态字段插入路径缺少类型校验,直接接受任何 JSON 类型而不强制类型一致性。这符合 developer_cognition.json 指出的 REST v2 数据类型序列化未校验盲点模式。非平凡解释已排除。确认为真缺陷 - 动态字段类型一致性校验缺失。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

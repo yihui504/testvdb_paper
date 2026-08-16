@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with enableDynamicField=true, insert data with field name '123field' (starts with number), then query with outputFields=['123field']",
+          "observed": "HTTP 200 OK on insert with field name '123field', but HTTP 65535 error on query: 'parse output field name failed: 123field'. Insert accepts invalid field name that query cannot handle.",
+          "evidence_cmd": "python -c \"from pymilvus import MilvusClient; client = MilvusClient('http://localhost:19530'); client.create_collection('test_005', dimension=4, enable_dynamic_field=True); client.insert('test_005', [{'id': 1, 'vector': [0.1, 0.2, 0.3, 0.4], '123field': 'v1'}]); print('Insert succeeded'); client.load_collection('test_005'); result = client.query('test_005', filter='id==1', output_fields=['123field']); print('Query:', result)\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit contract constraint on dynamic field name format, but expression parser requires valid identifier syntax"],
+          "note": "Field name validation inconsistency between insert path (accepts '123field') and query path (rejects '123field')"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ 2.6.10",
+          "grep_queries": ["ParseIdentifier", "parse output field name failed", "insert.*field"],
+          "files_examined": [
+            "internal/proxy/util.go",
+            "internal/parser/planparserv2"
+          ],
+          "source_excerpt": "// internal/proxy/util.go lines 1638-1665\nif schema.EnableDynamicField {\n\tdynamicNestedPath := outputFieldName\n\terr := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n\t\tcolumnInfo := expr.GetColumnExpr().GetInfo()\n\t\t// there must be no error here\n\t\tdynamicField, _ := schema.schemaHelper.GetDynamicField()\n\t\t// only $meta[\"xxx\"] is allowed for now\n\t\tif dynamicField.GetFieldID() != columnInfo.GetFieldId() {\n\t\t\treturn errors.New(\"not support getting subkeys of json field yet\")\n\t\t}\n\t\tnestedPaths := columnInfo.GetNestedPath()\n\t\t// $meta[\"A\"][\"B\"] not allowed for now\n\t\tif len(nestedPaths) != 1 {\n\t\t\treturn errors.New(\"not support getting multiple level of dynamic field for now\")\n\t\t}\n\t\t// $meta[\"dyn_field\"], output field name could be:\n\t\t// 1. \"dyn_field\", outputFieldName == nestedPath\n\t\t// 2. `$meta[\"dyn_field\"]` explicit form\n\t\tif nestedPaths[0] != outputFieldName {\n\t\t\t// use \"dyn_field\" as userDynamicFieldsMap when outputField = `$meta[\"dyn_field\"]`\n\t\t\tdynamicNestedPath = nestedPaths[0]\n\t\t}\n\t\treturn nil\n\t})\n\tif err != nil {\n\t\tlog.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n\t\treturn nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n\t}\n\tresultFieldNameMap[common.MetaFieldName] = true\n\tuserOutputFieldsMap[outputFieldName] = true\n\tuserDynamicFieldsMap[dynamicNestedPath] = true\n}",
+          "call_chain_traced": "Insert path: NO field name validation → accepts '123field'. Query path: outputFields processing → planparserv2.ParseIdentifier → identifier validation FAILS on '123field' → error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_inconsistent",
+          "note": "源码接地发现:insert 路径对动态字段名无格式校验,但 query 路径使用 planparserv2.ParseIdentifier 验证字段名语法,该解析器拒绝以数字开头的标识符('123field'),导致插入成功但查询失败的不一致性。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: insert accepts '123field', query ParseIdentifier validation fails with parse error",
+          "observed": "Insert succeeds, query fails with 'parse output field name failed: 123field', confirming validation inconsistency"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment issues", "concurrency race", "API semantics misunderstanding"],
+          "surviving": "validation_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization not validated",
+        "note": "命中 REST v2 数据验证盲点 - 插入与查询路径的验证不一致"
+      },
+      "source_excerpt": "// internal/proxy/util.go lines 1638-1665\nif schema.EnableDynamicField {\n\tdynamicNestedPath := outputFieldName\n\terr := planparserv2.ParseIdentifier(schema.schemaHelper, outputFieldName, func(expr *planpb.Expr) error {\n\t\tcolumnInfo := expr.GetColumnExpr().GetInfo()\n\t\t// there must be no error here\n\t\tdynamicField, _ := schema.schemaHelper.GetDynamicField()\n\t\t// only $meta[\"xxx\"] is allowed for now\n\t\tif dynamicField.GetFieldID() != columnInfo.GetFieldId() {\n\t\t\treturn errors.New(\"not support getting subkeys of json field yet\")\n\t\t}\n\t\tnestedPaths := columnInfo.GetNestedPath()\n\t\t// $meta[\"A\"][\"B\"] not allowed for now\n\t\tif len(nestedPaths) != 1 {\n\t\t\treturn errors.New(\"not support getting multiple level of dynamic field for now\")\n\t\t}\n\t\t// $meta[\"dyn_field\"], output field name could be:\n\t\t// 1. \"dyn_field\", outputFieldName == nestedPath\n\t\t// 2. `$meta[\"dyn_field\"]` explicit form\n\t\tif nestedPaths[0] != outputFieldName {\n\t\t\t// use \"dyn_field\" as userDynamicFieldsMap when outputField = `$meta[\"dyn_field\"]`\n\t\t\tdynamicNestedPath = nestedPaths[0]\n\t\t}\n\t\treturn nil\n\t})\n\tif err != nil {\n\t\tlog.Info(\"parse output field name failed\", zap.String(\"field name\", outputFieldName), zap.Error(err))\n\t\treturn nil, nil, nil, false, fmt.Errorf(\"parse output field name failed: %s\", outputFieldName)\n\t}\n\tresultFieldNameMap[common.MetaFieldName] = true\n\tuserOutputFieldsMap[outputFieldName] = true\n\tuserDynamicFieldsMap[dynamicNestedPath] = true\n}",
+      "files_examined": [
+        "internal/proxy/util.go",
+        "internal/parser/planparserv2"
+      ],
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "干净复现成功并经源码接地确认根本原因:insert 路径对动态字段名无格式校验,成功插入 '123field' 字段;但 query 路径使用 planparserv2.ParseIdentifier 验证字段名,该解析器遵循标识符命名规则(不能以数字开头),导致查询失败并返回 'parse output field name failed: 123field' 错误。这是明显的验证不一致缺陷 - 应在 insert 时应用相同的字段名验证规则,或至少在两个路径间保持一致的验证策略。符合 developer_cognition.json 指出的 REST v2 数据验证盲点模式。非平凡解释已排除。确认为真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

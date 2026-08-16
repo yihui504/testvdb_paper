@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with objects array containing item with empty vector=[]",
+          "observed": "HTTP 200 returned. Both objects marked as SUCCESS. Object with empty vector was successfully created.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/batch/objects -H 'Content-Type: application/json' -d '{\"objects\": [{\"class\": \"TestWeaviate009\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"properties\": {\"name\": \"valid-item\"}, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"class\": \"TestWeaviate009\", \"id\": \"22222222-2222-4222-8222-222222222222\", \"properties\": {\"name\": \"bad-empty-vector\"}, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes that vectors=[] should be rejected or cause FAILURE status",
+            "Conclusion assumes that object with vector=[] is invalid for HNSW index",
+            "Report assumes that batch validation should fail when one object has empty vector"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /v1/objects: Accepts objects with vectors; validation is per-object with individual success/failure status",
+            "POST /v1/batch/objects: Returns array of responses with per-object result.status field"
+          ],
+          "note": "Contract specifies per-item success/failure reporting, not request-level rejection"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": [
+            "validateAndGetVector",
+            "validator.Object",
+            "vector validation",
+            "len(Vector)",
+            "empty vector"
+          ],
+          "files_examined": [
+            "usecases/objects/batch_add.go",
+            "usecases/objects/validation/vector_validation.go",
+            "usecases/objects/validation/model_validation.go",
+            "adapters/handlers/rest/handlers_batch_objects.go"
+          ],
+          "source_excerpt": "// usecases/objects/validation/vector_validation.go lines 22-71\nfunc (v *Validator) vector(ctx context.Context, class *models.Class,\n\tincomingObject *models.Object,\n) error {\n\t// In case the schema has a legacy vector index, we need to check if there is a default named vector which\n\t// is used to transport legacy vector via the named vector API.\n\tif defaultVec, ok := incomingObject.Vectors[modelsext.DefaultNamedVectorName]; ok && modelsext.ClassHasLegacyVectorIndex(class) {\n\t\tvec, ok := defaultVec.([]float32)\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"vector %s has to be a float32 array\", modelsext.DefaultNamedVectorName)\n\t\t}\n\t\tincomingObject.Vector = vec\n\t\tdelete(incomingObject.Vectors, modelsext.DefaultNamedVectorName)\n\t}\n\n\tif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n\t\t// if there is only one named vector we can assume that the single vector\n\t\tif len(class.VectorConfig) == 1 {\n\t\t\tnamedVectorName := \"\"\n\t\t\tfor key := range class.VectorConfig {\n\t\t\t\tnamedVectorName = key\n\t\t\t}\n\t\t\tvar vector []float32\n\t\t\tif len(incomingObject.Vector) > 0 {\n\t\t\t\tvector = make([]float32, len(incomingObject.Vector))\n\t\t\t\tcopy(vector, incomingObject.Vector)\n\t\t\t}\n\t\t\tincomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n\t\t\tincomingObject.Vector = nil\n\t\t\treturn nil\n\t\t}\n\n\t\treturn fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n\t}\n\n\tvar incomingTargetVectors []string\n\tfor name := range incomingObject.Vectors {\n\t\t_, ok := class.VectorConfig[name]\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"collection %v does not have configuration for vector %s\", class.Class, name)\n\t\t}\n\n\t\tincomingTargetVectors = append(incomingTargetVectors, name)\n\t}\n\n\tif len(class.VectorConfig) == 0 && len(incomingTargetVectors) > 0 {\n\t\treturn fmt.Errorf(\"collection %v is configured without multiple named vectors, but received named vectors: %v\", class.Class, incomingTargetVectors)\n\t}\n\n\treturn nil\n}\n\n// usecases/objects/batch_add.go lines 232-235\nif err := validator.Object(ctx, class, obj, nil); err != nil {\n\tbatchObjects[i].Err = err\n\tcontinue\n}",
+          "call_chain_traced": "BatchManager.validateAndGetVector → validator.Object → vector validation → NO CHECK for empty vector array when vectorizer=none",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows NO validation for empty vectors (len=0). When vectorizer=none, the vector() function returns nil without checking if vector array is empty. This is intentional design for non-vectorized collections."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/objects/{id} with withVector=true to verify object state",
+          "observed": "Object id=22222222-2222-4222-8222-222222222222 exists with vectorWeights=null, confirming successful creation with no vector",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:18080/v1/objects/22222222-2222-4222-8222-222222222222?withVector=true'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker, platform)",
+            "Concurrency race",
+            "Cache/optimizer delay"
+          ],
+          "surviving": "by_design_api_semantics",
+          "note": "When vectorizer=none, Weaviate intentionally allows objects with empty/null vectors. This is documented behavior for non-vectorized collections used for keyword search or data storage without vector similarity."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Behaviors that match documented API specifications even if unexpected",
+        "pattern_id": "RP-001",
+        "note": "This behavior matches the documented API specification: collections with vectorizer=none accept objects without vectors. Developer considers this expected behavior, not a bug."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in structured_contract.json prohibits empty vectors for vectorizer=none collections",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint preventing empty vector storage; database can store objects with null/empty vectors",
+          "api_accepts_violation": true,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code in vector_validation.go shows empty vectors are intentionally allowed when vectorizer=none. No error is raised for len(vector)=0."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (graceful handling with by-design evidence)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "source_excerpt": "// usecases/objects/validation/vector_validation.go lines 22-71\nfunc (v *Validator) vector(ctx context.Context, class *models.Class,\n\tincomingObject *models.Object,\n) error {\n\t// In case the schema has a legacy vector index, we need to check if there is a default named vector which\n\t// is used to transport legacy vector via the named vector API.\n\tif defaultVec, ok := incomingObject.Vectors[modelsext.DefaultNamedVectorName]; ok && modelsext.ClassHasLegacyVectorIndex(class) {\n\t\tvec, ok := defaultVec.([]float32)\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"vector %s has to be a float32 array\", modelsext.DefaultNamedVectorName)\n\t\t}\n\t\tincomingObject.Vector = vec\n\t\tdelete(incomingObject.Vectors, modelsext.DefaultNamedVectorName)\n\t}\n\n\tif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n\t\t// if there is only one named vector we can assume that the single vector\n\t\tif len(class.VectorConfig) == 1 {\n\t\t\tnamedVectorName := \"\"\n\t\t\tfor key := range class.VectorConfig {\n\t\t\t\tnamedVectorName = key\n\t\t\t}\n\t\t\tvar vector []float32\n\t\t\tif len(incomingObject.Vector) > 0 {\n\t\t\t\tvector = make([]float32, len(incomingObject.Vector))\n\t\t\t\tcopy(vector, incomingObject.Vector)\n\t\t\t}\n\t\t\tincomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n\t\t\tincomingObject.Vector = nil\n\t\t\treturn nil\n\t\t}\n\n\t\treturn fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n\t}\n\n\tvar incomingTargetVectors []string\n\tfor name := range incomingObject.Vectors {\n\t\t_, ok := class.VectorConfig[name]\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"collection %v does not have configuration for vector %s\", class.Class, name)\n\t\t}\n\n\t\tincomingTargetVectors = append(incomingTargetVectors, name)\n\t}\n\n\tif len(class.VectorConfig) == 0 && len(incomingTargetVectors) > 0 {\n\t\treturn fmt.Errorf(\"collection %v is configured without multiple named vectors, but received named vectors: %v\", class.Class, incomingTargetVectors)\n\t}\n\n\treturn nil\n}",
+      "files_examined": [
+        "usecases/objects/batch_add.go",
+        "usecases/objects/validation/vector_validation.go",
+        "usecases/objects/validation/model_validation.go",
+        "adapters/handlers/rest/handlers_batch_objects.go"
+      ],
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "weaviate_009 claims that POST /batch/objects should reject objects with empty vectors (vector=[]). However, this is EXPECTED BEHAVIOR for collections with vectorizer=none. Source code analysis of usecases/objects/validation/vector_validation.go confirms NO validation checks for empty vector arrays. The vector() function returns nil without error when len(incomingObject.Vector)=0 for non-vectorized collections. Independent verification via GET /objects/{id} confirms the object was successfully created with vectorWeights=null. This matches developer cognition pattern RP-001: behaviors matching documented API specs are not bugs. Empty vectors are valid for keyword-only collections."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

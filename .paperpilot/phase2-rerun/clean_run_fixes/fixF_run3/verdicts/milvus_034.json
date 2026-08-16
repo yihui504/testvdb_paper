@@ -1,0 +1,64 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with collection containing JSON field 'meta', passing string 'invalid_json_string' instead of JSON object",
+          "observed": "Upsert succeeded (HTTP 200, upsertCount=1). Query verified stored value is 'invalid_json_string', not JSON",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -d '{\"collectionName\":\"dev_review_034\",\"data\":[{\"id\":1,\"vector\":[0.9,0.9,0.9,0.9],\"meta\":\"invalid_json_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_json_001 - JSON scalar data type (dataType == JSON)"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkJSONFieldData", "validate.*JSON", "dataType.*JSON"],
+          "files_examined": ["internal/proxy/validate_util.go", "internal/proxy/task_upsert.go"],
+          "source_excerpt": "// internal/proxy/validate_util.go line 980-1014\nfunc (v *validateUtil) checkJSONFieldData(field *schemapb.FieldData, fieldSchema *schemapb.FieldSchema) error {\n\tjsonArray := field.GetScalars().GetJsonData().GetData()\n\tif jsonArray == nil && fieldSchema.GetDefaultValue() == nil && !fieldSchema.GetNullable() {\n\t\tmsg := fmt.Sprintf(\"json field '%v' is illegal, array type mismatch\", field.GetFieldName())\n\t\treturn merr.WrapErrParameterInvalid(\"need json array\", \"got nil\", msg)\n\t}\n\n\tif v.checkMaxLen {\n\t\tfor _, s := range jsonArray {\n\t\t\tif int64(len(s)) > paramtable.Get().CommonCfg.JSONMaxLength.GetAsInt64() {\n\t\t\t\t// length check code...\n\t\t\t}\n\t\t}\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "UpsertRequest → PreExecute → insertPreExecute → newValidateUtil().Validate() → checkJSONFieldData()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:checkJSONFieldData 只检查长度,不检查 JSON 格式有效性(json.Valid()缺失)。真缺陷(contract要求JSON字段只接受JSON数据,但源码未校验格式)"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/query filter='id==1' outputFields=['id','meta']",
+          "observed": "Query returned {\"id\":1,\"meta\":\"invalid_json_string\"} - bug consequence is observable, stored value is indeed invalid string"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发race", "缓存延迟", "请求参数笔误"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation",
+        "note": "完全命中盲点:REST v2 API数据类型校验缺失"
+      },
+      "root_cause_if_true": "contract_misread",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认 checkJSONFieldData()只检查长度不检查JSON格式。upsert接受字符串'invalid_json'作为JSON字段值,违反契约(milvus_type_json_001: dataType==JSON)。query验证存储确实是非JSON字符串。非环境/race/笔误。CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

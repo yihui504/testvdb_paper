@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.distance=null",
+          "observed": "HTTP 200 returned. Request sent distance=null but API silently defaulted to distance=\\\"cosine\\\" instead of rejecting null as invalid type.",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}' && curl -X GET http://localhost:18080/v1/schema/TestClass | grep -o '\"distance\":\"[^\"]*\"'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle expects API to reject null values for required string parameters",
+            "Validation assumes distance field must be a valid string (cosine, dot, l2-squared, etc)",
+            "Type checking assumes JSON type violations return 422 error"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema returns 422 RestrictionViolationResponse for invalid parameters",
+            "vectorIndexConfig.distance must be a string: one of cosine, dot, l2-squared, manhattan, hamming"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "OptionalStringFromMap",
+            "DefaultDistanceMetric",
+            "ParseAndValidateConfig"
+          ],
+          "files_examined": [
+            "entities/vectorindex/common/config.go",
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/flat/config.go"
+          ],
+          "source_excerpt": "From entities/vectorindex/common/config.go lines 95-110:\n\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil  // Field not present = OK (optional)\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // NOT A STRING = OK (silently ignores null/other types!)\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}\n\nFrom entities/vectorindex/common/config.go lines 26-32:\n\nconst (\n\tDistanceCosine = \"cosine\"\n\tDistanceDot    = \"dot\"\n\tDistanceL2Squared = \"l2-squared\"\n\t// ...\n\n\tDefaultDistanceMetric = DistanceCosine\n)\n\nFrom entities/vectorindex/hnsw/config.go lines 85-96:\n\nfunc (u *UserConfig) SetDefaults() {\n\tu.MaxConnections = DefaultMaxConnections\n\tu.EFConstruction = DefaultEFConstruction\n\t// ...\n\tu.Distance = vectorIndexCommon.DefaultDistanceMetric\n\t// ...\n}\n\nFrom entities/vectorindex/hnsw/config.go lines 140-157:\n\nfunc ParseAndValidateConfig(input interface{}, isMultiVector bool) (config.VectorIndexConfig, error) {\n\tuc := UserConfig{}\n\tuc.SetDefaults()  // STEP 1: Sets Distance = \\\"cosine\\\"\n\n\tif input == nil {\n\t\treturn uc, nil\n\t}\n\n\tasMap, ok := input.(map[string]interface{})\n\tif !ok || asMap == nil {\n\t\treturn uc, fmt.Errorf(\"input must be a non-nil map\")\n\t}\n\n\tif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"maxConnections\", func(v int) {\n\t\tuc.MaxConnections = v\n\t}); err != nil {\n\t\treturn uc, err\n\t}\n\t// ... other field parsing\n\n\tif err := vectorIndexCommon.OptionalStringFromMap(asMap, \"distance\", func(v string) {\n\t\tuc.Distance = v  // STEP 2: User value overwrites default\n\t}); err != nil {\n\t\treturn uc, err\n\t}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig() → SetDefaults() [SETS Distance=\\\"cosine\\\"] → OptionalStringFromMap(\\\"distance\\\", null) [RETURNS NIL, DOESN'T OVERWRITE] → validate() [CHECKS DEFAULTED VALUE, NOT USER INPUT]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals type coercion gap. OptionalStringFromMap() silently ignores non-string types (including null) instead of returning error. The default value 'cosine' is set BEFORE parsing user input, and when null is sent, OptionalStringFromMap() returns nil without overwriting the default. This creates a type coercion vulnerability where null input is accepted and silently defaulted rather than rejected with 422 error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestClass to verify stored distance value",
+          "observed": "distance=\\\"cosine\\\" stored — not null. Confirms silent defaulting instead of type validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "By-design behavior (no documentation or comments indicating null should be accepted)",
+            "API semantics (null is not a valid distance metric value)",
+            "Backward compatibility (rejecting null would not break valid clients)"
+          ],
+          "surviving": "type_coercion_vulnerability"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Matches BS-004 pattern: parameter_validation defect at request parsing layer. Also matches developer cognition blindspot: 'Input validation is often incomplete at API boundaries' and 'Type coercion issues in RAFT communication'."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Confirmed type coercion vulnerability. The POST /schema endpoint accepts vectorIndexConfig.distance=null (JSON null), silently defaults to 'cosine', and returns HTTP 200. Source code analysis shows OptionalStringFromMap() allows non-string types including null to pass without error. The correct behavior should be 422 error rejecting null as invalid type for a required string field. This matches BS-004 (Parameter Validation Issues) and aligns with developer cognition blindspots about incomplete input validation and type coercion issues."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "type_coercion_vulnerability": 1
+    }
+  }
+}

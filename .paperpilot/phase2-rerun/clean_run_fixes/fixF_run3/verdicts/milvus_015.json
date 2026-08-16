@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_015",
+      "endpoint": "indexes+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_rest_idx\", \"dimension\": 128, \"metricType\": \"COSINE\"} then POST /v2/vectordb/indexes/create {\"collectionName\": \"test_rest_idx\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}]}",
+          "observed": "Step 1: Collection create succeeded (HTTP 200). Step 2: Index create returned error code 65535 with message \"CreateIndex failed: at most one distinct index is allowed per field\" - different from original log's \"collection not found\" error.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_rest_idx\", \"dimension\": 128, \"metricType\": \"COSINE\"}' && curl -s -X POST \"http://localhost:19530/v2/vectordb/indexes/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_rest_idx\", \"indexParams\": [{\"fieldName\": \"vector\", \"metricType\": \"L2\", \"indexType\": \"IVF_FLAT\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes index creation should succeed on any field regardless of existing index state",
+            "Oracle treats REST v2 API as having no validation for collection existence before index creation",
+            "Original log shows sequential requests where collection creation failed (missing dimension) but index creation still proceeded on non-existent collection"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_indexes_create_001 (nlist >= 1)",
+            "constraint_id: milvus_type_indexes_create_001 (metricType must be valid for field type)",
+            "Endpoint description: Create an index on a field in a collection"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "at most one distinct index",
+            "CreateIndex",
+            "indexes+create",
+            "canCreateIndex"
+          ],
+          "files_examined": [
+            "internal/datacoord/index_meta.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/datacoord/index_meta.go line 444-450\nerrMsg := \"at most one distinct index is allowed per field\"\nlog.Warn(errMsg,\n\tzap.String(\"source index\", fmt.Sprintf(\"{index_name: %s, field_id: %d, index_params: %v, user_params: %v, type_params: %v}\",\n\t\tindex.IndexName, index.FieldID, index.IndexParams, index.UserIndexParams, index.TypeParams)),\n\tzap.String(\"current index\", fmt.Sprintf(\"{index_name: %s, field_id: %d, index_params: %v, user_params: %v, type_params: %v}\",\n\t\treq.GetIndexName(), req.GetFieldID(), req.GetIndexParams(), req.GetUserIndexParams(), req.GetTypeParams())))\nreturn 0, fmt.Errorf(\"CreateIndex failed: %s\", errMsg)",
+          "call_chain_traced": "REST v2 handler_v2.go:createIndex() → proxy.CreateIndex() → datacoord index_meta.go:canCreateIndex() → validates existing index per field → returns error if index already exists on field",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:CreateIndex 在 datacoord 层有明确的单索引约束检查('at most one distinct index is allowed per field'),这是有意的设计,非 bug。REST v2 创建集合时若 schema.Fields 为空会自动创建默认索引(见 handler_v2.go:2061-2070),导致后续手动创建同名索引时触发此约束。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Create clean collection with explicit schema (no auto-index), then create index manually",
+          "observed": "With explicit schema collection, index creation succeeds. Auto-created index from quick-setup collection conflicts with manual index creation - this is expected behavior, not a defect."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproduced consistently",
+            "Race condition - deterministic behavior",
+            "Request parameter typo - parameters are valid"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002 (Rollback from 3.0 to 2.6 not supported - by design)",
+        "developer_quote": "Milvus maintains single-index-per-field constraint for consistency; quick-setup mode creates default index automatically",
+        "note": "未命中明确 by_design_patterns,但源码显示这是有意限制:每个字段只允许一个索引。REST v2 quick-setup 模式会自动创建默认索引,导致与手动创建索引冲突。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Endpoint: indexes+create - Create an index on a field in a collection. Constraints: milvus_range_indexes_create_001 (nlist >= 1), milvus_type_indexes_create_001 (metricType valid for field type)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Single index per field is not a physical constraint but a design choice",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "Oracle 误解了 REST v2 的索引创建语义。原始日志中集合创建失败(缺少 dimension 参数)后,仍对不存在的集合尝试创建索引,返回'collection not found'是正确行为。复现时补全 dimension 后集合创建成功,但随后索引创建失败是因为 quick-setup 模式会自动创建默认索引(handler_v2.go:2061-2070),导致手动创建同名索引时触发'at most one distinct index is allowed per field'约束。源码显示这是有意的设计限制,非缺陷。REST v2 的 quick-setup 模式会自动创建向量字段的默认索引,这是为了简化用户操作,但用户需要知晓这与手动创建索引的互斥关系。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

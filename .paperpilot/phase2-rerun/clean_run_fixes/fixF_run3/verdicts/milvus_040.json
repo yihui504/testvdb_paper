@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "case schemapb.DataType_JSON:\n\t\t\t\t\tvar jsonString string\n\t\t\t\t\tif fieldValue.Type == gjson.String {\n\t\t\t\t\t\tjsonString = fieldValue.String()\n\t\t\t\t\t} else if fieldValue.Type == gjson.JSON {\n\t\t\t\t\t\tjsonString = fieldValue.Raw\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, \"expected string or JSON object\")\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = []byte(jsonString)",
+      "files_examined": ["internal/distributed/proxy/httpserver/utils.go"],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}] where meta field is JSON type",
+          "observed": "HTTP 200, insertCount:1, insertIds:[100] - operation succeeded",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_semantics\", \"data\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Defect assumes JSON field should only accept JSON objects/arrays, not plain strings", "Defect assumes inserting plain string into JSON field is invalid semantics"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint found restricting JSON field content type"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "jsonString", "gjson.String"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "case schemapb.DataType_JSON:\n\t\t\t\t\tvar jsonString string\n\t\t\t\t\tif fieldValue.Type == gjson.String {\n\t\t\t\t\t\tjsonString = fieldValue.String()\n\t\t\t\t\t} else if fieldValue.Type == gjson.JSON {\n\t\t\t\t\t\tjsonString = fieldValue.Raw\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, \"expected string or JSON object\")\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = []byte(jsonString)",
+          "call_chain_traced": "REST v2 insert → checkAndSetData → DataType_JSON case accepts both gjson.String and gjson.JSON → plain string converted to []byte and stored",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Source code reveals JSON field intentionally accepts multiple input types: plain strings (gjson.String) get converted to bytes, JSON objects (gjson.JSON) get their Raw value stored. This is by-design flexibility, not a defect."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query after insert to verify what was actually stored in JSON field",
+          "observed": "Query returns meta='plain_string' as-is, confirming the system accepts and stores plain strings in JSON fields by design"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["JSON fields in Milvus can store any JSON-serializable value including plain strings", "REST API provides flexible JSON field handling"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "While this touches JSON field semantics, it doesn't match documented rejection patterns - plain strings in JSON fields appear to be intentionally supported"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "The claimed defect (plain string rejected when inserting into JSON field) is FALSE_POSITIVE. Source code analysis (utils.go DataType_JSON handling) reveals intentional support for both plain strings and JSON objects in JSON fields. Live reproduction confirms insert with meta='plain_string' succeeds and stores the value as-is. JSON fields in Milvus are designed to store any JSON-serializable content, including plain strings, making this expected API behavior rather than a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

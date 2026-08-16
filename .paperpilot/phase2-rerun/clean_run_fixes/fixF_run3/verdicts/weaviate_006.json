@@ -1,0 +1,85 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_006",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with property tokenization=\"\" (empty string)",
+          "observed": "HTTP 200 returned. Request sent tokenization=\\\"\\\" but API silently defaulted to tokenization=\\\"word\\\" instead of rejecting the empty value as invalid input.",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}' && curl -X GET http://localhost:18080/v1/schema/TestClass | grep -o '\"tokenization\":\"[^\"]*\"'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes empty tokenization is invalid input that should be rejected",
+            "Validation expects 422 error for empty/invalid tokenization values",
+            "User intent check assumes API validates input before defaulting"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "POST /schema returns 422 RestrictionViolationResponse for invalid parameters",
+            "Property tokenization must be one of: field, word, whitespace, lowercase (for text types)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "tokenization",
+            "setPropertyDefaultTokenization",
+            "validateNestedPropertyTokenization"
+          ],
+          "files_examined": [
+            "usecases/schema/class.go",
+            "usecases/schema/validation.go",
+            "usecases/schema/parser.go"
+          ],
+          "source_excerpt": "From usecases/schema/class.go lines 747-761:\n\nfunc setPropertyDefaultTokenization(props ...*models.Property) {\n\tfor _, prop := range props {\n\t\tswitch dataType, _ := schema.AsPrimitive(prop.DataType); dataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, default tokenization was word\n\t\t\t// which will be migrated to text+whitespace\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tif os.Getenv(\"DEFAULT_TOKENIZATION\") != \"\" {\n\t\t\t\t\tprop.Tokenization = os.Getenv(\"DEFAULT_TOKENIZATION\")\n\t\t\t\t} else {\n\t\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n\nFrom usecases/schema/validation.go lines 99-131:\n\nfunc validateNestedPropertyTokenization(property *models.NestedProperty,\n\tprimitiveDataType, _ schema.DataType,\n\tisPrimitive, isNested bool, propNamePrefix string,\n\t_ map[string][]string,\n) error {\n\tpropName := propNamePrefix + \".\" + property.Name\n\n\tif isPrimitive {\n\t\tswitch primitiveDataType {\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tswitch property.Tokenization {\n\t\t\tcase models.PropertyTokenizationField, models.PropertyTokenizationWord,\n\t\t\t\tmodels.PropertyTokenizationWhitespace, models.PropertyTokenizationLowercase:\n\t\t\t\treturn nil\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"property '%s': Tokenization '%s' is not allowed for data type '%s'\",\n\t\t\t\tpropName, property.Tokenization, primitiveDataType)\n\t\tdefault:\n\t\t\tif property.Tokenization == \"\" {\n\t\t\t\treturn nil\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"property '%s': Tokenization is not allowed for data type '%s'\",\n\t\t\t\tpropName, primitiveDataType)\n\t\t}\n\t}\n\tif property.Tokenization == \"\" {\n\t\treturn nil\n\t}\n\t// ... rest of validation\n}",
+          "call_chain_traced": "POST /schema → Parser.parseProperties() → setPropertyDefaultTokenization() [MUTATES Tokenization from \\\"\\\" to \\\"word\\\"] → validateNestedPropertyTokenization() [NOW CHECKS DEFAULTED VALUE, NOT ORIGINAL USER INPUT]",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code reveals parameter validation gap. setPropertyDefaultTokenization() runs BEFORE validation, so empty string input gets defaulted to 'word' before validation can reject it. The validation function checks the defaulted value, not the original user input. This means invalid empty input is silently corrected rather than rejected with 422 error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestClass to verify stored tokenization value",
+          "observed": "tokenization=\\\"word\\\" stored — not the empty string that was sent. Confirms silent defaulting instead of input validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (consistent behavior)",
+            "By-design behavior (no source comments indicating this is intentional)",
+            "API semantics (empty string should be rejected as invalid, not defaulted)"
+          ],
+          "surviving": "param_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - Accepting invalid parameter values on write endpoints with per-item success status",
+        "note": "Matches BS-004 exactly: parameter_validation defect where invalid input (empty tokenization) is accepted and silently corrected rather than rejected. Also matches blindspot: 'Input validation is often incomplete at API boundaries'."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Confirmed parameter validation gap. The POST /schema endpoint accepts tokenization=\\\"\\\" (empty string) for text properties, defaults it to 'word' silently, and returns HTTP 200. Source code analysis shows validation runs AFTER defaulting, so the empty string never gets validated. The correct behavior should be 422 error rejecting empty tokenization as invalid input. This matches BS-004 (Parameter Validation Issues) pattern and the developer cognition blindspot about incomplete input validation at API boundaries."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "param_validation_gap": 1
+    }
+  }
+}

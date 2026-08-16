@@ -1,0 +1,100 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_010",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Create collection with shard_number=1 (no vectors config), then insert point with vector data",
+          "observed": "HTTP 400 with error 'Wrong input: Not existing vector name error:' when attempting to insert point with vector into collection with no vectors config",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/broken2_q010' -H 'Content-Type: application/json' -d '{\"shard_number\": 1}' && curl -s -X PUT 'http://localhost:6333/collections/broken2_q010/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": [0.1, 0.2, 0.3, 0.4]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect assumption: Collection creation without explicit vectors config should be rejected",
+            "Original defect assumption: Inserting vectors into collection without vectors config should succeed",
+            "Contract explicitly states: 'collections without vector config support payload-only operations (vector insert returns an error at use time)'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_state_create_collection_001",
+            "assertion: 'Collection creation accepts configuration literally; a collection created without vector config is valid for payload-only use, vector errors surface on first vector operation'",
+            "assertion: 'After 200 response the collection exists with the configuration as submitted; collections without vector config support payload-only operations (vector insert returns an error at use time)'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["Not existing vector name", "VectorNameNotExists", "vectors.*config"],
+          "files_examined": ["lib/segment/src/common/operation_error.rs", "lib/collection/src/operations/types.rs"],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\n// Collection config shows vectors:{} when no vectors config is provided\n// Source code validates vector names against the configured vector set",
+          "call_chain_traced": "CollectionCreate(shard_number only) → vectors defaults to {} → PointInsertOperation → validate_vector_config → VectorNameNotExists error → HTTP 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: 当创建集合时只指定 shard_number 而不指定 vectors，系统默认将 vectors 设为空对象。根据 qdrant_state_create_collection_001，这是支持 payload-only 集合的预期行为，向量插入失败是正确的设计。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify collection is created successfully and config shows vectors:{}",
+          "observed": "Collection creation with shard_number=1 returns HTTP 200. GET collection shows config with vectors:{}. Vector insert returns HTTP 400 with 'Not existing vector name error'. This matches the contract specification for payload-only collections.",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:6333/collections/broken2_q010' to verify vectors:{} in config"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - test on standard Docker container",
+            "API misuse - correct usage of collection creation with partial config",
+            "Missing validation - proper validation occurs at vector use time",
+            "Documentation unclear - contract explicitly documents this behavior"
+          ],
+          "surviving": "by_design_in_source"
+        }
+      },
+      "source_excerpt": "// lib/segment/src/common/operation_error.rs\n#[error(\"Not existing vector name error: {received_name}\")]\nVectorNameNotExists { received_name: VectorNameBuf },\n\n// Collection config shows vectors:{} when no vectors config is provided\n// Source code validates vector names against the configured vector set",
+      "files_examined": ["lib/segment/src/common/operation_error.rs", "lib/collection/src/operations/types.rs"],
+      "cognition_match": {
+        "matched_pattern": "Payload-only collections: creating a collection without vector configuration is a supported use case, errors surface on first vector use",
+        "developer_quote": "not an unusable collection, it allows payload-only collection",
+        "pattern_id": "blindspot_indicators[12]",
+        "note": "Exact match in developer cognition: payload-only collections are supported, with errors surfacing on first vector use"
+      },
+      "root_cause_if_fp": "by_design_in_source",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_state_create_collection_001: collections without vector config support payload-only operations (vector insert returns an error at use time)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violated - API correctly handles collections without vectors config",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=REFUTED (payload-only collections are documented and intentional)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "This is essentially the same scenario as qdrant_009. The defect claims that inserting vectors into a collection created without vectors config should not fail, but Qdrant's explicit contract (qdrant_state_create_collection_001) states that 'collections without vector config support payload-only operations (vector insert returns an error at use time)'. When a collection is created with only shard_number parameter, the vectors config defaults to empty, creating a valid payload-only collection. The developer cognition explicitly supports this: 'Payload-only collections: creating a collection without vector configuration is a supported use case'. The source code shows proper validation. This is by-design behavior, not a defect."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"by_design_in_source": 1}
+  }
+}
