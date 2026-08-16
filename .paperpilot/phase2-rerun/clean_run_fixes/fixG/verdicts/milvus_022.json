@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "confidence": 0.98,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with collectionName='test_verify_dup' twice sequentially",
+          "observed": "Both CREATE requests returned HTTP 200 with code:0, indicating success. Second CREATE should have failed with 400 error for duplicate collection name but succeeded instead.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_verify_dup\", \"dimension\": 4, \"metricType\": \"COSINE\", \"idType\": \"Int64\", \"autoID\": false}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001 - 'Collection creation is atomic; collection name must be unique within a database'",
+            "constraint_id: milvus_behavioral_collections_create_002 - 'Create collection returns 400 on invalid parameters or duplicate name'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "createCollection",
+            "CreateCollection",
+            "duplicate collection",
+            "collectionName unique"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/service.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1795-2061\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\tc.Set(ContextRequest, req)\n\n\t// ... parameter validation logic ...\n\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/CreateCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.CreateCollection(reqCtx, req.(*milvuspb.CreateCollectionRequest))\n\t})\n\t// No duplicate check before proxy.CreateCollection call - handler directly forwards request\n\t// No HasCollection pre-check to detect existing collection with same name\n}",
+          "call_chain_traced": "REST v2 handler createCollection (line 1795) → wrapperProxyWithLimit → proxy.CreateCollection → RootCoord. No pre-check for existing collection name.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 handler 在 createCollection 函数中未对 collectionName 做重复性检查。没有调用 HasCollection 或任何存在性验证,直接透传到 proxy.CreateCollection。这违反了契约要求 'collection name must be unique'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/has with collectionName='test_verify_dup' after duplicate CREATE",
+          "observed": "has=true, collection exists with collectionID=468408515393955815. Both CREATEs created the same collection (no separate collection created), but second CREATE should have been rejected with 400 error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment issues",
+            "concurrency/race",
+            "cache delays",
+            "parameter typos",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "contract_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中 blindspot: REST v2 API 缺少 gRPC path 中存在的重复检查。维护者明确将跨通道不一致视为缺陷并修复。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collectionName must be unique within dbName (constraint_id: milvus_state_collections_create_001)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "collectionName is primary key identifier - must be unique for database integrity",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "rationale": "Milvus REST v2 /collections/create 接口缺少 collectionName 重复性检查,违反契约 'collection name must be unique within a database'。实测显示对同一 collectionName 连续发起两次 CREATE 请求均返回 HTTP 200 (成功),第二次请求应返回 HTTP 400 (duplicate name) 却被接受。源码分析确认 handler_v2.go 的 createCollection 函数未调用 HasCollection 等存在性验证,直接透传到后端,导致 REST v2 API 与 gRPC 验证行为不一致(维护者明确将此类跨通道不一致视为缺陷)。此为 Type1_IllegalSuccess - 非法成功,数据库完整性约束被绕过。",
+      "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1795-2061\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\tc.Set(ContextRequest, req)\n\n\t// ... parameter validation logic ...\n\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/CreateCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.CreateCollection(reqCtx, req.(*milvuspb.CreateCollectionRequest))\n\t})\n\t// No duplicate check before proxy.CreateCollection call - handler directly forwards request\n\t// No HasCollection pre-check to detect existing collection with same name\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2_test.go",
+        "internal/distributed/proxy/httpserver/constant.go",
+        "internal/distributed/proxy/service.go"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

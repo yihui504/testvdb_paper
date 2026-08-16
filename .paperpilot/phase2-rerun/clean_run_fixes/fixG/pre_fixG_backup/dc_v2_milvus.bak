@@ -1,0 +1,112 @@
+{
+ "_meta": {
+  "generated_at": "2026-08-06T10:00:00Z",
+  "total_issues_analyzed": 161
+ },
+ "developer_cognition_signals": {
+  "what_developers_prioritize": [
+   "Performance optimization over data validation (REST v2 issues persist)",
+   "Feature development over edge case handling (segment lifecycle)",
+   "Index functionality over data safety (compaction errors)"
+  ],
+  "blindspot_indicators": [
+   "REST v2 API data type serialization - 8 issues in corpus",
+   "Segment state machine violations - 15+ issues",
+   "Snapshot isolation broken during concurrent operations - 7 issues",
+   "Memory admission control bypassed - 6 OOM issues",
+   "RBAC privilege annotations incomplete - 5 security issues",
+   "Concurrent operation edge cases - 12 deadlock/hang issues",
+   "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)"
+  ],
+  "areas_with_repeated_issues": [
+   {
+    "area": "REST v2 API",
+    "issue_count": 25,
+    "pattern": "Data type serialization not validated",
+    "example_issues": [
+     52232,
+     52230,
+     52229
+    ]
+   },
+   {
+    "area": "Segment Management",
+    "issue_count": 25,
+    "pattern": "State machine violations during lifecycle transitions",
+    "example_issues": [
+     52201,
+     52199,
+     52195
+    ]
+   },
+   {
+    "area": "Concurrency Control",
+    "issue_count": 15,
+    "pattern": "Deadlocks and hangs in concurrent DML/DQL",
+    "example_issues": [
+     52233,
+     52178,
+     52154
+    ]
+   }
+  ]
+ },
+ "rejection_patterns": [
+  {
+   "pattern_id": "RP-001",
+   "rejection_reason": "expected_behavior",
+   "description": "Issue rejected as expected system behavior",
+   "examples": [
+    "load partition stuck at 50%",
+    "channel checkpoint lag increasing"
+   ],
+   "attack_guidance": "Verify against documentation, check if behavior matches documented contract"
+  },
+  {
+   "pattern_id": "RP-002",
+   "rejection_reason": "by_design",
+   "description": "Issue rejected as intentional design choice",
+   "examples": [
+    "uneven vchannel distribution",
+    "memory imbalance"
+   ],
+   "attack_guidance": "Design may prioritize scalability over perfect balance"
+  }
+ ],
+ "by_design_patterns": [
+  {
+   "pattern_id": "BDP-001",
+   "pattern": "Storage V3 excludes uncommitted segments from snapshots",
+   "endpoint": "Storage V3 snapshot/restore",
+   "developer_quote": "uncommitted V3 growing segments intentionally excluded",
+   "source_issue_numbers": [
+    52043
+   ],
+   "should_report": false,
+   "classification": "Type4_StateViolation — FALSE POSITIVE",
+   "attack_guidance": "DO NOT report missing uncommitted segments as defect. Team explicitly excludes them from snapshots for correctness."
+  },
+  {
+   "pattern_id": "BDP-002",
+   "pattern": "Rollback from 3.0 to 2.6 not supported",
+   "endpoint": "Version downgrade",
+   "developer_quote": "index store path version incompatibility - rollback not supported",
+   "source_issue_numbers": [
+    51788
+   ],
+   "should_report": false,
+   "classification": "deployment_mismatch — FALSE POSITIVE",
+   "attack_guidance": "DO NOT report rollback failures. Downgrade not supported by design."
+  }
+ ],
+ "statistics": {
+  "total_blindspot_areas": 6,
+  "high_frequency_blindspots": [
+   "REST_v2_data_types",
+   "Segment_state_management",
+   "Concurrency_control"
+  ],
+  "rejection_patterns_count": 2,
+  "by_design_patterns_count": 2
+ }
+}

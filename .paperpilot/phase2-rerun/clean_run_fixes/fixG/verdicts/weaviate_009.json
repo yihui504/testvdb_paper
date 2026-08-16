@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "v1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with objects to non-existent collection 'NonExistent'",
+          "observed": "HTTP 200 with response showing per-item SUCCESS status, objects created successfully",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/batch/objects' -H 'Content-Type: application/json' -d '{\"objects\": [{\"class\": \"NonExistent\", \"id\": \"00000000-0000-0000-0000-000000000001\"}], \"fields\": [\"ALL\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Batch operations require valid collection name",
+            "Objects should be successfully created or properly rejected",
+            "Per-item status should accurately reflect operation outcome"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint in structured_contract.json requiring batch operations to fail on non-existent collections",
+            "Auto-schema feature is documented and enabled by default (environment.go:850: autoSchemaEnabled = true)",
+            "State constraint weaviate_state_batch_idempotent_001 confirms batch is idempotent - auto-creation maintains idempotency"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": [
+            "autoSchema",
+            "autoSchemaManager",
+            "allowCreateClass",
+            "GetCachedClassNoAuth",
+            "batch_add.go validateAndGetVector"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/config/environment.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/auto_schema.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/batch_add.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/adapters/handlers/rest/handlers_batch_objects.go",
+            "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/add.go"
+          ],
+          "source_excerpt": "// usecases/config/environment.go:850-852\nautoSchemaEnabled := true\nif v := os.Getenv(\"AUTOSCHEMA_ENABLED\"); v != \"\" {\n\tautoSchemaEnabled = !(strings.ToLower(v) == \"false\")\n}\n\n// usecases/objects/auto_schema.go:119-127\nif schemaClass == nil {\n\t// it returns the newly created class and version\n\tschemaClass, schemaVersion, err = m.createClass(ctx, principal, namespacing.StripOwnNamespace(principal, object.Class), properties)\n\tif err != nil {\n\t\treturn 0, fmt.Errorf(\"auto-schema: create collection: %w\", err)\n\t}\n\tclasses[object.Class] = versioned.Class{Class: schemaClass, Version: schemaVersion}\n\tclasscache.RemoveClassFromContext(ctx, object.Class)\n}\n\n// usecases/objects/batch_add.go:197\nschemaVersion, err := b.autoSchemaManager.autoSchema(ctx, principal, true, fetchedClasses, obj)\n\n// usecases/objects/add.go:97\nautoSchemaVersion, err := m.autoSchemaManager.autoSchema(ctx, principal, true, fetchedClasses, object)",
+          "call_chain_traced": "AddObjects() → GetCachedClassNoAuth() → autoSchema() (with allowCreateClass=true) → createClass() when class doesn't exist → batch_items get SUCCESS status",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source"
+        },
+        "source_excerpt": "// usecases/config/environment.go:850-852\nautoSchemaEnabled := true\nif v := os.Getenv(\"AUTOSCHEMA_ENABLED\"); v != \"\" {\n\tautoSchemaEnabled = !(strings.ToLower(v) == \"false\")\n}\n\n// usecases/objects/auto_schema.go:119-127\nif schemaClass == nil {\n\t// it returns the newly created class and version\n\tschemaClass, schemaVersion, err = m.createClass(ctx, principal, namespacing.StripOwnNamespace(principal, object.Class), properties)\n\tif err != nil {\n\t\treturn 0, fmt.Errorf(\"auto-schema: create collection: %w\", err)\n\t}\n\tclasses[object.Class] = versioned.Class{Class: schemaClass, Version: schemaVersion}\n\tclasscache.RemoveClassFromContext(ctx, object.Class)\n}\n\n// usecases/objects/batch_add.go:197\nschemaVersion, err := b.autoSchemaManager.autoSchema(ctx, principal, true, fetchedClasses, obj)\n\n// usecases/objects/add.go:97\nautoSchemaVersion, err := m.autoSchemaManager.autoSchema(ctx, principal, true, fetchedClasses, object)",
+        "files_examined": [
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/config/environment.go",
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/auto_schema.go",
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/batch_add.go",
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/adapters/handlers/rest/handlers_batch_objects.go",
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2/usecases/objects/add.go"
+        ],
+        "source_note": "Auto-schema is a documented feature (environment.go:850 defaults to true). Batch operations explicitly call autoSchema with allowCreateClass=true (batch_add.go:197), which creates non-existent collections. This is intentional design, not a validation gap.",
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema after batch operation to verify collection was actually created",
+          "observed": "GET /schema returns collection 'NonExistent' with description 'This property was generated by Weaviate's auto-schema feature on Sat Aug 15 23:41:17 2026' - confirms auto-creation occurred successfully",
+          "evidence_cmd": "curl -s -X GET 'http://localhost:18080/v1/schema' | grep -A 5 'NonExistent'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment configuration issue (auto-schema is default-enabled)",
+            "Validation gap (auto-schema explicitly designed to create collections)",
+            "Silent failure (collections are created and objects stored successfully)",
+            "Race condition (reproduced consistently)"
+          ],
+          "surviving": "by_design_auto_schema_feature"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Auto-schema is a documented feature, not a blindspot. Developers explicitly prioritize 'API contract compliance' but auto-schema IS the contract for default configuration. No rejection pattern matches this - auto-creation is intentional."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The observed behavior (batch operations to non-existent collections returning SUCCESS) is the intended auto-schema feature. Source code shows: (1) auto-schema defaults to enabled (environment.go:850), (2) batch operations explicitly call autoSchema with allowCreateClass=true (batch_add.go:197), (3) autoSchema creates missing collections (auto_schema.go:119-127), (4) created collections are visible in schema and objects are successfully stored. This is documented, intentional behavior - not a validation gap, silent failure, or contract violation. The structured_contract.json contains no constraint requiring batch operations to fail on non-existent collections. This is a feature, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

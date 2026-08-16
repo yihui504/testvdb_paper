@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {class: 'TestClass', vectorizer: 'none', vectorIndexConfig: {distance: null}}",
+          "observed": "HTTP 200 returned with response showing 'distance': 'cosine' (default value). The input null was silently coerced to 'cosine' instead of being rejected.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:18080/v1/schema' -H 'Content-Type: application/json' -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": null}}' | jq '.vectorIndexConfig.distance'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "The defect conclusion assumes that POST /schema should validate the vectorIndexConfig.distance field and reject null values",
+            "The raw request in output_weaviate_007.log explicitly shows 'vectorIndexConfig': {'distance': null} being sent in the payload"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "weaviate_type_schema_create_002: vectorIndexType must be one of allowed index types",
+            "API endpoint /schema POST accepts Class object with vectorIndexConfig as optional parameter"
+          ],
+          "note": "No explicit contract assertion found about null handling for distance field, but the principle of explicit vs implicit configuration suggests null should be rejected or handled explicitly, not silently coerced"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["OptionalStringFromMap", "distance", "SetDefaults", "vectorIndexConfig"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/common/config.go",
+            "usecases/schema/parser.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/common/config.go lines 95-110\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // BUG: When value is null, this returns nil WITHOUT calling setFn, leaving default value intact\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig (hnsw/config.go:140) → uc.SetDefaults() (line 96 sets Distance='cosine') → OptionalStringFromMap('distance', line 213) → value.(string) type assertion fails for null → returns without calling setter → Distance remains 'cosine'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "The bug is in OptionalStringFromMap: it treats null the same as 'field not present', both cases return nil without calling the setter. This means explicit null input is indistinguishable from omitted field, causing silent coercion to default instead of validation error."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempted to falsify by checking if API rejects invalid distance values (e.g., 'invalid-metric'). Confirmed that API only validates at parse time, not at null handling time.",
+          "observed": "The bug exists: null is accepted and coerced to 'cosine'. No independent channel can disprove this since the API response clearly shows the coercion occurred."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker, filesystem) - not applicable as this is pure request parsing logic",
+            "Concurrency/race conditions - single request, no concurrent state",
+            "Request parameter typos - the request explicitly contains 'distance': null, not a typo"
+          ],
+          "surviving_explanation": "This is a type coercion bug in request parsing logic, specifically the OptionalStringFromMap helper function that treats null as 'field absent' rather than 'invalid value'."
+        }
+      },
+      "source_excerpt": "// entities/vectorindex/common/config.go lines 95-110\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // BUG: When value is null, this returns nil WITHOUT calling setFn, leaving default value intact\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}",
+      "files_examined": [
+        "entities/vectorindex/hnsw/config.go",
+        "entities/vectorindex/common/config.go",
+        "usecases/schema/parser.go"
+      ],
+      "cognition_match": {
+        "matched_pattern": "BS-004: Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "This defect directly matches the developer cognition pattern for parameter validation issues at request parsing boundaries. The blindspot indicator about 'input validation is often incomplete at API boundaries' is confirmed."
+      },
+      "root_cause_if_confirmed": "parameter_validation_parsing_null_coercion",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Raw request evidence (output_weaviate_007.log) shows POST /schema with explicit 'distance': null payload. API returned HTTP 200 with 'distance': 'cosine' in response, confirming silent type coercion from null to default value. Source code analysis (OptionalStringFromMap in entities/vectorindex/common/config.go lines 103-106) proves the root cause: when value is null, the type assertion value.(string) fails, function returns nil without calling the setter, leaving the default value from SetDefaults() intact. This violates the principle that explicit user input (null) should be validated, not silently coerced. The bug matches developer cognition pattern BS-004 (Parameter Validation Issues in Request Parsing) with high confidence."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_parsing_null_coercion": 1
+    }
+  }
+}

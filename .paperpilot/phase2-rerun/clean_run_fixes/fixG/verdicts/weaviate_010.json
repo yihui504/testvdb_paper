@@ -1,0 +1,90 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_010",
+      "endpoint": "DELETE /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// usecases/objects/batch_delete.go lines 124-137 (validateBatchDelete function)\nfunc (b *BatchManager) validateBatchDelete(ctx context.Context, principal *models.Principal,\n\tmatch *models.BatchDeleteMatch, dryRun *bool, output *string,\n) (*BatchDeleteParams, uint64, error) {\n\tif match == nil {\n\t\treturn nil, 0, errors.New(\"empty match clause\")  // line 128: plain errors.New, NOT ErrInvalidUserInput\n\t}\n\n\tif len(match.Class) == 0 {\n\t\treturn nil, 0, errors.New(\"empty match.class clause\")  // line 132: plain errors.New\n\t}\n\n\tif match.Where == nil {\n\t\treturn nil, 0, errors.New(\"empty match.where clause\")  // line 136: plain errors.New - THIS IS THE BUG\n\t}\n\t...\n}\n\n// usecases/objects/batch_delete.go line 78 (deleteObjects function)\nparams, schemaVersion, err := b.validateBatchDelete(ctx, principal, match, dryRun, output)\nif err != nil {\n\treturn nil, errors.Wrap(err, \"validate\")  // WRAPS plain error, still not ErrInvalidUserInput\n}\n\n// adapters/handlers/rest/handlers_batch_objects.go lines 185-197 (deleteObjects handler)\nres, err := h.manager.DeleteObjects(ctx, principal,\n\tparams.Body.Match, params.Body.DeletionTimeUnixMilli, params.Body.DryRun, params.Body.Output, repl, tenant)\nif err != nil {\n\th.metricRequestsTotal.logError(\"\", err)\n\tif errors.As(err, &objects.ErrInvalidUserInput{}) {  // THIS CHECK FAILS because validateBatchDelete returns plain errors.New\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().  // NEVER EXECUTED\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else {\n\t\treturn batch.NewBatchObjectsDeleteInternalServerError().  // EXECUTED INSTEAD: 500 status\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t}\n}",
+      "files_examined": ["usecases/objects/batch_delete.go", "adapters/handlers/rest/handlers_batch_objects.go", "usecases/objects/errors.go"],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "DELETE http://localhost:18080/v1/batch/objects with {\"match\": {\"class\": \"TestCollection\"}, \"output\": \"minimal\"}",
+          "observed": "HTTP 500 with body: {\"error\":[{\"message\":\"validate: empty match.where clause\"}]}",
+          "evidence_cmd": "curl -s -X DELETE 'http://localhost:18080/v1/batch/objects' -H 'Content-Type: application/json' -d '{\"match\": {\"class\": \"TestCollection\"}, \"output\": \"minimal\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_state_http_status_semantics (developer_cognition blindspot_indicators)", "developer_cognition.blindspot_indicators: 'HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed (500->422 merged PR 12049, 500->404 merged PR 12040, batch REST handler error-code fixes merged PR 11878, 500->202 with maintainer +1 on PR 12262)'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": ["empty match", "match.where", "match.class", "BatchDelete"],
+          "files_examined": ["usecases/objects/batch_delete.go", "adapters/handlers/rest/handlers_batch_objects.go", "usecases/objects/errors.go"],
+          "source_excerpt": "// usecases/objects/batch_delete.go lines 124-137 (validateBatchDelete function)\nfunc (b *BatchManager) validateBatchDelete(ctx context.Context, principal *models.Principal,\n\tmatch *models.BatchDeleteMatch, dryRun *bool, output *string,\n) (*BatchDeleteParams, uint64, error) {\n\tif match == nil {\n\t\treturn nil, 0, errors.New(\"empty match clause\")  // line 128: plain errors.New, NOT ErrInvalidUserInput\n\t}\n\n\tif len(match.Class) == 0 {\n\t\treturn nil, 0, errors.New(\"empty match.class clause\")  // line 132: plain errors.New\n\t}\n\n\tif match.Where == nil {\n\t\treturn nil, 0, errors.New(\"empty match.where clause\")  // line 136: plain errors.New - THIS IS THE BUG\n\t}\n\t...\n}\n\n// usecases/objects/batch_delete.go line 78 (deleteObjects function)\nparams, schemaVersion, err := b.validateBatchDelete(ctx, principal, match, dryRun, output)\nif err != nil {\n\treturn nil, errors.Wrap(err, \"validate\")  // WRAPS plain error, still not ErrInvalidUserInput\n}\n\n// adapters/handlers/rest/handlers_batch_objects.go lines 185-197 (deleteObjects handler)\nres, err := h.manager.DeleteObjects(ctx, principal,\n\tparams.Body.Match, params.Body.DeletionTimeUnixMilli, params.Body.DryRun, params.Body.Output, repl, tenant)\nif err != nil {\n\th.metricRequestsTotal.logError(\"\", err)\n\tif errors.As(err, &objects.ErrInvalidUserInput{}) {  // THIS CHECK FAILS because validateBatchDelete returns plain errors.New\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().  // NEVER EXECUTED\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else {\n\t\treturn batch.NewBatchObjectsDeleteInternalServerError().  // EXECUTED INSTEAD: 500 status\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t}\n}",
+          "call_chain_traced": "REST handler deleteObjects → manager.DeleteObjects → deleteObjects → validateBatchDelete → errors.New('empty match.where clause') → errors.Wrap → handler checks for ErrInvalidUserInput type → FAILS → returns HTTP 500",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: validateBatchDelete 函数在第 128/132/136 行使用 plain errors.New() 而不是 NewErrInvalidUserInput(),导致 REST handler 的 errors.As 检查失败,本应返回 422 的客户端参数错误返回了 500 内部服务器错误。这违反了开发者认知中的 HTTP status-code semantics 要求。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "同上 clean_repro,HTTP 500 确实发生且错误消息 'validate: empty match.where clause' 证实这是请求侧可检测错误(缺少必需的 where 子句)而非内部故障",
+          "observed": "HTTP 500 status with error message referencing 'empty match.where clause' - a client-side detectable error being returned as server-side 5xx error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题(非标准 Docker 部署)", "并发 race(单线程复现)", "缓存延迟(即时响应)", "请求参数笔误(参数完全符合 spec 格式,只是缺少可选字段)"],
+          "surviving": "http_status_code_semantics_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed (500->422 merged PR 12049, 500->404 merged PR 12040, batch REST handler error-code fixes merged PR 11878, 500->202 with maintainer +1 on PR 12262). 5xx is reserved for genuine internal failures; 'the validation exists and the error message is clear' does not make a 5xx status correct",
+        "note": "命中开发者明确标识的盲点模式:请求侧可检测错误(缺少必需参数 where)返回了 5xx 状态码。维护者已在多个 PR 中修复此类问题(11878/12049/12040/12262),这是系统性缺陷模式。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "developer_cognition.blindspot_indicators 明确要求: 'HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "assertion_text_quoted": "HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers",
+          "api_observed_value": "DELETE /batch/objects with missing 'where' parameter → HTTP 500 (Internal Server Error)",
+          "api_violates_assertion": true,
+          "agent_suspects_contract_wrong": false
+        },
+        "physical": {
+          "objective_constraint": "HTTP RFC 7231: 4xx codes indicate client errors, 5xx codes indicate server errors. A missing required parameter is a client error (422 Unprocessable Entity), not a server failure.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API returns 500 which is the most ungraceful response for a client input error - it masks the real problem and suggests server failure rather than client mistake"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) + verdict_B=CONFIRMED (HTTP RFC violation) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "原 oracle 正确识别了 HTTP 状态码语义违规。源码接地证实: validateBatchDelete 在第 128/132/136 行使用 plain errors.New() 而非 NewErrInvalidUserInput(),导致 REST handler (handlers_batch_objects.go:185-197) 的 errors.As 检查失败,本应返回 422 (Unprocessable Entity) 的客户端参数错误返回了 500 (Internal Server Error)。这直接违反了 developer_cognition.blindspot_indicators 中明确记录的维护者立场:'5xx is reserved for genuine internal failures',且已有多个修复 PR (11878/12049/12040/12262) 证明这是系统性地被维护者确认和修复的缺陷模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"http_status_code_semantics_violation": 1}
+  }
+}

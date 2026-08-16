@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with {\"collectionName\": \"_test_coll\", \"dimension\": 128, \"consistencyLevel\": \"INVALID_LEVEL\"}",
+          "observed": "HTTP 200, code 0 - request succeeds despite invalid consistencyLevel value",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"_test_coll\", \"dimension\": 128, \"consistencyLevel\": \"INVALID_LEVEL\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_verified": [
+            "consistencyLevel should only accept enum values [Strong, Session, Bounded, Eventually]",
+            "Invalid consistencyLevel values should be rejected with error",
+            "Top-level consistencyLevel field should either be validated or rejected (not silently ignored)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: consistencyLevel (type: string, required: false, enum_values: [Strong, Session, Bounded, Eventually])"
+          ],
+          "contract_source": "collections+create endpoint in structured_contract.json"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["consistencyLevel", "CollectionReq struct", "ConsistencyLevel_value"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2_test.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 683-696\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 2008-2023\nconsistencyLevel := commonpb.ConsistencyLevel_Bounded\nif _, ok := httpReq.Params[\"consistencyLevel\"]; ok {\n\tif level, ok := commonpb.ConsistencyLevel_value[fmt.Sprintf(\"%s\", httpReq.Params[\"consistencyLevel\"])]; ok {\n\t\tconsistencyLevel = commonpb.ConsistencyLevel(level)\n\t} else {\n\t\terr := merr.WrapErrParameterInvalid(\"Strong, Session, Bounded, Eventually, Customized\", httpReq.Params[\"consistencyLevel\"],\n\t\t\t\"consistencyLevel can only be [Strong, Session, Bounded, Eventually, Customized], default: Bounded\")\n\t\tlog.Ctx(ctx).Warn(\"high level restful api, create collection fail\", zap.Error(err), zap.Any(\"request\", anyReq))\n\t\tHTTPAbortReturn(c, http.StatusOK, gin.H{\n\t\t\tHTTPReturnCode:    merr.Code(err),\n\t\t\tHTTPReturnMessage: err.Error(),\n\t\t})\n\t\treturn nil, err\n\t}\n}\nreq.ConsistencyLevel = consistencyLevel",
+          "call_chain_traced": "CollectionReq struct (no ConsistencyLevel field) → handler_v2.go line 2009 checks httpReq.Params['consistencyLevel'] → validation only in params map, not top-level",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:CollectionReq struct 没有 ConsistencyLevel 字段,只有 Params map;handler 仅验证 httpReq.Params['consistencyLevel'],不验证顶层字段 → API 接受顶层 consistencyLevel 但既不验证也不应用(Type1 违规)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/describe to check actual consistencyLevel applied",
+          "observed": "Created collection shows consistencyLevel='Bounded' (default), proving top-level 'INVALID_LEVEL' was silently ignored",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"_test_coll\", \"dbName\": \"default\"}' | grep consistencyLevel"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on running container)",
+            "Race condition (deterministic behavior)",
+            "Request parameter typo (matches documented parameter name)",
+            "API semantics misunderstanding (validation exists for params map but not top-level)"
+          ],
+          "surviving_explanation": "parameter_handling_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "命中 blindspot:REST v2 参数处理不一致(顶层字段 vs params map),与历史 bug shape 一致"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "consistencyLevel ∈ [Strong, Session, Bounded, Eventually] (enum constraint in structured_contract.json)",
+          "source_implements_check": false,
+          "api_observed_value": "API accepts 'INVALID_LEVEL' at top level without validation (HTTP 200, code 0)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "consistencyLevel is an enum with 4 valid values only",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "Silent ignore (applies default) is not graceful degradation for invalid input",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_handling_inconsistency",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 collections/create API accepts consistencyLevel as a top-level JSON field but silently ignores it (no validation, no application). Source code shows CollectionReq struct has no ConsistencyLevel field, only Params map. Validation exists only for httpReq.Params['consistencyLevel'] (handler_v2.go:2009-2021). Top-level field bypasses validation entirely, violating contract's enum constraint. Invalid value 'INVALID_LEVEL' should be rejected with error code 1100, but returns HTTP 200. Describe API confirms collection was created with default 'Bounded' level, proving silent ignore. Matches blindspot pattern: REST v2 parameter handling inconsistency."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_handling_inconsistency": 1
+    }
+  }
+}

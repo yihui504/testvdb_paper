@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "verdict": "CONFIRMED",
+      "confidence": 0.97,
+      "source_excerpt": "func (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0/usecases/sharding/config/config.go",
+        "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0/usecases/schema/parser.go"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): desiredCount=-1 returns HTTP 200 (illegal success), while desiredCount=0 correctly returns 422. Negative shard count is physically impossible and should be rejected as invalid input. Step 2 (Premise Audit): Weaviate v1.38.0 REST API active at localhost:18080/v1, confirmed via root endpoint. Step 3 (Contract Grounding): Developer cognition explicitly states 'Parameter validation gaps at API boundaries' are bugs (developer_cognition.json). Bug shape BS-004 matches: 'Accepting invalid parameter values on write endpoints' with 42 historical instances. HTTP status-code semantics indicate 5xx/4xx misuses are defects. Step 4 (Source Grounding): validate() function at usecases/sharding/config/config.go:53-70 only checks Key, Strategy, Function fields but does NOT validate DesiredCount >= 1. The optionalIntFromMap function accepts any int64 value including negatives. Step 5 (Reverse Falsification): Positive cases confirmed—desiredCount=1 and desiredCount=3 both return 200 success as expected, isolating the bug to negative value acceptance. Step 6 (Aggregation): All three perspectives (clean reproduction 1.0, contract grounding 0.95, source grounding 0.95) independently confirm the defect. Final verdict: CONFIRMED with confidence 0.97."
+    }
+  ]
+}
