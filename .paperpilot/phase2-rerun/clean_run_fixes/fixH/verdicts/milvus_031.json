@@ -1,0 +1,103 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with collection created using enableDynamicField=false, data containing extra field 'color' not in schema",
+          "observed": "HTTP 200 with code=1804, message='has pass more field without dynamic schema, please check it: invalid parameter'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_autoid\", \"dimension\": 4, \"metricType\": \"L2\", \"autoID\": true, \"schema\": {\"autoID\": true, \"primaryFieldName\": \"id\", \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 4}}]}}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_autoid\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'upsert应接受额外字段而无需enableDynamicField'的前提",
+            "Raw请求显示collection创建时未设置enableDynamicField=true",
+            "API正确拒绝了schema中不存在的额外字段"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: enableDynamicField (collections+create endpoint) - 'Enable reserved $meta dynamic field'",
+            "endpoint: entities+upsert - 'Insert or update entities'",
+            "constraint_id: milvus_type_entities_upsert_001 - 'Primary key field must be specified in data for upsert'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "has pass more field without dynamic schema",
+            "checkAndSetData",
+            "EnableDynamicField"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 664-694\n// fill dynamic schema\nfor mapKey, mapValue := range data.Map() {\n    if !containsString(fieldNames, mapKey) {\n        if collSchema.EnableDynamicField {\n            if mapKey == common.MetaFieldName {\n                return nil, nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"use the invalid field name(%s) when enable dynamicField\", mapKey))\n            }\n            // ... process dynamic field ...\n        } else {\n            return nil, nil, merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\")\n        }\n    }\n}\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1315-1349\nfunc (h *HandlersV2) upsert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n    httpReq := anyReq.(*CollectionDataReq)\n    req := &milvuspb.UpsertRequest{\n        DbName:         dbName,\n        CollectionName: httpReq.CollectionName,\n        PartitionName:  httpReq.PartitionName,\n        PartialUpdate:  httpReq.PartialUpdate,\n    }\n    collSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n    if err != nil {\n        return nil, err\n    }\n    body, _ := c.Get(gin.BodyBytesKey)\n    var validDataMap map[string][]bool\n    httpReq.Data, validDataMap, err = checkAndSetData(body.([]byte), collSchema, httpReq.PartialUpdate)\n    if err != nil {\n        log.Ctx(ctx).Warn(\"high level restful api, fail to deal with upsert data\", zap.Any(\"body\", body), zap.Error(err))\n        HTTPAbortReturn(c, http.StatusOK, gin.H{\n            HTTPReturnCode:    merr.Code(merr.ErrInvalidInsertData),\n            HTTPReturnMessage: merr.ErrInvalidInsertData.Error() + \", error: \" + err.Error(),\n        })\n        return nil, err\n    }",
+          "call_chain_traced": "upsert() → checkAndSetData() → line 668-692: if !collSchema.EnableDynamicField → return error 'has pass more field without dynamic schema'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: checkAndSetData函数在line 668-692处明确检查collSchema.EnableDynamicField,当其为false且数据包含schema中不存在的字段时,返回错误.这是显式的by-design行为,用于强制schema约束."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "创建collection WITH enableDynamicField=true, 同样upsert请求",
+          "observed": "HTTP 200 with code=0, upsertCount=1, upsertIds=[468409143911253500] - 成功接受额外字段",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_with_dynamic\", \"dimension\": 4, \"metricType\": \"L2\", \"autoID\": true, \"enableDynamicField\": true, \"schema\": {\"autoID\": true, \"primaryFieldName\": \"id\", \"enableDynamicField\": true, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 4}}]}}' && curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_with_dynamic\", \"data\": [{\"id\": 1, \"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "enableDynamicField参数控制schema严格性,这是API设计特性",
+            "额外字段'color'不在预定义schema中",
+            "源码明确实现此验证逻辑"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns,但行为完全符合API语义 - enableDynamicField=false时拒绝额外字段是预期设计,非缺陷"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "collections+create endpoint supports enableDynamicField parameter to control dynamic field behavior",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - no physical constraint violated",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED (by_design_in_source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "候选声称'upsert在enableDynamicField=false时应接受额外字段'是误读.源码显示checkAndSetData函数(utils.go:668-692)明确检查collSchema.EnableDynamicField:当为false且数据包含schema中不存在的字段时,返回错误'has pass more field without dynamic schema'.这是显式的by-design行为,用于强制schema约束.证伪测试确认:同一请求在enableDynamicField=true时成功(upsertCount=1).行为符合API设计 - enableDynamicField参数控制schema严格性.无违规."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

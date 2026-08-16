@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with dbName parameter variants",
+          "observed": "Request with dbName='default' succeeded (HTTP 200). Request with dbName='_default' (documented default) failed with error 800: 'database not found[database=_default]'. This is inverted behavior.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test\", \"dimension\": 128, \"metricType\": \"COSINE\", \"dbName\": \"default\"}' vs \"_default\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should accept the documented default dbName value",
+            "Source code DefaultDbName constant should match documented default_value",
+            "REST v2 handler should use consistent default dbName across code and documentation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_collections_create (endpoint parameter definition)",
+            "source: structured_contract.json lines 26-40: dbName parameter with default_value='_default'",
+            "source_url: https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "DefaultDbName",
+            "dbName.*default",
+            "wrapperPost",
+            "checkDatabase"
+          ],
+          "files_examined": [
+            "pkg/util/constant.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// File: pkg/util/constant.go, Line 55\nDefaultDBName       = \"default\"\n\n// File: internal/distributed/proxy/httpserver/constant.go, Line 126\nDefaultDbName            = \"default\"\n\n// File: internal/distributed/proxy/httpserver/handler_v1.go, Lines 111-136\nfunc (h *HandlersV1) checkDatabase(ctx context.Context, c *gin.Context, dbName string) error {\n\tif dbName == DefaultDbName {\n\t\treturn nil\n\t}\n\tif proxy.CheckDatabase(ctx, dbName) {\n\t\treturn nil\n\t}\n\tresponse, err := h.proxy.ListDatabases(ctx, &milvuspb.ListDatabasesRequest{})\n\t// ... database validation logic\n}\n\n// File: internal/distributed/proxy/httpserver/handler_v2.go, Lines 356-366\n\t\tdbName := \"\"\n\t\tif req != nil {\n\t\t\tif getter, ok := req.(requestutil.DBNameGetter); ok {\n\t\t\t\tdbName = getter.GetDbName()\n\t\t\t}\n\t\t\tif dbName == \"\" {\n\t\t\t\tdbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n\t\t\t\tif dbName == \"\" {\n\t\t\t\t\tdbName = DefaultDbName  // Uses 'default' not '_default'\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n// File: internal/distributed/proxy/httpserver/request_v2.go, Lines 683-698\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\t// ... other fields\n}\n\nfunc (req *CollectionReq) GetDbName() string         { return req.DbName }",
+          "call_chain_traced": "REST v2 Request → wrapperPost() → CollectionReq.GetDbName() → DefaultDbName constant ('default') → proxy.CreateCollection()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: pkg/util/constant.go 和 internal/distributed/proxy/httpserver/constant.go 均定义 DefaultDbName = 'default' (无下划线), 但 structured_contract.json 中记录的 default_value 为 '_default' (有下划线)。REST v2 handler_v2.go 第365行直接使用 DefaultDbName 常量作为默认值,导致文档与实际行为不一致。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test both 'default' and '_default' as dbName values",
+          "observed": "Confirmed that API accepts 'default' (HTTP 200) but rejects '_default' (error 800). This validates that the source code constant is the authoritative source, not the documented value.",
+          "evidence_cmd": "Parallel curl requests showed consistent behavior: 'default' succeeds, '_default' fails with 'database not found' error"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on live container)",
+            "Concurrency issue (sequential requests)",
+            "Request parameter typo (tested both variants explicitly)",
+            "API misunderstanding (verified against source code)"
+          ],
+          "surviving_explanation": "documentation_behavior_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Documentation-behavior consistency (blindspot indicator)",
+        "developer_quote": "Documentation-behavior consistency: when official documentation claims a behavior or capability that the server does not exhibit (documented X, actual behavior is not-X), this is a consistency defect - maintainers' repeated disposition is to fix it, usually by correcting the docs to match verified behavior",
+        "note": "命中开发者认知的文档-行为一致性盲点。开发者历史态度是修复此类不一致(通常修正文档以匹配验证过的行为)。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dbName parameter default value is '_default' per structured_contract.json",
+          "assertion_text_quoted": "default_value: '_default'",
+          "source_implements_check": false,
+          "api_observed_value": "API uses 'default' (no underscore) from source code constant DefaultDbName",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "None - both 'default' and '_default' are valid string values for database names",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED",
+          "note": "API gracefully accepts the correct default and provides clear error for incorrect documented value, but this is not intentional by-design given the documentation inconsistency"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation: default_value mismatch) → final=CONFIRMED (C cannot override contract violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "documentation_behavior_inconsistency",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地确认: pkg/util/constant.go 和 internal/distributed/proxy/httpserver/constant.go 定义 DefaultDbName = 'default' (无下划线),REST v2 handler_v2.go 直接使用此常量作为默认值。但 structured_contract.json 记录 default_value='_default' (有下划线)。实测证实 API 接受 'default' 成功但拒绝 '_default' (error 800)。这是典型的文档-行为不一致缺陷,符合开发者认知的 'Documentation-behavior consistency' 盲点模式。开发者历史态度是修复此类不一致,应判 CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "documentation_behavior_inconsistency": 1
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "func (h *HandlersV2) insert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionDataReq)\n\treq := &milvuspb.InsertRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t}\n\t...\n\treq.NumRows = uint32(len(httpReq.Data))\n\treq.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/request_v2.go"
+      ],
+      "rationale": "The REST v2 insert endpoint at /v2/vectordb/entities/insert accepts arbitrary-sized data arrays without validating against the documented maximum limit of 100 entities per insert call (constraint milvus_range_entities_insert_001). Testing confirmed: (1) Original observation: inserting 101 entities succeeded with HTTP 200, insertCount: 101; (2) Falsification test: inserting 200 entities succeeded with HTTP 200, insertCount: 200; (3) Extreme test: inserting 500 entities also succeeded with HTTP 200, insertCount: 500. Source code analysis shows the handler directly sets req.NumRows = uint32(len(httpReq.Data)) at line 1267 without any upper bound validation. The restfulSizeMiddleware only collects metrics, it does not perform size validation. This is a Type1_IllegalSuccess defect where the API accepts inputs that violate documented constraints, returning success status for requests that should be rejected with HTTP 400 and an appropriate error message."
+    }
+  ]
+}

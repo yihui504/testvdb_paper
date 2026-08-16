@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create with collectionName='test_dup', dimension=4, metricType=COSINE (twice with same parameters)",
+          "observed": "First request: HTTP 200 {\"code\":0,\"data\":{}}. Second request: HTTP 200 {\"code\":0,\"data\":{}}. Both succeeded without error - this is the expected idempotent behavior for duplicate collection creation with SAME schema.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_dup\",\"dimension\":4,\"metricType\":\"COSINE\",\"idType\":\"Int64\",\"autoID\":false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Candidate assumes duplicate collection creation should return an error, but Milvus contract specifies idempotent behavior when schema is unchanged", "The oracle appears to expect an error on ANY duplicate, but the documented behavior distinguishes between same-schema (200) vs different-schema (error 65535) cases"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_create_001 - 'collection creation is atomic AND collectionName is unique within dbName; re-creating an existing collection with the SAME schema is an idempotent no-op returning 200'",
+            "constraint_id: milvus_behavioral_collections_create_002 - 'duplicate collection name with the same schema returns 200 (idempotent no-op), with a different schema returns an error'",
+            "invariant_id: milvus_invariant_create_duplicate_001 - 'create(collection, schema A) -> create(collection, schema A) returns 200 (idempotent no-op)'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["create duplicate collection", "errIgnoredCreateCollection", "validateIfCollectionExists"],
+          "files_examined": [
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/meta_table.go",
+            "internal/rootcoord/root_coord.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/create_collection_task.go line 522-540\nfunc (t *createCollectionTask) validateIfCollectionExists(ctx context.Context) error {\n\t// Check if the collection name duplicates an alias.\n\tif _, err := t.meta.DescribeAlias(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp); err == nil {\n\t\terr2 := fmt.Errorf(\"collection name [%s] conflicts with an existing alias, please choose a unique name\", t.Req.GetCollectionName())\n\t\tlog.Ctx(ctx).Warn(\"create collection failed\", zap.String(\"database\", t.Req.GetDbName()), zap.Error(err2))\n\t\treturn err2\n\t}\n\n\t// Check if the collection already exists.\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection\n\t}\n\treturn nil\n}",
+          "call_chain_traced": "CreateCollectionRequest -> validateIfCollectionExists -> GetCollectionByName -> Equal check -> return errIgnoredCreateCollection if schemas match",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly implements idempotent duplicate collection creation: when collection exists with SAME schema (Equal check passes), it returns errIgnoredCreateCollection, which is caught in root_coord.go line 903-907 and converted to HTTP 200 success. This is intentional by-design behavior, not a bug."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create with DIFFERENT parameters (dimension=8, metricType=L2) on existing collection 'test_dup_review2'",
+          "observed": "HTTP 200 on first create, then HTTP 200 with code=65535 and message='create duplicate collection with different parameters, collection: test_dup_review2' on second attempt. This PROVES the API correctly distinguishes same-schema (idempotent) from different-schema (error) cases."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002",
+        "developer_quote": "re-creating an existing collection with the SAME schema is an idempotent no-op returning 200",
+        "note": "This is explicitly documented in the contract and implemented in source code. The developer cognition model documents this as expected behavior (state_constraint milvus_state_collections_create_001)."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "Milvus explicitly specifies and implements idempotent collection creation: re-creating a collection with the SAME schema returns HTTP 200 (no-op success), while re-creating with DIFFERENT parameters returns error 65535. The candidate expects an error on duplicate creation regardless of schema, which contradicts both the documented contract (milvus_state_collections_create_001, milvus_behavioral_collections_create_002, milvus_invariant_create_duplicate_001) and the verified source implementation (create_collection_task.go:522-540, root_coord.go:903-907). Source code shows errIgnoredCreateCollection is returned when schemas match and explicitly converted to success response. This is by-design idempotent behavior, not a defect.",
+      "source_excerpt": "// internal/rootcoord/create_collection_task.go line 522-540\nfunc (t *createCollectionTask) validateIfCollectionExists(ctx context.Context) error {\n\t// Check if the collection name duplicates an alias.\n\tif _, err := t.meta.DescribeAlias(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp); err == nil {\n\t\terr2 := fmt.Errorf(\"collection name [%s] conflicts with an existing alias, please choose a unique name\", t.Req.GetCollectionName())\n\t\tlog.Ctx(ctx).Warn(\"create collection failed\", zap.String(\"database\", t.Req.GetDbName()), zap.Error(err2))\n\t\treturn err2\n\t}\n\n\t// Check if the collection already exists.\n\texistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\n\tif err == nil {\n\t\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\t\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t\t}\n\t\treturn errIgnoredCreateCollection\n\t}\n\treturn nil\n}",
+      "files_examined": [
+        "internal/rootcoord/create_collection_task.go",
+        "internal/rootcoord/meta_table.go",
+        "internal/rootcoord/root_coord.go"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}
