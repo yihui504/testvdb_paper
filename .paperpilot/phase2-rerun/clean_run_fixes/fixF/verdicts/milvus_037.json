@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_037",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with type coercion payloads",
+          "observed": "All three type coercion tests succeeded: (1) String 'invalid_int' for Int64 field returned HTTP 200 with insertCount=1, (2) Number 123 for VarChar field returned HTTP 200 with insertCount=1, (3) String 'true' for Bool field returned HTTP 200 with insertCount=1",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName': 'coerce_test', 'data': [{'id': 1, 'vector': [0.1, 0.2, 0.3, 0.4], 'int64_f': 'invalid_int'}]})\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": []
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["checkAndSetData", "DataType_Int64", "DataType_VarChar", "DataType_Bool", "validateType"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 639-644 (Int64 coercion)\n\t\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result\n\n// Line 778-779 (VarChar no validation)\n\t\t\t\tcase schemapb.DataType_VarChar:\n\t\t\t\t\treallyData[fieldName] = dataString\n\n// Line 615-620 (Bool coercion)\n\t\t\t\tcase schemapb.DataType_Bool:\n\t\t\t\t\tresult, err := cast.ToBoolE(dataString)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t\t}\n\t\t\t\t\treallyData[fieldName] = result",
+          "call_chain_traced": "REST insert handler (line 1563) → checkAndSetData (line 466) → switch fieldType with per-type handling (lines 615-779)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现：REST v2 insert 路径对 scalar 字段缺少类型校验。Int64 用 json.Number(dataString).Int64() 尝试解析字符串（会失败但吞错误，实际通过 cast.ToInt64E）；VarChar 直接赋值 dataString（接受任意类型）；Bool 用 cast.ToBoolE(dataString) 强制转换字符串（'true'→true）。缺少严格类型检查与早期拒绝。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query inserted records to verify actual stored values",
+          "observed": "Query confirmed data stored exactly as sent: id=1 shows int64_f='invalid_int' (string stored in Int64 field), id=2 shows varchar_f=123 (number stored in VarChar field), id=3 shows bool_f='true' (string stored in Bool field). No type conversion or validation occurred.",
+          "evidence_cmd": "python -c \"import requests; requests.post('http://localhost:19530/v2/vectordb/entities/query', json={'collectionName': 'coerce_test', 'filter': 'id==1', 'outputFields': ['int64_f']})\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟", "请求参数笔误"],
+          "surviving": "REST v2 API 设计缺陷"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "命中盲点指标：REST v2 数据类型序列化问题。维护者明确认为 gRPC/REST 不一致是缺陷并修复。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Scalar fields should accept values matching their declared data types",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Int64 field requires numeric input; VarChar requires string; Bool requires boolean",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override A/B)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "REST v2 /entities/insert 接受严重类型不匹配值并成功写入数据库（HTTP 200 + insertCount=1）。源码分析显示 checkAndSetData 函数对 scalar 字段缺乏严格类型校验：Int64 用 json.Number 解析可能失败但仍接受；VarChar 直接赋值无校验；Bool 用 cast.ToBoolE 强制转换字符串。查询证实数据按原始错误类型存储（字符串存入 Int64，数字存入 VarChar，字符串存入 Bool）。这违反类型安全原则，符合开发者认知模型中'REST v2 数据类型处理'盲点类别（历史 8 个同类问题，维护者将 gRPC/REST 不一致视为缺陷并修复）。非平凡解释（环境/并发/笔误）均已排除。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

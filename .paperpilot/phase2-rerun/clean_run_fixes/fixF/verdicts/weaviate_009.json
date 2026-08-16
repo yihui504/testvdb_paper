@@ -1,0 +1,105 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with two items: one with valid vector [0.1, 0.2, 0.3, 0.4], one with empty vector []",
+          "observed": "API returned HTTP 200 with both items showing status: SUCCESS. Empty vector item succeeded without error.",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/batch/objects -d '{\"objects\": [{\"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption 1: Empty vectors should be rejected - The raw evidence shows empty vector [] was accepted with status SUCCESS",
+            "Assumption 2: Batch operations validate each item's vector - API successfully processed both items without rejecting the empty vector",
+            "Assumption 3: Vector field validation checks for non-empty arrays - No validation prevented empty vector storage"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_object_vector_001 - 'vector must be array of floats'",
+            "constraint_id: weaviate_state_batch_idempotent_001 - 'batch create is idempotent; existing UUIDs are replaced'",
+            "The contract specifies vector must be array of floats but does not explicitly prohibit empty arrays",
+            "However, the constraint 'vector is array of number (float)' implies semantic requirement for numeric vectors, not empty placeholders"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": ["vector.*validation", "empty.*vector", "BatchPutObjects", "validateAndGetVector"],
+          "files_examined": [
+            "usecases/objects/validation/vector_validation.go",
+            "usecases/objects/validation/model_validation.go",
+            "usecases/objects/batch_add.go",
+            "adapters/handlers/rest/handlers_batch_objects.go"
+          ],
+          "source_excerpt": "// From usecases/objects/validation/vector_validation.go lines 22-71:\nfunc (v *Validator) vector(ctx context.Context, class *models.Class,\n\tincomingObject *models.Object,\n) error {\n\t// In case the schema has a legacy vector index, we need to check if there is a default named vector which\n\t// is used to transport legacy vector via the named vector API.\n\tif defaultVec, ok := incomingObject.Vectors[modelsext.DefaultNamedVectorName]; ok && modelsext.ClassHasLegacyVectorIndex(class) {\n\t\tvec, ok := defaultVec.([]float32)\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"vector %s has to be a float32 array\", modelsext.DefaultNamedVectorName)\n\t\t}\n\t\tincomingObject.Vector = vec\n\t\tdelete(incomingObject.Vectors, modelsext.DefaultNamedVectorName)\n\t}\n\n\tif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n\t\t// if there is only one named vector we can assume that the single vector\n\t\tif len(class.VectorConfig) == 1 {\n\t\t\tnamedVectorName := \"\"\n\t\t\tfor key := range class.VectorConfig {\n\t\t\t\tnamedVectorName = key\n\t\t\t}\n\t\t\tvar vector []float32\n\t\t\tif len(incomingObject.Vector) > 0 {\n\t\t\t\tvector = make([]float32, len(incomingObject.Vector))\n\t\t\t\tcopy(vector, incomingObject.Vector)\n\t\t\t}\n\t\t\tincomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n\t\t\tincomingObject.Vector = nil\n\t\t\treturn nil\n\t\t}\n\n\t\treturn fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n\t}\n\n\tvar incomingTargetVectors []string\n\tfor name := range incomingObject.Vectors {\n\t\t_, ok := class.VectorConfig[name]\n\t\tif !ok {\n\t\t\treturn fmt.Errorf(\"collection %v does not have configuration for vector %s\", class.Class, name)\n\t\t}\n\n\t\tincomingTargetVectors = append(incomingTargetVectors, name)\n\t}\n\n\tif len(class.VectorConfig) == 0 && len(incomingTargetVectors) > 0 {\n\t\treturn fmt.Errorf(\"collection %v is configured without multiple named vectors, but received named vectors: %v\", class.Class, incomingTargetVectors)\n\t}\n\n\treturn nil\n}",
+          "call_chain_traced": "POST /batch/objects → handlers_batch_objects.go:addObjects() → batch_add.go:AddObjects() → validateAndGetVector() → model_validation.go:Object() → vector_validation.go:vector() - NO CHECK FOR EMPTY ARRAY",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Critical finding: The vector() function in vector_validation.go validates vector TYPE (must be []float32) but never validates vector LENGTH. Empty arrays pass all validation checks because len(incomingObject.Vector) > 0 check on line 36 skips validation when vector is empty. This is the root cause of the bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /objects/BatchVectorBugReproTest/22222222-2222-4222-8222-222222222222 - verify object with empty vector was actually stored",
+          "observed": "Object successfully retrieved with properties {'name': 'bad-empty-vector'} and no vector field - proving the empty vector was accepted and stored",
+          "evidence_cmd": "curl -X GET http://localhost:18080/v1/objects/BatchVectorBugReproTest/22222222-2222-4222-8222-222222222222"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - reproduced consistently on clean Weaviate 1.38.2 instance",
+            "Race condition - synchronous single-threaded test",
+            "Request parameter typo - explicit empty array [] sent",
+            "API semantic misunderstanding - vectorizer: 'none' means manual vectors provided by user"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004: Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Input validation is often incomplete at API boundaries",
+        "note": "Matches blindspot indicator: 'Input validation is often incomplete at API boundaries'. This is a systematic parameter validation defect where the API accepts invalid values (empty vectors) that should be rejected at the boundary."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "This is a TRUE BUG (CONFIRMED). The Weaviate batch objects endpoint accepts and stores objects with empty vectors when using vectorizer: 'none' (manual vector mode). The source code in vector_validation.go:vector() validates that vectors are []float32 type but NEVER validates that the array is non-empty. Empty arrays bypass the len(incomingObject.Vector) > 0 check on line 36, so all validation passes. This violates the semantic intent of manual vector mode where users must provide valid vectors. Developer cognition confirms 'Input validation is often incomplete at API boundaries' is a known blindspot. The bug pattern matches BS-004 (Parameter Validation Issues). This is not a false positive - it's a genuine parameter validation gap that allows invalid data into the system."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "vector must be array of floats (constraint_id: weaviate_type_object_vector_001)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Vectors in manual mode must have dimension > 0 for vector search operations",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED → final=CONFIRMED (contract and physical violations both present)",
+    "final_verdict": "CONFIRMED"
+  }
+}

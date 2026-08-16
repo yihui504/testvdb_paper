@@ -1,0 +1,119 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_score_threshold_validation/points/search with vector=[0.1,0.2,0.3,0.4], score_threshold=2.0 (invalid for Cosine similarity [0,1])",
+          "observed": "API returned HTTP 200 with empty result array [] instead of 4xx validation error",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_validation/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": 2.0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "score_threshold parameter is optional",
+            "Cosine similarity scores are in [0,1] range for normalized vectors",
+            "API should reject invalid score_threshold values outside [0,1] for Cosine distance"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: collections+{collection_name}+points+search",
+            "parameter: score_threshold (type: number, optional)",
+            "description: 'Return points with scores better than this threshold'"
+          ],
+          "note": "Contract defines score_threshold as generic number type without range validation"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ v1.18.0",
+          "grep_queries": [
+            "score_threshold",
+            "ScoreType",
+            "Distance::Cosine",
+            "validate"
+          ],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "lib/common/common/src/types.rs",
+            "lib/segment/src/types.rs",
+            "lib/segment/src/spaces/simple.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs line 572-577\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n/// Max number of points to return. Default is 10.\n#[validate(range(min = 1))]\npub limit: Option<usize>,\n\n// lib/common/common/src/types.rs line 7-8\n/// Type of vector matching score\npub type ScoreType = f32;\n\n// lib/segment/src/spaces/simple.rs line 208-212\nimpl MetricPostProcessing for CosineMetric {\n    fn postprocess(score: ScoreType) -> ScoreType {\n        score\n    }\n}",
+          "call_chain_traced": "REST request → ScoreRequest.score_threshold (Option<ScoreType>=Option<f32>) → no validation attribute present → direct pass-through to search logic",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: score_threshold 定义为 Option<ScoreType>=Option<f32>，没有任何 #[validate(...)] 属性。对比之下，limit 参数有 #[validate(range(min = 1))]。score_threshold 直接透传，不做范围校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested with score_threshold values: 2.0, -0.5, 999.9, 'invalid_string'",
+          "observed": "API accepts all invalid numeric values (2.0, -0.5, 999.9) with HTTP 200, only rejects type error (string) with 400. No semantic validation of score range for Cosine similarity [0,1].",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:6333/collections/test_score_threshold_validation/points/search' -H 'Content-Type: application/json' -d '{\"vector\": [0.1, 0.2, 0.3, 0.4], \"limit\": 5, \"score_threshold\": -0.5}' returns HTTP 200 with result=[id=1,score=1.0]"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (test on clean Docker container)",
+            "Request parameter typo (verified correct syntax)",
+            "API misunderstanding (Cosine similarity is [0,1] for normalized vectors)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "qdrant-parameter-validation-numeric-boundary",
+        "developer_quote": null,
+        "note": "命中 bug_shapes.json 中的 'Parameter Validation issues where Numeric Boundary validation is missing' 模式。score_threshold 是 Numeric Boundary 参数，缺失范围校验。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "score_threshold is Optional<ScoreType>=f32 without explicit range constraint in contract",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract 没有明文规定 score_threshold 的范围，但从语义上它应该与距离度量类型匹配"
+        },
+        "physical": {
+          "objective_constraint": "Cosine similarity for normalized vectors produces scores in [0, 1] range. score_threshold should be within [0, 1] for Cosine distance.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "物理约束: Cosine 相似度归一化后为 [0,1]，score_threshold=2.0/-0.5/999.9 都违反此约束，API 却接受"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "行为不优雅: API 没有任何错误提示或警告，静默接受非法值，可能导致用户误以为过滤生效"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "parameter_validation_numeric_boundary_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实: lib/api/src/rest/schema.rs 中 score_threshold 定义为 Option<ScoreType>，没有任何 #[validate(...)] 属性。对比 limit 参数的 #[validate(range(min = 1))]，可见缺失校验。实测证明 API 接受 score_threshold=2.0/-0.5/999.9 (HTTP 200)，虽然 Cosine 相似度范围为 [0,1]。这是参数验证缺失导致的 Type1 违规：API 接受语义上无效的数值，没有返回 4xx 错误。",
+      "source_excerpt": "// lib/api/src/rest/schema.rs line 572-577\n/// Return points with scores better than this threshold.\npub score_threshold: Option<ScoreType>,\n\n/// Max number of points to return. Default is 10.\n#[validate(range(min = 1))]\npub limit: Option<usize>,\n\n// lib/common/common/src/types.rs line 7-8\n/// Type of vector matching score\npub type ScoreType = f32;\n\n// lib/segment/src/spaces/simple.rs line 208-212\nimpl MetricPostProcessing for CosineMetric {\n    fn postprocess(score: ScoreType) -> ScoreType {\n        score\n    }\n}",
+      "files_examined": [
+        "lib/api/src/rest/schema.rs",
+        "lib/common/common/src/types.rs",
+        "lib/segment/src/types.rs",
+        "lib/segment/src/spaces/simple.rs"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_numeric_boundary_missing": 1
+    }
+  }
+}

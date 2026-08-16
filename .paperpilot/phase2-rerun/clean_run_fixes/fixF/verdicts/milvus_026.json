@@ -1,0 +1,116 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"_test_collection\", \"dimension\": 128, \"metricType\": \"COSINE\"}",
+          "observed": "HTTP 200 {\"code\":0,\"data\":{}} - collection created successfully",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"_test_final_check\", \"dimension\": 128, \"metricType\": \"COSINE\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "assumptions_verified": [
+            "Request uses valid dimension=128 (within contract range 1-32768)",
+            "Request uses valid metricType=COSINE (enum: [L2, IP, COSINE])",
+            "Request omits dbName parameter (defaults to _default per contract)",
+            "No dependency on unrequested response fields - raw response is 200 with empty data object"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "constraint_ids_verified": [
+            "milvus_range_collections_create_001: 1 <= dimension <= 32768",
+            "milvus_type_collections_create_002: metricType in [L2, IP, COSINE]"
+          ],
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001 (dimension 1-32768)",
+            "constraint_id: milvus_type_collections_create_002 (metricType enum)"
+          ],
+          "request_complies": "dimension=128 ∈ [1,32768] AND metricType=COSINE ∈ [L2,IP,COSINE]"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ 2.6.17",
+          "grep_queries": [
+            "CreateCollection",
+            "dimension.*required",
+            "metricType",
+            "type CollectionReq struct"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go line 1795-1894\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\t// ...\n\tif len(httpReq.Schema.Fields) == 0 {\n\t\tif httpReq.Dimension == 0 {\n\t\t\terr := merr.WrapErrParameterInvalid(\"collectionName & dimension\", \"collectionName\",\n\t\t\t\t\"dimension is required for quickly create collection(default metric type: \"+DefaultMetricType+\")\")\n\t\t\t// returns error if dimension == 0\n\t\t}\n\t\t// Dimension value passed to schema at line 1889:\n\t\t// Value: strconv.FormatInt(int64(httpReq.Dimension), 10),\n\t}\n}",
+          "call_chain_traced": "REST handler createCollection (line 1795) → checks Dimension == 0 (line 1820) → marshals schema with dimension value (line 1889) → proxy.CreateCollection → underlying layer validates dimension range (2-32768)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_deferred_to_underlying_layer",
+          "note": "REST layer validates dimension != 0; underlying layer validates dimension ∈ [2,32768]. Request dimension=128 passes both checks. No param validation defect found."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple independent probes executed: (1) Exact reproduction from raw log - success, (2) Invalid dimension=32769 - properly rejected with 'should be in range 2 ~ 32768', (3) Invalid dimension=-100 - properly rejected, (4) Invalid dbName='nonexistent' - properly rejected with 'database not found'",
+          "observed": "All test cases behaved correctly: valid requests succeed (200), invalid params rejected with appropriate error messages. No evidence of param validation defect."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - Docker container running normally",
+            "Concurrency/race - sequential operations, no concurrent state",
+            "Cache/optimization delay - immediate responses",
+            "Request parameter typo - all parameters correctly formatted",
+            "API semantics misunderstanding - behavior matches documented contract"
+          ],
+          "surviving_explanation": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Candidate does not match any known by_design_patterns or rejection_patterns from developer_cognition.json. The observed behavior (successful collection creation with valid parameters) is correct API behavior, not a defect."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dimension ∈ [1, 32768] (constraint_id: milvus_range_collections_create_001), metricType ∈ [L2, IP, COSINE] (constraint_id: milvus_type_collections_create_002)",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED",
+          "api_observed_value": "dimension=128, metricType=COSINE, HTTP 200 success",
+          "api_violates_assertion": false
+        },
+        "physical": {
+          "objective_constraint": "Dimension must be mathematically valid (positive integer)",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "API correctly accepts valid parameters and rejects invalid ones. Source code shows proper validation chain."
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (no violation found)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "Raw evidence shows valid API behavior: POST /collections/create with dimension=128 (within [1,32768]) and metricType=COSINE (valid enum value) returns HTTP 200 success. Contract constraints milvus_range_collections_create_001 and milvus_type_collections_create_002 are both satisfied. Source code grounding confirms REST layer validates dimension != 0, and underlying layer validates dimension ∈ [2,32768]. Falsification probes confirm invalid values (dimension=32769, -100, nonexistent dbName) are properly rejected with specific error messages. No param validation defect found - this is correct API behavior for valid input. The defect claim appears to be a false positive, possibly arising from misunderstanding that valid parameters should be rejected."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

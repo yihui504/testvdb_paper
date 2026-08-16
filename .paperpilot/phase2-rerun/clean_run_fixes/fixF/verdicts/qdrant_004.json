@@ -1,0 +1,109 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.0",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points?wait=true with vector=[0.1, 0.2, 0.3] (3 dim) into 4-dim collection",
+          "observed": "status=400, error='Vector dimension error: expected dim: 4, got 3'",
+          "evidence_cmd": "curl -s -X PUT 'http://localhost:6333/collections/test/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 2, \"vector\": [0.1, 0.2, 0.3]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Original defect report likely assumed async request (without wait=true) returning 'acknowledged' meant validation was skipped",
+            "The 'type_coercion' defect_type is misleading - this is about async validation timing, not type coercion"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_type_upsert_points_003 - 'vector type is array of floats or object of named vectors'",
+            "constraint_id: qdrant_range_create_collection_001 - 'Vector dimension size, minimum 1'",
+            "Raw knowledge note: 'vector dimensions must match collection config'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 @ 1.18.0",
+          "grep_queries": [
+            "WrongVectorDimension",
+            "expected dim",
+            "check_vector_against_config",
+            "upsert_point"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/mod.rs",
+            "lib/segment/src/common/operation_error.rs",
+            "lib/segment/src/segment/entry.rs",
+            "src/actiz/api/update_api.rs",
+            "lib/segment/src/data_types/vectors.rs",
+            "lib/segment/src/segment_constructor/simple_segment_constructor.rs"
+          ],
+          "source_excerpt": "lib/segment/src/common/mod.rs lines 185-219:\n\n/// Check if the given dense vector data is compatible with the given configuration.\n///\n/// Returns an error if incompatible.\nfn check_vector_against_config(\n    vector: VectorRef,\n    vector_config: &VectorDataConfig,\n) -> OperationResult<()> {\n    match vector {\n        VectorRef::Dense(vector) => {\n            // Check dimensionality\n            let dim = vector_config.size;\n            if vector.len() != dim {\n                return Err(OperationError::WrongVectorDimension {\n                    expected_dim: dim,\n                    received_dim: vector.len(),\n                });\n            }\n            Ok(())\n        }",
+          "call_chain_traced": "REST API (update_api.rs) -> do_upsert_points -> shard update -> segment.upsert_point -> check_vector_against_config (validation exists)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "Dimension validation IS present in source code. The function check_vector_against_config at lib/segment/src/common/mod.rs:185-219 explicitly checks vector.len() != vector_config.size and returns WrongVectorDimension error. This validation is invoked during upsert_point operations."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "After async request returned 'acknowledged', verify point was not actually stored",
+          "observed": "GET /collections/test/points/1 returned 'Not found', points_count=0. Async validation rejected invalid point silently.",
+          "evidence_cmd": "curl -s 'http://localhost:6333/collections/test/points/1' and curl -s 'http://localhost:6333/collections/test' | grep points_count"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Async API behavior - 'acknowledged' status means operation queued, not validated",
+            "Dimension validation exists and is enforced (wait=true test proves this)",
+            "Invalid points are rejected asynchronously before storage"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not hit any by_design_patterns. The async acknowledgment behavior is standard API semantics."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "qdrant_type_upsert_points_003: 'vector type is array of floats'; qdrant_range_create_collection_001: 'Vector dimension size, minimum 1'. Contract implies vectors must match collection config dimensions.",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension must match collection configuration (size=4 in test collection)",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED (with by_design in source) → final=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "qdrant_004 is a FALSE_POSITIVE. The defect report claimed 'type_coercion' violation where vectors with wrong dimensions were accepted. However: (1) Step 1 clean reproduction WITH wait=true shows validation WORKS (400 error with 'Vector dimension error: expected dim: 4, got 3'); (2) Step 3.5 source grounding PROVES validation exists in check_vector_against_config at lib/segment/src/common/mod.rs:195-201; (3) Step 4 falsification PROVES async 'acknowledged' responses don't mean validation was skipped—the invalid point was NOT stored (points_count=0, GET returns 404); (4) The 'type_coercion' defect_type is misleading—this is about async validation timing semantics, not missing type validation. The async API returns 'acknowledged' for queued operations but validates before storage. This is by-design async API behavior, not a bug."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

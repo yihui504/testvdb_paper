@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_017",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "type OptionalCollectionNameReq struct {\n\tDbName         string `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\"`\n}\n\nvs\n\ntype CollectionNameReq struct {\n\tDbName         string   `json:\"dbName\"`\n\tCollectionName string `json:\"collectionName\" binding:\"required\"`\n\tPartitionNames []string `json:\"partitionNames\"`\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/request_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "rationale": "STEP1-REPRODUCTION: Log REQ4/REQ9 show POST /v2/vectordb/aliases/list with empty collectionName returns HTTP 200 with empty array, confirming validation is bypassed.\n\nSTEP2-PREMAUDIT: Defect endpoint 'aliases+list' type 'param_validation' - validates that request parameters should be properly validated.\n\nSTEP3-CONTRACT: Source shows inconsistent validation: CollectionNameReq has binding:'required' (line64) but OptionalCollectionNameReq lacks validation (line147). Same field, different rules.\n\nSTEP4-SOURCE: File internal/distributed/proxy/httpserver/request_v2.go lines145-148 show OptionalCollectionNameReq struct with CollectionName field lacking binding:'required' tag. Line 62-64 show CollectionNameReq with proper validation. Handler at handler_v2.go line299 uses OptionalCollectionNameReq for listAlias endpoint.\n\nSTEP5-FALSIFICATION: Log proves empty collectionName is accepted. If binding:'required' were enforced, Gin would return error 1802 like REQ3/REQ8 show for empty aliasName.\n\nSTEP6-TRIVIALEXCLUSION: Not trivial. Inconsistency causes: (a) security risk - listing all DB aliases when collectionName empty, (b) API confusion - unclear if field required, (c) cross-channel inconsistency - gRPC likely validates properly.\n\nPERSPECTIVES: (1) Source shows validation gap. (2) Developer cognition line19 states 'REST v2 accepting values gRPC rejects = defect'. (3) Historical pattern rest-v2-data-type-handling has 26 similar cases (confidence 0.95). All confirm defect."
+    }
+  ]
+}

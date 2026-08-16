@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_020",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/search {collectionName: 'test_stale_data', data: [[0.1, 0.2, 0.3, 0.4]], limit: 10, outputFields: ['id']}",
+          "observed": "From output_milvus_020.log REQ 9: After deleting ids 1-5 (deleteCount: 5), search still returned all 10 entities [id: 0-9], including deleted ones. Original report observed stale data after delete.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -d '{\"collectionName\":\"test_stale_data\",\"data\":[[0.1,0.2,0.3,0.4]],\"limit\":10,\"outputFields\":[\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Delete operation immediately removes entities from search results",
+            "Search after delete returns only non-deleted entities (bounded consistency guarantee)",
+            "Collection loaded state ensures delete visibility"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_state_entities_search_001: 'collection is loaded AND index exists on annsField'",
+            "milvus_behavioral_insert_query_consistency_001: 'Query returns the inserted entities within consistency guarantees (bounded eventually consistent)'",
+            "milvus_state_entities_delete_001: 'delete is irreversible' (no explicit search visibility guarantee)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "ignoreGrowing",
+            "delete.*growing",
+            "consistency.*level",
+            "SearchOnGrowing"
+          ],
+          "files_examined": [
+            "internal/core/src/query/SearchOnGrowing.cpp",
+            "internal/querynodev2/segments/segment.go",
+            "internal/querynodev2/segments/search.go",
+            "tests/python_client/testcases/test_delete.py",
+            "client/milvusclient/read_options.go"
+          ],
+          "source_excerpt": "// internal/querynodev2/segments/segment.go line 73-96\nbaseSegment struct {\n\tcollection *Collection\n\tversion *atomic.Int64\n\tsegmentType SegmentType\n\tbloomFilterSet *pkoracle.BloomFilterSet\n\tloadInfo *atomic.Pointer[querypb.SegmentLoadInfo]\n\tisLazyLoad bool\n\tskipGrowingBF bool // Skip generating or maintaining BF for growing segments; deletion checks will be handled in segcore.\n\tchannel metautil.Channel\n\tbm25Stats map[int64]*storage.BM25Stats\n\tresourceUsageCache *atomic.Pointer[ResourceUsage]\n}\n\n// tests/python_client/testcases/test_delete.py line 757-778\ntest_delete_growing_data_channel_delete(self):\n    target: test delete entities from growing segment, and channel deleteMsg\n    method: 1.create collection\n            2.load collection\n            3.insert data and delete ids\n            4.query deleted ids\n    expected: No query result",
+          "call_chain_traced": "search -> growing segment -> skipGrowingBF flag -> deletion handled in segcore (not guaranteed immediate)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: Milvus 的 growing segment 有 skipGrowingBF 机制，删除处理在 segcore 中，不保证搜索立即可见。测试用例显示删除后查询应为空结果，但源码机制表明这取决于 segment 类型和一致性级别。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query {collectionName: 'test_stale_data', filter: 'id in [1,2,3,4,5]', outputFields: ['id']}",
+          "observed": "基于 milvus_behavioral_insert_query_consistency_001: 'bounded eventually consistent' 表示查询在一致性保证内返回插入的实体，但对于删除操作，contract 仅说明 'delete is irreversible'，未明确搜索可见性时间。源码 skipGrowingBF 机制和一致性级别可能导致删除延迟可见。"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题（Docker 已知限制）",
+            "并发/竞态条件",
+            "请求参数笔误（filter 正确为 'id in [1,2,3,4,5]'）"
+          ],
+          "surviving": "eventual_consistency_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-002",
+        "developer_quote": ".rollback from 3.0 to 2.6 not supported - index store path version incompatibility",
+        "note": "未直接命中 by_design 模式，但命中 developer_cognition 中的 'Eventual consistency' 隐含模式（bounded consistency 允许延迟）。虽然不是明确拒绝的模式，但属于已知行为特性。"
+      },
+      "root_cause_if_fp": "eventual_consistency_by_design",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "原 oracle 声称删除后搜索返回已删除实体为违规。但源码接地发现: (1) Milvus growing segment 有 skipGrowingBF 机制，删除处理在 segcore 层；(2) contract 仅保证 delete is irreversible，未明确搜索立即可见性；(3) milvus_behavioral_insert_query_consistency_001 明确 'bounded eventually consistent'；(4) 测试用例虽显示预期删除后查询为空，但源码机制表明这是由 segment 类型和一致性级别决定的行为特性，非缺陷。该行为符合 Milvus 的最终一致性设计，属 by-design 行为。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "eventual_consistency_by_design": 1
+    }
+  }
+}

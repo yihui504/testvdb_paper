@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_014",
+      "endpoint": "cluster+recover",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /cluster/recover",
+          "observed": "HTTP 500 with error: 'Service internal error: Qdrant is running in standalone mode'",
+          "evidence_cmd": "curl -s -X POST http://localhost:6333/cluster/recover | python -m json.tool"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes /cluster/recover should work in standalone mode, but this is a cluster-only endpoint that requires consensus to be enabled",
+            "Conclusion expects 2xx success or 4xx client error, but 500 is the correct server error for calling a cluster API in standalone mode"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: cluster+recover (POST)",
+            "description: 'Recover current peer Raft state'",
+            "No constraints require this endpoint to work in standalone mode"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["propose_operation_sender", "get_consensus_proposal_sender", "Qdrant is running in standalone mode", "cluster.enabled"],
+          "files_examined": [
+            "src/main.rs",
+            "src/actix/api/cluster_api.rs",
+            "lib/storage/src/content_manager/toc/mod.rs"
+          ],
+          "source_excerpt": "// src/main.rs line 508-514\nlet propose_operation_sender = if settings.cluster.enabled {\n    Some(OperationSender::new(propose_sender))\n} else {\n    None\n};\n\n// lib/storage/src/content_manager/toc/mod.rs line 774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender.as_ref().ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))\n}\n\n// src/actix/api/cluster_api.rs line 60-73\n#[post(\"/cluster/recover\")]\nfn recover_current_peer(...) -> impl Future<Output = HttpResponse> {\n    dispatcher.toc(&auth, &pass).request_snapshot()?;\n}",
+          "call_chain_traced": "recover_current_peer → request_snapshot → get_consensus_proposal_sender → Returns error if consensus_proposal_sender is None (standalone mode)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code clearly shows that cluster APIs are intentionally disabled in standalone mode by setting consensus_proposal_sender to None. The error 'Qdrant is running in standalone mode' is deliberate design."
+        },
+        "falsification": {
+          "pass": false,
+          "note": "No additional falsification needed - source code and behavior confirm this is by-design"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "API semantics: /cluster/recover is a distributed cluster API that requires Raft consensus, which doesn't exist in standalone mode",
+            "By-design behavior: Source code explicitly sets consensus_proposal_sender to None when cluster is disabled"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Cluster communication over single-node correctness",
+        "developer_quote": "Cluster communication over single-node correctness (what_developers_prioritize)",
+        "note": "Developers explicitly prioritize cluster communication over single-node correctness. This endpoint is for cluster recovery and is correctly disabled in standalone mode."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint requires /cluster/recover to work in standalone mode. Contract only describes the endpoint as 'Recover current peer Raft state' without standalone-mode requirements.",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint violation - distributed consensus is not available in standalone mode",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by_design_in_source) → final_verdict=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The /cluster/recover endpoint is explicitly designed for distributed cluster operations using Raft consensus. Source code shows that consensus_proposal_sender is set to None when cluster mode is disabled (settings.cluster.enabled = false), and the error 'Qdrant is running in standalone mode' is intentionally thrown. This is not a bug - it's correct API behavior for a cluster-only endpoint being called in standalone mode. The 500 error is the appropriate server response for an operation that cannot physically execute without consensus infrastructure.",
+      "source_excerpt": "// src/main.rs line 508-514\nlet propose_operation_sender = if settings.cluster.enabled {\n    Some(OperationSender::new(propose_sender))\n} else {\n    None\n};\n\n// lib/storage/src/content_manager/toc/mod.rs line 774-778\nfn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {\n    self.consensus_proposal_sender.as_ref().ok_or_else(|| StorageError::service_error(\"Qdrant is running in standalone mode\"))\n}",
+      "files_examined": [
+        "src/main.rs",
+        "src/actix/api/cluster_api.rs",
+        "lib/storage/src/content_manager/toc/mod.rs"
+      ]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

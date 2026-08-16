@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_019",
+      "endpoint": "collections+get_stats",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create + insert 5 entities + load + get_stats",
+          "observed": "Insert 5 entities (insertCount=5), load succeeds, get_stats returns rowCount=0. Query with filter id>=0 returns 5 entities, confirming data exists. Violation confirmed: rowCount=0 after inserting 5 entities.",
+          "evidence_cmd": "From output_milvus_019.log: REQ3 insertCount=5, REQ5 rowCount=0, REQ6 returns 5 entities"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["assertion_id: milvus_behavioral_collections_get_stats_001 - returns 200 with data.rowCount showing number of entities", "invariant_id: milvus_invariant_count_consistency_001 - After inserting N entities, get_stats must report rowCount >= N"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["GetCollectionStatistics", "GetNumRowsOfCollection", "isSegmentHealthy", "row_count"],
+          "files_examined": ["internal/datacoord/services.go", "internal/datacoord/meta.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/request_v2.go"],
+          "source_excerpt": "// internal/datacoord/services.go line 322-343\nfunc (s *Server) GetCollectionStatistics(ctx context.Context, req *datapb.GetCollectionStatisticsRequest) (*datapb.GetCollectionStatisticsResponse, error) {\n\tresp := &datapb.GetCollectionStatisticsResponse{\n\t\tStatus: merr.Success(),\n\t}\n\tnums := s.meta.GetNumRowsOfCollection(ctx, req.CollectionID)\n\tresp.Stats = append(resp.Stats, &commonpb.KeyValuePair{Key: \"row_count\", Value: strconv.FormatInt(nums, 10)})\n\treturn resp, nil\n}\n\n// internal/datacoord/meta.go line 1266-1272\nfunc (m *meta) GetNumRowsOfCollection(ctx context.Context, collectionID UniqueID) int64 {\n\tvar ret int64\n\tsegments := m.SelectSegments(ctx, WithCollection(collectionID), SegmentFilterFunc(isSegmentHealthy))\n\tfor _, segment := range segments {\n\t\tret += segment.GetNumOfRows()\n\t}\n\treturn ret\n}\n\n// internal/datacoord/meta.go line 1274-1279\nfunc isSegmentHealthy(segment *SegmentInfo) bool {\n\treturn segment != nil &&\n\t\tsegment.GetState() != commonpb.SegmentState_SegmentStateNone &&\n\t\tsegment.GetState() != commonpb.SegmentState_NotExist &&\n\t\tsegment.GetState() != commonpb.SegmentState_Dropped\n}",
+          "call_chain_traced": "REST v2 handler_v2.go getCollectionStats -> proxy.GetCollectionStatistics -> datacoord.GetCollectionStatistics -> meta.GetNumRowsOfCollection -> SelectSegments with isSegmentHealthy filter",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:GetNumRowsOfCollection 只统计 isSegmentHealthy() 返回true的segments。新插入的segments在Growing状态时虽然被isSegmentHealthy判定为healthy,但如果segments还未被flush或未被datacoord meta正确track,则会导致rowCount=0。这是get_stats与实际数据状态不一致的根因。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with filter id>=0",
+          "observed": "Query returns 5 entities (ids 0-4), proving data physically exists despite rowCount=0. Bug exists independently verified via separate query endpoint."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Race condition", "Cache/optimizer delay", "Request parameter typo"],
+          "surviving": "none"
+        }
+      },
+      "source_excerpt": "// internal/datacoord/services.go line 322-343\nfunc (s *Server) GetCollectionStatistics(ctx context.Context, req *datapb.GetCollectionStatisticsRequest) (*datapb.GetCollectionStatisticsResponse, error) {\n\tresp := &datapb.GetCollectionStatisticsResponse{\n\t\tStatus: merr.Success(),\n\t}\n\tnums := s.meta.GetNumRowsOfCollection(ctx, req.CollectionID)\n\tresp.Stats = append(resp.Stats, &commonpb.KeyValuePair{Key: \"row_count\", Value: strconv.FormatInt(nums, 10)})\n\treturn resp, nil\n}\n\n// internal/datacoord/meta.go line 1266-1272\nfunc (m *meta) GetNumRowsOfCollection(ctx context.Context, collectionID UniqueID) int64 {\n\tvar ret int64\n\tsegments := m.SelectSegments(ctx, WithCollection(collectionID), SegmentFilterFunc(isSegmentHealthy))\n\tfor _, segment := range segments {\n\t\tret += segment.GetNumOfRows()\n\t}\n\treturn ret\n}\n\n// internal/datacoord/meta.go line 1274-1279\nfunc isSegmentHealthy(segment *SegmentInfo) bool {\n\treturn segment != nil &&\n\t\tsegment.GetState() != commonpb.SegmentState_SegmentStateNone &&\n\t\tsegment.GetState() != commonpb.SegmentState_NotExist &&\n\t\tsegment.GetState() != commonpb.SegmentState_Dropped\n}",
+      "files_examined": ["internal/datacoord/services.go", "internal/datacoord/meta.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/request_v2.go"],
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Documentation-behavior consistency: when official documentation claims a behavior or capability that the server does not exhibit (documented X, actual behavior is not-X), this is a consistency defect - maintainers' repeated disposition is to fix it",
+        "note": "Bug states that get_stats should return rowCount matching inserted entities, but returns 0. Matches documentation-behavior inconsistency pattern."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Defect confirmed: insert 5 entities succeeds (insertCount=5), load collection succeeds, but get_stats returns rowCount=0. Independent verification via query endpoint confirms all 5 entities exist. Source code analysis reveals GetNumRowsOfCollection filters segments by isSegmentHealthy, which excludes segments in certain states. The rowCount=0 indicates either segments are not being tracked correctly in meta after insert+load, or segments are in a state not considered healthy by the filter. This is a data inconsistency issue between physical storage and reported statistics. Contract invariant milvus_invariant_count_consistency_001 explicitly requires rowCount >= N after inserting N entities - this invariant is violated."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

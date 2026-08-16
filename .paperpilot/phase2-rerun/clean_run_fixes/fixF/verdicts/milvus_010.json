@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "Type1_IllegalSuccess",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_ttl_review\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}",
+          "observed": "HTTP 200 with code: 0 (success) - collection created despite invalid negative TTL",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/create\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_ttl_review\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}' | head"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Oracle assumes API should reject negative TTL values during collection creation",
+            "Oracle expects validation on par with alter_properties which correctly rejects negative TTL (error 1100: 'collection TTL is out of range, expect [-1, 3155760000], got -100')"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004",
+            "assertion: 'ttlSeconds >= 0'",
+            "source: structured_contract.json line 2620-2628"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ 2.6.16",
+          "grep_queries": [
+            "collection.ttl.seconds",
+            "validateCollectionTTL",
+            "ttlSeconds"
+          ],
+          "files_examined": [
+            "internal/proxy/task.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "pkg/common/common.go"
+          ],
+          "source_excerpt": "// internal/proxy/task.go line 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\n// Line 460-463 in createCollectionTask.PreExecute\n_, err = validateCollectionTTL(t.GetProperties())\nif err != nil {\n\treturn err\n}",
+          "call_chain_traced": "handler_v2.go line 2019-2024 converts ttlSeconds param to property -> task.go line 460 calls validateCollectionTTL -> validation checks val < -1 (line 366) BUT -100 < -1 is TRUE, so validation SHOULD catch it",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_in_code_but_not_executed",
+          "note": "CRITICAL: Validation EXISTS in source code (task.go:366 'if val < -1') and IS called (line 460), yet API still returns HTTP 200. This indicates either: (a) PreExecute not being called in the execution path, (b) validation being bypassed, or (c) properties not being populated correctly from the HTTP request. The create succeeds with HTTP 200 despite -100 violating the constraint ttlSeconds >= 0."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/alter_properties with same negative TTL value",
+          "observed": "HTTP 200 with code: 1100, message: 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter' - alter_properties CORRECTLY rejects the invalid value, proving the constraint is known and enforced elsewhere",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/collections/alter_properties\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_ttl_review\", \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not an environment issue (consistent behavior across retries)",
+            "Not a race condition (deterministic repro)",
+            "Not a misunderstanding of API semantics (contract explicitly states ttlSeconds >= 0)"
+          ],
+          "surviving": "inconsistent_validation_between_create_and_alter"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does NOT match by_design_patterns - developers clearly intend to validate TTL range (error message in alter_properties shows expected range [-1, 3155760000]). The defect is that create bypasses this validation."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "rationale": "collections+create accepts negative TTL (-100) with HTTP 200 success, violating constraint ttlSeconds >= 0 (milvus_range_collections_create_004). Source code confirms validation EXISTS (task.go:366 'if val < -1 || val > common.MaxTTLSeconds') and IS called in createCollectionTask.PreExecute (line 460), yet the API still succeeds. Falsification confirms alter_properties correctly rejects same value with error 1100, proving inconsistent enforcement. This is Type1_IllegalSuccess: API accepts invalid value that should be rejected per contract and internal validation logic. The bug is NOT missing validation (code exists), but rather the validation path not being executed or being bypassed for create requests.",
+      "source_excerpt": "// internal/proxy/task.go line 359-373\nfunc validateCollectionTTL(props []*commonpb.KeyValuePair) (bool, error) {\n\tfor _, pair := range props {\n\t\tif pair.Key == common.CollectionTTLConfigKey {\n\t\t\tval, err := strconv.Atoi(pair.Value)\n\t\t\tif err != nil {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is not a valid positive integer\")\n\t\t\t}\n\t\t\tif val < -1 || val > common.MaxTTLSeconds {\n\t\t\t\treturn true, merr.WrapErrParameterInvalidMsg(\"collection TTL is out of range, expect [-1, 3155760000], got %d\", val)\n\t\t\t}\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\n// Line 460-463 in createCollectionTask.PreExecute\n_, err = validateCollectionTTL(t.GetProperties())\nif err != nil {\n\treturn err\n}",
+      "files_examined": [
+        "internal/proxy/task.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "pkg/common/common.go"
+      ]
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "ttlSeconds >= 0 (constraint milvus_range_collections_create_004 from structured_contract.json)",
+      "source_implements_check": true,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "TTL represents time duration in seconds; negative time is physically meaningless",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm defect)",
+    "final_verdict": "CONFIRMED"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "inconsistent_validation_between_create_and_alter": 1
+    }
+  }
+}

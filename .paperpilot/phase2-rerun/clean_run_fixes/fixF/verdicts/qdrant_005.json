@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_zero_repro with shard_number=0; PUT /collections/test_shard_neg_repro with shard_number=-1",
+          "observed": "shard_number=0 returned 422 with 'Validation error: value 0 invalid, must be 1 or larger'; shard_number=-1 returned 400 with 'Format error: invalid value: integer `-1`, expected u32'",
+          "evidence_cmd": "curl -s -X PUT http://localhost:6333/collections/test_shard_zero_repro -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["Oracle likely assumed API would accept invalid shard_number values (0 or -1) and return 200, but API correctly rejected them with 4XX validation errors"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: qdrant_range_create_collection_001 - assertion: 'shard_number >= 1'",
+            "assertion_id: qdrant_behavioral_001 - 'Returns 4XX on invalid params'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ 1.18.1",
+          "grep_queries": ["shard_number.*validate.*range", "shard_number.*min.*1", "CreateCollection.*shard_number"],
+          "files_examined": [
+            "lib/api/src/grpc/qdrant.rs",
+            "lib/collection/src/operations/validation.rs",
+            "src/tonic/api/mod.rs"
+          ],
+          "source_excerpt": "// lib/api/src/grpc/qdrant.rs line 1184-1188\n/// Number of shards in the collection, default is 1 for standalone, otherwise\n/// equal to the number of nodes. Minimum is 1\n#[prost(uint32, optional, tag = \"7\")]\n#[validate(range(min = 1))]\npub shard_number: ::core::option::Option<u32>,",
+          "call_chain_traced": "CreateCollection.shard_number → #[validate(range(min = 1))] → validator::Validate trait enforces min=1 constraint → validation fails for 0 and -1 → 4XX error returned",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:CreateCollection 结构体在 lib/api/src/grpc/qdrant.rs:1187 明确声明了 #[validate(range(min = 1))] 注解，对 shard_number 参数强制执行最小值 1 的验证。validation.rs 实现了 'must be 1 or larger' 的错误消息生成逻辑。验证逻辑正确工作，拒绝了非法值。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "PUT /collections/test_shard_valid with shard_number=1",
+          "observed": "Returned 200 OK with result:true, confirming valid value accepted while invalid values are properly rejected"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发/race", "缓存/优化器延迟"],
+          "surviving": "request_param_typo - oracle likely misread expected behavior, thinking API should accept invalid values when it should not"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition.json 中的任何模式。API 正确执行了参数验证，这是预期的行为，不是缺陷。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "原 qdrant_005 声称检测到 shard_number 参数验证缺陷，但独立复现证实 API 正确拒绝了非法值：shard_number=0 返回 422 验证错误(消息明确 'must be 1 or larger')；shard_number=-1 返回 400 格式错误(u32 不能接受负值)。源码接地确认：CreateCollection 结构体在 lib/api/src/grpc/qdrant.rs:1187 显式声明了 #[validate(range(min = 1))] 注解，validation.rs 实现了完整的验证逻辑。有效值(shard_number=1)被正常接受(200 OK)。这是 API 按契约正确工作的案例，不是缺陷。oracle 可能误解了预期行为——API 应该拒绝非法值，而不是接受它们。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

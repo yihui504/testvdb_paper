@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "source_excerpt": "func (c *Core) CreateCollection(ctx context.Context, in *milvuspb.CreateCollectionRequest) (*commonpb.Status, error) {\n\tif err := c.broadcastCreateCollectionV1(ctx, in); err != nil {\n\t\tif errors.Is(err, errIgnoredCreateCollection) {\n\t\t\tlogger.Info(\"create existed collection with same schema, ignore it\")\n\t\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.SuccessLabel).Inc()\n\t\t\treturn merr.Success(), nil\n\t\t}\n\t\tlogger.Info(\"failed to create collection\", zap.Error(err))\n\t\tmetrics.RootCoordDDLReqCounter.WithLabelValues(\"CreateCollection\", metrics.FailLabel).Inc()\n\t\treturn merr.Status(err), nil\n\t}\n\nreturn merr.Success(), nil\n}\n\n// In create_collection_task.go Prepare() method:\n// Check if the collection already exists.\nexistedCollInfo, err := t.meta.GetCollectionByName(ctx, t.Req.GetDbName(), t.Req.GetCollectionName(), typeutil.MaxTimestamp)\nif err == nil {\n\tnewCollInfo := newCollectionModel(t.header, t.body, 0)\n\tif equal := existedCollInfo.Equal(*newCollInfo); !equal {\n\t\treturn fmt.Errorf(\"create duplicate collection with different parameters, collection: %s\", t.Req.GetCollectionName())\n\t}\n\treturn errIgnoredCreateCollection\n}",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/root_coord.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/create_collection_task.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17/internal/rootcoord/meta_table.go",
+        "C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json"
+      ],
+      "rationale": "After thorough investigation following the 6-step dev-reviewer process:\n\n1. CLEAN REPRODUCTION: Confirmed via live test that creating a duplicate collection with the SAME schema returns HTTP 200 (success) - this is the reported behavior.\n\n2. CONTRACT ANALYSIS: The structured_contract.json explicitly states in constraint 'milvus_state_collections_create_001' that 're-creating an existing collection with the SAME schema is an idempotent no-op returning 200'. This is documented expected behavior.\n\n3. SOURCE GROUNDING: Deep source code analysis reveals intentional design:\n   - In root_coord.go line 903-906: When errIgnoredCreateCollection occurs, the system explicitly returns merr.Success(), nil\n   - In create_collection_task.go Prepare() lines 530-538: The code checks if collection exists, compares schemas, and returns errIgnoredCreateCollection for identical schemas\n   - This is NOT a bug - it's intentional idempotency for same-schema duplicate creates\n\n4. FALSIFICATION TEST: The system DOES properly error when creating a duplicate with DIFFERENT parameters (line 535 returns error for 'create duplicate collection with different parameters'). The logic correctly distinguishes between same-schema (idempotent success) vs different-schema (error) cases.\n\n5. DEVELOPER COGNITION: This matches the 'by-design' pattern from developer_cognition.json - treating same-schema recreation as idempotent no-op.\n\n6. THREE-VIEW AGGREGATION:\n   - Contract view: Documented as expected idempotent behavior\n   - Source view: Intentional implementation with explicit success return\n   - Runtime view: Verified actual behavior matches design\n\nVERDICT: FALSE_POSITIVE - This is documented, intentional idempotent behavior, not a defect."
+    }
+  ]
+}

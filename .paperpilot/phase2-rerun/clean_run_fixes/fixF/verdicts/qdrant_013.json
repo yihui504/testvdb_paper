@@ -1,0 +1,19 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "source_excerpt": "lib/api/src/rest/schema.rs:573-575:\n/// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n#[validate(nested)]\npub query: Option<QueryInterface>,\n\nlib/shard/src/query/planned_query.rs:459-472:\nNone => {\n    let scroll = QueryScrollRequestInternal {\n        scroll_order: Default::default(),\n        filter,\n        with_vector: WithVector::from(false),\n        with_payload: WithPayloadInterface::from(false),\n        limit,\n    };\n\n    let idx = scrolls.len();\n    scrolls.push(scroll);\n\n    Source::ScrollsIdx(idx)\n}\n\nlib/shard/src/query/scroll.rs:35-41:\n#[derive(Clone, Debug, Default, PartialEq)]\npub enum ScrollOrder {\n    #[default]\n    ById,\n    ByField(OrderBy),\n    Random,\n}",
+      "files_examined": [
+        "lib/api/src/rest/schema.rs",
+        "lib/shard/src/query/planned_query.rs",
+        "lib/shard/src/query/scroll.rs",
+        "lib/collection/src/operations/universal_query/collection_query.rs",
+        "src/actix/api/query_api.rs"
+      ],
+      "rationale": "FALSE_POSITIVE - BY DESIGN BEHAVIOR: REST API schema explicitly documents 'If missing without prefetches, returns points ordered by their IDs' (schema.rs:573). Source implementation confirms: query=null triggers scroll fallback with ScrollOrder::ById default (planned_query.rs:459-471, scroll.rs:38-40). Validation logic permits query=None when prefetches empty (collection_query.rs:748-753). Reproduced behavior matches design: query=null returns all points sorted by ID (1,5,10), offset/pagination work correctly. Stage2 endpoint annotation incorrect (lists 'collections+{collection_name}+points' but actual is 'collections+{collection_name}+points+query'). Contract defines query as 'type: object, required: false' but null handling is intentional leniency consistent with qdrant's 'lenient parsing' design pattern (developer_cognition.json). No validation error, no silent failure - documented fallback behavior."
+    }
+  ]
+}

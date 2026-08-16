@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_009",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "source_excerpt": "/// Check if all vector names in the diff exist in the collection configuration\n/// Returns an error if incompatible.\npub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {\n    for vector_name in self.0.keys() {\n        collection\n            .vectors\n            .get_params(vector_name)\n            .map(|_| ())\n            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name.clone()))?;\n    }\n    Ok(())\n}",
+      "files_examined": [
+        "lib/segment/src/common/operation_error.rs",
+        "lib/collection/src/operations/types.rs",
+        "lib/collection/src/collection/collection_ops.rs",
+        "tests/openapi/test_optional_vectors.py"
+      ],
+      "rationale": "OBSERVED: PUT /collections/{name} with vectors={} returns 200, but PUT /collections/{name}/points with vector data returns 400 'Not existing vector name error'. DOCUMENTED INTENT: structured_contract.json line 3217 explicitly states 'collections without vector config support payload-only operations (vector insert returns an error at use time)'. DEVELOPER STANCE: developer_cognition.json lines 13-15 confirm 'Payload-only collections: creating a collection without vector configuration is a supported use case, errors surface on first vector use'. SOURCE CODE: operation_error.rs defines VectorNameNotExists as legitimate error; types.rs implements explicit validation via check_vector_names(); test_optional_vectors.py:667 expects this exact error as CORRECT behavior. REVERSE FALSIFICATION: Verified that payload-only operations (POST /points/payload, scroll) work correctly on collections with empty vectors config, confirming this is intentional payload-only collection support. CONCLUSION: This is a documented feature, not a defect. The behavior matches the API contract and developer intent."
+    }
+  ]
+}

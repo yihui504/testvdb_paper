@@ -1,0 +1,117 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with vectorFieldType=\"InvalidVectorType\"",
+          "observed": "API returns HTTP 200 with code=0, creating collection successfully despite invalid parameter",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_repro\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"InvalidVectorType\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate concludes 'API accepts invalid vectorFieldType' but this depends on premise that vectorFieldType is a validated/processed parameter",
+            "The actual violation is that vectorFieldType is NOT PROCESSED AT ALL - it's silently ignored by the request binding layer"
+          ],
+          "root_assumption_violated": "The parameter is not validated because it's not even recognized"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract constraint mentions vectorFieldType validation",
+            "This absence is itself a documentation gap - contract should specify which parameters are valid"
+          ],
+          "gap_identified": "Contract does not enumerate valid parameters for collections+create endpoint"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "vectorFieldType",
+            "CollectionReq struct",
+            "createCollection",
+            "DisallowUnknownKeys"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19/internal/distributed/proxy/httpserver/request_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19/internal/distributed/proxy/httpserver/handler.go"
+          ],
+          "source_excerpt": "// From request_v2.go line 690-703\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// NOTE: No VectorFieldType field exists in this struct\n// Any JSON field 'vectorFieldType' will be silently ignored by Gin's JSON binding\n\n// From handler_v2.go line 1837-1840 (createCollection function)\nhttpReq := anyReq.(*CollectionReq)\nreq := &milvuspb.CreateCollectionRequest{\n\tDbName:         dbName,\n\tCollectionName: httpReq.CollectionName,\n\tProperties:     []*commonpb.KeyValuePair{},\n}\n// The function only processes known fields from httpReq.Params (lines 1893-2091)\n// Unknown fields in the JSON payload are never accessed or validated",
+          "call_chain_traced": "JSON payload → Gin ShouldBindBodyWith → CollectionReq struct (no VectorFieldType field) → silently ignored → createCollection processes only known params",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source接地发现: CollectionReq结构体缺少VectorFieldType字段，Gin绑定层自动忽略未知JSON字段，createCollection函数只处理预定义的params子集。这是REST v2 API数据类型处理缺陷的具体实例。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Attempt to use vectorFieldType to create Float16Vector field instead of default FloatVector",
+          "observed": "Created collection has FloatVector field type regardless of vectorFieldType parameter value, proving parameter is not processed",
+          "evidence_cmd": "curl -s 'http://localhost:19530/v2/vectordb/collections/create' ... 'vectorFieldType': 'Float16Vector' && describe shows vector field is FloatVector, not Float16Vector"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Not an environment issue - reproducible across clean runs",
+            "Not a race condition - deterministic behavior",
+            "Not a parameter typo - 'vectorFieldType' is semantically correct but unsupported",
+            "Not by-design - silent parameter rejection is not intentional API design"
+          ],
+          "surviving_explanation": "REST v2 API validation gap - unknown parameters should be rejected with 400 error, not silently ignored"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_details": {
+          "shape_id": "rest-v2-data-type-handling",
+          "affected_layer": "api_gateway",
+          "defect_type": "Type1_IllegalSuccess",
+          "historical_instances": 26
+        },
+        "note": "This defect matches the known REST v2 data type handling pattern where the REST API fails to properly validate parameters that would be rejected in gRPC path"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint enumerates valid parameters for collections+create or mandates rejection of unknown fields",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract gap - absence of explicit requirement doesn't make the behavior correct, but contract doesn't directly support CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "REST APIs must validate input parameters and reject unknown fields with appropriate error codes (HTTP 400)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical violation: REST v2 API silently accepts and ignores 'vectorFieldType' parameter without validation, violating REST API design principles"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Behavior is NOT graceful - silent parameter rejection leads to user confusion and bugs where users think they've specified a vector field type but actually haven't. No source code indicates this is intentional."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (physical/behavioral violations override contract neutrality)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "REST v2 /collections/create endpoint silently ignores unknown 'vectorFieldType' parameter instead of rejecting it with HTTP 400. Source接地发现: CollectionReq结构体(request_v2.go:690-703)缺少VectorFieldType字段，导致Gin绑定层自动忽略该JSON字段；createCollection函数(handler_v2.go:1829+)只处理预定义的params子集。复现证明API接受InvalidVectorType并返回200成功；反向证伪显示vectorFieldType='Float16Vector'无法改变字段类型(仍为FloatVector)。此缺陷匹配已知bug_shape 'rest-v2-data-type-handling'(26历史实例)，属REST v2与gRPC验证分歧模式。维护者明确将此类cross-channel inconsistency视为需修复缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_validation_gap": 1
+    }
+  }
+}

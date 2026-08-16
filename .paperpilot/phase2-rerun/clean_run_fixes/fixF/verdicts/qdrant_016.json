@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_016",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from.collection=nonexistent_collection_xyz and raw vector query [0.3, 0.3, 0.3, 0.3], limit=3",
+          "observed": "HTTP 200 with result.points containing [id=4, id=0, id=3], all from test_lookup_source collection. No error about nonexistent lookup_from collection.",
+          "evidence_cmd": "From output_qdrant_016.log REQ 7 (lines 42-46): HTTP 200 response returned successfully with results from source collection, not from the nonexistent lookup collection."
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes lookup_from.collection must be validated at request time regardless of query content",
+            "Defect assumes HTTP 200 implies the lookup collection was accessed, when actually it was never used"
+          ],
+          "root_cause": "The query used raw vectors only, with no ID references to the lookup_from collection. The lookup validation code path is only triggered when point IDs need to be resolved from the lookup collection."
+        },
+        "contract_grounding": {
+          "pass": false,
+          "contract_refs": [],
+          "note": "structured_contract.json has no constraint requiring lookup_from.collection to exist at request time. The parameter description states 'The location to use for IDs lookup, if not specified - use the current collection', implying it's only used for ID resolution, not general query execution."
+        },
+        "source_grounding": {
+          "pass": true,
+          "contract_refs": ["lib/collection/src/common/fetch_vectors.rs:240-268"],
+          "note": "Collection validation EXISTS at line 264 but only executes inside the fetch_vectors path, which is called only when there are point IDs to resolve from the lookup collection. The test query used raw vectors only, so this validation code never executed."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "The defect can be falsified by understanding the execution path: (1) Query with raw vector only → no ID references → lookup_from.collection validation never executes → returns 200 with results from source collection. (2) Query with ID references to lookup_from collection → would trigger fetch_vectors → collection_by_name validation → would return 404 if collection doesn't exist.",
+          "observed": "The raw output log shows both queries (with nonexistent and existing lookup_from collections) returned HTTP 200 with identical results from the source collection. This proves that the lookup_from.collection field was not accessed/validated because the query used only raw vectors with no ID references.",
+          "independent_channel": "Code inspection shows validation exists at lib/collection/src/common/fetch_vectors.rs:264 but only in the ID resolution code path, which is not exercised by raw-vector-only queries."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "API returns 200 because it successfully executed the query on the source collection using the provided raw vector",
+            "lookup_from.collection is an optional parameter for ID-based lookup, not a required field that must exist for all queries",
+            "The 'violation' only occurs when IDs from the lookup collection are actually referenced, which requires prefetch queries or Nearest(VectorInputInternal::Id)"
+          ],
+          "surviving": "mundane_api_semantics - The parameter is designed for optional cross-collection ID lookup, not for request-time validation. Collection existence is checked lazily only when needed."
+        }
+      },
+      "source_grounding": {
+        "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+        "grep_queries": ["lookup_from", "collection_by_name", "CollectionError::not_found", "fetch_vectors"],
+        "files_examined": [
+          "lib/api/src/rest/schema.rs",
+          "src/common/inference/query_requests_rest.rs",
+          "lib/collection/src/operations/universal_query/collection_query.rs",
+          "lib/collection/src/common/fetch_vectors.rs"
+        ],
+        "source_excerpt": "// lib/collection/src/common/fetch_vectors.rs lines 240-268\n                None => vector_retrieves.push(retrieve_points_with_locked_collection(\n                    CollectionRefHolder::Ref(collection),\n                    points,\n                    vector_names,\n                    read_consistency,\n                    &shard_selector,\n                    timeout,\n                    hw_measurement_acc.clone(),\n                )),\n                Some(name) => {\n                    let other_collection = collection_by_name(name.clone()).await;\n                    match other_collection {\n                        Some(other_collection) => {\n                            vector_retrieves.push(retrieve_points_with_locked_collection(\n                                CollectionRefHolder::Arc(other_collection),\n                                points,\n                                vector_names,\n                                read_consistency,\n                                &shard_selector,\n                                timeout,\n                                hw_measurement_acc.clone(),\n                            ))\n                        }\n                        None => {\n                            return Err(CollectionError::not_found(format!(\"Collection {name}\")));\n                        }\n                    }\n                }",
+        "call_chain_traced": "query_request_from_rest → convert_query_request_from_rest (lookup_from passed through) → CollectionQuery::execute → fetch_vectors → collection_by_name validation (line 250-264) → CollectionError::not_found if collection missing",
+        "source_verified_by_reviewer": true,
+        "verification_outcome": "validation_present_conditional",
+        "note": "Collection validation EXISTS at line 264 but only executes inside the fetch_vectors path, which is called only when there are point IDs to resolve from the lookup collection. The test query used raw vectors only, so this validation code never executed."
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "This doesn't match documented by_design_patterns, but aligns with the principle that optional parameters should only be validated when actually used."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The reported defect claims that POST /collections/{name}/points/query accepts a nonexistent lookup_from.collection and returns HTTP 200, which it characterizes as a Type1_IllegalSuccess violation. However, analysis of the source code reveals that collection validation for lookup_from DOES exist (lib/collection/src/common/fetch_vectors.rs:264) but only executes in the code path that resolves referenced point IDs. The test query in output_qdrant_016.log used raw vectors with no ID references, so the lookup_from.collection field was never accessed and the validation code never executed. The API correctly returned 200 with results from the source collection because it successfully executed the query using the provided raw vector without needing to access the lookup_from collection. This is by-design behavior: lookup_from is an optional parameter for cross-collection ID lookup, validated only when IDs from that collection are actually referenced. The defect report misunderstood the lazy validation design as a missing validation bug. To trigger the actual validation, the query would need to reference point IDs from the lookup_from collection via prefetch queries or Nearest(VectorInputInternal::Id), at which point the 404 Collection {name} error would be returned."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

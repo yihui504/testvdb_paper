@@ -1,0 +1,110 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_035",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}] into collection with Int64 primary key",
+          "observed": "HTTP 200 with error code 1804: \"fail to deal the insert data, error: strconv.ParseInt: parsing \\\"abc\\\": invalid syntax: invalid parameter[expected=Int64][actual=abc]\"",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/insert' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_pk\", \"data\": [{\"id\": \"abc\", \"vector\": [0.5, 0.5, 0.5, 0.5]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "checked_assumptions": [
+            "API should validate data types before insert",
+            "Invalid Int64 values should be rejected with clear error",
+            "REST v2 should enforce schema constraints"
+          ],
+          "all_assumptions_satisfied": true
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_001 - dataType == Int64 for scalar fields",
+            "endpoint: entities+insert with schema validation"
+          ],
+          "note": "Schema defines Int64 type for primary key field"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "case schemapb.DataType_Int64",
+            "json.Number.Int64",
+            "ParseInt"
+          ],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0/internal/distributed/proxy/httpserver/utils.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 639-644\n\tcase schemapb.DataType_Int64:\n\t\tresult, err := json.Number(dataString).Int64()\n\t\tif err != nil {\n\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t}\n\t\treallyData[fieldName] = result",
+          "call_chain_traced": "insert handler → checkAndSetData → json.Number(dataString).Int64() → returns error on invalid input → merr.WrapErrParameterInvalid → HTTPAbortReturn with error code 1804",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:REST v2 API 在 checkAndSetData 函数中显式验证 Int64 类型,使用 json.Number(dataString).Int64() 进行类型转换,失败时返回 merr.WrapErrParameterInvalid 错误,最终以 HTTP 200 + error code 1804 返回给客户端。这是预期的类型校验行为,不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - Type coercion failure is correctly detected and reported",
+          "observed": "API correctly rejects invalid Int64 value 'abc' with proper error message indicating type mismatch"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/REST v2)",
+            "Concurrency/race condition",
+            "Request parameter typo"
+          ],
+          "surviving": "mundane_api_semantics",
+          "note": "This is expected API behavior - REST v2 validates types and returns error code 1804 for invalid Int64 values. The error message clearly states 'invalid parameter[expected=Int64][actual=abc]'"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "pattern_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "note": "候选命中开发者认知模型中的 blindspot: REST v2 数据类型处理是已知的高频问题区域(26 个历史案例)。但本案例中,API 正确执行了类型验证并返回错误,这是预期行为而非缺陷。开发者明确将 REST v2 类型处理列为盲点,意味着该区域需要特别注意,但本案属于正常验证流程。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原候选声称的类型转换问题实际上是 REST v2 API 的正确行为。源码分析(源码接地)证明:API 在 checkAndSetData 函数中使用 json.Number(dataString).Int64() 显式验证 Int64 类型,当传入 'abc' 等非数字字符串时,转换失败并返回 merr.WrapErrParameterInvalid 错误,最终以 HTTP 200 + error code 1804 返回。错误消息 'strconv.ParseInt: parsing \"abc\": invalid syntax: invalid parameter[expected=Int64][actual=abc]' 清楚表明了类型不匹配。这是预期的类型校验逻辑,符合开发者对 REST v2 数据类型验证的设计模式。候选误将正常的类型验证报错视为缺陷,实为 API 正常行为。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_int64_001: dataType == Int64 for scalar fields",
+          "source_implements_check": true,
+          "verdict_A": "REFUTED",
+          "note": "Contract 定义 Int64 类型要求,源码实现了该检查(json.Number.Int64 验证),API 正确拒绝非法值"
+        },
+        "physical": {
+          "objective_constraint": "Int64 字段只能接受 64 位整数值",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED",
+          "note": "API 正确拒绝字符串 'abc',满足物理约束"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "源码 checkAndSetData 显式处理类型转换失败,返回清晰的错误消息(error code 1804),这是 by-design 的优雅处理"
+        },
+        "aggregation_applied": "verdict_A=REFUTED + verdict_B=REFUTED + verdict_C=REFUTED → final_verdict=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

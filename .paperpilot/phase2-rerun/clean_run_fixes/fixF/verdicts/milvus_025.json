@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with 101 entities (id 0-100, each with vector [0.1, 0.2, 0.3, 0.4])",
+          "observed": "HTTP 200, insertCount=101, insertIds=[0,1,2,...,100]. Query verification confirms entities 0-9 actually stored in database",
+          "evidence_cmd": "python -c \"import requests; data=[{'id':i,'vector':[0.1,0.2,0.3,0.4]} for i in range(101)]; r=requests.post('http://localhost:19530/v2/vectordb/entities/insert', json={'collectionName':'test_limit','data':data}); print(r.json())\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes insert should reject >100 entities (FALSE - constraint explicitly states no fixed upper bound)",
+            "Candidate assumes there is a row-count limit (FALSE - MaxInsertSize defaults to -1, meaning no limit)",
+            "Candidate assumes 101 exceeds some threshold (FALSE - API accepts any count fitting payload size)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_entities_insert_001",
+            "assertion: 'no fixed upper bound on len(data); inserts of any row count that fits the request payload are accepted (HTTP 200)'",
+            "api_observed_value: Insert with 101 entities succeeded (HTTP 200) - matches contract exactly"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": [
+            "MaxInsertSize",
+            "maxInsertSize",
+            "PreExecute"
+          ],
+          "files_examined": [
+            "internal/proxy/task_insert.go",
+            "pkg/util/paramtable/quota_param.go"
+          ],
+          "source_excerpt": "// pkg/util/paramtable/quota_param.go line 1507-1515\n\tp.MaxInsertSize = ParamItem{\n\t\tKey:          \"quotaAndLimits.limits.maxInsertSize\",\n\t\tVersion:      \"2.4.1\",\n\t\tDefaultValue: \"-1\", // -1 means no limit, the unit is byte\n\t\tDoc:          `maximum size of a single insert request, in bytes, -1 means no limit`,\n\t\tExport:       true,\n\t}\n\n// internal/proxy/task_insert.go line 120-125\n\tmaxInsertSize := Params.QuotaConfig.MaxInsertSize.GetAsInt()\n\tif maxInsertSize != -1 && it.insertMsg.Size() > maxInsertSize {\n\t\tlog.Ctx(ctx).Warn(\"insert request size exceeds maxInsertSize\",\n\t\t\tzap.Int(\"request size\", it.insertMsg.Size()), zap.Int(\"maxInsertSize\", maxInsertSize))\n\t\treturn merr.WrapErrAsInputError(merr.WrapErrParameterTooLarge(\"insert request size exceeds maxInsertSize\"))\n\t}",
+          "call_chain_traced": "MaxInsertSize default value (-1) → PreExecute validation check (line 121) → condition 'maxInsertSize != -1' is FALSE → size check skipped → request accepted",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: MaxInsertSize 默认值为 -1（无限制）. 验证逻辑明确设计为仅在 maxInsertSize != -1 时才检查大小. 这是设计意图，非缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with outputFields=['id','vector'], limit=10 to verify actual data storage",
+          "observed": "Query successfully returns entities id=0 through id=9 with full vector data, confirming that the 101-entity insert was genuine and data is persistently stored. No boundary violation occurred."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (not applicable)",
+            "Concurrency race (not applicable)",
+            "Request parameter typo (not applicable)"
+          ],
+          "surviving": "by_design_maxInsertSize_negative_one"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 by_design_patterns. 这是合法的 API 行为，而非维护者明确标记的 by-design 模式"
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.98,
+      "rationale": "候选声称的 'param_validation' 缺陷完全基于对契约的误读。约束 milvus_range_entities_insert_001 明确声明 'no fixed upper bound on len(data); inserts of any row count that fits the request payload are accepted (HTTP 200)'。源码接地确认 MaxInsertSize 默认值为 -1（无限制），验证逻辑明确设计为跳过大小检查。独立查询验证确认 101 个实体确实成功插入并存储。API 行为与契约和源码设计完全一致。这不是 bug，是正确的设计行为。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Constraint milvus_range_entities_insert_001: 'no fixed upper bound on len(data); inserts of any row count that fits the request payload are accepted (HTTP 200)'",
+          "source_implements_check": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "No physical/mathematical constraint on row count exists",
+          "api_accepts_violation": "N/A - No constraint to violate",
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (contract and behavioral both refute the defect claim)",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

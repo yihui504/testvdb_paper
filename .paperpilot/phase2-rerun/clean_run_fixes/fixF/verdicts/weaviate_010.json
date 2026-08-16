@@ -1,0 +1,91 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_010",
+      "endpoint": "DELETE /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "DELETE /batch/objects with {\"match\": {\"class\": \"BoundaryTestBatchDelete\"}, \"output\": \"minimal\"} (missing where clause)",
+          "observed": "HTTP 500 with body '{\"error\":[{\"message\":\"validate: empty match.where clause\"}]}'",
+          "evidence_cmd": "curl -s -w '\\nHTTP_STATUS:%{http_code}\\n' -X DELETE 'http://localhost:18080/v1/batch/objects' -H 'Content-Type: application/json' -d '{\"match\": {\"class\": \"BoundaryTestBatchDelete\"}, \"output\": \"minimal\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_range_batch_delete_001 (max deletions per request = QUERY_MAXIMUM_RESULTS)"],
+          "note": "Contract does not explicitly specify HTTP status codes for validation errors, but developer_cognition indicates 5xx for request-side detectable errors is a known defect pattern"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": ["validateBatchDelete", "empty match", "ErrInvalidUserInput", "errors.As.*ErrInvalidUserInput"],
+          "files_examined": [
+            "usecases/objects/batch_delete.go",
+            "usecases/objects/errors.go",
+            "adapters/handlers/rest/handlers_batch_objects.go",
+            "adapters/handlers/rest/operations/batch/batch_objects_delete.go"
+          ],
+          "source_excerpt": "// usecases/objects/batch_delete.go lines 124-137\nfunc (b *BatchManager) validateBatchDelete(ctx context.Context, principal *models.Principal,\n\tmatch *models.BatchDeleteMatch, dryRun *bool, output *string,\n) (*BatchDeleteParams, uint64, error) {\n\tif match == nil {\n\t\treturn nil, 0, errors.New(\"empty match clause\")  // PLAIN error, not ErrInvalidUserInput\n\t}\n\n\tif len(match.Class) == 0 {\n\t\treturn nil, 0, errors.New(\"empty match.class clause\")  // PLAIN error, not ErrInvalidUserInput\n\t}\n\n\tif match.Where == nil {\n\t\treturn nil, 0, errors.New(\"empty match.where clause\")  // PLAIN error, not ErrInvalidUserInput\n\t}\n\n\t// ... rest of validation\n}\n\n// adapters/handlers/rest/handlers_batch_objects.go lines 183-198\nres, err := h.manager.DeleteObjects(ctx, principal,\n\tparams.Body.Match, params.Body.DeletionTimeUnixMilli, params.Body.DryRun, params.Body.Output, repl, tenant)\nif err != nil {\n\th.metricRequestsTotal.logError(\"\", err)\n\tif errors.As(err, &objects.ErrInvalidUserInput{}) {\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().  // 422 mapping\n\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else if errors.As(err, &objects.ErrMultiTenancy{}) {\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().\n\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else if errors.As(err, &autherrs.Forbidden{}) {\n\t\treturn batch.NewBatchObjectsDeleteForbidden().\n\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else {\n\t\treturn batch.NewBatchObjectsDeleteInternalServerError().  // 500 fallback\n\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t}\n}",
+          "call_chain_traced": "validateBatchDelete returns plain errors.New() → errors.Wrap in deleteObjects line 78 → REST handler errors.As check fails → falls through to InternalServerError (500)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: validateBatchDelete 函数对空 match 子句的校验返回普通 errors.New() 而非 ErrInvalidUserInput，导致 REST 层的 errors.As 类型检查失败，错误被误分类为 500 而非 422。这是 developer_cognition.json blindspot_indicators 中明确指出的 '5xx responses to request-side detectable errors' 缺陷模式。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证错误确实来自验证逻辑非环境问题：创建合法 collection 后发送请求，观察到 500 响应",
+          "observed": "请求被正确拒绝但 HTTP 状态码错误（500 而非 422），错误消息清晰（'empty match.where clause'）但状态码语义错误"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题（容器正常运行）", "并发竞态（单次同步请求）", "缓存延迟（直接查询）", "请求参数笔误（使用正确语法）"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed",
+        "note": "完全命中 blindspot_indicators：空 match.where 是请求侧可检测的参数错误，应返回 422 而非 500。维护者历史中多次修复同类问题（PR 12049、12040、11878、12262）。"
+      },
+      "root_cause_if_confirmed": "http_status_misclassification",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地证实：validateBatchDelete 函数（batch_delete.go:127-137）对空 match 子句校验时使用普通 errors.New() 而非 objects.ErrInvalidUserInput。这导致错误在 deleteObjects:78 被 errors.Wrap 包装后丢失类型信息，REST 层的 errors.As 检查（handlers_batch_objects.go:185）失败，错误被误分类为 500 Internal Server Error 而非 422 Unprocessable Entity。此行为直接违反 developer_cognition.json 中维护者明确拒绝的 '5xx for request-side detectable errors' 模式，且与历史修复 PR（12049、12040、11878）方向一致。实测复现成功：两个边界请求均返回 500 状态码且错误消息明确指出验证失败。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "http_status_misclassification": 1
+    }
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "Contract does not explicitly specify HTTP status codes for DELETE /batch/objects validation errors, but developer_cognition.json blindspot_indicators establishes that 5xx for request-side detectable errors is a defect pattern",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "HTTP semantics: 4xx for client errors, 5xx for server-side failures (RFC 9110)",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": false,
+      "by_design_in_source": false,
+      "verdict_C": "CONFIRMED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+    "final_verdict": "CONFIRMED"
+  }
+}

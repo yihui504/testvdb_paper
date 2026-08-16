@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/list with {\"dbName\": \"\"}",
+          "observed": "API returns HTTP 200 with collections list from default database. Empty string dbName is treated as equivalent to default dbName.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes empty dbName parameter should be rejected as invalid input",
+            "Candidate assumes dbName must be a non-empty string value",
+            "Candidate treats empty string as distinct from default database name"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "parameter: dbName, type: string, required: false, default_value: '_default'",
+            "path: collections+list, method: POST, description: 'List all collections in a database'"
+          ],
+          "note": "Contract specifies dbName is optional with default '_default'. Empty string triggers fallback to default, which is consistent with contract intent."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "DefaultDbName",
+            "wrapperPost",
+            "dbName == \"\"",
+            "listCollections"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 356-367\n\tdbName := \"\"\n\tcollectionName := \"\"\n\tif req != nil {\n\t\tif getter, ok := req.(requestutil.DBNameGetter); ok {\n\t\t\tdbName = getter.GetDbName()\n\t\t}\n\t\tif dbName == \"\" {\n\t\t\tdbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n\t\t\tif dbName == \"\" {\n\t\t\t\tdbName = DefaultDbName  // DefaultDbName = \"default\" per constant.go:126\n\t\t\t}\n\t\t}\n\t}\n\n// internal/distributed/proxy/httpserver/handler_v2.go lines 568-571\nfunc (h *HandlersV2) listCollections(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\treq := &milvuspb.ShowCollectionsRequest{\n\t\tDbName: dbName,  // dbName already normalized to \"default\" if empty\n\t}",
+          "call_chain_traced": "HTTP POST /collections/list → wrapperPost → listCollections → ShowCollectionsRequest with normalized dbName",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code explicitly handles empty dbName by falling back to DefaultDbName (\"default\"). This is intentional parameter normalization logic, not a validation gap."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with explicit dbName=\"default\" vs dbName=\"\" produces identical results",
+          "observed": "Both requests return same collection list, confirming empty string is functionally equivalent to default database name. No violation present."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Concurrency race",
+            "Request parameter typo"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 356-367\n\tdbName := \"\"\n\tcollectionName := \"\"\n\tif req != nil {\n\t\tif getter, ok := req.(requestutil.DBNameGetter); ok {\n\t\t\tdbName = getter.GetDbName()\n\t\t}\n\t\tif dbName == \"\" {\n\t\t\tdbName = gCtx.Request.Header.Get(HTTPHeaderDBName)\n\t\t\tif dbName == \"\" {\n\t\t\t\tdbName = DefaultDbName  // DefaultDbName = \"default\" per constant.go:126\n\t\t\t}\n\t\t}\n\t}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/constant.go",
+        "internal/distributed/proxy/httpserver/request_v2.go"
+      ],
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Not a documented by_design_pattern but falls under standard API parameter normalization (empty string → default)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "dbName is optional, default='_default' (parameter spec in structured_contract.json)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not assert empty string must be rejected; it specifies dbName is optional with default value"
+        },
+        "physical": {
+          "objective_constraint": "None - dbName is an optional string parameter",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical constraint violated. Empty string is valid string input."
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Source code shows explicit fallback logic: empty string → DefaultDbName. This is intentional graceful handling."
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final=FALSE_POSITIVE (by-design in source with explicit fallback logic)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "rationale": "The candidate milvus_012 claims param_validation defect for collections+list accepting empty dbName. However, raw HTTP testing confirms the API treats empty string dbName as equivalent to default dbName ('default'). Source code analysis (handler_v2.go:356-367) shows explicit fallback logic: when dbName is empty string, the system assigns DefaultDbName constant. This is standard API parameter normalization (empty optional parameter → default value), not a validation defect. The structured_contract.json correctly specifies dbName as 'required: false, default_value: \"_default\"'. This behavior is intentional and by-design in the source code. Therefore, milvus_012 is a FALSE_POSITIVE with root_cause='mundane_api_semantics'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

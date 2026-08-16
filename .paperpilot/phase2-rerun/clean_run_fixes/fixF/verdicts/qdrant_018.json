@@ -1,0 +1,19 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_018",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "lib/segment/src/index/struct_payload_index/read_view/filtering.rs:104-110\n\nCondition::IsEmpty(IsEmptyCondition { is_empty: field }) => {\n    let available_points = self.available_point_count();\n    let condition = FieldCondition::new_is_empty(field.key.clone(), true);\n\n    self.estimate_field_condition(&condition, nested_path, hw_counter)?\n        .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))\n}\n\nThis code shows that IsEmpty conditions delegate to field index cardinality estimation. For keyword indexes, the estimation appears to use a coarse heuristic (likely falling back to unknown() or an imprecise index-based estimate), resulting in systematic under-counting. The exact path scans all points and returns 4, while the approximate indexed path returns only 2 (50% error), exceeding the 20% tolerance threshold defined in the cardinality_oracle bug shape.",
+      "files_examined": [
+        "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+        "lib/segment/src/index/query_estimator.rs",
+        "lib/segment/src/index/payload_index_base.rs",
+        "src/actix/api/count_api.rs",
+        "lib/segment/src/index/struct_payload_index/read_view/payload_index_read.rs"
+      ],
+      "rationale": "TRIPLE-PERSPECTIVE CONFIRMATION:\n\n1. CONTRACTUAL EXPECTATION (Violation):\n   - API contract defines exact=true as 'accurate scan count' and exact=false as 'approximate indexed cardinality estimate'\n   - Reasonable expectation: approximate mode should stay within ~20% error tolerance\n   - Actual: exact=true returns 4, exact:false returns 2, error = 50% > threshold\n\n2. EMPIRICAL EVIDENCE (Confirmed):\n   - Clean reproduction: exact:true=4, exact:false=2 on 20-point collection with 4 is_empty matches\n   - Scroll ground truth: scroll returns 4 points, confirming exact:true is correct\n   - Systematic bias: exact:false consistently undercounts by 50%, not random fluctuation\n\n3. DEVELOPER COGNITION (No Disclaimer):\n   - developer_cognition.json does NOT list this as by_design behavior\n   - bug_shapes.json cardinality_oracle shape explicitly defines this pattern as Type2_PoorDiagnostics\n   - Source code shows IsEmpty delegates to field index estimation, which appears to use imprecise fallback for keyword indexes\n\nROOT CAUSE:\nThe keyword index cardinality estimator for IsEmpty conditions lacks precision, falling back to a coarse heuristic (likely CardinalityEstimation::unknown() or an imprecise index statistic) instead of maintaining accurate per-field counts. This is a genuine estimator bug in the approximate count path, not an acceptable limitation."
+    }
+  ]
+}

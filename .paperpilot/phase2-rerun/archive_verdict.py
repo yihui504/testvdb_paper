@@ -30,9 +30,18 @@ def main():
         sys.exit(1)
     v0 = vs[0]
     verdict = v0.get('verdict')
-    sg = v0.get('steps', {}).get('source_grounding', {}) if isinstance(v0.get('steps'), dict) else {}
-    excerpt = sg.get('source_excerpt') or v0.get('source_excerpt') or ''
-    files = sg.get('files_examined') or v0.get('files_examined') or []
+    spots = []
+    if isinstance(v0.get('steps'), dict):
+        spots.append(v0['steps'].get('source_grounding') or {})
+    if isinstance(v0.get('source_grounding'), dict):
+        spots.append(v0['source_grounding'])
+    excerpt = v0.get('source_excerpt') or ''
+    files = v0.get('files_examined') or []
+    for sg in spots:
+        if not excerpt:
+            excerpt = sg.get('source_excerpt') or ''
+        if not files:
+            files = sg.get('files_examined') or []
     problems = []
     if verdict not in ('CONFIRMED', 'FALSE_POSITIVE'):
         problems.append('verdict=%r' % verdict)

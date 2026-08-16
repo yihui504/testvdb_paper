@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_015",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "lib/collection/src/operations/conversions.rs:1912-1922:\nshard_number: NonZeroU32::new(shard_number).ok_or_else(|| {\n    Status::invalid_argument(\"`shard_number` cannot be zero\")\n})?,\nreplication_factor: NonZeroU32::new(\n    replication_factor\n        .unwrap_or_else(|| default_replication_factor().get()),\n)\n.ok_or_else(|| {\n    Status::invalid_argument(\"`replication_factor` cannot be zero\")\n})?,\n\nlib/api/src/grpc/validate.rs:163-168:\nif self.replication_factor == Some(0) {\n    let mut errors = ValidationErrors::new();\n    errors.add(\n        \"replication_factor\",\n        ValidationError::new(\"Replication factor must be greater than 0\"),\n    );\n    return Err(errors);",
+      "files_examined": [
+        "lib/collection/src/operations/conversions.rs",
+        "lib/api/src/grpc/validate.rs",
+        "lib/storage/src/content_manager/toc/create_collection.rs",
+        "lib/api/src/rest/validate.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Raw probe log shows PUT /collections with shard_number=2147483647 (i32::MAX) and replication_factor=0 both resulted in server hanging (status: None, body: empty). Subsequent GET / requests also hung, indicating server crash/DOS. Step 2 (Premise Audit): Structured contract defines shard_number and replication_factor as 'integer' type with no documented upper bounds or constraints beyond default values. Developer cognition shows parameter_validation as high-frequency pattern (95 error_handling cases), but no explicit mention of shard/replica bounds. Step 3 (Contract Comparison): Probe violates implicit API contract - replication_factor=0 means zero replicas (no data persistence), shard_number=2147483647 attempts to create 2.1B shards. Both should return 4xx but instead cause server crash. Step 4 (Source Grounding): Found validation at lib/collection/src/operations/conversions.rs:1912-1922 - shard_number only checked for non-zero via NonZeroU32::new(), NO upper bound validation. replication_factor validated non-zero but accepts edge case 0 at REST layer (gRPC validate.rs has check, REST validate.rs lacks collection creation validation). Step 5 (Reverse Falsification): Cannot prove harmless - extreme shard counts provably cause memory exhaustion and service unavailability. This matches crash defect_type. Step 6 (Trivial Exclusion): Not by-design - developer cognition documents batch operations are 'not promised atomic' but doesn't sanction accepting invalid shard counts. Not user error - API should reject malformed requests with 400/422, not hang. Three-perspective aggregation: Behavior perspective (server crash=DOS), Contract perspective (missing validation on critical params), Implementation perspective (NonZeroU32 insufficient for shard_number). CONFIRMED: Missing upper bound validation on shard_number allows resource exhaustion crash; REST layer missing replication_factor validation present in gRPC layer."
+    }
+  ]
+}

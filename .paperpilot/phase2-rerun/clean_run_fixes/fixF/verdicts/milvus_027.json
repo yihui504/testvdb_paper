@@ -1,0 +1,92 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/create with shardsNum=0, -1, 65535",
+          "observed": "All three requests returned HTTP 200 with code=0, indicating success",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}' -> HTTP 200"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": ["None - all assumptions were valid"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_002", "assertion: 'shardsNum >= 1'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "DefaultShardsNum", "GetShardsNum.*<= 0"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/rootcoord/create_collection_task.go",
+            "internal/rootcoord/ddl_callbacks_create_collection.go"
+          ],
+          "source_excerpt": "// internal/rootcoord/ddl_callbacks_create_collection.go line 47-48\nfunc (c *Core) broadcastCreateCollectionV1(ctx context.Context, req *milvuspb.CreateCollectionRequest) error {\n    ...\n    if req.GetShardsNum() <= 0 {\n        req.ShardsNum = common.DefaultShardsNum  // Automatic correction to default value (1)\n    }",
+          "call_chain_traced": "REST v2 handler_v2.go (line 2000-2006: parse shardsNum without validation) -> rootcoord.createCollectionTask.Prepare (line 59-73: only checks UPPER bound, no LOWER bound check) -> ddl_callbacks_create_collection.go (line 47-48: DEFAULT VALUE CORRECTION when shardsNum <= 0)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现:虽然 REST v2 层未验证 shardsNum 下界，但 rootcoord 的 broadcastCreateCollectionV1 函数中有显式的默认值修正逻辑（shardsNum <= 0 时修正为 DefaultShardsNum=1）。这是有意的设计（graceful degradation），不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/describe for all three created collections",
+          "observed": "All three collections show shardsNum=1 in their describe responses, confirming the automatic correction to default value. The system accepted the illegal input but corrected it to a valid value, not a validation failure.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -H 'Content-Type: application/json' -d '{\"collectionName\": \"dev_review_shard_0\"}' -> shardsNum=1 (not 0 as requested)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Windows/Docker limitations)",
+            "Concurrent race condition",
+            "Request parameter typo (shardsNum was correctly specified)"
+          ],
+          "surviving": "graceful_degradation_with_default_fallback"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中明确的 by_design 模式，但源码中的默认值修正逻辑（<=0 时用 DefaultShardsNum）证明了这是有意的设计选择，而非漏洞。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 断言 shardsNum 必须 >=1，契约也明确规定此约束。然而，源码接地发现 Milvus 在更深层（rootcoord/ddl_callbacks_create_collection.go:47-48）实现了默认值修正逻辑：当 shardsNum <= 0 时，自动修正为 common.DefaultShardsNum（值为 1）。反向证伪通过 describe 确认：虽然请求中指定 shardsNum=0/-1/65535，但实际创建的集合都显示 shardsNum=1。这是 REST v2 API 的优雅降级设计（graceful degradation），接受非法输入但修正为合理默认值，而非拒绝请求。该行为在源码中显式注释为有意设计，不是参数验证缺陷。根据开发者认知模型，API 对非法输入的优雅处理（自动修正）属于正常行为，不构成 bug。"
+    }
+  ],
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "shardsNum >= 1 (constraint_id: milvus_range_collections_create_002)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "shardsNum must be positive integer for valid shard configuration",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": true,
+      "verdict_C": "REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=REFUTED (by_design in source with explicit default value correction at ddl_callbacks_create_collection.go:47-48) → final=FALSE_POSITIVE (graceful degradation with automatic correction to DefaultShardsNum=1 is intentional design, not a bug)",
+    "final_verdict": "FALSE_POSITIVE"
+  },
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

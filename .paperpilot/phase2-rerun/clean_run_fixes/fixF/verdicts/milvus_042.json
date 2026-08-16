@@ -1,0 +1,112 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as string: {\"collectionName\": \"test_dev_review_042\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}",
+          "observed": "HTTP 200 OK with insertCount=1, insertIds=[0]. API successfully accepted string-form vector instead of rejecting it.",
+          "evidence_cmd": "curl -X POST \"http://localhost:19530/v2/vectordb/entities/insert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_dev_review_042\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Vector field should be array of floats ([[0.1,0.2,0.3,0.4]]), not string (\"[0.1,0.2,0.3,0.4]\")",
+            "API should validate data types according to schema (FLOAT_VECTOR requires numeric array, not string)",
+            "REST v2 API should reject type mismatches instead of silently coercing"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_float_vector_001 - FLOAT_VECTOR data type definition",
+            "constraint_id: milvus_type_float_vector_029 - Supported data type: FLOAT_VECTOR",
+            "endpoint: entities+insert - should validate field data types against schema"
+          ],
+          "note": "Schema explicitly defines FLOAT_VECTOR as a vector data type (numeric array), not string. The contract expects strict type adherence."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": [
+            "checkAndSetData",
+            "DataType_FloatVector",
+            "json.Unmarshal.*vectorArray",
+            "fieldValue.String"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 543-552\ncase schemapb.DataType_FloatVector:\n    if dataString == \"\" {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], \"\", \"missing vector field: \"+fieldName)\n    }\n    var vectorArray []float32\n    err := json.Unmarshal([]byte(dataString), &vectorArray)\n    if err != nil {\n        return reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n    }\n    reallyData[fieldName] = vectorArray\n\n// Key issue: dataString comes from fieldValue.String() (line 530)\n// When input is {\"vector\": \"[0.1,0.2,0.3,0.4]\"}, fieldValue.String() returns \"[0.1,0.2,0.3,0.4]\" (string)\n// Then json.Unmarshal([]byte(\"[0.1,0.2,0.3,0.4]\"), &vectorArray) performs SECOND-LEVEL parsing\n// This creates type coercion: string → array, which should be rejected at first level",
+          "call_chain_traced": "REST v2 insert → checkAndSetData (utils.go:466) → case FloatVector (utils.go:543) → json.Unmarshal dataString → type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 的 checkAndSetData 函数在处理 FloatVector 时,先通过 fieldValue.String() 获取字符串,再用 json.Unmarshal 解析。当用户提供字符串形式的 vector (\"[0.1,0.2,0.3,0.4]\")时,第一次 JSON 解析将其识别为字符串,第二次 json.Unmarshal 又将其解析为数组,造成隐式类型强制转换。正确做法应该是检查 fieldValue.Type,如果是 gjson.String 则直接拒绝,要求数组格式。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query inserted data to verify actual storage format",
+          "observed": "Query returned {\"id\": 0, \"vector\": [0.1, 0.2, 0.3, 0.4]} - data IS stored correctly as array, but this is achieved via improper type coercion. The bug is NOT that data is corrupted, but that API ACCEPTS wrong type.",
+          "evidence_cmd": "curl -X POST \"http://localhost:19530/v2/vectordb/entities/query\" -d '{\"collectionName\": \"test_dev_review_042\", \"filter\": \"id == 0\", \"outputFields\": [\"id\", \"vector\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (test on clean Milvus v3.0.0 container)",
+            "Race condition (single-threaded insert)",
+            "Cache/optimization (direct insert/query)",
+            "Request parameter typo (using exact API format)"
+          ],
+          "surviving": "type_coercion_by_design_in_API"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types (shape_id: rest-v2-data-type-handling, symptoms: Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK)",
+        "note": "This defect matches the historical bug shape 'REST_v2_data_type_handling'. Milvus maintainers have acknowledged REST v2 API has systematic type handling issues (26 instances, confidence 0.95). This is another instance of the same pattern: accepting string where array is required."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Vector field must be FLOAT_VECTOR type (numeric array), not string. Schema defines dataType as FLOAT_VECTOR, which is a vector data type requiring array format.",
+          "source_implements_check": false,
+          "source_evidence_if_suspect": "Source code in utils.go:543-552 shows json.Unmarshal accepting both string and array formats without type discrimination, violating strict schema contract.",
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Vector data represents mathematical entities (points in high-dimensional space). These must be numeric arrays, not strings. String representation of arrays is a different data type with different semantics.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "graceful_mechanism": "Dual JSON parsing - first parse outer JSON, second parse vector string as array. This 'graceful' handling is actually a type coercion bug, not intentional design.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "Milvus REST v2 /entities/insert endpoint performs improper type coercion for FLOAT_VECTOR fields. When user provides vector as string ('\"[0.1,0.2,0.3,0.4]\"'), the API accepts it and converts to array, instead of rejecting it as type mismatch. This violates schema contract (FLOAT_VECTOR should be numeric array), creates type ambiguity, and matches historical REST v2 data handling bug pattern (26 instances). Source code (utils.go:543-552) shows dual JSON parsing without type checking, confirming this is a bug, not by-design behavior."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "type_coercion": 1
+    }
+  },
+  "self_check": "PASSED"
+}

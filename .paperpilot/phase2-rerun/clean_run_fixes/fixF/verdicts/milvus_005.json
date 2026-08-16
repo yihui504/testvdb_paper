@@ -1,0 +1,93 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_005",
+      "endpoint": "entities+insert",
+      "defect_type": "doc_mismatch",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "internal/proxy/util.go:356-388\nfunc validateFieldName(fieldName string) error {\n\tfieldName = strings.TrimSpace(fieldName)\n\tif fieldName == \"\" {\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, \"field name should not be empty\")\n\t}\n\tfirstChar := fieldName[0]\n\tif firstChar != '_' && !isAlpha(firstChar) {\n\t\tmsg := invalidMsg + \"The first character of a field name must be an underscore or letter.\"\n\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t}\n\tfor i := 1; i < fieldNameSize; i++ {\n\t\tc := fieldName[i]\n\t\tif c != '_' && !isAlpha(c) && !isNumber(c) {\n\t\t\tmsg := invalidMsg + \"Field name can only contain numbers, letters, and underscores.\"\n\t\t\treturn merr.WrapErrFieldNameInvalid(fieldName, msg)\n\t\t}\n\t}\n}\n\ninternal/proxy/util.go:2333-2362\nfunc verifyDynamicFieldData(schema *schemapb.CollectionSchema, insertMsg *msgstream.InsertMsg) error {\n\tfor _, field := range insertMsg.FieldsData {\n\t\tif field.GetFieldName() == common.MetaFieldName {\n\t\t\tif !schema.EnableDynamicField {\n\t\t\t\treturn fmt.Errorf(\"without dynamic schema enabled, the field name cannot be set to %s\", common.MetaFieldName)\n\t\t\t}\n\t\t\tfor _, rowData := range field.GetScalars().GetJsonData().GetData() {\n\t\t\t\tjsonData := make(map[string]interface{})\n\t\t\t\tjson.Unmarshal(rowData, &jsonData)\n\t\t\t\t// No validateFieldName() call on dynamic field keys here\n\t\t\t}\n\t\t}\n\t}\n\treturn nil\n}",
+      "files_examined": [
+        "internal/proxy/util.go",
+        "internal/parser/planparserv2/plan_parser_v2.go",
+        "internal/proxy/task_insert.go",
+        "internal/proxy/task_upsert.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /entities/insert with dynamic fields '123field' and '@field', then POST /entities/query with outputFields=['123field', '@field']",
+          "observed": "Insert succeeds (HTTP 200), data stored correctly. Query fails with 'parse output field name failed: 123field'",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/query' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review_005\", \"filter\": \"id in [1,2]\", \"outputFields\": [\"123field\", \"@field\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "checked_assumptions": [
+            "Dynamic fields should accept any field name when enableDynamicField=true",
+            "Field names starting with numbers should be allowed for dynamic fields",
+            "Special characters like @ should be allowed for dynamic fields"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_entities_insert_001 - 'data field types match collection schema'",
+            "constraint_id: milvus_state_entities_insert_001 - 'collection exists AND is loaded AND (autoID OR primary key provided)'"
+          ],
+          "contract_gaps": [
+            "No explicit constraint validating dynamic field names during insert",
+            "No contract requirement that outputFields must pass ParseIdentifier validation when dynamic fields are enabled"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": [
+            "parse output field name",
+            "validateFieldName",
+            "checkDynamicFieldData",
+            "ParseIdentifier"
+          ],
+          "call_chain_traced": "InsertTask → checkDynamicFieldData → verifyDynamicFieldData → NO validateFieldName call on dynamic JSON keys | QueryTask → parseOutputFields → ParseIdentifier → validateFieldName applied",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_in_query_but_absent_in_insert",
+          "note": "源码接地发现: insert时不校验动态字段名(validateFieldName未调用), query时却严格校验(ParseIdentifier包含validateFieldName规则). 导致data可存但不可查的inconsistent state."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /entities/get with outputFields=['*'] to verify data was actually stored",
+          "observed": "Get request returns both entities with '123field': 'v1' and '@field': 'v2' successfully, confirming data was stored correctly but query outputFields validation blocks retrieval",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/get' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_dev_review_005\", \"id\": [1, 2], \"outputFields\": [\"*\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (tested on clean milvus v2.6.10 container)",
+            "Race condition (single-threaded sequential test)",
+            "Cache/optimization delay (immediate query after insert)",
+            "Request param typo (exact field names matched between insert and query)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Documentation-behavior consistency: when official documentation claims a behavior or capability that the server does not exhibit (documented X, actual behavior is not-X), this is a consistency defect - maintainers' repeated disposition is to fix it",
+        "note": "Match blindspot: REST v2 API data type serialization / validation inconsistency. Insert accepts invalid field names but query rejects them - a cross-operation inconsistency."
+      },
+      "root_cause_if_true": "inconsistent_validation_between_insert_and_query_paths",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "源码接地揭示根本原因: insert路径(checkDynamicFieldData/verifyDynamicFieldData)对动态字段JSON key未调用validateFieldName(), 仅检查JSON格式; query路径(parseOutputFields→ParseIdentifier)对outputField每个名字严格应用validateFieldName规则(要求首字符为_或字母,其余仅含字母数字_). 导致'123field'/'@field'等非法字段名可insert存入但无法通过query的outputFields检索. 这是真正的实现不一致bug, 不是文档误解. 实测复现: insert成功(HTTP 200), entities/get验证数据已存储, query报'parse output field name failed: 123field'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "inconsistent_validation_between_insert_and_query_paths": 1
+    }
+  }
+}

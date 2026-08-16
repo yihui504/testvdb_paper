@@ -1,0 +1,89 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_032",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "internal/distributed/proxy/httpserver/request_v2.go line 160-175\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// Missing ConsistencyLevel field compared to QueryReqV2/SearchReqV2 which have:\n// ConsistencyLevel string `json:\"consistencyLevel\"`",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/request_v2.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/utils.go"
+      ],
+      "rationale": "Contract (milvus_type_collections_create_003) explicitly requires consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']. Raw request POST /collections/create with consistencyLevel='Invalid' returns HTTP 200 (success). Source code reveals CollectionReq struct lacks ConsistencyLevel field (unlike QueryReqV2/SearchReqV2), so JSON binding silently ignores invalid values. Handler validation at handler_v2.go:2042-2057 only checks httpReq.Params['consistencyLevel'], not the direct field. This is a Type1_IllegalSuccess: API accepts invalid enum value and silently defaults to 'Bounded' instead of rejecting with 400 error.",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create {\"collectionName\": \"test_invalid_consistency\", \"dimension\": 4, \"metricType\": \"L2\", \"idType\": \"Int64\", \"autoID\": true, \"vectorFieldType\": \"FloatVector\", \"consistencyLevel\": \"Invalid\"}",
+          "observed": "HTTP 200 success, describe shows consistencyLevel='Bounded' (silent default)",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/collections/describe -d '{\"collectionName\": \"test_invalid_consistency\", \"dbName\": \"default\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_collections_create_003", "assertion: consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": ["CollectionReq struct", "ConsistencyLevel field", "convertConsistencyLevel"],
+          "files_examined": ["internal/distributed/proxy/httpserver/request_v2.go", "internal/distributed/proxy/httpserver/handler_v2.go", "internal/distributed/proxy/httpserver/utils.go"],
+          "source_excerpt": "internal/distributed/proxy/httpserver/request_v2.go line 160-175\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n}\n\n// Compare with QueryReqV2 (line 289-299) which HAS ConsistencyLevel:\n// ConsistencyLevel string `json:\"consistencyLevel\"`",
+          "call_chain_traced": "HTTP POST /collections/create → Gin binds JSON to CollectionReq → CollectionReq.ConsistencyLevel field MISSING → Invalid value silently ignored → handler_v2.go:2042-2057 only checks httpReq.Params['consistencyLevel'] (not direct field) → No validation triggered → Invalid value defaults to Bounded",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:CollectionReq 结构体缺少 ConsistencyLevel 字段(与 QueryReqV2/SearchReqV2 不同),导致 Gin JSON 绑定忽略该字段,Handler 层只检查 Params['consistencyLevel'] 而非直接字段,导致非法值绕过校验"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Invalid consistencyLevel accepted with HTTP 200 - no falsification needed",
+          "observed": "Raw response: HTTP 200, body: {\"code\":0,\"data\":{}}"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["environment", "race_condition", "api_semantics_misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "note": "Hits blindspot: REST v2 data type serialization not validated (25 issues in corpus). This is REST v2 enum validation gap."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually'] (constraint_id: milvus_type_collections_create_003)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "enum values are from a fixed set",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation with source_verified=true) → final=CONFIRMED (graceful handling cannot override explicit contract requirement)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

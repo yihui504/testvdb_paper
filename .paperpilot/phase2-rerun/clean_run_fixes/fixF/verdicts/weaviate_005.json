@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// usecases/sharding/config/config.go lines 53-70\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}\n\n// NOTE: The validate() function does NOT check if DesiredCount >= 1\n// It only validates Key, Strategy, and Function fields\n// This allows negative values like -1 to pass validation",
+      "files_examined": [
+        "usecases/sharding/config/config.go",
+        "usecases/schema/parser.go",
+        "usecases/schema/usage_limits_shards_test.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}",
+          "observed": "HTTP 200 - collection created successfully with negative desiredCount",
+          "evidence_cmd": "curl -s -w \"\\nHTTP_STATUS:%{http_code}\\n\" -X POST \"http://localhost:18080/v1/schema\" -H \"Content-Type: application/json\" -d '{\"class\": \"TestNeg\", \"shardingConfig\": {\"desiredCount\": -1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "note": "No assumptions violated - the raw request explicitly passes shardingConfig.desiredCount=-1 and receives HTTP 200 success"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_range_schema_replication_001 - replicationConfig.factor >= 1",
+            "constraint_id: weaviate_range_replication_scale_001 - replicationFactor >= 1",
+            "Note: No explicit constraint found for shardingConfig.desiredCount range in structured_contract.json, but similar integer count parameters (replicationConfig.factor, replicationFactor) have minimum value constraints"
+          ],
+          "note": "The contract contains range constraints for similar count-based parameters (replicationConfig.factor >= 1, replicationFactor >= 1), suggesting that desiredCount should also have a minimum bound of >= 1. The absence of an explicit constraint for desiredCount is itself a documentation gap."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "shardingConfig",
+            "desiredCount",
+            "validate",
+            "ParseConfig"
+          ],
+          "call_chain_traced": "POST /schema → Parser.parseShardingConfig() → shardingConfig.ParseConfig() → validate() → NO desiredCount range check found",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code inspection confirms that the validate() function in usecases/sharding/config/config.go does not contain any range validation for the DesiredCount field. The function only validates Key (must be '_id'), Strategy (must be 'hash'), and Function (must be 'murmur3'). This is the root cause of the bug - negative values like -1 or -100 bypass validation and result in successful collection creation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple tests with negative desiredCount values",
+          "observed": "POST with desiredCount=-1 returned HTTP 200; POST with desiredCount=-100 returned HTTP 200; POST with desiredCount=0 returned HTTP 422 (different error - 'physical shards unavailable'). The negative values consistently succeed, proving the validation gap.",
+          "evidence_cmd": "curl -s -w \"\\nHTTP_STATUS:%{http_code}\\n\" -X POST \"http://localhost:18080/v1/schema\" -H \"Content-Type: application/json\" -d '{\"class\": \"TestNeg100\", \"shardingConfig\": {\"desiredCount\": -100}}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - running in standard Docker container",
+            "Race conditions - single request, no concurrent operations",
+            "Request parameter typo - explicitly passing desiredCount as integer",
+            "API semantics misunderstanding - shard count is a physical configuration requiring positive integer"
+          ],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter Validation Issues in Request Parsing - 'Accepting invalid parameter values on write endpoints (e.g. empty vectors, invalid types) with per-item success status'",
+        "pattern_name": "Parameter Validation Issues in Request Parsing",
+        "root_cause_category": "parameter_validation",
+        "note": "This defect directly matches bug shape BS-004 - accepting invalid parameter values (negative desiredCount) on schema creation endpoint with HTTP 200 success. The developer cognition model identifies 'Parameter validation gaps at API boundaries' as what developers consider bugs."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract assertion for shardingConfig.desiredCount range exists in structured_contract.json, but analogous parameters (replicationConfig.factor, replicationFactor) have >= 1 constraints",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "While no explicit constraint exists for desiredCount, the established pattern from similar count-based parameters (replicationConfig.factor >= 1, replicationFactor >= 1) establishes the expected semantic constraint. Source confirms no validation exists."
+        },
+        "physical": {
+          "objective_constraint": "desiredCount represents shard count, a physical resource allocation that must be >= 1 (cannot have negative or zero physical shards in a distributed system)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: shard count is a count of physical database shards. Negative shard counts are physically impossible. API accepts -1, -100, violating physical constraint."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful degradation, no by-design handling. API accepts negative values with HTTP 200, which is not graceful - it's successful acceptance of physically invalid configuration."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract pattern), verdict_B=CONFIRMED (physical violation), verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED (all perspectives confirm bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "POST /schema accepts negative shardingConfig.desiredCount values (-1, -100) returning HTTP 200 success. Source code analysis confirms the validate() function in usecases/sharding/config/config.go only checks Key/Strategy/Function fields with no range validation for DesiredCount. This matches bug shape BS-004 (Parameter Validation Issues) and developer cognition on 'Parameter validation gaps at API boundaries'. Physically, shard count must be >= 1 for distributed database operation. Contract虽然没有显式约束，但同类参数(replicationConfig.factor, replicationFactor)都有>=1约束，建立了模式先例。三视角分析：契约视角确认缺失约束违反模式，物理视角确认负值违反物理约束，行为视角确认无优雅处理。代码接地成功，找到根本原因。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Step 1: Raw evidence analysis from output_qdrant_017.log",
+          "observed": "The log shows normal pagination behavior: offset=0 returns 10 points (IDs 0-9), offset=10 returns 10 points (IDs 10-19), offset=20 returns 5 points (IDs 20-24). Total 25 points inserted, all 25 accounted for across pages. No duplicates observed in search results.",
+          "evidence_cmd": "Raw HTTP request/response pairs in output_qdrant_017.log show: REQ4 (offset=0, limit=10) -> RESP4 (10 results, IDs 0-9); REQ5 (offset=10, limit=10) -> RESP5 (10 results, IDs 10-19); REQ6 (offset=20, limit=10) -> RESP6 (5 results, IDs 20-24)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["collections+{collection_name}+points+search endpoint supports offset/limit pagination parameters"],
+          "note": "Contract defines offset as 'Pagination offset' and limit as 'Max results to return' for search endpoint"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2",
+          "grep_queries": ["dedup", "offset", "skip", "pagination", "seen_ids"],
+          "files_examined": [
+            "lib/collection/src/collection/search.rs",
+            "lib/collection/src/collection/query.rs",
+            "lib/collection/src/tests/points_dedup.rs",
+            "lib/segment/src/segment/read_view/search.rs"
+          ],
+          "source_excerpt": "lib/collection/src/collection/search.rs:283-322:\n\n            // Merge results from shards in order and deduplicate based on point ID\n            let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);\n            let mut seen_ids = AHashSet::new();\n            ...\n            let merged_iter = match order {\n                Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),\n                Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),\n            }\n            .filter(|point| seen_ids.insert(point.id));  // <- Deduplication filter\n\n            // Skip `offset` only for client requests\n            // to avoid applying `offset` twice in distributed mode.\n            let top_res = if is_client_request && request.offset > 0 {\n                merged_iter\n                    .skip(request.offset)\n                    .take(request.limit)\n                    .collect()\n            } else {\n                merged_iter.take(request.offset + request.limit).collect()  // <- Non-client path\n            };",
+          "call_chain_traced": "Collection::merge_from_shards -> results_from_shards.kmerge_by -> .filter(dedup by seen_ids) -> .skip(offset).take(limit) OR .take(offset+limit)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "deduplication_present_in_source",
+          "note": "Source code at line 306 explicitly implements deduplication via .filter(|point| seen_ids.insert(point.id)). This filter removes duplicate point IDs before offset/limit are applied. The logic is: (1) merge sorted results from shards, (2) filter out duplicates by tracking seen_ids, (3) apply pagination via skip(offset).take(limit) for client requests or take(offset+limit) for internal distributed requests. The raw test data shows correct behavior - no duplicates in search results."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Step 4: Falsification via raw response analysis",
+          "observed": "The raw responses in output_qdrant_017.log show NO duplicate point IDs across any search results. RESP4: [0,1,2,3,4,5,6,7,8,9]; RESP5: [10,11,12,13,14,15,16,17,18,19]; RESP6: [20,21,22,23,24]. All 25 unique IDs appear exactly once across all pagination pages. This directly contradicts a 'pagination deduplication' defect claim.",
+          "evidence_cmd": "Raw response bodies in output_qdrant_017.log lines 26, 33, 40 show unique point IDs with no overlap between pages"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues (Docker/platform)",
+            "Concurrency/race conditions",
+            "Cache/optimizer delays",
+            "Request parameter typos",
+            "API semantic misunderstandings"
+          ],
+          "surviving": "none",
+          "note": "The observed behavior is correct: pagination returns non-overlapping pages covering the full result set. This is expected API behavior."
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Candidate does not match any by_design_patterns or rejection_patterns from developer_cognition.json. The behavior shown in raw evidence is correct pagination semantics."
+      },
+      "root_cause_if_fp": "contract_misread",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "The raw evidence in output_qdrant_017.log shows correct pagination behavior: search with limit=10 and offset=0/10/20 returns three non-overlapping pages (IDs 0-9, 10-19, 20-24) covering all 25 inserted points with zero duplicates. Source code analysis confirms deduplication is implemented at lib/collection/src/collection/search.rs:306 via .filter(|point| seen_ids.insert(point.id)). The candidate claims a 'pagination deduplication' defect but the raw HTTP responses demonstrate that pagination works correctly with no duplicate point IDs. This appears to be a misinterpretation of correct API behavior rather than an actual bug.",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Search endpoint supports offset/limit pagination (parameters: offset='Pagination offset', limit='Max results to return')",
+          "source_implements_check": true,
+          "api_observed_value": "Pagination returns correct non-overlapping pages covering full result set",
+          "api_violates_assertion": false,
+          "verdict_A": "REFUTED"
+        },
+        "physical": {
+          "objective_constraint": "Pagination should return non-overlapping pages that cover the result set without duplicates",
+          "api_accepts_violation": false,
+          "verdict_B": "REFUTED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "note": "Source code at lib/collection/src/collection/search.rs:306 explicitly implements deduplication filter, and raw responses show correct behavior",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=REFUTED, verdict_B=REFUTED, verdict_C=REFUTED -> final_verdict=FALSE_POSITIVE",
+        "final_verdict": "FALSE_POSITIVE"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "contract_misread": 1
+    }
+  }
+}

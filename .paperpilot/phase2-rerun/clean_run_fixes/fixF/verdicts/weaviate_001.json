@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_001",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with dynamicEfMin=500, dynamicEfMax=10 (inverted range)",
+          "observed": "API returned HTTP 200 and created collection with dynamicEfMin=500, dynamicEfMax=10 stored as provided",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H 'Content-Type: application/json' -d '{\"class\": \"TestEfBad\", \"vectorizer\": \"none\", \"vectorIndexConfig\": {\"distance\": \"cosine\", \"dynamicEfMin\": 500, \"dynamicEfMax\": 10, \"dynamicEfFactor\": 8}}' && curl -s http://localhost:18080/v1/schema/TestEfBad | grep -E '(dynamicEfMin|dynamicEfMax)'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: weaviate_range_schema_replication_001 (replicationConfig.factor >= 1) demonstrates range validation pattern", "API endpoint: POST /schema is documented to return 422 RestrictionViolationResponse for invalid config"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["dynamicEfMin|dynamicEfMax|dynamicEfFactor", "validate|validation", "vectorIndexConfig"],
+          "files_examined": ["entities/vectorindex/hnsw/config.go", "entities/vectorindex/hnsw/config_test.go", "entities/vectorindex/dynamic/config_test.go"],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go line 260-323 (validate function)\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\t// ... PQ/RQ/Multivector validation ...\n\treturn nil\n}\n\n// Line 30-32: Default constants\nconst (\n\tDefaultDynamicEFMin           = 100\n\tDefaultDynamicEFMax           = 500\n\tDefaultDynamicEFFactor        = 8\n)",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig → UserConfig.validate() → NO CHECK for dynamicEfMin < dynamicEfMax",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code inspection reveals the validate() function checks MaxConnections, EFConstruction, and FilterStrategy, but completely lacks any validation for dynamicEfMin < dynamicEfMax semantic constraint. This is a genuine validation gap."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /schema/TestEfBad returns stored config",
+          "observed": "Collection was created and persists with dynamicEfMin=500, dynamicEfMax=10 - no auto-correction or rejection occurred"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issues", "Race conditions", "Request parameter typos"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries - from developer_cognition.json what_developers_consider_bugs list",
+        "note": "Defect directly matches BS-004 (Parameter Validation Issues in Request Parsing) pattern and developer cognition indicating 'Parameter validation gaps at API boundaries' are considered bugs"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "POST /schema must validate vectorIndexConfig parameters and return 422 RestrictionViolationResponse for invalid values (per API spec)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "dynamicEfMin must be <= dynamicEfMax (semantic impossibility for min > max in range-based parameters)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED → final=CONFIRMED (both contract violation and physical constraint violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "POST /schema accepts inverted dynamicEfMin=500 and dynamicEfMax=10 without validation. Source code confirms validate() function in entities/vectorindex/hnsw/config.py (lines 260-323) checks MaxConnections, EFConstruction, and FilterStrategy ranges, but completely lacks semantic validation for dynamicEfMin < dynamicEfMax. This violates the API contract (422 expected for invalid config) and physical constraint (min cannot exceed max). Direct match to developer cognition BS-004 pattern 'Parameter validation gaps at API boundaries'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

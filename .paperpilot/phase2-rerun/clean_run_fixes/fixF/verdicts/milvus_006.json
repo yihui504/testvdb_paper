@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "File: internal/distributed/proxy/httpserver/utils.go, Lines 894-906\n\nMilvus REST v2 entities+insert handler performs unchecked type assertions for VarChar/String/Timestamptz/Geometry fields:\n\n```go\ncase schemapb.DataType_VarChar:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([]string), candi.v.Interface().(string))\n```\n\nThe code directly asserts `candi.v.Interface().(string)` without verifying the actual type of `candi.v`. When JSON contains non-string values (integers, floats, booleans, arrays), the type assertion either:\n1. Panics (if strict mode enabled)\n2. Silently coerces via Go's type system (current behavior)\n\nRoot cause: No type validation before type assertion. The `reflectValueCandi` function at line 709 extracts raw JSON-decoded values without type checking, and `anyToColumns` blindly trusts these values match the schema.\n\nMissing validation code should be:\n```go\ncase schemapb.DataType_VarChar:\n    if v, ok := candi.v.Interface().(string); ok {\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]string), v)\n    } else {\n        return nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"field %s requires string type, got %T\", field.Name, candi.v.Interface()))\n    }\n```",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/utils.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/wrap_request.go",
+        "internal/proxy/task_insert.go"
+      ],
+      "rationale": "【干净复现】验证通过：对运行中的 Milvus 2.6.10 实例执行 insert 操作，VarChar 字段接受 integer (12345)、float (3.14159)、boolean (true)、array ([1,2,3]) 并成功返回 200，查询返回原始非字符串值。无类型转换错误，无 schema 约束拒绝。\n\n【源码接地】定位缺陷：internal/distributed/proxy/httpserver/utils.go:900 直接进行 candi.v.Interface().(string) 类型断言，无类型检查。同类问题存在于 line 894 (Timestamptz)、898 (String)、906 (Geometry)。\n\n【反向证伪】扩展测试：Insert 浮点数、布尔值、数组均被接受并原样存储，证明这非单一整数问题，而是系统性的 REST v2 类型校验缺失。\n\n【契约对照】违反 structured_contract.json 约束 milvus_type_entities_insert_001: 'data must contain field values matching collection schema data types'。API 返回 200 但违反 schema 类型约束，属 Type1_IllegalSuccess。\n\n【开发者认知】developer_cognition.json 将此列为已知盲区：'REST v2 API data type serialization - 8 issues in corpus' 及 'REST v2 and gRPC divergent validation'。开发者已认知此为待修复缺陷，非 by-design 行为。\n\n【平凡排除】非文档行为（API 文档未声明 VarChar 可接受非字符串值）；非 by-design（无 BDP 条目豁免）；非用户误用（类型不匹配应返回 400）。"
+    }
+  ]
+}

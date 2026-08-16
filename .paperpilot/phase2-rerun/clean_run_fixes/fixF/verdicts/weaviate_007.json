@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "/schema",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// entities/vectorindex/common/config.go lines 95-110\nfunc OptionalStringFromMap(in map[string]interface{}, name string,\n\tsetFn func(v string),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tasString, ok := value.(string)\n\tif !ok {\n\t\treturn nil  // <-- BUG: silently ignores null values\n\t}\n\n\tsetFn(asString)\n\treturn nil\n}",
+      "files_examined": [
+        "entities/vectorindex/common/config.go",
+        "entities/vectorindex/hnsw/config.go",
+        "usecases/schema/parser.go",
+        "entities/schema/config/vector_index_config.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with {\"class\":\"TestClass\",\"vectorizer\":\"none\",\"vectorIndexConfig\":{\"distance\":null}}",
+          "observed": "API returns 200 with vectorIndexConfig.distance=\"cosine\" (default value), ignoring the null input",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H \"Content-Type: application/json\" -d '{\"class\":\"TestClass\",\"vectorizer\":\"none\",\"vectorIndexConfig\":{\"distance\":null}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API accepts POST /schema requests",
+            "Response contains vectorIndexConfig with distance field",
+            "Null input in JSON is valid syntax"
+          ],
+          "note": "No assumptions violated - raw request shows actual behavior"
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /schema",
+            "constraint: weaviate_type_schema_create_001 - class field must be CamelCase",
+            "OpenAPI spec: vectorIndexConfig is an object with distance property of type string"
+          ],
+          "note": "Contract specifies distance as string type, but does not explicitly state behavior for null values"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": [
+            "OptionalStringFromMap",
+            "ParseAndValidateConfig",
+            "distance.*null",
+            "vectorIndexConfig.*distance"
+          ],
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig() → OptionalStringFromMap(asMap, \"distance\", func) → null value fails type assertion → function returns nil without setting field → default value 'cosine' remains",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code shows that OptionalStringFromMap at line 103-106 does not handle null values. When value.(string) type assertion fails for null, the function returns nil without calling setFn, leaving the default value (cosine) unchanged. This is a true type coercion bug where null is coerced to the default string value."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v1/schema with distance=null, then GET /schema/TestClass to verify stored value",
+          "observed": "GET returns distance=\"cosine\", confirming that null was accepted and coerced to default value instead of being rejected",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestClass | grep -o '\"distance\":\"[^\"]*\"'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues - running in standard Docker container",
+            "Race conditions - single request, no concurrent operations",
+            "Request parameter typo - valid JSON syntax",
+            "API semantic misunderstanding - null should either be accepted as explicit null or rejected with 400/422"
+          ],
+          "surviving": "type_coercion_in_config_parser"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries - Accepting invalid parameter values on write endpoints (e.g. empty vectors, invalid types) with per-item success status",
+        "note": "Bug shape BS-004 matches: systematic parameter_validation defects affecting request_parsing functionality. The null value for a string field is invalid input that should be rejected (422) but is instead silently coerced to default."
+      },
+      "root_cause_if_fp": "",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "weaviate_type_schema_create_001 - class field must be CamelCase (validated). However, no explicit constraint for distance=null handling.",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not explicitly specify null handling for distance field, but type system implies null should not coerce to default string."
+        },
+        "physical": {
+          "objective_constraint": "distance field is defined as string type in UserConfig struct. Type system should reject non-string values like null.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical type constraint violated: null is not a valid string value, yet API accepts it and coerces to 'cosine'."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "No graceful handling of null values - code silently ignores null through failed type assertion, leaving default value. No explicit design for null handling found in source."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED (physical constraint violation + no graceful handling)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "weaviate_007 is CONFIRMED as a true type coercion defect. The OptionalStringFromMap function in entities/vectorindex/common/config.go (lines 103-106) silently ignores null values when the type assertion value.(string) fails. This causes null inputs for the distance field to be coerced to the default value 'cosine' instead of being rejected with a 422 error. The bug is in parameter validation at the API boundary (matching bug shape BS-004) where invalid input (null for string type) should be rejected but instead succeeds with silent coercion."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "type_coercion_in_config_parser": 1
+    }
+  },
+  "self_check": "PASSED"
+}

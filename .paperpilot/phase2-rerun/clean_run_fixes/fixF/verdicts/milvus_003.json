@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search {collectionName: 'test_milvus_003_repro', data: [[0.1,...]], limit: 3, searchParams: {ef: 0}}",
+          "observed": "HTTP 200 with successful search results (distance: 0, id: 0/1). API accepts ef=0 without error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_milvus_003_repro\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"ef\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_entities_search_002 (limit + offset < 16384) - NO ef constraint found in contract", "API templates: searchParams described as 'Search parameters including metricType, radius, range_filter' - no ef validation mentioned"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+          "grep_queries": ["searchParams", "ef", "handleSearch", "KeyValuePair"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/wrap_request.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/wrap_request.go line 383-397\ntype SearchRequest struct {\n\tBase               *commonpb.MsgBase        `protobuf:\\\"bytes,1,opt,name=base,proto3\\\" json:\\\"base,omitempty\\\"`\n\tDbName             string                   `protobuf:\\\"bytes,2,opt,name=db_name,json=dbName,proto3\\\" json:\\\"db_name,omitempty\\\"`\n\tCollectionName     string                   `protobuf:\\\"bytes,3,opt,name=collection_name,json=collectionName,proto3\\\" json:\\\"collection_name,omitempty\\\"`\n\tPartitionNames     []string                 `protobuf:\\\"bytes,4,rep,name=partition_names,json=partitionNames,proto3\\\" json:\\\"partition_names,omitempty\\\"`\n\t// ... other fields ...\n\tSearchParams       []*commonpb.KeyValuePair `protobuf:\\\"bytes,9,rep,name=search_params,json=searchParams,proto3\\\" json:\\\"search_params,omitempty\\\"`\n\t// ... no validation code present ...\n}\n\n// internal/distributed/proxy/httpserver/handler.go line 357-375\nfunc (h *Handlers) handleSearch(c *gin.Context) (interface{}, error) {\n\twrappedReq := SearchRequest{}\n\terr := shouldBind(c, &wrappedReq)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"%w: parse body failed: %v\\\", errBadRequest, err)\n\t}\n\treq := milvuspb.SearchRequest{\n\t\tBase:               wrappedReq.Base,\n\t\tDbName:             wrappedReq.DbName,\n\t\tCollectionName:     wrappedReq.CollectionName,\n\t\t// ... direct assignment, no validation ...\n\t\tSearchParams:       wrappedReq.SearchParams,  // <-- passed through WITHOUT any range check\n\t\t// ... no ef validation code ...\n\t}\n\t// ... rest of function ...\n}",
+          "call_chain_traced": "REST request -> SearchRequest struct (line 383-397) -> handleSearch (line 357) -> direct assignment to milvuspb.SearchRequest.SearchParams (line 371) -> no validation on ef parameter range",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 SearchRequest 结构体的 SearchParams 字段是 []*commonpb.KeyValuePair 类型,在 handleSearch 函数中直接透传给底层 gRPC 请求,整个调用链中没有任何对 'ef' 参数的范围检查代码。根据 HNSW 索引算法特性,ef (exploration factor) 必须 >= 1 才有意义,值为 0 或负数会导致未定义行为或性能异常,但 REST v2 API 接受这些非法值而返回 HTTP 200。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with ef=-5 (negative value)",
+          "observed": "HTTP 200 with successful search results - confirms API accepts ANY numeric ef value without validation",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_milvus_003_repro\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"ef\": -5}, \"outputFields\": [\"id\"]}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - observed on clean Milvus 2.6.10 Docker container",
+            "Concurrent/race issue - single-threaded sequential test",
+            "Cache/optimizer delay - immediate response observed",
+            "Request parameter typo - exact field name 'searchParams.ef' used",
+            "API semantics misunderstanding - HNSW ef parameter requires ef >= 1 for valid operation"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types; 26 historical issues in this pattern (bug_shapes.json shape_id: rest-v2-data-type-handling, confidence: 0.95). This is the same blindspot area: parameter validation gaps in REST v2 layer.",
+        "note": "命中 REST v2 数据类型处理盲点 - 开发者认知显示此区域有 26 个历史问题,属于高频盲点"
+      },
+      "root_cause_if_confirmed": "rest_v2_param_validation_gap",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Milvus REST v2 /entities/search endpoint accepts searchParams.ef=0 (and negative values) without validation, returning HTTP 200 with successful search results. Source code analysis confirms SearchParams are passed through directly as []*commonpb.KeyValuePair without any range validation. HNSW index ef (exploration factor) parameter has objective mathematical constraint ef ≥ 1 for meaningful search behavior. This violates physical constraints (Step 3.5 source grounding: no validation in handler.go line 357-375, wrap_request.go line 383-397). Contract (structured_contract.json) has no ef constraint, but source code reveals validation absence. Matches developer blindspot pattern 'rest-v2-data-type-handling' (26 historical issues). Reproducible on clean Milvus 2.6.10 with both ef=0 and ef=-5 returning HTTP 200."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_param_validation_gap": 1
+    }
+  }
+}

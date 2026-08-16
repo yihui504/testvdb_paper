@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with JSON field containing string value 'plain_string' instead of JSON object",
+          "observed": "Insert succeeded (HTTP 200, insertCount=1, insertIds=[100]) - REST v2 API accepts plain string for JSON field without validation",
+          "evidence_cmd": "Raw log shows REQ 5: POST /entities/insert with data=[{id:100, vector:[0.1,0.2,0.3,0.4], meta:'plain_string'}] → RESP 5: HTTP 200 with insertCount:1"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_json_001 - JSON dataType should accept only valid JSON (objects/arrays/strings/numbers/booleans), not plain non-JSON strings"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["DataType_JSON", "JSON.*case", "reallyData.*dataString"],
+          "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/wrap_request.go"],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// CRITICAL: No JSON validation - direct cast of string to []byte without json.Unmarshal() check\n// Contrast with VarChar handling line 745-758 which uses: err := json.Unmarshal([]byte(dataString), &arr)\n// JSON field lacks equivalent validation - allows ANY string to pass through",
+          "call_chain_traced": "REST v2 insert → checkAndSetData() → case DataType_JSON → direct []byte(dataString) cast (no validation)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: REST v2 insert path (utils.go:761) casts dataString directly to []byte for JSON type without validating it's valid JSON. Contrast with other scalar types which use json.Unmarshal() with error checking."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification: REST v2 accepts 'plain_string' (non-JSON) for JSON field without error - violates type contract",
+          "observed": "Raw evidence from output_milvus_040.log REQ 5-RESP 5 confirms: HTTP 200 success, insertCount=1. Invalid JSON string accepted as valid JSON field value."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue (container healthy)", "Concurrent operations (single sequential test)", "Request formatting error (valid JSON structure)"],
+          "surviving": "none - Type validation violation is the defect itself"
+        }
+      },
+      "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 760-761\n\t\t\t\tcase schemapb.DataType_JSON:\n\t\t\t\t\treallyData[fieldName] = []byte(dataString)\n\n// CRITICAL: No JSON validation - direct cast of string to []byte without json.Unmarshal() check\n// Contrast with VarChar handling line 745-758 which uses: err := json.Unmarshal([]byte(dataString), &arr)\n// JSON field lacks equivalent validation - allows ANY string to pass through",
+      "files_examined": ["internal/distributed/proxy/httpserver/utils.go", "internal/distributed/proxy/httpserver/wrap_request.go"],
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers, Array fields in raw protobuf format, AutoId not working for Int64 PK",
+        "note": "Hits known REST v2 blindspot: data type serialization not validated (26 instances in bug_shapes.json, confidence 0.95). This is a NEW variant: JSON field accepts non-JSON strings."
+      },
+      "root_cause_if_confirmed": "rest_v2_json_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 entities+insert endpoint accepts invalid JSON string ('plain_string') for JSON dataType field without validation. Source code (utils.go:761) shows direct []byte(dataString) cast with no json.Unmarshal error checking, unlike all other scalar types. Raw HTTP evidence confirms insertion succeeds (HTTP 200, insertCount=1). This violates the JSON type contract and matches the REST v2 data type handling blindspot pattern (26 historical issues, 95% confidence)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"rest_v2_json_validation_missing": 1}
+  }
+}

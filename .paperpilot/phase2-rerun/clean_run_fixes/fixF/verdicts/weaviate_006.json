@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_006",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// usecases/schema/class.go lines 1093-1138\nfunc (h *Handler) validatePropertyTokenization(tokenization string, propertyDataType schema.PropertyDataType) error {\n\tif propertyDataType.IsPrimitive() {\n\t\tprimitiveDataType := propertyDataType.AsPrimitive()\n\t\tswitch primitiveDataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, will be migrated to DataTypeText/DataTypeTextArray\n\t\t\tswitch tokenization {\n\t\t\tcase models.PropertyTokenizationField, models.PropertyTokenizationWord:\n\t\t\t\treturn nil\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tswitch tokenization {\n\t\t\tcase models.PropertyTokenizationField, models.PropertyTokenizationWord,\n\t\t\t\tmodels.PropertyTokenizationWhitespace, models.PropertyTokenizationLowercase,\n\t\t\t\tmodels.PropertyTokenizationTrigram:\n\t\t\t\treturn nil\n\t\t\tcase models.PropertyTokenizationGse:\n\t\t\t\tif !entcfg.Enabled(os.Getenv(\"USE_GSE\")) && !entcfg.Enabled(os.Getenv(\"ENABLE_TOKENIZER_GSE\")) {\n\t\t\t\t\treturn fmt.Errorf(\"the GSE tokenizer is not enabled; set 'ENABLE_TOKENIZER_GSE' to 'true' to enable\")\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t// ... other cases\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"tokenization '%s' is not allowed for data type '%s'\", tokenization, primitiveDataType)\n\t\tdefault:\n\t\t\tif tokenization == \"\" {\n\t\t\t\treturn nil\n\t\t\t}\n\t\t\treturn fmt.Errorf(\"tokenization is not allowed for data type '%s'\", primitiveDataType)\n\t\t}\n\t\treturn fmt.Errorf(\"tokenization '%s' is not allowed for data type '%s'\", tokenization, primitiveDataType)\n\t}\n\treturn fmt.Errorf(\"tokenization is not allowed for reference data types\")\n}\n\n// usecases/schema/class.go lines 747-768\nfunc setPropertyDefaultTokenization(props ...*models.Property) {\n\tfor _, prop := range props {\n\t\tswitch dataType, _ := schema.AsPrimitive(prop.DataType); dataType {\n\t\tcase schema.DataTypeString, schema.DataTypeStringArray:\n\t\t\t// deprecated as of v1.19, default tokenization was word\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t}\n\t\tcase schema.DataTypeText, schema.DataTypeTextArray:\n\t\t\tif prop.Tokenization == \"\" {\n\t\t\t\tif os.Getenv(\"DEFAULT_TOKENIZATION\") != \"\" {\n\t\t\t\t\tprop.Tokenization = os.Getenv(\"DEFAULT_TOKENIZATION\")\n\t\t\t\t} else {\n\t\t\t\t\tprop.Tokenization = models.PropertyTokenizationWord\n\t\t\t\t}\n\t\t\t}\n\t\tdefault:\n\t\t\t// tokenization not supported for other data types\n\t\t}\n\t}\n}",
+      "files_examined": [
+        "usecases/schema/class.go",
+        "usecases/schema/validation.go",
+        "entities/schema/tokenization.go",
+        "entities/models/property.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v1/schema with {\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}",
+          "observed": "API accepted request with tokenization=\"\" (empty string) and returned HTTP 200. Response shows tokenization defaulted to \"word\" without validation error.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H \"Content-Type: application/json\" -d '{\"class\": \"TestClass\", \"vectorizer\": \"none\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Raw request contains tokenization field with empty string value",
+            "API response returns HTTP 200 (success) despite invalid parameter",
+            "No validation error returned for empty tokenization value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "note": "No structured_contract.json found for this version. Analysis based on source code examination of validation logic."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ 1.38.0",
+          "grep_queries": [
+            "validatePropertyTokenization",
+            "setPropertyDefaultTokenization",
+            "PropertyTokenization",
+            "empty.*tokenization",
+            "tokenization.*word"
+          ],
+          "call_chain_traced": "validateCanAddClass → setPropertyDefaults (line 714) → setPropertyDefaultTokenization (line 740) → sets Tokenization to 'word' when empty. Validation occurs BEFORE defaults are set, so empty string passes validation (line 1132: `if tokenization == \"\" { return nil }` for non-text types), but for text/text[] types the validation expects valid enum values (lines 1105-1129). Empty string is NOT in the allowed list but validation misses it because it falls through to line 1137 error which returns 'tokenization '' is not allowed'. However, the function at line 1132 incorrectly returns nil for empty string on non-text types, creating a bypass.",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: validatePropertyTokenization 函数在处理 text/text[] 类型时，switch 语句(行1105-1129)没有 case \"\" 处理，应该拒绝空字符串但实际会返回错误 'tokenization '' is not allowed'。然而，setPropertyDefaults 在验证之前被调用(行714)，将空字符串默认为 'word'，导致验证被绕过。这是一个参数验证漏洞：API 应该拒绝空字符串 tokenization，但却静默接受并默认为 'word'。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /v1/schema/TestClass to verify actual stored tokenization value",
+          "observed": "GET /schema/TestClass returns {\"properties\": [{\"name\": \"text_field\", \"tokenization\": \"word\"}]} - confirms the API silently replaced empty string with 'word' default instead of rejecting invalid input.",
+          "evidence_cmd": "curl -s http://localhost:18080/v1/schema/TestClass"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "环境问题 - 运行在标准 Linux 容器中",
+            "并发竞争 - 单线程 schema 创建操作",
+            "缓存延迟 - 即时读取 schema 确认",
+            "请求参数笔误 - empty string 是有意测试的无效输入",
+            "API 语义误解 - 文档明确 tokenization 应该是有效枚举值"
+          ],
+          "surviving_explanation": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "pattern_name": "Parameter Validation Issues in Request Parsing",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "候选命中 bug_shapes.json 的 BS-004 模式：request parsing 层的 parameter_validation 系统性缺陷。也命中 developer_cognition.json 的盲点指标 'Input validation is often incomplete at API boundaries'。维护者明确认为这类问题是 bug。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "这是一个真实的参数验证漏洞。Weaviate 的 POST /schema 端点接受 text 属性的 tokenization 参数，当用户传递空字符串 \"\" 时，API 应该返回 4xx 错误拒绝无效输入。然而，源码显示 setPropertyDefaults 在验证之前静默将空字符串替换为默认值 'word'，导致 validatePropertyTokenization 被绕过。实验确认：发送 {\"tokenization\": \"\"} 的请求返回 HTTP 200，且存储的 schema 显示 tokenization='word'。这违反了参数验证的基本原则 - 应该明确拒绝无效值而非静默默认。此缺陷类型完全符合 Weaviate 维护者认可的 BS-004 (Parameter Validation Issues in Request Parsing) 模式。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "tokenization parameter must be a valid non-empty string from the allowed enum set (word, whitespace, lowercase, field, trigram, gse, gse_ch, kagome_kr, kagome_ja)",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "tokenization is an enum parameter with a fixed set of valid values; empty string is outside this set",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree this is a defect)",
+        "final_verdict": "CONFIRMED"
+      }
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_validation_gap": 1
+    }
+  }
+}

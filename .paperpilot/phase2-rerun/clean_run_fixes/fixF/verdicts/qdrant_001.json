@@ -1,0 +1,115 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test/points with empty vector array, with and without wait=true parameter",
+          "observed": "With wait=true: HTTP 400 error 'Vector dimension error: expected dim: 4, got 0'. Without wait: HTTP 200 with acknowledged status, but point not actually inserted (points_count remains 0)",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test/points?wait=true' -d '{\"points\": [{\"id\": 1, \"vector\": []}]}' && curl -X PUT 'http://localhost:6333/collections/test/points' -d '{\"points\": [{\"id\": 2, \"vector\": []}]}' && curl -X GET 'http://localhost:6333/collections/test'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "validated_assumptions": [
+            "Collection exists with vector size 4 configuration",
+            "Empty vector array is invalid input (dimension 0 vs expected 4)",
+            "wait parameter controls synchronous vs asynchronous operation mode",
+            "HTTP 200 acknowledged response should indicate successful operation"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: PUT /collections/{collection_name}points - upsert points with validation",
+            "parameter: wait (boolean) - controls synchronous operation execution"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ 1.12.1",
+          "grep_queries": [
+            "Vector dimension error",
+            "update_with_consistency",
+            "wait.*Acknowledged",
+            "validate.*PointInsertOperations"
+          ],
+          "files_examined": [
+            "lib/segment/src/common/operation_error.rs",
+            "src/actix/api/update_api.rs",
+            "src/common/points.rs",
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/collection/src/shards/replica_set/update.rs",
+            "lib/collection/src/operations/types.rs"
+          ],
+          "source_excerpt": "// lib/segment/src/common/operation_error.rs line 20-23\n#[error(\"Vector dimension error: expected dim: {expected_dim}, got {received_dim}\")]\nWrongVectorDimension {\n    expected_dim: usize,\n    received_dim: usize,\n}\n\n// lib/collection/src/operations/point_ops.rs line 196-202\nimpl Validate for PointInsertOperations {\n    fn validate(&self) -> Result<(), validator::ValidationErrors> {\n        match self {\n            PointInsertOperations::PointsBatch(batch) => batch.validate(),\n            PointInsertOperations::PointsList(list) => list.validate(),\n        }\n    }\n}\n\n// lib/collection/src/collection/point_ops.rs line 140\noperation.validate()?;\n\n// src/actix/api/update_api.rs line 49\nlet wait = params.wait.unwrap_or(false);\n\n// lib/collection/src/shards/replica_set/update.rs line 46-48\nif let Some(local_shard) = local.deref() {\n    match self.peer_state(&self.this_peer_id()) {\n        Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing | ReplicaState::Resharding) =>\n            Ok(Some(local_shard.get().update(operation, wait).await?)),",
+          "call_chain_traced": "HTTP request → update_api.rs::upsert_points (line 49 extracts wait param) → do_upsert_points → Collection::update_from_client (line 140 validates operation) → ShardReplicaSet::update_with_consistency → update_local → Shard::update with wait parameter",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wait_dependent",
+          "note": "源码接地发现: validation确实存在于operation.validate() (point_ops.rs:140),但当wait=false时,update_local在replica_set/update.rs:46直接传递wait参数给底层shard.update(),且返回Acknowledged状态而不等待实际插入完成。这解释了为什么wait=false时返回200但未插入数据。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify point count and collection state after both operations",
+          "observed": "GET /collections/test shows points_count: 0 after both operations, confirming that the wait=false request did not actually insert the point despite returning HTTP 200 acknowledged status"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container problem)",
+            "Concurrent operation/race condition",
+            "Request parameter typo (both requests used exact same payload)",
+            "API semantic misunderstanding (empty vector is clearly invalid)"
+          ],
+          "surviving": "validation_skipped_in_async_mode"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "PUT /collections/{name}/points should validate vector dimensions and return appropriate error for invalid input regardless of wait parameter",
+          "source_implements_check": true,
+          "api_observed_value": "wait=true returns 400 with error, wait=false returns 200 acknowledged but no insertion",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "Vector dimension must match collection configuration (size=4), empty array has dimension 0",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree)",
+        "final_verdict": "CONFIRMED"
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中by_design_patterns;这属于validation consistency issue:同一非法输入在不同wait模式下返回不同结果,违反了API一致性原则"
+      },
+      "root_cause_if_true": "validation_skipped_in_async_mode",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Step 1干净复现成功:wait=true时返回400错误(wait=false时返回200 acknowledged但未插入数据)。Step 3.5源码接地确认validation逻辑存在但受wait参数控制:operation.validate()在Collection::update_from_client中调用(140行),但update_local传递wait参数给底层shard.update(),且当wait=false时返回Acknowledged状态而不等待实际插入完成(replica_set/update.rs:46-48)。Step 4反向证伪成功:collection points_count保持0确认wait=false请求未实际插入点。Step 6三视角聚合:契约视角(API应该对非法输入一致返回错误,无论wait参数),物理约束(向量维度0违反size=4要求),行为视角(API未优雅处理,直接200 acknowledged但实际失败) - 所有视角都支持CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_skipped_in_async_mode": 1
+    }
+  }
+}

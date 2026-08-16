@@ -1,0 +1,114 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go:2192-2242\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\t// ... parameter extraction logic ...\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\treturn searchParams, nil\n}\n\n// CRITICAL FINDING: The generateSearchParams function performs NO validation on parameter values.\n// It converts all values to strings using fmt.Sprintf(\"%v\", value) and passes them through.\n// No checks for: ef >= 1, nprobe >= 1, ef <= nlist, nprobe <= nlist, or any other range constraints.\n// Parameters are serialized to KeyValuePair without any bounds checking.",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/task_search.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/proxy/search_util.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams containing invalid values (ef=-1, ef=0, nprobe=0)",
+          "observed": "All three requests returned HTTP 200 with successful search results: (1) ef=-1: {\"code\":0,\"data\":[{\"distance\":0,\"id\":1}]}, (2) ef=0: {\"code\":0,\"data\":[{\"distance\":0,\"id\":1}]}, (3) nprobe=0: {\"code\":0,\"data\":[{\"distance\":0,\"id\":0},{\"distance\":0,\"id\":1}]}",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_hnsw_ef\",\"data\":[[0.1,0.2,0.3,0.4]],\"limit\":5,\"searchParams\":{\"ef\":-1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "API should validate search parameter ranges per index type requirements",
+            "ef parameter for HNSW index should be >= 1 (positive integer)",
+            "nprobe parameter for IVF index should be >= 1 (positive integer)",
+            "Invalid parameter values should return HTTP 400 error with descriptive message"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_range_indexes_create_003: efConstruction >= 1 (implicitly requires ef >= 1)",
+            "milvus_range_indexes_create_001: nlist >= 1 (implicitly requires nprobe >= 1 for valid search)",
+            "Physical constraint: ef and nprobe represent iteration counts, cannot be zero or negative"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": [
+            "generateSearchParams",
+            "ef",
+            "nprobe",
+            "searchParams",
+            "validateSearchParam"
+          ],
+          "call_chain_traced": "REST v2 Handler (handler_v2.go:1528) → generateSearchParams (utils.go:2192) → no validation → pass-through to SearchRequest.SearchParams → proxy.Search → querynodes",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code inspection confirms REST v2 API has no search parameter validation. The generateSearchParams function at line 2192 in utils.go directly converts all searchParams to KeyValuePair without any range or type validation. Parameters like ef and nprobe are passed as-is to the search backend."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Attempt to search with valid parameter values (ef=10, nprobe=10) to confirm API works correctly",
+          "observed": "Valid parameters also return HTTP 200 with results, confirming the API accepts both valid AND invalid values without discrimination. This confirms it's not returning correct results despite bad params - it's genuinely not validating them at all."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise - tests run in clean Docker container",
+            "Concurrency race - single-threaded sequential requests",
+            "Request parameter typos - verified exact parameter names 'ef' and 'nprobe'",
+            "API semantic misunderstanding - HNSW ef and IVF nprobe are well-documented parameters that must be >= 1",
+            "Approximate by-design behavior - invalid params should be rejected, not silently accepted"
+          ],
+          "surviving": "true_defect"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - Returns wrong values for large integers; Array fields in raw protobuf format; AutoId not working for Int64 PK",
+        "note": "This defect aligns with the blindspot pattern 'REST_v2_data_type_handling' (bug_shape_id: rest-v2-data-type-handling, confidence: 0.95). The REST v2 API layer has systematic issues with parameter validation and data type handling. Search parameters are passed through without validation, which is consistent with the broader REST v2 validation gaps affecting 26 historical issues."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "ef >= 1 and nprobe >= 1 are implicit physical constraints derived from parameter semantics (ef = number of candidates to evaluate, nprobe = number of IVF partitions to probe). While structured_contract.json doesn't explicitly state 'ef >= 1', the constraint milvus_range_indexes_create_003 (efConstruction >= 1) and milvus_range_indexes_create_001 (nlist >= 1) imply that runtime search parameters should follow similar positive integer constraints.",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract perspective: Physical constraints require ef >= 1 and nprobe >= 1. Source code confirms no validation exists. API accepts invalid values. Violation confirmed."
+        },
+        "physical": {
+          "objective_constraint": "ef and nprobe represent counts/iterations in search algorithms: (1) HNSW ef = number of candidate vertices to evaluate during search, must be >= 1; (2) IVF nprobe = number of inverted list partitions to probe, must be >= 1. Zero or negative values are semantically meaningless and violate physical algorithm constraints.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical perspective: ef=-1, ef=0, and nprobe=0 violate fundamental algorithm constraints. API accepts these impossible values with HTTP 200."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "Behavioral perspective: No graceful degradation or fallback. API doesn't reject invalid params, doesn't apply defaults, doesn't sanitize values. It passes through raw invalid values to downstream components."
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED, verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives agree on defect)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_confirmed": "rest_v2_validation_missing",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Raw evidence shows REST v2 /entities/search accepts semantically invalid search parameters (ef=-1, ef=0, nprobe=0) and returns HTTP 200 with search results. Source code inspection (handler_v2.go:1528, utils.go:2192-2242) confirms the generateSearchParams function performs zero validation - it converts all values to strings via fmt.Sprintf and passes them through as KeyValuePair. No checks for ef >= 1, nprobe >= 1, or any other range constraints exist. This violates physical algorithm constraints (ef and nprobe represent iteration counts that must be positive integers) and represents a Type1_IllegalSuccess defect. The defect aligns with the documented blindspot pattern 'REST_v2_data_type_handling' affecting 26 historical issues in the corpus. Confidence is high (0.95) given clean reproduction on three distinct parameter types and direct source code confirmation of missing validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_validation_missing": 1
+    }
+  }
+}

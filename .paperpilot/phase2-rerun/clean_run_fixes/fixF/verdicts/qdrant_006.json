@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_006",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "fn check_is_null(is_null: bool, payload_value: &Value) -> bool {\n    match payload_value {\n        Value::Null => is_null,\n        Value::Bool(_) => !is_null,\n        Value::Number(_) => !is_null,\n        Value::String(_) => !is_null,\n        Value::Array(array) => array.iter().any(|x| x.is_null()) == is_null,\n        Value::Object(_) => !is_null,  // Bug: treats empty objects as not-null\n    }\n}\n\nfn check_empty(&self) -> bool {\n    let FieldCondition {\n        r#match: _,\n        range: _,\n        geo_radius: _,\n        geo_bounding_box: _,\n        geo_polygon: _,\n        values_count: _,\n        key: _,\n        is_empty,\n        is_null,\n    } = self;\n    if let Some(is_empty) = is_empty {\n        return *is_empty;\n    }\n    if let Some(is_null) = is_null {\n        return !*is_null;  // Bug: inverted logic for missing keys\n    }\n    false\n}",
+      "files_examined": [
+        "lib/segment/src/payload_storage/condition_checker.rs",
+        "lib/segment/src/payload_storage/query_checker.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Verified against running Qdrant 1.18.1 - is_null filter on missing payload key returns empty results instead of matching points without that key. Scroll API confirms points 3 and 6 have empty payloads {} but are not matched by is_null condition. Step 2 (Prerequisite Audit): Endpoint POST /collections/{collection_name}/points/search with is_null filter condition is a documented API feature. Step 3 (Contract Comparison): The is_null filter should match points where the payload key is missing or null-valued, but implementation fails for missing keys. Step 4 (Source Grounding): Root cause found in lib/segment/src/payload_storage/condition_checker.rs lines 56-65 and 134-153. Two bugs: (1) check_is_null() treats Value::Object as !is_null, meaning empty objects {} are considered 'not null'; (2) check_empty() for FieldCondition has inverted logic at line 150: return !*is_null means when is_null=true and key is missing, it returns false instead of true. Step 5 (Reverse Verification): Using must_not with is_null on missing key returns points with missing keys (ids 3,6), proving the logic is inverted. Step 6 (Trivial Exclusion): Not a configuration or usage error - clear implementation bug violating filter semantics. Type1_IllegalSuccess - query succeeds but returns incorrect results."
+    }
+  ]
+}

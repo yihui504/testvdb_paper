@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "File: internal/proxy/task.go, Lines 2243-2256\n\n// check index\nindexResponse, err := t.mixCoord.DescribeIndex(ctx, &indexpb.DescribeIndexRequest{\n\tCollectionID: collID,\n\tIndexName:    \"\",\n})\nif err == nil {\n\terr = merr.Error(indexResponse.GetStatus())\n}\nif err != nil {\n\tif errors.Is(err, merr.ErrIndexNotFound) {\n\t\terr = merr.WrapErrIndexNotFoundForCollection(t.GetCollectionName())\n\t}\n\treturn err\n}\n\nFile: internal/proxy/task.go, Lines 2275-2279\n\nif len(unindexedVecFields) != 0 {\n\terrMsg := fmt.Sprintf(\"there is no vector index on field: %v, please create index firstly\", unindexedVecFields)\n\tlog.Debug(errMsg)\n\treturn errors.New(errMsg)\n}\n\nThe code checks for index existence and properly returns ErrIndexNotFound when no index exists. However, the create_collection API implicitly creates a default index on vector fields, causing the 'creating multiple indexes on same field is not supported' error when users attempt to create their first explicit index.",
+      "files_examined": [
+        "internal/proxy/task.go",
+        "internal/proxy/task_index.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/proxy/impl.go"
+      ],
+      "rationale": "DEFECT CONFIRMED as Type2_PoorDiagnostics (revised from original 'behavior' type and 'High' severity to 'Medium' severity). Root cause: Milvus automatically creates a default index on vector fields during collection creation via the high-level API (REST v2 and pymilvus create_collection). When users attempt to create an explicit index, the system fails with the misleading error 'creating multiple indexes on same field is not supported'. This error is factually incorrect - the user is creating their FIRST explicit index, not 'multiple' indexes. The auto-created index is implicit behavior not documented in the REST API contract. Clean reproduction confirmed: (1) create_collection auto-creates index on 'vector' field, (2) explicit create_index fails with 'multiple indexes' error, (3) load_collection succeeds due to auto-index, (4) search succeeds using auto-index. Low-level API test confirmed load properly fails with 'index not found' when no index exists, validating the state constraint is enforced when truly applicable. Source code analysis (task.go:2243-2256) shows proper index checking logic, but the error message at index creation doesn't distinguish between explicit user-created indexes and auto-created indexes. The defect is in diagnostic quality: the error message should say 'Cannot create explicit index on field that already has an auto-created index. Use drop_index first to remove the auto-index' to guide users toward the solution. No data corruption or loss occurs - this is purely a UX/diagnostics issue affecting operational friction."
+    }
+  ]
+}

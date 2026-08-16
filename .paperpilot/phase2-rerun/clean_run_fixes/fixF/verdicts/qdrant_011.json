@@ -1,0 +1,17 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_011",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "source_excerpt": "lib/segment/src/common/utils.rs:98-111\nimpl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {\n    pub fn deserialize<D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>\n    where\n        D: serde::Deserializer<'de>,\n    {\n        use serde_untagged::UntaggedEnumVisitor;\n\n        UntaggedEnumVisitor::new()\n            .unit(|| Ok(None))\n            .seq(|x| x.deserialize().map(Some))\n            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))\n            .deserialize(deserializer)\n    }\n}\n\n// Test confirms null is accepted:\nlet res = serde_json::from_str::<Test>(r#\"{\"data\": null}\"#).unwrap();\nassert!(res.data.is_none());",
+      "files_examined": [
+        "lib/segment/src/common/utils.rs",
+        "lib/segment/src/types.rs",
+        "src/actix/api/query_api.rs"
+      ],
+      "rationale": "六步双盲审查结果：\n\n第1步（干净复现）：成功复现，POST /collections/{c}/points/query with filter:{should:null} 返回 200+所有点（同无filter）。\n\n第2步（前提审计）：defect_type=param_validation 符合 stage2 标签。目标DB qdrant/1.18.2 容器运行正常。\n\n第3步（契约对照）：contract 定义 should: Option<Vec<Condition>>，按严格类型理论应拒绝 null 值。\n\n第4步（证伪）：实际测试发现 filter:{should:'INVALID_STRING'} 返回 4xx 验证错误，证明反序列化存在但 null 特殊处理。\n\n第5步（平凡排除）：developer_cognition.json 明确列入 blindspot_indicators：'Lenient filter parsing: null / single-object / array forms are all accepted by design (maintainers: This is fine and expected... it would be a breaking change)'。这是官方认可的 by-design 行为，非缺陷。\n\n第6步（三视角聚合）：\n- 视角1（契约）: 技术违规（应拒绝4xx）\n- 视角2（意图）: 开发者明确声明 by-design\n- 视角3（影响）: null被当作None，影响低（同无filter）\n\n源码接地关键证据：lib/segment/src/common/utils.rs:106 .unit(|| Ok(None)) 证明null值被显式接受并转为None，测试用例亦确认。根据开发者立场和源码实现，这是设计的宽松解析，非缺陷。"
+    }
+  ]
+}

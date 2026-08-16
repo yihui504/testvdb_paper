@@ -1,0 +1,16 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "source_excerpt": "Line 691-693 in internal/distributed/proxy/httpserver/utils.go:\n} else {\n    return nil, nil, merr.WrapErrParameterInvalidMsg(\"has pass more field without dynamic schema, please check it\")\n}\n\nLine 2382-2384 in internal/proxy/util.go (gRPC path equivalent):\nif !schema.EnableDynamicField {\n    return fmt.Errorf(\"without dynamic schema enabled, the field name cannot be set to %s\", common.MetaFieldName)\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/utils.go",
+        "internal/proxy/util.go"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): REST v2 /entities/upsert and /entities/insert both correctly reject undeclared field 'color' when enableDynamicField=false (error 1804: 'has pass more field without dynamic schema, please check it'). Reverse test confirms insert succeeds with enableDynamicField=true (returns insertCount=1, ID allocated). Upsert fails even with dynamic field due to autoID=true semantic limitation (upsert requires PK for row matching), not a validation bug. Step 2 (Premise Audit): Reported premise expects undeclared fields to be accepted on non-dynamic schema—no documentation or contract supports this; rejection is standard validation. Step 3 (Contract Check): No formal structured_contract.json available; developer_cognition indicates REST/gRPC cross-channel inconsistency is treated as defect, but本案 shows consistent rejection across both paths (gRPC util.go:2383 has same EnableDynamicField check). Step 4 (Source Grounding): Line 692 in utils.go explicitly checks collSchema.EnableDynamicField and returns error if false. This is intentional validation, not a bug. Step 5 (Reverse Falsification): Testing with enableDynamicField=true yields insert success for undeclared fields (proof that rejection is conditional, not a bug). Upsert failure under autoID is expected (upsert requires PK). Step 6 (Triangulation): (A) Reproduction confirms correct validation behavior. (B) Source code shows intentional check, both REST and gRPC paths consistent. (C) No developer_cognition blindspot or bug_shape pattern supports reporting this as a defect—相反，错误消息明确指引解决方案（启用 dynamic field）。Bug shape 'rest-v2-data-type-handling' describes 'Type1_IllegalSuccess' (serialization errors accepting invalid values), but本案 is 'correct rejection', not illegal success. Aggregated verdict: FALSE_POSITIVE (correct schema validation, not a bug)."
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_002",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "File: C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go\nLines 24-68:\n\nconst (\n\t// Set these defaults if the user leaves them blank\n\tDefaultCleanupIntervalSeconds = 5 * 60\n\tDefaultMaxConnections         = 32\n\tDefaultEFConstruction         = 128\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\tDefaultDynamicEFMin           = 100\n\tDefaultDynamicEFMax           = 500\n\tDefaultDynamicEFFactor        = 8\n\tDefaultSkip                   = false\n\tDefaultFlatSearchCutoff       = 40000\n\n\tFilterStrategySweeping = \"sweeping\"\n\tFilterStrategyAcorn    = \"acorn\"\n\n\tDefaultFilterStrategy = FilterStrategyAcorn\n\n\t// Fail validation if those criteria are not met\n\tMinmumMaxConnections  = 4\n\tMaximumMaxConnections = 2047\n\tMinmumEFConstruction  = 4\n)\n\n// UserConfig bundles all values settable by a user in the per-class settings\ntype UserConfig struct {\n\tSkip                     bool              `json:\"skip\"`\n\tCleanupIntervalSeconds   int               `json:\"cleanupIntervalSeconds\"`\n\tMaxConnections           int               `json:\"maxConnections\"`\n\tEFConstruction           int               `json:\"efConstruction\"`\n\tEF                       int               `json:\"ef\"`\n\tDynamicEFMin             int               `json:\"dynamicEfMin\"`\n\tDynamicEFMax             int               `json:\"dynamicEfMax\"`\n\tDynamicEFFactor          int               `json:\"dynamicEfFactor\"`\n\tVectorCacheMaxObjects    int               `json:\"vectorCacheMaxObjects\"`\n\tFlatSearchCutoff         int               `json:\"flatSearchCutoff\"`\n\t...\n}\n\nFile: C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go\nLines 195-205:\n\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}\n\nFile: C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go\nLines 260-323 (validate function):\n\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.MaxConnections > MaximumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be less than %d\",\n\t\t\tMaximumMaxConnections+1,\n\t\t))\n\t}\n\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"efConstruction must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\n\tif u.FilterStrategy != FilterStrategySweeping && u.FilterStrategy != FilterStrategyAcorn {\n\t\terrMsgs = append(errMsgs, \"filterStrategy must be either 'sweeping' or 'acorn'\")\n\t}\n\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\",\n\t\t\tstrings.Join(errMsgs, \", \"))\n\t}\n\t...\n\treturn nil\n}",
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go",
+        "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/search.go"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Successfully reproduced - POST /schema with vectorIndexConfig.flatSearchCutoff=-100 returned HTTP 200 and persisted the negative value in the response.\n\nStep 2 (Assumption Audit): The defect conclusion relies on the premise that flatSearchCutoff should reject negative values. This is a reasonable assumption as flatSearchCutoff represents a threshold for switching from flat to HNSW search, and negative values make no semantic sense.\n\nStep 3 (Contract Grounding): structured_contract.json has NO constraint for flatSearchCutoff validation - no assertion about min/max values or non-negative requirement.\n\nStep 3.5 (Source Grounding - Local Clone): Grep across entire source tree confirmed NO validation for flatSearchCutoff. Found in config.go line 58: FlatSearchCutoff is defined as int with default 40000. Line 201-205 shows it accepts any int value via OptionalIntFromMap with no range check. The validate() function (lines 260-323) validates maxConnections (min 4, max 2047) and efConstruction (min 4) but does NOT validate flatSearchCutoff. This is a genuine validation gap.\n\nStep 4 (Falsification): Cannot falsify - the negative value is accepted and persisted without error.\n\nStep 5 (Mundane Explanations): Not environment, not concurrency, not parameter typo. This is a missing validation check.\n\nStep 6 (Three-View Perspective):\n- A (Contract): NEUTRAL - no contract constraint exists\n- B (Physical): CONFIRMED - flatSearchCutoff represents a count threshold, must be >= 0 (mathematically meaningless to be negative)\n- C (Behavioral): CONFIRMED - negative value accepted without graceful handling or error\n\nPERSPECTIVE_ANALYSIS: Physical constraint (count cannot be negative) + absence of source validation = CONFIRMED. Developer cognition shows this matches blindspot_indicator 'Input validation is often incomplete at API boundaries' and 'Configuration validation is inconsistent across parameters'.",
+      "source_grounding": {
+        "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+        "grep_queries": [
+          "flatSearchCutoff",
+          "validate",
+          "OptionalIntFromMap"
+        ],
+        "files_examined": [
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/entities/vectorindex/hnsw/config.go",
+          "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/adapters/repos/db/vector/hnsw/search.go"
+        ],
+        "source_excerpt": "const (\n\tDefaultFlatSearchCutoff       = 40000\n\t...\n\tMinmumMaxConnections  = 4\n\tMaximumMaxConnections = 2047\n\tMinmumEFConstruction  = 4\n)\n\ntype UserConfig struct {\n\t...\n\tFlatSearchCutoff         int               `json:\"flatSearchCutoff\"`\n\t...\n}\n\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"flatSearchCutoff\", func(v int) {\n\tuc.FlatSearchCutoff = v\n}); err != nil {\n\treturn uc, err\n}\n\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(...))\n\t}\n\tif u.EFConstruction < MinmumEFConstruction {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(...))\n\t}\n\t// NO validation for FlatSearchCutoff\n\tif len(errMsgs) > 0 {\n\t\treturn fmt.Errorf(\"invalid hnsw config: %s\", ...)\n\t}\n\treturn nil\n}",
+        "call_chain_traced": "ParseAndValidateConfig -> OptionalIntFromMap(flatSearchCutoff) -> validate() -> NO CHECK",
+        "source_verified_by_reviewer": true,
+        "verification_outcome": "validation_absent"
+      },
+      "cognition_match": {
+        "pattern_id": "BI-001",
+        "matched_field": "blindspot_indicators",
+        "quote": "Input validation is often incomplete at API boundaries"
+      },
+      "assumption_audit": {
+        "violated_assumptions": [],
+        "satisfied_assumptions": [
+          "flatSearchCutoff should reject negative values (reasonable: count threshold cannot be negative)"
+        ]
+      },
+      "contract_analysis": {
+        "constraint_id": "none",
+        "assertion_text_quoted": "no constraint found",
+        "api_observed_value": "flatSearchCutoff=-100 accepted with HTTP 200",
+        "api_violates_assertion": false,
+        "verdict": "NEUTRAL"
+      },
+      "physical_analysis": {
+        "objective_constraint": "flatSearchCutoff is a count threshold (allowList.Len() < flatSearchCutoff), must be >= 0",
+        "api_accepts_violation": true,
+        "verdict": "CONFIRMED"
+      },
+      "behavioral_analysis": {
+        "api_graceful": false,
+        "by_design_in_source": false,
+        "verdict": "CONFIRMED"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "none",
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "flatSearchCutoff >= 0 (count threshold)",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED → final=CONFIRMED (physical violation)",
+        "final_verdict": "CONFIRMED"
+      },
+      "reproduction_evidence": {
+        "request": "POST /schema with {class: 'TestDevReview', vectorIndexConfig: {flatSearchCutoff: -100}}",
+        "response_status": 200,
+        "response_body": "{\"flatSearchCutoff\": -100}",
+        "reproduced": true
+      }
+    }
+  ]
+}

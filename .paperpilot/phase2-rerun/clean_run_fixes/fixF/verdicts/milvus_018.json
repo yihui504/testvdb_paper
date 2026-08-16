@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_018",
+      "endpoint": "collections+rename",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/rename {\"collectionName\": \"test_rename_src\", \"newCollectionName\": \"test_rename_dst\", \"dbName\": \"default\"}",
+          "observed": "HTTP 200 with {\"code\":65535,\"message\":\"duplicated new collection name default:test_rename_dst with other collection name or alias\"}. Despite test_rename_dst not existing (proven by subsequent successful creation in REQ 6), rename fails with duplicate name error.",
+          "evidence_cmd": "Raw log lines REQ 5-6 from output_milvus_018.log show: REQ 5 returns code 65535; REQ 6 successfully creates test_rename_dst, proving the name was available."
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Rename should succeed when the target name does not exist - VIOLATED: target name available but rename rejected",
+            "Error responses should return appropriate HTTP status codes (4xx for client errors) - VIOLATED: HTTP 200 with error code 65535 instead of 400"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_collections_rename_001 - assertion: 'source collection exists AND new collection name does NOT exist'",
+            "endpoint_registry quote: '200 on success; 400 if new name already exists; 404 if source not found'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["duplicated new collection name", "RenameCollection", "HTTPAbortReturn"],
+          "files_examined": [
+            "internal/rootcoord/meta_table.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "File: internal/rootcoord/meta_table.go, lines 1126-1135\n\n// check new collection already exists\ncoll, err := mt.getCollectionByNameInternal(ctx, newDBName, newName, typeutil.MaxTimestamp)\nif coll != nil {\n\tlog.Warn(\"duplicated new collection name, already taken by another collection or alias.\")\n\treturn fmt.Errorf(\"duplicated new collection name %s:%s with other collection name or alias\", newDBName, newName)\n}\nif err != nil && !errors.Is(err, merr.ErrCollectionNotFound) {\n\tlog.Warn(\"fail to check if new collection name is already taken\", zap.Error(err))\n\treturn err\n}\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, lines 789-795\n\nresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/RenameCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\treturn h.proxy.RenameCollection(reqCtx, req.(*milvuspb.RenameCollectionRequest))\n})\nif err == nil {\n\tHTTPReturn(c, http.StatusOK, wrapperReturnDefault())\n}\nreturn resp, err\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, line 539\n\nif err != nil {\n\tlog.Ctx(ctx).Warn(\"high level restful api, grpc call failed\", zap.Error(err))\n\tif !ignoreErr {\n\t\tHTTPAbortReturn(ginCtx, http.StatusOK, gin.H{HTTPReturnCode: merr.Code(err), HTTPReturnMessage: err.Error()})\n\t}\n}",
+          "call_chain_traced": "renameCollection handler -> wrapperProxyWithLimit -> proxy.RenameCollection -> rootcoord meta_table.renameCollection -> getCollectionByNameInternal (incorrectly returns coll when it should not exist) -> error propagated to HTTP layer -> HTTPAbortReturn with http.StatusOK instead of 400",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present_but_wrong_http_status",
+          "note": "源码接地发现: rename 存在重复名称检测,但错误处理层统一返回 HTTP 200 + error code,违反契约规定的 HTTP 400. HTTPAbortReturn 在 line 539 硬编码 http.StatusOK,不区分错误类型."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via create operation after failed rename",
+          "observed": "REQ 6 (POST /collections/create) successfully creates test_rename_dst immediately after the failed rename, proving the name was NOT actually duplicated. The false positive was caused by getCollectionByNameInternal incorrectly finding a collection/alias that should not exist."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (Docker/container)",
+            "Concurrency/race condition (sequential execution)",
+            "Request parameter typo (exact names confirmed)",
+            "API semantic misunderstanding (contract explicitly states 400 expected)"
+          ],
+          "surviving": "http_status_code_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Not matching any by_design_patterns. This is a genuine REST v2 API layer bug where error responses incorrectly use HTTP 200 instead of proper 4xx codes."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Collections rename fails with 'duplicate name' error (code 65535) despite target name being available (proven by successful create immediately after). REST v2 API incorrectly returns HTTP 200 instead of contractually obligated HTTP 400 for client errors. Source code confirms HTTPAbortReturn hardcodes http.StatusOK for all errors (line 539 in handler_v2.go), violating the documented contract and HTTP semantics. This is a Type2_PoorDiagnostics defect affecting API usability."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "http_status_code_violation": 1
+    }
+  }
+}

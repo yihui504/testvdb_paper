@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with collection containing JSON field 'meta', first insert valid JSON object {\"important\": \"data\"}, then upsert string value \"invalid_json\" for same field",
+          "observed": "Upsert succeeds (HTTP 200), query returns corrupted data: meta field changed from {\"important\": \"data\"} to \"invalid_json\" (string instead of JSON object)",
+          "evidence_cmd": "python -c \"import requests; r = requests.post('http://localhost:19530/v2/vectordb/entities/query', json={'collectionName': 'test_json', 'filter': 'id in [0,1]', 'outputFields': ['meta']}); print(r.json())\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["JSON field should maintain JSON object structure; accepting primitive string for JSON dataType violates data integrity"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["anyToColumns", "DataType_JSON", "JSON.*validation", "upsert.*JSON"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/proxy/task_upsert.go",
+            "internal/proxy/util.go",
+            "pkg/util/typeutil/schema.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 1967-1968\ncase schemapb.DataType_JSON:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([][]byte), candi.v.Interface().([]byte))\n\n// Context: This code in anyToColumns() converts REST API request data to internal format.\n// For JSON fields, it directly casts the interface{} to []byte WITHOUT any type validation.\n// No check that the input is actually a JSON object/map vs. a primitive string.\n// Line 1865 shows JSON data is prepared as []byte, but the conversion logic at line 1968\n// blindly accepts whatever type the caller provides, leading to data corruption.",
+          "call_chain_traced": "REST v2 upsert request → handler_v2.go:upsert() → anyToColumns() → DataType_JSON case → unsafe .([]byte) cast → data stored as corrupted string",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:anyToColumns函数在处理JSON字段时(line 1967-1968),直接将interface{}强制转换为[]byte,未做类型检查。当传入字符串而非JSON对象时,该转换静默成功但破坏了数据完整性(contract要求JSON字段存储JSON对象)→ 真缺陷"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Independent verification via query after upsert: query id=0 with outputFields=['meta'] shows meta=\"invalid_json\" instead of expected JSON object",
+          "observed": "Query confirms data corruption: original JSON object {\"important\": \"data\"} replaced with string \"invalid_json\""
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment noise (reproducible on clean install)",
+            "Race condition (single-threaded test)",
+            "Request parameter error (payload syntactically valid)",
+            "API semantic misunderstanding (JSON dataType should enforce JSON structure)",
+            "By-design behavior (data integrity violation, not intentional)"
+          ],
+          "surviving": "data_type_validation_missing"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; pattern: 'Data type serialization not validated'",
+        "note": "候选命中developer_cognition.json中rest-v2-data-type-handling模式: REST v2 API未能正确序列化/验证复杂数据类型,本例为JSON字段接受非JSON值并破坏数据完整性"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Upsert API接受JSON字段的非JSON值(字符串)并静默成功,导致数据从有效JSON对象 {\"important\": \"data\"} 被破坏为字符串 \"invalid_json\"。源码接地发现anyToColumns()函数在处理DataType_JSON时(line 1967-1968)直接进行interface{}到[]byte的强制转换,缺失类型检查。这不是by-design行为而是validation缺失缺陷,与历史bug_shapes.json中rest-v2-data-type-handling模式(26个实例,置信度0.95)完全吻合。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"data_type_validation_missing": 1}
+  }
+}

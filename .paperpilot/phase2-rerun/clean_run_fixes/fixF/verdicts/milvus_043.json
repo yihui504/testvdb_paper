@@ -1,0 +1,118 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams={groupByField:'cat', groupSize:2, strictGroupSize:true}",
+          "observed": "API accepts strictGroupSize parameter and returns 15 results (each cat value 0-4 appears 3 times), violating the strictGroupSize constraint which should limit each group to exactly 2 results",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"gs_demo\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":15,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":2,\"strictGroupSize\":true},\"outputFields\":[\"cat\"]}' | jq '.data | group_by(.cat) | map({cat: .[0].cat, count: length})'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": [],
+          "verified_assumptions": [
+            "Request explicitly sets strictGroupSize=true",
+            "Request sets groupSize=2",
+            "Expected behavior: each group (cat values 0-4) should have exactly 2 results",
+            "Actual behavior: returns 3 results per group (15 total vs 10 expected)"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "note": "No structured_contract.json available for v3.0.0, but source code shows strictGroupSize is passed through the system as a parameter (ParamStrictGroupSize) and propagated to queryInfo.StrictGroupSize (internal/proxy/task_search.go line 1040)"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ 3.0.0",
+          "grep_queries": [
+            "StrictGroupSize",
+            "strict_group_size",
+            "groupSize",
+            "ParamStrictGroupSize",
+            "group full"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/task_search.go",
+            "internal/proxy/search_reduce_util.go",
+            "internal/util/reduce/reduce_info.go",
+            "internal/util/function/chain/operator_group_by.go",
+            "internal/proxy/search_util.go",
+            "internal/proxy/task.go",
+            "internal/proxy/task_search_test.go"
+          ],
+          "source_excerpt": "// internal/proxy/search_reduce_util.go line 234-236\n            } else if exists && int64(len(bucket)) >= groupSize {\n                // group full\n            } else {\n\n// internal/util/reduce/reduce_info.go line 10-20\ntype ResultInfo struct {\n\tnq                  int64\n\ttopK                int64\n\tmetricType          string\n\tpkType              schemapb.DataType\n\toffset              int64\n\tgroupSize           int64\n\tisAdvance           bool\n\tgroupByFieldIds     []int64\n\tisSearchAggregation bool\n}\n// NOTE: No strictGroupSize field exists in ResultInfo struct!\n\n// internal/distributed/proxy/httpserver/handler_v2.go line 1930-1932\nif httpReq.GroupByField != \"\" && httpReq.GroupSize > 0 {\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamGroupSize, Value: strconv.FormatInt(int64(httpReq.GroupSize), 10)})\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamStrictGroupSize, Value: strconv.FormatBool(httpReq.StrictGroupSize)})\n}\n\n// internal/proxy/task_search.go line 1026-1040\n// Propagate agg-path overrides into queryInfo BEFORE plan serialization so\n// segcore sees the derived topK / groupSize and plural GroupByFieldIds.\n// strict_group_size is forced true: aggregation metrics need each top-K\n// group filled to groupSize for meaningful sample sizes.\nif t.aggCtx != nil {\n\tt.Topk = t.aggCtx.DerivedTopK\n\tt.GroupSize = t.aggCtx.DerivedGroupSize\n\tqueryInfo.Topk = t.aggCtx.DerivedTopK\n\tqueryInfo.GroupSize = t.aggCtx.DerivedGroupSize\n\tqueryInfo.StrictGroupSize = true\n}",
+          "call_chain_traced": "HTTP request → handler_v2.go (line 1931: ParamStrictGroupSize added) → task_search.go (line 1040: queryInfo.StrictGroupSize set) → search_reduce_util.go (line 235: groupSize check BUT NO strictGroupSize check) → ResultInfo struct (MISSING strictGroupSize field)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source grounding reveals the root cause: StrictGroupSize parameter is parsed and passed through the system (handler_v2.go line 1931, task_search.go line 1040 sets queryInfo.StrictGroupSize), but the reduce.ResultInfo struct lacks a strictGroupSize field (reduce_info.go lines 10-20), and the reduction logic in search_reduce_util.go line 235 only checks 'len(bucket) >= groupSize' without considering strictGroupSize. This means groups continue to accumulate results beyond groupSize when strictGroupSize=true, violating the documented constraint."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Analyzed raw output_milvus_043.log showing repeated requests with strictGroupSize=true returning 15 results where each cat value appears 3 times instead of 2",
+          "observed": "Raw log data confirms: request with strictGroupSize=true, groupSize=2, limit=15 returns 15 results with cat sequence [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0] - each group has 3 items instead of 2, proving strictGroupSize is not enforced"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency/race conditions",
+            "Request parameter typos (strictGroupSize correctly set to true)",
+            "API semantic misunderstanding (strictGroupSize has clear meaning: enforce exact groupSize)",
+            "By-design behavior (source code comments at task_search.go line 1026-1027 explicitly state strict_group_size should be enforced)"
+          ],
+          "surviving": "parameter_handled_but_not_enforced"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match by_design_patterns (BDP-001/BDP-002). However, it DOES match blindspot_indicator: 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)' - though this is REST v2 only, the principle that 'parameter exists but is not enforced' is a defect maintainers fix."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "strictGroupSize parameter when true should enforce that each group contains exactly groupSize results (no more, no less). Source code confirms this intent: task_search.go line 1026-1027 comments 'strict_group_size is forced true: aggregation metrics need each top-K group filled to groupSize for meaningful sample sizes'",
+          "source_implements_check": false,
+          "api_observed_value": "API accepts strictGroupSize=true in request but returns 3 results per group instead of 2 (groupSize=2)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED",
+          "agent_suspects_contract_wrong": false,
+          "source_evidence_if_suspect": null
+        },
+        "physical": {
+          "objective_constraint": "When strictGroupSize=true, the mathematical constraint is: count(group_i) = groupSize for all groups i. This is a hard count constraint.",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "Source code explicitly shows strictGroupSize is NOT by-design ignored. It is parsed, stored in queryInfo, and forced true in aggregation contexts (task_search.go line 1040). The failure is in the reduction logic which never checks the flag.",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED AND verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (all three perspectives confirm defect: contract violation, physical count constraint violation, and behavioral failure to enforce parsed parameter)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Raw evidence from output_milvus_043.log shows strictGroupSize=true with groupSize=2 returning 15 results where each cat value appears 3 times (violating the 2-per-group constraint). Source code grounding confirms StrictGroupSize is parsed (handler_v2.go:1931) and propagated (task_search.go:1040 sets queryInfo.StrictGroupSize), but the reduce.ResultInfo struct lacks a strictGroupSize field (reduce_info.go:10-20), and reduction logic only checks 'len(bucket) >= groupSize' without strictGroupSize consideration (search_reduce_util.go:235). This is a true bug: parameter exists and is intended to be enforced, but the enforcement logic is completely missing from the reducer. All three perspectives confirm: contract violation (parameter ignored), physical constraint violation (count!=groupSize), and behavioral failure (no by-design evidence, comments confirm enforcement intent)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "parameter_handled_but_not_enforced": 1
+    }
+  }
+}

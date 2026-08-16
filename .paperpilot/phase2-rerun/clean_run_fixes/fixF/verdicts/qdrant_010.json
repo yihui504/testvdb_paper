@@ -1,0 +1,17 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_010",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "pub struct UpdateParams {\n    #[serde(default)]\n    pub wait: bool,\n    #[serde(default)]\n    pub ordering: WriteOrdering,\n    #[serde_as(as = \"Option<DurationSeconds<String>>\")]\n    pub timeout: Option<Duration>,\n}\n\nimpl UpdateParams {\n    pub fn from_grpc(\n        wait: Option<bool>,\n        ordering: Option<api::grpc::qdrant::WriteOrdering>,\n        timeout: Option<u64>,\n    ) -> tonic::Result<Self> {\n        let params = Self {\n            wait: wait.unwrap_or(false),\n            ordering: write_ordering_from_proto(ordering)?,\n            timeout: timeout.map(Duration::from_secs),\n        };",
+      "files_examined": [
+        "src/common/update.rs",
+        "src/actix/api/update_api.rs",
+        "lib/api/src/rest/schema.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Successfully reproduced the defect - PUT /collections/{collection_name}/points with timeout=0 returns 200 OK and processes the operation normally, violating the documented constraint that timeout >= 1.\n\nStep 2 (Prerequisite Audit): Confected the structured_contract.json specifies qdrant_range_create_collection_004 with assertion 'timeout >= 1' (confidence 1.0). This constraint applies to collection operations including points endpoints as per the API contract.\n\nStep 3 (Contract Compliance): The endpoint PUT /collections/{collection_name}+points accepts UpdateParams via Query<UpdateParams> (update_api.rs line 37). The UpdateParams struct (update.rs lines 38-45) defines timeout as Option<Duration> with no explicit validation constraints, using Duration::from_secs which accepts 0.\n\nStep 4 (Source Grounding): Found the root cause in UpdateParams::from_grpc (update.rs lines 48-60). The method maps timeout using 'timeout.map(Duration::from_secs)' without validation. Duration::from_secs(0) creates a valid zero-duration, bypassing the documented >= 1 second requirement. The REST handler uses Query<UpdateParams> with actix_web_validator but UpdateParams lacks #[validate] attribute or custom validation logic.\n\nStep 5 (Falsification Testing): Tested multiple invalid values - timeout=-1 correctly rejected (error: 'Duration cannot be negative'), timeout=0 incorrectly accepted (200 OK), wait=invalid_boolean correctly rejected. This confirms the validation gap exists specifically for the zero boundary condition.\n\nStep 6 (Tri-View Aggregation): Contract View - Violates explicit constraint 'timeout >= 1' from structured_contract.json (Type1_IllegalSuccess). Implementation View - No validation in UpdateParams struct or handlers permits zero timeout. Runtime View - Confirmed via live API test that timeout=0 returns 200 OK with successful operation processing. All three views align: this is a CONFIRMED parameter validation defect where the zero boundary condition is not validated."
+    }
+  ]
+}

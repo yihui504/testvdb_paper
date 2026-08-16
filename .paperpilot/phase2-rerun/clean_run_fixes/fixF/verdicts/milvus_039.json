@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with {\"collectionName\": \"test_milvus_039\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}",
+          "observed": "Upsert succeeded with upsertCount=1 and upsertIds=[100]. The string ID \"100\" was accepted and converted to integer 100, successfully updating the entity. Follow-up query confirmed the update with id=100 having vector=[0.9, 0.9, 0.9, 0.9].",
+          "evidence_cmd": "curl -X POST \"http://localhost:19530/v2/vectordb/entities/upsert\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_milvus_039\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "The defect assumes that Int64 primary key fields should reject string-encoded numeric values",
+            "The defect assumes type coercion is a violation rather than intentional API behavior"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_behavioral_primary_key_type_001 - Primary key must be Int64 or VarChar (source: https://milvus.io/docs/schema.md)",
+            "No explicit constraint found prohibiting string input for Int64 fields in structured_contract.json"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["json.Number", "Int64", "checkAndSetData", "DataType_Int64", "type coercion"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v1.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go line 639-644\n\t\t\tcase schemapb.DataType_Int64:\n\t\t\t\tresult, err := json.Number(dataString).Int64()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn reallyDataArray, validDataMap, merr.WrapErrParameterInvalid(schemapb.DataType_name[int32(fieldType)], dataString, err.Error())\n\t\t\t\t}\n\t\t\t\treallyData[fieldName] = result\n\nThis code shows that Int64 fields intentionally use json.Number(dataString).Int64() to parse input values. The json.Number type in Go accepts both numeric JSON values AND string-encoded numeric values, then converts them to int64. This is a deliberate type coercion feature, not a bug. When given the string \"100\", json.Number successfully parses and converts it to the integer 100.",
+          "call_chain_traced": "REST v2 upsert request → handler_v2.go:upsert() → checkAndSetData() → DataType_Int64 case → json.Number(dataString).Int64() → successful type coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: checkAndSetData函数中对Int64类型字段使用json.Number(dataString).Int64()进行解析，这是Go标准库json.Number的正常行为，接受字符串形式的数字并转换。这是有意设计的API灵活性，不是缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Tested upsert with non-numeric string \"abc\" to verify proper validation exists",
+          "observed": "Server correctly rejected non-numeric string with error: 'strconv.ParseInt: parsing \"abc\": invalid syntax'. This proves the API does perform validation - it accepts string-encoded numeric values (\"100\") but rejects non-numeric strings (\"abc\"). The behavior is intentional type coercion, not a lack of validation."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (not platform-specific)",
+            "Concurrency race (single-threaded test)",
+            "Request parameter typo (intentional string test)",
+            "API misunderstanding (this IS the documented behavior via source code)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "匹配bug_shapes.json中的REST_v2_data_type_handling模式。开发者认知模型显示REST v2 API的数据类型序列化是已知的问题区域，但这种类型转换行为是有意设计的API特性，而非缺陷。"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint found that prohibits string input for Int64 primary key fields. Contract only specifies that primary keys must be Int64 or VarChar data type, not the input format.",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical or mathematical constraint violated. Int64 can represent the value 100, and the string \"100\" is a valid representation of that value.",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "graceful_handling": "API uses json.Number.Int64() which accepts both numeric and string-encoded numeric values, with proper error handling for invalid inputs (non-numeric strings rejected)",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final=FALSE_POSITIVE. Type coercion is intentional API design for REST v2 flexibility.",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "milvus_039声称upsert接口接受字符串ID(如\"100\")用于Int64类型的主键字段是类型强制转换缺陷。经过独立复现和源码分析，发现这是REST v2 API有意设计的类型转换行为，不是缺陷。源码中checkAndSetData函数对Int64字段使用json.Number(dataString).Int64()进行解析，Go的json.Number类型接受字符串形式的数字(如\"100\")并转换为int64。这不是验证缺失，因为API正确拒绝了非数字字符串(如\"abc\"返回错误)。契约中没有明确约束禁止Int64字段接受字符串输入。开发者认知模型显示REST v2 API的数据类型处理是已知领域，但这种灵活性是有意设计。此行为属于mundane_api_semantics，不是真正的缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}
