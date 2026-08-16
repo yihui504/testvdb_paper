@@ -12,7 +12,7 @@
 | milvus intel | +2 锚点（REST v2/gRPC 通道不一致=缺陷；**+C 文档-行为一致性=缺陷**） | MF 169；fix_intel_anchors_g.py MF 174 |
 | qdrant intel | +3 锚点（D2 payload-only / D3 宽松解析 / D4 batch 无原子性） | fix_intel_blindspot_d.py，MF 172；D1 单行为不注入 |
 | weaviate intel | +1 锚点（**G 5xx 用于请求侧错误=缺陷**） | fix_intel_anchors_g.py，MF 174 |
-| 契约 | 4 断言跨版本修复（M1 幂等create / M2 幂等drop / Q1 payload-only / Q2 batch无原子性） | fix_contract_assertions.py，MF 173；**残留待办：state_001/behavioral_002 与 M1 方向冲突未修** |
+| 契约 | 6 断言跨版本修复（M1 幂等create / M2 幂等drop / Q1 payload-only / Q2 batch无原子性 / fixH state_001+behavioral_002 残留 / fixI range_insert_001 无行数上限） | fix_contract_assertions.py MF 173；fix_contract_residual.py MF 175；fix_contract_insert_range.py MF 176 |
 | SOP | **原版**（fixC 的 E1-E5 已回滚，逐字节还原） | 备份 clean_run_fixes/dev-reviewer.md.pre-fixC.bak |
 | GT | 9149→FP_BY_DESIGN（分母 44） | GT_FIXES.json；8 个旧存疑 8-14 已降级完毕 |
 
@@ -34,10 +34,14 @@ audit 0 FAIL；判词零残留于材料树；容器全清。
 | fixC（统一规则，已回滚） | — | — | — | SPLIT32 κ 0.030 无效；milvus 18/25、qdrant 4/9 |
 | fixD（qdrant 锚点，保留） | — | — | — | qdrant 9 子集 7/9；锚点适用 4/5 |
 | fixE（契约修复，保留） | — | — | — | 适用 5/5（全 C 组→fp_supp）；007 翻正 |
+| fixG/H/I（C/G 锚点+残留修复，保留） | — | — | — | fixF 顽固 FN 8→5；022 定责闭环 |
+| **fixF r1 / r2 / r3（最终配置三轮）** | **0.659 / 0.568 / 0.591** | 0.667/0.704/0.815 | 0.763/0.500/0.550 | **中位 0.591 [0.568,0.659]，带宽 0.091=fixA 带；acc 0.662/0.620/0.676；轮间 κ 0.187-0.318 同配置不高于跨配置** |
 
 机制发现（论文论点，全部有实证）：四层根因、同源码行四轮相反结论、证据层级欠规约
 （同对材料相反消解）、规则显式化≠执行稳定化（fixC κ 0.03）、锚点被引用≠被消费（fixD 007）
-→ 材料内战是错向根源、材料同向后消费稳定（fixE 007）、位置效应谱系
+→ 材料内战是错向根源、材料同向后消费稳定（fixE 007；**run2 修正：契约消费本身概率性，M1/M2 三轮 F/C/F 振荡**）、位置效应谱系、
+死刑类=低概率非零概率（三轮后仅 001/012 全漏；009/q002 结构性取证通道常开、q014 run3 翻正）、
+轮方差与配置无关（clean/fixA/fixF 三代配置带宽恒 0.09，headline 淹没在轮方差海）
 （per-vendor 锚点>统一规则>无规约）、灰区（GT 态度分裂）对全部干预封闭。
 
 ## 3. recall 算术分解（回答"为什么落点仍 0.57-0.66"）
