@@ -9,11 +9,18 @@
 
 | 组件 | 内容 | 留痕 |
 |------|------|------|
-| milvus intel | +1 锚点（REST v2/gRPC 通道不一致=缺陷） | fix_intel_blindspot.py，MATERIAL_FIXES 169 |
+| milvus intel | +2 锚点（REST v2/gRPC 通道不一致=缺陷；**+C 文档-行为一致性=缺陷**） | MF 169；fix_intel_anchors_g.py MF 174 |
 | qdrant intel | +3 锚点（D2 payload-only / D3 宽松解析 / D4 batch 无原子性） | fix_intel_blindspot_d.py，MF 172；D1 单行为不注入 |
-| 契约 | 4 断言跨版本修复（M1 幂等create / M2 幂等drop / Q1 payload-only / Q2 batch无原子性） | fix_contract_assertions.py，MF 173；备份 fixE/pre_contract_backup/ |
+| weaviate intel | +1 锚点（**G 5xx 用于请求侧错误=缺陷**） | fix_intel_anchors_g.py，MF 174 |
+| 契约 | 4 断言跨版本修复（M1 幂等create / M2 幂等drop / Q1 payload-only / Q2 batch无原子性） | fix_contract_assertions.py，MF 173；**残留待办：state_001/behavioral_002 与 M1 方向冲突未修** |
 | SOP | **原版**（fixC 的 E1-E5 已回滚，逐字节还原） | 备份 clean_run_fixes/dev-reviewer.md.pre-fixC.bak |
 | GT | 9149→FP_BY_DESIGN（分母 44） | GT_FIXES.json；8 个旧存疑 8-14 已降级完毕 |
+
+fixG（2026-08-16，FIXG_REPORT.md）：调查 investigate_fn_stances/（7 类三条件检验，
+B/E/F/A 证据性死刑=态度分裂/孤证/死链）；适用 2/2 翻正（031/010 顽固 FN 首破）；
+weaviate 4/4 全对；milvus 对照 022/026 双翻错（fixA 宽泛匹配+M1 残留断言，C 锚点零
+引用→字面保留，priming 溢出不可证伪；fixF milvus 侧数据裁决，若 FP 灰区系统性翻 C →
+回滚 C 再快照）。
 
 audit 0 FAIL；判词零残留于材料树；容器全清。
 
