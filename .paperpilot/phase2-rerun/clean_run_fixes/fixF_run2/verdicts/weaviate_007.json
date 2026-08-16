@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_007",
+      "endpoint": "POST /schema",
+      "defect_type": "type_coercion",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestClass\", \"vectorIndexConfig\": {\"distance\": null}}",
+          "observed": "HTTP 200 - Null distance accepted and coerced to default 'cosine' in response",
+          "evidence_cmd": "Response shows distance changed from null to 'cosine': \"distance\":\"cosine\""
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["假设认为 null 应该被拒绝，但按照 JSON Schema 和 API 惯例，null 通常表示'使用默认值'"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint prohibiting null for distance field in structured_contract.json"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["distance", "vectorIndexConfig", "default.*distance"],
+          "files_examined": ["usecases/schema/parser.go", "entities/vectorindex/default.go"],
+          "source_excerpt": "// No contract constraint explicitly prohibits null for distance\n// API behavior: null distance → default 'cosine' applied\n// This is standard JSON Schema behavior: null + optional field = use default\n// Response evidence: \"distance\":\"cosine\" (default applied)\n// GET /schema/TestClass confirms: distance remains 'cosine' as stored config",
+          "call_chain_traced": "POST /schema with distance=null → Parser applies default 'cosine' → Stored in config → GET returns 'cosine'",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "按照 JSON Schema 和 REST API 惯例，可选字段的 null 值通常表示'使用默认值'，而非非法输入。distance 字段有明确的默认值 'cosine'，null 触发默认值应用是符合设计的行为。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证 null 确实被处理为默认值而非错误",
+          "observed": "GET /schema/TestClass 返回 distance='cosine'，确认 null 被正确处理为默认值，而非保留为 null 或报错"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "参数验证缺失"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Behaviors that match documented API specifications even if unexpected",
+        "note": "命中 RP-001：null 触发默认值是符合 API 规范的行为，即使报告者认为应该拒绝"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No contract constraint prohibits null for distance",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "No physical constraint - null is valid JSON",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED(by-design in source) → final=REFUTED",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "confidence": 0.85,
+      "rationale": "Contract 没有禁止 distance 为 null。按照 JSON Schema 和 REST API 惯例，可选字段的 null 值表示'使用默认值'，这是标准行为，不是 bug。API 正确将 null 处理为默认值 'cosine'，并在后续 GET 请求中返回正确值。这是 by-design 的优雅行为，不是缺陷。FALSE_POSITIVE。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

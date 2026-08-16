@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_006",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestClass\", \"properties\": [{\"name\": \"text_field\", \"dataType\": [\"text\"], \"tokenization\": \"\"}]}",
+          "observed": "HTTP 200 - Empty tokenization string accepted and coerced to 'word' in response",
+          "evidence_cmd": "Response shows tokenization changed from empty string to 'word': \"tokenization\":\"word\""
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["weaviate_type_schema_create_003: properties[].tokenization must be a valid enum value"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["tokenization", "ParseClass", "property.*token"],
+          "files_examined": ["usecases/schema/parser.go", "entities/models/class.go"],
+          "source_excerpt": "// Contract constraint weaviate_type_schema_create_003:\n{\n  \"constraint_id\": \"weaviate_type_schema_create_003\",\n  \"endpoint\": \"/schema POST\",\n  \"description\": \"properties[].tokenization must be a valid enum value\",\n  \"assertion\": \"properties.properties[].tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}\",\n  \"type\": \"type_constraint\",\n  \"confidence\": 0.95,\n  \"evidence_tier\": \"explicit\"\n}\n\n// API response evidence: tokenization changed from input empty string to output 'word'\n// Request: {\"tokenization\": \"\"}\n// Response: {\"tokenization\": \"word\"}\n// This indicates silent coercion rather than validation rejection",
+          "call_chain_traced": "POST /schema → Parser.ParseClass() → property tokenization field processed → empty string coerced to default 'word' WITHOUT 422 error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Contract 明确规定 tokenization 必须是有效枚举值之一，但 API 实际接受空字符串并静默转换为 'word'，而非返回 422 错误。这是类型约束违反。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证响应确实显示 tokenization 从空字符串变为 word",
+          "observed": "响应 body 中 tokenization 字段值为 'word'，而非请求中的空字符串或错误信息"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "请求参数笔误"],
+          "surviving": "contract_violation"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Behaviors that match documented API specifications even if unexpected",
+        "note": "未命中明确的 by_design 模式，但属于参数验证缺口类型"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "weaviate_type_schema_create_003: tokenization in {word, lowercase, whitespace, field, trigram, gse, kagome_kr, kagome_ja, gse_ch}",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "Empty string is not a valid enum value",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED (contract violation) → final=CONFIRMED (C cannot override)",
+        "final_verdict": "CONFIRMED"
+      },
+      "confidence": 0.90,
+      "rationale": "Contract weaviate_type_schema_create_003 明确规定 tokenization 必须是枚举值之一，空字符串不在枚举中。API 实际接受空字符串并静默转换为默认值 'word'，违反了类型约束。根据 developer_cognition，维护者将参数验证缺口视为 bug。CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"contract_violation": 1}
+  }
+}

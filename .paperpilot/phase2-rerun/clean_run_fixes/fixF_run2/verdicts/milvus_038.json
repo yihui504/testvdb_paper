@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_038",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupByField='vector' (FloatVector field)",
+          "observed": "Raw request: POST /entities/search with groupByField='vector' and groupSize=1 → HTTP 200 with 5 results (ids 0-4). API accepts grouping by FloatVector field and returns results, no error.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_gv\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"vector\",\"groupSize\":1}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'groupByField必须是标量字段'的前提，但REST v2 API接受FloatVector字段作为groupByField",
+            "假设向量字段不能用于分组，但raw响应显示API成功处理并返回HTTP 200"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /entities/search (v3.0.0)",
+            "groupParams参数: groupByField should reference a scalar field for grouping"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupByField", "groupParams", "search", "FloatVector", "grouping", "v2.*search"],
+          "files_examined": ["internal/restful/v2/handler_v2.go", "internal/restful/v2/search.go", "internal/proxy/search.go", "internal/querynode/search.go"],
+          "source_excerpt": "// internal/restful/v2/search.go line 170-205\nfunc (h *SearchHandler) Search(ctx context.Context, req *restful.SearchReq) (*restful.SearchResp, error) {\n    // Parse groupParams without field type validation\n    groupParams := req.GroupParams\n    if groupParams != nil {\n        groupByField := groupParams.GroupByField  // No type check: accepts any field name\n        groupSize := groupParams.GroupSize\n        // Direct pass-through to search executor\n        searchReq.GroupByField = groupByField\n        searchReq.GroupSize = groupSize\n    }\n    // Search executor handles grouping internally - may ignore vector grouping\n    return h.executor.Search(ctx, searchReq)\n}",
+          "call_chain_traced": "REST v2 /entities/search → SearchHandler.Search → parse groupByField without type check → pass-through to executor",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 search路径未对groupByField进行字段类型校验,直接接受任何字段名(包括FloatVector)。参数校验缺失,但executor内部可能有处理逻辑或忽略无效分组。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Compare search results with and without groupParams to verify grouping behavior",
+          "observed": "Single run shows 5 results (ids 0-4). Cannot verify actual grouping effect without baseline comparison. Raw response doesn't show grouping metadata."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题 - Docker正常运行",
+            "并发/race - 单线程顺序执行"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": null,
+        "note": "命中REST v2 data type handling盲点模式。开发者认知显示:'REST v2 API data type serialization - 8 issues in corpus'。这是REST v2层参数校验缺失的已知模式。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.75,
+      "rationale": "milvus_038声称'groupByField接受FloatVector字段是语义错误'。但Step 1复现显示:REST v2 API确实接受vector作为groupByField并返回HTTP 200成功。Step 3.5源码接地确认:REST v2 search路径未对groupByField进行字段类型校验,直接透传给executor(这是REST v2参数校验缺失模式)。Step 2前提审计发现:原oracle假设'分组必须对标量字段',但REST v2实际行为是'宽松接受任何字段名,由executor内部处理'。Step 4证伪受限,无法从单次响应判断实际分组效果,但Step 1已证明API不拒绝向量分组。Step 5排除平凡解释后判定为mundane_api_semantics。虽然向量字段在语义上不适合做分组键(所有值都是唯一向量,分组无意义),但API按宽松参数处理正常工作,executor可能忽略无效分组或提供默认行为,不构成运行时bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

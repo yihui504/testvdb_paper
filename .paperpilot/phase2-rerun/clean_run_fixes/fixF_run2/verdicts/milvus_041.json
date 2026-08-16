@@ -1,0 +1,100 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_041",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with multiple type coercions: {\"dbl_f\": \"3.14159\"} (string for Double), {\"bool_f\": \"true\"} (string for Boolean), {\"bool_f\": 1} (int for Boolean), {\"i16_f\": \"42\"} (string for Int16)",
+          "observed": "All requests return HTTP 200 success, accepting mismatched types without error or coercion",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_upsert_scalar\", \"data\": [{\"id\": 0, \"vector\": [0.9, 0.9, 0.9, 0.9], \"dbl_f\": \"3.14159\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "REST v2 API should enforce type safety for scalar fields",
+            "Boolean fields should accept only boolean values (true/false)",
+            "Double fields should accept only numeric values, not string representations",
+            "Int16 fields should accept only integers, not string representations"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_double_037 - Valid dataType value: DOUBLE",
+            "constraint_id: milvus_type_bool_038 - Valid dataType value: BOOL",
+            "constraint_id: milvus_type_int16_020 - Valid dataType value: INT16",
+            "endpoint: entities+upsert - Upsert entities"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["anyToColumns", "DataType_Double", "DataType_Bool", "DataType_Int16", "candi.v.Interface"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/utils.go lines 1946-1960 (Direct type assertions for scalar types)\n\nswitch field.DataType {\ncase schemapb.DataType_Bool:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([]bool), candi.v.Interface().(bool))  // LINE 1946 - No string->bool conversion\n    case schemapb.DataType_Int8:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int8), candi.v.Interface().(int8))\n    case schemapb.DataType_Int16:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int16), candi.v.Interface().(int16))  // LINE 1950 - No string->int16 conversion\n    case schemapb.DataType_Int32:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int32), candi.v.Interface().(int32))\n    case schemapb.DataType_Int64:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int64), candi.v.Interface().(int64))\n    case schemapb.DataType_Float:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]float32), candi.v.Interface().(float32))\n    case schemapb.DataType_Double:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]float64), candi.v.Interface().(float64))  // LINE 1960 - No string->double conversion",
+          "call_chain_traced": "REST v2 Upsert → checkAndSetData(body) → gjson.GetBytes parses JSON → anyToColumns(rows, schema) → lines 1946-1960 perform direct type assertions without format validation or coercion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 upsert对标量字段(lines 1946-1960)做直接类型断言,缺少类型校验与转换。当传入字符串表示的数值/布尔值时,应返回类型错误或执行显式转换,但实际服务端静默接受不匹配类型,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Multiple upsert operations with different type coercions all succeed, query verifies data storage",
+          "observed": "All type mismatches accepted: string→Double, string→Boolean, int→Boolean, string→Int16, demonstrating systematic lack of type validation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible across multiple scalar types)",
+            "By-design behavior (type safety is core database invariant)",
+            "Documentation ambiguity (scalar types have clear type definitions)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - 8 issues in corpus",
+        "note": "命中REST v2类型处理盲点: 标量字段系统性缺少类型验证,是开发者已识别的REST v2层缺陷模式。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 upsert对多种标量字段(Double/Boolean/Int16)系统性缺少类型验证,接受不匹配类型(字符串/整数)替代正确类型。源码接地发现lines 1946-1960处直接类型断言缺少校验逻辑。实测复现证实服务端对所有类型组合均返回HTTP 200成功,构成系统性真缺陷。此缺陷命中REST v2类型处理盲点模式,且影响多个数据类型,严重性高。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "Scalar fields (Double/Boolean/Int16) must accept only their defined types (constraint_ids: milvus_type_double_037, milvus_type_bool_038, milvus_type_int16_020)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Scalar types have physical type constraints - Double requires float64, Boolean requires true/false, Int16 requires 16-bit signed integer",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  }
+}

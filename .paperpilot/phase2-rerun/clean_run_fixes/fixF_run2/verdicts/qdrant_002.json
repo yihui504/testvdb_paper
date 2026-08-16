@@ -1,0 +1,18 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_002",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "/// Range filter request\n#[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]\n#[derive_args(< OrderedFloatPayloadType > => \"Range\", < DateTimePayloadType > => \"DatetimeRange\")]\n#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]\n#[serde(rename_all = \"snake_case\")]\npub struct Range<T> {\n    /// point.key < range.lt\n    pub lt: Option<T>,\n    /// point.key > range.gt\n    pub gt: Option<T>,\n    /// point.key >= range.gte\n    pub gte: Option<T>,\n    /// point.key <= range.lte\n    pub lte: Option<T>,\n}",
+      "files_examined": [
+        "lib/segment/src/types.rs",
+        "lib/shard/src/count.rs",
+        "src/actix/api/count_api.rs",
+        "lib/common/common/src/validation.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Tested POST /collections/{c}/points/count with logically impossible range filter {\"gte\": 100, \"lt\": 50}. Server returns HTTP 200 with count=0, accepting invalid input without 4xx error. Tested with extreme boundary values (1.7976931348623157e+308, -1.7976931348623157e+308) - also accepted with HTTP 200. API contract violation confirmed.\n\nStep 2 (Premise Audit): Developer cognition confirms 'Parameter validation on filter/condition APIs (min_should, value_count)' as a known blindspot. Bug shape 'qdrant-parameter-validation-numeric-boundary' explicitly targets missing Numeric Boundary validation. Premise holds.\n\nStep 3 (Contract Verification): Contract specifies POST /collections/{c}/points/count accepts filter with Range condition having lt/gt/gte/lte fields. Contract states API should validate input but Range struct lacks validation constraints.\n\nStep 4 (Source Grounding): Range<T> struct (lib/segment/src/types.rs:2787-2796) has NO #[validate(...)] attributes. No logical consistency checks (e.g., gte <= lt, gt < lte). check_range() function (lines 2812-2819) validates if a NUMBER fits in range, NOT if range parameters are valid. CountRequestInternal (lib/shard/src/count.rs:11-19) has #[validate(nested)] on filter, but Filter validation only recurses into Conditions, not Range boundaries. No boundary validation exists.\n\nStep 5 (Falsification): Cannot falsify - reproduced successfully with impossible range (gte > lt). Server should return 400 Bad Request but returns 200 OK.\n\nStep 6 (Triviality Exclusion): Not trivial. This is Type1_IllegalSuccess - API accepts semantically invalid input that violates mathematical logic (gte > lt is impossible for any number). Developer cognition confirms this is a recurring pattern (param_validation, 51 occurrences). \n\nThree-View Consensus: Contract perspective expects validation; source perspective shows no validation; reproduction perspective confirms acceptance of invalid input. CONFIRMED."
+    }
+  ]
+}

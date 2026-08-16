@@ -1,0 +1,100 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_039",
+      "endpoint": "entities+upsert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/upsert with {\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]} (string ID instead of integer)",
+          "observed": "Server returns HTTP 200 with upsertCount: 1 and upsertIds: [100], indicating successful upsert with string '100' treated as integer 100",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_type_coercion\", \"data\": [{\"id\": \"100\", \"vector\": [0.9, 0.9, 0.9, 0.9]}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "REST v2 API should enforce type safety for primary key fields",
+            "Collection schema defines primary key as Int64 type",
+            "Type mismatch between schema (Int64) and request (string) should be rejected"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_int64_022 - Valid dataType value: INT64",
+            "endpoint: entities+upsert - Upsert entities (REST v2)",
+            "API contract: Primary key field with Int64 type should only accept integer values"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["anyToColumns", "DataType_Int64", "candi.v.Interface().(int64)", "checkAndSetData", "upsert"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/utils.go line 1953-1954\n\nswitch field.DataType {\n    case schemapb.DataType_Bool:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]bool), candi.v.Interface().(bool))\n    case schemapb.DataType_Int8:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int8), candi.v.Interface().(int8))\n    case schemapb.DataType_Int16:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int16), candi.v.Interface().(int16))\n    case schemapb.DataType_Int32:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int32), candi.v.Interface().(int32))\n    case schemapb.DataType_Int64:\n        nameColumns[field.Name] = append(nameColumns[field.Name].([]int64), candi.v.Interface().(int64))  // LINE 1954 - BUG: Direct type assertion, no string->int64 conversion\n        // When JSON contains {\"id\": \"100\"}, candi.v holds a string, not int64\n        // This line should validate and convert string to int64 or reject with type error\n        // Instead, the server accepts the mismatched type, creating data integrity risk",
+          "call_chain_traced": "REST v2 Upsert → checkAndSetData(body) → gjson.GetBytes parses JSON → anyToColumns(rows, schema) → line 1954 does candi.v.Interface().(int64) direct type assertion",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 upsert路径在line 1954处对Int64字段做直接类型断言,缺少类型校验与转换逻辑。当JSON传入字符串ID(如'100')时,应返回类型错误,但实际服务端接受了不匹配类型,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query the upserted record to verify it was actually accepted: POST /v2/vectordb/entities/query with filter id==100",
+          "observed": "Query returns id=100 with vector [0.9, 0.9, 0.9, 0.9], confirming server accepted the string ID and performed silent type coercion, violating type safety"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean Milvus 3.0.0 container)",
+            "Concurrent operation (single-threaded test)",
+            "Documentation mismatch (contract clearly states Int64 type requirement)",
+            "By-design behavior (type safety is core database invariant)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types - historical instances: issues 52232, 52230, 52229, 52212",
+        "note": "命中blindspot_indicators: REST v2 API data type serialization - 8 issues in corpus。开发者已识别REST v2存在系统性类型处理缺陷,本案例证实该模式。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "Milvus REST v2 upsert endpoint接受不匹配的primary key类型(字符串'100'替代Int64 100),违反契约类型安全要求。源码接地发现line 1954处直接类型断言candi.v.Interface().(int64)缺少类型校验,当传入字符串时应返回类型错误而非静默转换。实测复现证实服务端返回HTTP 200成功,query验证确认数据已接受,构成真缺陷。此缺陷命中开发者认知的REST v2类型处理盲点模式,历史issues显示该层存在系统性类型处理问题。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "Primary key field with Int64 dataType should only accept integer values (constraint_id: milvus_type_int64_022)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Int64 primary key has physical type constraint - must be 64-bit signed integer, not string",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED (C cannot override contract/physical violation)",
+    "final_verdict": "CONFIRMED"
+  }
+}

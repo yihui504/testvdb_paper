@@ -1,0 +1,28 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_025",
+      "endpoint": "entities+insert",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1241-1313\n\nfunc (h *HandlersV2) insert(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\t// ... parameter processing ...\n\treq.NumRows = uint32(len(httpReq.Data))\n\t// NO MAXIMUM LIMIT CHECK - no validation of row count limits before proxy.Insert()\n\treq.FieldsData, err = anyToColumns(httpReq.Data, validDataMap, collSchema, true, false)\n\t// ... proceeds to insert regardless of row count ...\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "structured_contract.json"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /entities/insert with 101 records (ids 0-100) succeeded with HTTP 200 and insertCount=101. However, structured_contract.json contains NO constraints documenting a 100-record limit for insert operations. Source code analysis (handler_v2.go:1267) shows req.NumRows = uint32(len(httpReq.Data)) with no maximum limit check. Without documented constraint or reasonable physical limit (101 records is well within typical batch sizes), this cannot be considered a defect. The assertion appears to be based on an unstated expectation rather than documented contract violation. Matches mundane_api_semantics pattern."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

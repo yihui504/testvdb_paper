@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_014",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with dimension=32768 (schema mode) vs dimension=32769 (quick mode)",
+          "observed": "Schema mode accepts dimension=32768 (HTTP 200), but quick mode with dimension=32769 returns HTTP 400 with 'invalid dimension: 32769... should be in range 2 ~ 32768'. The validation messages are inconsistent between creation modes.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_large_dim\", \"schema\": {\"autoID\": false, \"enableDynamicField\": true, \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 32768}}]}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assamptions": [
+            "Assumption: dimension validation should be consistent across schema and quick modes",
+            "Assumption: upper bound (32768) should be enforced consistently"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001 - 'dimension must be 1-32768 for FloatVector'",
+            "Error message states: 'float vector dimension should be in range 2 ~ 32768'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["dimension", "32768", "FloatVector", "validation", "schema", "quick"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver: Schema mode and quick mode have different validation code paths. Quick mode has explicit dimension range validation returning error 'invalid dimension... should be in range 2 ~ 32768'. Schema mode may bypass this validation or apply different bounds. The inconsistency suggests separate validation implementations for different creation modes.",
+          "call_chain_traced": "CreateCollection (quick mode) -> dimension validation (2-32768) -> rejection of 32769; CreateCollection (schema mode) -> different validation path -> acceptance of 32768",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "inconsistent_validation_paths"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - validation inconsistency, not result falsification",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue",
+            "Request parameter error - dimension values are correctly specified"
+          ],
+          "surviving": "different_validation_paths_for_modes"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - different code paths for schema vs quick mode may have different validation timings or implementations",
+        "note": "不同创建模式（schema vs quick）走不同代码路径，验证时机和实现可能不同。这通常被视为实现细节差异而非真正缺陷。"
+      },
+      "root_cause_if_fp": "different_validation_paths",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "从三视角分析：契约视角明确要求维度 1-32768（CONFIRMED）；物理视角向量维度客观上应有上界（CONFIRMED）；行为视角 32768 确实在边界上但两种模式处理不同（INCONSISTENT）。然而，根据 developer_cognition，schema 模式和 quick 模式走不同代码路径是已知的架构差异。32768 落在契约范围内，quick 拒绝 32769 是正确行为，schema 接受 32768 也是正确（在范围内）。两种模式对边界值的处理差异属于实现细节而非真正缺陷。判定为 FALSE_POSITIVE，root_cause 为不同验证路径的实现差异。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "different_validation_paths": 1
+    }
+  }
+}

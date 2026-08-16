@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_013",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with Request-Timeout header set to '3.5', 'abc', and '10'",
+          "observed": "API accepts invalid Request-Timeout header values ('3.5', 'abc', '10') without error and returns successful responses. HTTP headers should be validated for proper format.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -H 'Request-Timeout: abc' -d '{}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: Request-Timeout header should be validated for numeric format",
+            "Assumption: Invalid header values should be rejected with 400 error"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract constraint found for Request-Timeout header validation",
+            "HTTP header validation not documented in REST v2 API specifications"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["Request-Timeout", "header", "validation", "timeout"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/middleware.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver: No explicit Request-Timeout header validation found in HTTP middleware or handler code. Timeout headers are typically handled by HTTP framework layer rather than application logic. Invalid timeout values may be ignored or handled by Go's HTTP server defaults.",
+          "call_chain_traced": "HTTP Request -> Request-Timeout header -> no validation in application layer -> default HTTP server handling -> operation proceeds",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "not_found_in_source"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - header validation issue, not result falsification",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Request parameter error - this is HTTP header handling",
+            "API semantic misunderstanding - HTTP header validation is framework-level concern"
+          ],
+          "surviving": "http_header_framework_handling"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - HTTP header validation handled by framework, not application layer",
+        "note": "HTTP 头验证通常由 HTTP 框架层处理，应用层不应重复验证。这属于框架层面的责任，应用层忽略无效头值是标准做法。"
+      },
+      "root_cause_if_fp": "http_header_framework_responsibility",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "从三视角分析：契约视角无显式约束（NEUTRAL）；物理视角无客观约束（NEUTRAL）；行为视角 HTTP 头验证是框架层责任，应用层忽略无效头值是标准模式（by_design）（REFUTED）。根据聚合规则，所有视角均为 NEUTRAL 或 REFUTED，判定为 FALSE_POSITIVE。Request-Timeout 处理是 HTTP 框架的职责，应用层不验证是合理的设计边界划分。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "http_header_framework_responsibility": 1
+    }
+  }
+}

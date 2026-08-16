@@ -1,0 +1,17 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_004",
+      "verdict": "CONFIRMED",
+      "confidence": 0.88,
+      "source_excerpt": "impl ValueChecker for Match {\n    fn check_match(&self, payload: &Value) -> bool {\n        match self {\n            Match::Value(MatchValue { value }) => match (payload, value) {\n                (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,\n                (Value::String(stored), ValueVariants::String(val)) => stored == val,\n                (Value::Number(stored), ValueVariants::Integer(val)) => {\n                    stored.as_i64().is_some_and(|num| num == *val)\n                }\n                _ => false,\n            },",
+      "files_examined": [
+        "lib/segment/src/payload_storage/condition_checker.rs",
+        "lib/segment/src/types.rs",
+        "lib/segment/src/payload_storage/query_checker.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Created collection with vector size 4. Inserted point with payload {\"num_field\": 42} (numeric). Filtered with {\"key\": \"num_field\", \"match\": {\"value\": \"string_instead_of_number\"}} (string). Server returns HTTP 200 with count=0 instead of rejecting type mismatch. Expected behavior: 400 Bad Request with type error. Actual: silent false result from type mismatch comparison.\n\nStep 2 (Premise Audit): Developer cognition confirms 'Type Coercion issues where Type Confusion validation is missing' as blindspot. Bug shape 'qdrant-type-coercion-type-confusion' explicitly targets missing Type Confusion validation. Defect_type='type_coercion' aligns perfectly with premise.\n\nStep 3 (Contract Verification): Contract defines MatchValue with value: ValueVariants (String/Integer/Bool). When filtering on numeric field 'num_field', only Integer ValueVariants should be accepted. String value violates contract but is accepted.\n\nStep 4 (Source Grounding): ValueChecker for Match (lib/segment/src/payload_storage/condition_checker.rs:154-162) implements type comparison. Line 156: Bool vs Bool ✓, Line 157: String vs String ✓, Line 158-160: Number vs Integer ✓, Line 161: `_ => false` - catch-all for type mismatches returns FALSE instead of ERROR. No validation at MatchValue construction level (lib/segment/src/types.rs:2511-2513) - MatchValue accepts any ValueVariants without field-type checking. FieldCondition (no validation) → Match (no validation) → MatchValue (no validation). Type safety only enforced at comparison time, silently returning false.\n\nStep 5 (Falsification): Cannot falsify - reproduced type confusion: string filter value on numeric field returns count=0 instead of 400 Bad Request. Code path confirmed: condition_checker.rs:161 returns false for mismatched types.\n\nStep 6 (Triviality Exclusion): Not trivial. Type confusion in filters is a semantic error that misleads users. Query {\"num_field\": \"string\"} should error, not return 0 matches. Developer cognition lists this as recurring pattern (type_coercion, 5 occurrences). This is Type2_PoorDiagnostics - API accepts invalid input without meaningful error.\n\nThree-View Consensus: Contract perspective expects type-consistent filter values; source perspective shows silent false return for type mismatches; reproduction perspective confirms string value accepted on numeric field with misleading count=0 result. CONFIRMED."
+    }
+  ]
+}

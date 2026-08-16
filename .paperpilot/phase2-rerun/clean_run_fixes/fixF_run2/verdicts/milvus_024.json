@@ -1,0 +1,25 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_024",
+      "endpoint": "entities+delete",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "confidence": 0.90,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1202-1239\n\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionFilterReq)\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treq := &milvuspb.DeleteRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tPartitionName:  httpReq.PartitionName,\n\t\tExpr:           httpReq.Filter,  // Only uses Filter field\n\t}\n\t// NO MUTUAL EXCLUSIVITY CHECK - does not validate that filter and ids are mutually exclusive\n\t// The CollectionFilterReq struct accepts both but handler silently ignores ids when filter is present\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /entities/delete with both filter='id > 0' AND ids=[1,2,3] succeeded with HTTP 200 and deleteCount=1. Detailed test shows filter parameter silently takes precedence (deleteCount=3 when filter='id in [1,2,3]' and ids=[4,5]). Source code analysis (handler_v2.go:1202-1239) shows delete handler only uses Expr field from httpReq.Filter, completely ignoring any ids parameter in CollectionFilterReq. This creates ambiguous API behavior where both parameters can be provided but only one takes effect silently, violating parameter validation expectations. Matches REST_v2_data_type_handling pattern - REST v2 fails to validate parameter exclusivity."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

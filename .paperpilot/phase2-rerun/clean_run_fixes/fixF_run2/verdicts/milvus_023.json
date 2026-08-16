@@ -1,0 +1,25 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_023",
+      "endpoint": "collections+drop",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 745-759\n\nfunc (h *HandlersV2) dropCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\tgetter, _ := anyReq.(requestutil.CollectionNameGetter)\n\treq := &milvuspb.DropCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: getter.GetCollectionName(),\n\t}\n\tc.Set(ContextRequest, req)\n\t// NO EXISTENCE CHECK HERE - does not call hasCollection() before DropCollection\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/DropCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.DropCollection(reqCtx, req.(*milvuspb.DropCollectionRequest))\n\t})\n\tif err == nil {\n\t\tHTTPReturn(c, http.StatusOK, wrapperReturnDefault())\n\t}\n\treturn resp, err\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /collections/drop with collection_name='nonexistent_collection_xyz' succeeded with HTTP 200 and empty body, despite the collection never existing. Independent verification via has_collection() returns False, proving collection doesn't exist. Source code analysis (handler_v2.go:745-759) shows dropCollection handler performs NO existence check before proxy.DropCollection() call - it directly proceeds to deletion attempt. This allows dropping nonexistent collections to succeed silently, violating idempotency semantics and masking actual errors. This matches REST_v2_data_type_handling pattern - REST v2 fails to validate preconditions before state-changing operations."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

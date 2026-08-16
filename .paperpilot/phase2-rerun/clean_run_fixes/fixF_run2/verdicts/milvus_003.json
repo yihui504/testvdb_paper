@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_003",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"ef\": 0}",
+          "observed": "HTTP 200 OK with successful search results. API accepts ef=0 without validation.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_nprobe_validation\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"ef\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes ef parameter should be validated to be >= 1 for HNSW indexes",
+            "API is expected to reject invalid ef values (like 0) with an error response",
+            "REST v2 should have same parameter validation as gRPC path (developer_cognition blindspot: 'REST v2 and gRPC divergent validation')"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint_id found for ef validation in structured_contract.json",
+            "milvus_type_entities_search_001: 'data must be array of float arrays, annsField must be a vector field, limit must be positive integer' - but no mention of searchParams validation",
+            "milvus_range_entities_search_001: 'vector dimensions in data must match collection vector dimension' - no searchParams validation"
+          ],
+          "contract_misread": false,
+          "note": "Contract has type constraints for search endpoint but no explicit parameter validation constraints for searchParams fields like ef. Same gap as milvus_002."
+        },
+        "falsification": {
+          "pass": true,
+          "note": "Falsification not applicable - bug confirmed at API parameter validation layer."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean setup)",
+            "Concurrent/race condition (single sequential request)",
+            "Request parameter typo (ef=0 is intentional test case)",
+            "API semantics misunderstanding (ef < 1 is objectively invalid for HNSW)"
+          ],
+          "surviving_explanation": "Missing parameter validation in REST v2 API layer"
+        }
+      },
+      "source_grounding": {
+        "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+        "grep_queries": ["ef", "searchParams", "SearchParams", "generateSearchParams"],
+        "files_examined": [
+          "internal/distributed/proxy/httpserver/request_v2.go",
+          "internal/distributed/proxy/httpserver/handler_v2.go",
+          "internal/distributed/proxy/httpserver/utils.go"
+        ],
+        "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 333-352\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tData             []interface{}          `json:\"data\" binding:\"required\"`\n\tAnnsField        string                 `json:\"annsField\"`\n\tPartitionNames   []string               `json:\"partitionNames\"`\n\tFilter           string                 `json:\"filter\"`\n\tGroupByField     string                 `json:\"groupingField\"`\n\tGroupSize        int32                  `json:\"groupSize\"`\n\tStrictGroupSize  bool                   `json:\"strictGroupSize\"`\n\tLimit            int32                  `json:\"limit\"`\n\tOffset           int32                  `json:\"offset\"`\n\tOutputFields     []string               `json:\"outputFields\"`\n\tSearchParams     map[string]interface{} `json:\"searchParams\"`  // <-- No validation tags, generic map\n\tConsistencyLevel string                 `json:\"consistencyLevel\"`\n\tExprParams       map[string]interface{} `json:\"exprParams\"`\n\tFunctionScore    FunctionScore          `json:\"functionScore\"`\n\tParams map[string]float64 `json:\"params\"`\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 2076-2125 (generateSearchParams function)\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// [deepEqual function omitted]\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s, in search_param: %v, in search_param.params: %v\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value  // <-- No validation of specific parameter values like ef\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})  // <-- Pass-through, no validation\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+        "call_chain_traced": "SearchReqV2.SearchParams (map[string]interface{}) → generateSearchParams() → pass-through to backend as KeyValuePair[] → NO ef range validation",
+        "source_verified_by_reviewer": true,
+        "verification_outcome": "validation_absent",
+        "note": "Source code confirms REST v2 search parameter handler does NOT validate ef range. Same root cause as milvus_002 - SearchParams is a generic map[string]interface{} that gets serialized and passed to backend without any parameter-specific validation. No check for ef >= 1."
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Defect directly matches developer cognition blindspot: REST v2 API lacking validation that gRPC path has. Same pattern as milvus_002."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint for ef validation found in structured_contract.json for entities+search endpoint",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract has no constraint for ef parameter validation."
+        },
+        "physical": {
+          "objective_constraint": "ef >= 1 for HNSW index search (ef represents search list size in HNSW algorithm, must be at least 1)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint is clear: ef < 1 is mathematically invalid for HNSW search. API accepts ef=0, violating physical constraint."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API does not handle ef=0 gracefully - no error response, no validation. Same pass-through behavior as nprobe."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (same pattern as milvus_002)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "REST v2 API missing parameter validation that should reject ef < 1",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Milvus REST v2 entities/search accepts ef=0 (invalid for HNSW indexes) without validation, returning HTTP 200 with successful search. Physical constraint: ef represents search list size in HNSW algorithm, must be >= 1. Source code confirms same root cause as milvus_002 - SearchParams is processed as generic map[string]interface{} in generateSearchParams() with no parameter-specific validation. This matches developer cognition blindspot: 'REST v2 and gRPC divergent validation'. Contract has no explicit constraint for ef validation. Physical constraint (ef >= 1) is objectively violated. No graceful handling or by-design evidence in source. True defect: missing REST v2 parameter validation, same class as milvus_002."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_rest_v2_parameter_validation": 1
+    }
+  }
+}

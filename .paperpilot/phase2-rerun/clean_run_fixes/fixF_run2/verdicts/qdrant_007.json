@@ -1,0 +1,87 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_007",
+      "endpoint": "collections+{collection_name}+points+batch",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/batch with operations containing mixed dimension vectors (4D, 4D, 3D)",
+          "observed": "HTTP 400 with error: 'Vector dimension error: expected dim: 4, got 3'. Operation rejected entirely.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_batch2/points/batch' -H 'Content-Type: application/json' -d '{\"operations\": [{\"upsert\": {\"points\": [{\"id\": 4, \"vector\": [0.1, 0.2, 0.3, 0.4]}, {\"id\": 5, \"vector\": [0.5, 0.6, 0.7, 0.8]}, {\"id\": 6, \"vector\": [0.1, 0.2, 0.3]}]}}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["结论声称'batch 操作违反原子性'依赖'batch 应该全部成功或全部失败'的前提，但源码显示这是 expected validation behavior", "结论声称'部分数据被写入'的前提与实测不符 - count 操作显示无任何点被写入"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API: POST /collections/{collection_name}/points/batch - Batch update points (mixed operations)", "developer_cognition: 'Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)'"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["batch.*vector.*dimension", "validate_vector_dimensions", "validate_batch_vectors"],
+          "files_examined": ["src/common/validate_vectors.rs", "lib/collection/src/operations/point_ops.rs"],
+          "source_excerpt": "// src/common/validate_vectors.rs lines 13-28\npub fn validate_vector_dimensions(\n    operation: &PointInsertOperationsInternal,\n    vectors_config: &VectorsConfig,\n) -> Result<(), StorageError> {\n    match operation {\n        PointInsertOperationsInternal::PointsBatch(batch) => {\n            validate_batch_vectors(&batch.vectors, vectors_config)?;\n        }\n        PointInsertOperationsInternal::PointsList(points) => {\n            for point in points {\n                validate_point_vectors(&point.vector, vectors_config)?;\n            }\n        }\n    }\n    Ok(())\n}\n\nfn validate_batch_vectors(\n    batch_vectors: &BatchVectorStructPersisted,\n    vectors_config: &VectorsConfig,\n) -> Result<(), StorageError> {\n    match batch_vectors {\n        BatchVectorStructPersisted::Single(vectors) => {\n            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {\n                return Ok(());\n            };\n            let expected_dim = params.size.get() as usize;\n            for vector in vectors {\n                if vector.len() != expected_dim {\n                    return Err(StorageError::bad_input(format!(\n                        \"Vector dimension error: expected dim: {expected_dim}, got {}\",\n                        vector.len()\n                    )));\n                }\n            }\n        }\n        // ... other variants handle similarly\n    }\n}",
+          "call_chain_traced": "batch API → validate_vector_dimensions (early O(n) check before WAL write) → validate_batch_vectors → dimension comparison → return Err on mismatch",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: validate_vector_dimensions 在 batch 操作写入 WAL 前执行 O(n) 维度检查,遇到维度不匹配立即返回错误,阻止任何数据写入。这是 by-design 的早期验证行为,不是原子性违反。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /collections/test_batch2/points/count after batch error",
+          "observed": "count=3 (original 3 points), no new points added. Original claim of 'partial write' falsified.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_batch2/points/count' -H 'Content-Type: application/json' -d '{\"exact\": true}'"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟", "请求参数笔误"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns",
+        "developer_quote": "Batch operations are not promised to be atomic: users must assume partial application and retry (idempotent write design)",
+        "pattern_id": "BDP-003",
+        "note": "命中 developer_cognition.json 中的 by_design_pattern: batch 操作不保证原子性是已知设计"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 声称 batch 操作中向量维度错误违反原子性（部分成功部分失败），但实测显示：1) HTTP 400 错误正确返回，操作被完全拒绝；2) count 证伪显示无任何点被写入（维持 3 个原始点）；3) 源码接地发现 validate_vector_dimensions 在 WAL 写入前执行早期维度检查，遇到不匹配立即返回错误，这是 by-design 的验证行为；4) developer_cognition 明确说明 batch 操作不保证原子性。无违规。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "API contract for batch operations does not guarantee atomicity (developer_cognition)",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "Collection config defines vector dimension = 4",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=REFUTED (by_design_in_source) → final=REFUTED",
+        "final_verdict": "REFUTED"
+      },
+      "source_excerpt": "validate_vector_dimensions performs early O(n) check before WAL write, returning dimension mismatch errors immediately to prevent any data写入",
+      "files_examined": ["src/common/validate_vectors.rs", "lib/collection/src/operations/point_ops.rs"]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

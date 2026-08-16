@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_004",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with vectorIndexConfig.ef=-1",
+          "observed": "API returned HTTP 200 and successfully created collection with ef=-1 stored as provided",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -d '{\"class\":\"TestEfneg\",\"vectorizer\":\"none\",\"vectorIndexConfig\":{\"ef\":-1}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes ef=-1 is invalid (negative value)",
+            "Actually, ef=-1 is a valid sentinel value meaning 'let Weaviate pick automatically'"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [],
+          "note": "No contract constraint exists that would forbid ef=-1. The value is explicitly defined as a sentinel."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["DefaultEF", "ef.*-1", "let Weaviate pick"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "test/acceptance/schema/get_schema_without_client_test.go",
+            "test/benchmark/remote/terraform/variables.tf"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 28-29: DefaultEF definition\nconst (\n\tDefaultEFConstruction         = 128\n\tDefaultEF                     = -1 // indicates \"let Weaviate pick\"\n\t...\n)\n\n// Line 52: EF field in UserConfig\ntype UserConfig struct {\n\tEF                       int               `json:\"ef\"`\n\t...\n}\n\n// Lines 87-90: SetDefaults function uses DefaultEF (-1)\nfunc (u *UserConfig) SetDefaults() {\n\tu.MaxConnections = DefaultMaxConnections\n\tu.EFConstruction = DefaultEFConstruction\n\tu.EF = DefaultEF  // Sets ef to -1 by default\n\t...\n}\n\n// test/acceptance/schema/get_schema_without_client_test.go line 47: Test confirms -1 is valid\n\t\"ef\":                     float64(-1),\n\n// test/benchmark/remote/terraform/variables.tf line 51: Test uses -1\n\t\"ef\":                    -1,",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig → DefaultEF (-1) → accepted as valid sentinel value",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms that ef=-1 is DefaultEF, a valid sentinel value explicitly documented as 'indicates let Weaviate pick'. This is by-design behavior, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify ef=-1 is handled correctly in source code",
+          "observed": "Multiple test files and source code confirm ef=-1 is the default value and is explicitly supported as 'let Weaviate pick' sentinel",
+          "evidence_cmd": "grep -r 'DefaultEF.*-1' C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4/"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "API semantics misunderstanding"
+          ],
+          "surviving": "by_design_sentinel_value",
+          "note": "This is a by-design feature: ef=-1 is a documented sentinel value for automatic selection"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "Does not match any rejection pattern. This is a by-design sentinel value, not a validation gap."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None - no contract constraint forbids ef=-1",
+          "source_implements_check": false,
+          "api_observed_value": "POST /schema with ef=-1 returned HTTP 200 (valid sentinel accepted)",
+          "api_violates_assertion": false,
+          "note": "No contract assertion exists that would make ef=-1 invalid",
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - ef can be -1 (sentinel) or positive (explicit value)",
+          "api_accepts_violation": false,
+          "api_behavior": "Accepts valid sentinel value",
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "note": "Source code explicitly defines DefaultEF = -1 as 'indicates let Weaviate pick'. This is documented by-design behavior used throughout tests.",
+          "verdict_C": "REFUTED"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL + verdict_B=NEUTRAL + verdict_C=REFUTED (by-design in source) → final=REFUTED (FALSE_POSITIVE)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.96,
+      "rationale": "FALSE_POSITIVE: Source code definitively proves ef=-1 is a valid by-design sentinel value. entities/vectorindex/hnsw/config.go line 29 defines 'DefaultEF = -1 // indicates \"let Weaviate pick\"'. Multiple test files (get_schema_without_client_test.go, benchmark tests) use ef=-1 as the default valid value. The defect claim incorrectly assumes negative values are invalid, but -1 is explicitly documented and supported as the automatic selection sentinel."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

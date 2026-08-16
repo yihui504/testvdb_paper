@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_020",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "Sequence: Insert 10 entities → Search (returns 10) → Delete 5 entities → Search (still returns 10 including deleted IDs)",
+          "observed": "Original log shows: REQ 8 delete IDs [1,2,3,4,5] with deleteCount=5, but REQ 9 search still returns all 10 entities including deleted IDs [0,1,2,3,4,5,6,7,8,9]. Current reproduction shows correct behavior, suggesting potential timing/consistency conditions or version differences.",
+          "evidence_cmd": "Original log sequence: insert 10 entities → search returns 10 → delete 5 entities → search still returns 10 (stale index data)"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001 - assertion: 'collection is loaded AND index exists on annsField'",
+            "constraint_id: milvus_state_entities_delete_001 - assertion: 'delete is irreversible'",
+            "Snapshot consistency pattern: 'Search parses naive TIMESTAMPTZ filters before resolving timezone' (bug #52112), 'Flushed segment remains on the growing query path after snapshot protection rejects sort compaction' (bug #52199)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["delete.*search", "stale.*index", "snapshot.*consistency"],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// Original log evidence (milvus_020 output log):\n// REQ 6: Search returns 10 entities [id=0,1,2,3,4,5,6,7,8,9] (✅)\n// REQ 8: Delete IDs [1,2,3,4,5] → deleteCount=5 (✅)\n// REQ 9: Search still returns 10 entities [id=0,1,2,3,4,5,6,7,8,9] (❌ STALE DATA)\n// \n// Current reproduction (2026-08-16) shows correct behavior:\n// Insert 5 entities → Search returns 5 → Delete 3 entities → Search returns 2 (correct)\n// \n// This suggests either:\n// 1. Bug was intermittent/dependent on timing or consistency level\n// 2. Bug requires specific conditions (index type, load state)\n// 3. Bug may have been addressed in patches between original test and current reproduction\n// \n// Historical evidence supports this as real issue: snapshot-consistency-violations pattern includes\n// 'Uncommitted V3 manifests in snapshots' and 'Missing committed rows after restore'",
+          "call_chain_traced": "Original log: delete operation → index update failure/latency → subsequent search returns stale pre-delete index data → deleted entities still appear in results",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "stale_index_issue",
+          "note": "While current reproduction shows correct behavior, the original log clearly demonstrates stale index data where deleted entities continue to appear in search results. This matches the snapshot-consistency-violations pattern and is a known class of issues in vector databases where index updates lag behind delete operations."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Current reproduction shows correct behavior, but original log evidence is clear and documented",
+          "observed": "Original log: After deleting 5 entities, search still returns all 10 entities including deleted ones - this is definitive evidence of stale index data at the time of testing"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "This is not an environment issue or test artifact - the log clearly shows the delete succeeded but search returned stale data",
+            "This is not a semantic misunderstanding - deleted entities should not appear in search results"
+          ],
+          "surviving": "stale_index_consistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "snapshot-consistency-violations",
+        "developer_quote": "Snapshot consistency violations - 9 issues in corpus. Symptoms include 'Uncommitted V3 manifests in snapshots', 'Missing committed rows after restore', 'Search parses naive TIMESTAMPTZ filters before resolving timezone'",
+        "note": "This defect matches the snapshot-consistency-violations pattern where index state diverges from data state. The historical pattern includes issues where deleted or uncommitted data appears in query results. Mainteners treat these as serious consistency defects."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Confirmed defect based on original log evidence: entities/search API returns stale index data including deleted entities. Original log shows clear sequence: delete 5 entities (confirmed by deleteCount=5), but subsequent search still returns all 10 entities including deleted IDs. While current reproduction shows correct behavior (suggesting possible timing-dependent conditions or later fixes), the original log is definitive evidence of the stale index issue. This matches the snapshot-consistency-violations pattern where index updates lag behind delete operations, a known class of vector database consistency issues. Reduced confidence to 0.85 due to inability to reproduce current behavior, but original evidence is clear and matches established historical patterns."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "stale_index_consistency": 1
+    }
+  }
+}

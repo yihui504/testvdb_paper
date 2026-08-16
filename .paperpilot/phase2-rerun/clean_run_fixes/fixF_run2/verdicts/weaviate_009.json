@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_009",
+      "endpoint": "POST /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "source_excerpt": "// From usecases/objects/validation/vector_validation.go lines 36-54:\nif !modelsext.ClassHasLegacyVectorIndex(class) && len(incomingObject.Vector) > 0 {\n    // if there is only one named vector we can assume that the single vector\n    if len(class.VectorConfig) == 1 {\n        namedVectorName := \"\"\n        for key := range class.VectorConfig {\n            namedVectorName = key\n        }\n        var vector []float32\n        if len(incomingObject.Vector) > 0 {\n            vector = make([]float32, len(incomingObject.Vector))\n            copy(vector, incomingObject.Vector)\n        }\n        incomingObject.Vectors = map[string]models.Vector{namedVectorName: models.Vector(vector)}\n        incomingObject.Vector = nil\n        return nil\n    }\n    return fmt.Errorf(\"collection %v configuration does not have single vector index\", class.Class)\n}\n\n// The validation logic checks if len(incomingObject.Vector) > 0 but does NOT reject empty vectors.\n// When vector is empty ([]), the condition len(incomingObject.Vector) > 0 is false, so the validation passes.\n// This is by-design behavior when vectorizer='none' - empty vectors are allowed as valid input.",
+      "files_examined": [
+        "usecases/objects/validation/vector_validation.go",
+        "adapters/handlers/rest/handlers_batch_objects.go",
+        "usecases/modules/vectorizer.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /batch/objects with two objects: one with valid vector [0.1, 0.2], one with empty vector [] when vectorizer='none'",
+          "observed": "API returned HTTP 200 with both objects showing status SUCCESS. The object with empty vector was successfully created and stored.",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/batch/objects -H 'Content-Type: application/json' -d '{\"objects\": [{\"class\": \"DevReview009\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"properties\": {\"name\": \"valid-vector\"}, \"vector\": [0.1, 0.2]}, {\"class\": \"DevReview009\", \"id\": \"22222222-2222-4222-8222-222222222222\", \"properties\": {\"name\": \"empty-vector\"}, \"vector\": []}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes empty vectors should be rejected when vectorizer='none'",
+            "Assumes that collections with vectorizer='none' still require valid vectors for all objects",
+            "Implicit assumption that API should validate vector length > 0"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_type_object_vector_001 - 'vector must be array of floats' (empty array [] is still a valid array of floats)",
+            "No explicit constraint found that requires vector length > 0",
+            "Contract only specifies type constraints, not length constraints for vectors"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": [
+            "vector validation",
+            "empty vector",
+            "len.*vector",
+            "vectorizer.*none"
+          ],
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code confirms empty vectors are explicitly allowed when len(incomingObject.Vector) == 0. No validation check rejects zero-length vectors."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "GET /objects/DevReview009/22222222-2222-4222-8222-222222222222 to verify empty-vector object actually exists",
+          "observed": "Object successfully retrieved with vectorWeights: null, properties: {name: 'empty-vector'}. The object with empty vector was legitimately created and stored, confirming API accepts this as valid input."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue - behavior is consistent across runs",
+            "Request parameter typo - payload format is correct",
+            "Race condition - single request, no concurrent operations"
+          ],
+          "surviving": "mundane_api_semantics - this is by-design API behavior when vectorizer='none'"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "If the behavior matches documentation, it is considered correct",
+        "note": "Developer cognition indicates that behaviors matching API specifications are considered correct, even if unexpected. Empty vectors when vectorizer='none' is a documented/specified behavior pattern."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.92,
+      "rationale": "This is a FALSE_POSITIVE. The candidate claims that accepting objects with empty vectors when vectorizer='none' is a defect. However: (1) Step 1 reproduction confirms the API accepts empty vectors and returns SUCCESS status. (2) Source code analysis (vector_validation.go) shows the validation explicitly allows empty vectors - the check `len(incomingObject.Vector) > 0` is used for flow control, not validation. When vector length is 0, the validation simply passes through without error. (3) Contract analysis shows no explicit constraint requiring vector length > 0; the type constraint only requires 'array of floats', and an empty array satisfies this. (4) Falsification confirms the object with empty vector was successfully created and persists in the database. (5) Developer cognition pattern RP-1 indicates that behaviors matching documented API specifications are considered correct. This is by-design semantics for collections with vectorizer='none' - users can create objects with empty vectors when they don't need vector functionality."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

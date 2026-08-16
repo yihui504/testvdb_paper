@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_031",
+      "endpoint": "entities+upsert",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with schema={...} AND enableDynamicField=true at top level, then upsert with dynamic field",
+          "observed": "Collection created with enableDynamicField=false despite top-level enableDynamicField=true. Upsert with dynamic field correctly rejected: 'has pass more field without dynamic schema'. The top-level enableDynamicField parameter is ignored when schema is provided.",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\": \"test_031\", \"dimension\": 4, \"enableDynamicField\": true, \"schema\": {\"autoID\": true, \"primaryFieldName\": \"id\", \"fields\": [{\"fieldName\": \"id\", \"dataType\": \"Int64\", \"isPrimary\": true}, {\"fieldName\": \"vector\", \"dataType\": \"FloatVector\", \"elementTypeParams\": {\"dim\": 4}}]}}' && curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"test_031\"}' && curl -X POST 'http://localhost:19530/v2/vectordb/entities/upsert' -d '{\"collectionName\": \"test_031\", \"data\": [{\"vector\": [1.0, 2.0, 3.0, 4.0], \"color\": \"red\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit contract constraint - this is a parameter handling consistency issue where enableDynamicField parameter is silently ignored when schema is provided"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["enableDynamicField", "Schema.Fields", "schema mode"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 1808-1904\n// Quick setup mode (no schema provided)\nif len(httpReq.Schema.Fields) == 0 {\n    enableDynamic := EnableDynamic  // Uses top-level enableDynamicField parameter\n    if enStr, ok := httpReq.Params[\"enableDynamicField\"]; ok {\n        enableDynamic, err = strconv.ParseBool(fmt.Sprintf(\"%v\", enStr))\n    }\n    // ... uses enableDynamic variable\n} else {\n    // Schema mode (schema provided)\n    collSchema := &schemapb.CollectionSchema{\n        EnableDynamicField: httpReq.Schema.EnableDynamicField,  // Uses schema's field, NOT top-level parameter!\n    }\n}",
+          "call_chain_traced": "CreateCollection request → check if schema.Fields empty → if empty: use top-level enableDynamicField param; if not empty: use schema.EnableDynamicField (ignoring top-level param)",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "parameter_ignored",
+          "note": "源码接地发现: REST v2 handler存在参数处理不一致。当请求同时提供schema和top-level enableDynamicField时，handler_v2.go:1808判断进入schema模式，行1904使用httpReq.Schema.EnableDynamicField而完全忽略top-level enableDynamicField参数。这导致用户明确设置的enableDynamicField=true被silently ignored，实际使用schema内的默认值false。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Compare collection creation with/without schema to confirm parameter is ignored",
+          "observed": "With schema + top-level enableDynamicField=true: collection has enableDynamicField=false. Without schema + top-level enableDynamicField=true: collection has enableDynamicField=true. Confirms parameter is ignored when schema present."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Race condition", "Request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "命中盲点指标: REST v2参数处理不一致。enableDynamicField参数在schema模式下被忽略，违反用户明确设置的意图，属于参数处理缺陷。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API在collections/create时，当用户同时提供schema和top-level enableDynamicField参数时，silently ignores top-level enableDynamicField而使用schema.EnableDynamicField的默认值false。源码handler_v2.go:1808-1904显示两条路径：无schema时用top-level参数，有schema时用schema字段。这导致用户设置的enableDynamicField=true被忽略，动态字段功能无法启用。upsert被正确拒绝但根本原因是collection创建时参数处理错误。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

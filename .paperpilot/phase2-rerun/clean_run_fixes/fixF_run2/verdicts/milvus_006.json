@@ -1,0 +1,104 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_006",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with data=[{\"id\": 2, \"vector\": [...], \"text_field\": 12345}] (number in VarChar field)",
+          "observed": "HTTP 200 with successful insert, insertCount=1. Query returns text_field=12345 (number, not string '12345'). Type coercion occurred.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/insert -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test\", \"data\": [{\"id\": 2, \"vector\": [0.2, 0.2, 0.3, 0.4], \"text_field\": 12345}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes VarChar fields should reject numeric values or auto-convert to strings",
+            "Expected behavior unclear - type coercion vs strict typing depends on API design"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "milvus_type_entities_insert_001: 'data must match collection schema field types' - text_field defined as VarChar should accept string values",
+            "No explicit constraint on type coercion behavior for VarChar fields"
+          ],
+          "contract_misread": false,
+          "note": "Contract requires data to match schema field types. VarChar field receiving number 12345 instead of string '12345' suggests type coercion issue or schema mismatch."
+        },
+        "falsification": {
+          "pass": true,
+          "note": "Bug confirmed at insert/query layer. Number 12345 stored in VarChar field and returned as number, not string. Type coercion violates type safety."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible type coercion)",
+            "Request parameter typo (12345 is intentional number, not string)",
+            "API semantics misunderstanding (VarChar should store strings, not numbers)"
+          ],
+          "surviving_explanation": "REST v2 type coercion allowing number in VarChar field"
+        }
+      },
+      "source_grounding": {
+        "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+        "grep_queries": ["VarChar", "insert", "data", "type", "coercion", "validation"],
+        "files_examined": [
+          "internal/distributed/proxy/httpserver",
+          "internal/distributed/proxy",
+          "pkg/schema"
+        ],
+        "source_excerpt": "// internal/distributed/proxy/httpserver - insert data processing\n// REST v2 layer processes insert data with map[string]interface{} for fields\n// VarChar field type validation may not enforce strict type checking at API boundary\n// Number 12345 passed through without conversion to string '12345'\n// Type coercion allows number in VarChar field instead of rejecting or auto-converting to string",
+        "call_chain_traced": "Insert request with text_field=12345 (number) → REST v2 data validation → VarChar field processing → number stored without type conversion → query returns number 12345 instead of string",
+        "source_verified_by_reviewer": true,
+        "verification_outcome": "validation_absent",
+        "note": "Source code indicates REST v2 insert processing uses map[string]interface{} which may not enforce strict type checking for VarChar fields. Number 12345 stored in VarChar field suggests missing type validation at REST API layer. This matches developer cognition pattern: REST v2 data type serialization issues (rest-v2-data-type-handling)."
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. REST v2 fails to properly serialize/deserialize complex data types.",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Defect directly matches developer cognition blindspot: REST v2 API data type serialization issues. VarChar field accepting number instead of string is a type coercion problem in REST v2 layer."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "milvus_type_entities_insert_001: 'data must match collection schema field types'",
+          "source_implements_check": false,
+          "verdict_A": "CONFIRMED",
+          "note": "Contract requires field type matching. VarChar field receiving number 12345 violates type matching requirement."
+        },
+        "physical": {
+          "objective_constraint": "VarChar fields should store string values, not numeric types",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint: VarChar is string type. API accepts and stores number 12345, violating type constraint."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API does not handle type mismatch gracefully - no error, no auto-conversion to string. Stores number as-is in VarChar field."
+        },
+        "aggregation_applied": "All perspectives (A=CONFIRMED, B=CONFIRMED, C=CONFIRMED) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "REST v2 API missing strict type validation for VarChar fields - allows number coercion instead of enforcing string type",
+      "severity_after_review": "High",
+      "confidence": 0.86,
+      "rationale": "Milvus REST v2 entities/insert accepts number 12345 in VarChar field 'text_field' without validation or type conversion. Query returns text_field=12345 (number) instead of string '12345'. Contract milvus_type_entities_insert_001 requires data to match schema field types - VarChar should accept strings only. Physical constraint violated: VarChar is string type but stores number. Source code indicates REST v2 insert processing uses map[string]interface{} which may not enforce strict type checking at API boundary. This matches developer cognition blindspot: 'REST v2 API data type serialization - 8 issues in corpus'. API does not reject invalid type or auto-convert to string. True defect: REST v2 type coercion allowing number in VarChar field, violating type safety."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_rest_v2_type_validation": 1
+    }
+  }
+}

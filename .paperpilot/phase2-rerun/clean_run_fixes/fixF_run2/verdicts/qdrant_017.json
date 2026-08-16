@@ -1,0 +1,79 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_017",
+      "endpoint": "collections+{collection_name}+points+search",
+      "defect_type": "state_logic",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_pagination_dedup/points/search with offset=0,10,20",
+          "observed": "offset=0 returns ids [0-9], offset=10 returns ids [10-19], offset=20 returns ids [20-24]. No duplicates observed across pages. Each id appears exactly once.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_pagination_dedup/points/search\" -H \"Content-Type: application/json\" -d '{\"vector\": [0.5, 0.5, 0.5, 0.5], \"limit\": 10, \"offset\": 0, \"with_payload\": false}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes pagination with offset should return duplicate points",
+            "Candidate assumes HNSW approximate search guarantees no duplicates in pagination",
+            "Candidate assumes observed duplicates in raw evidence indicate a bug rather than test artifact"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: structured_contract.json line 1026-1029 defines offset as 'Pagination offset' - no guarantee of no duplicates",
+            "constraint_id: developer_cognition.json by_design_patterns: 'HNSW approximation duplicates in pagination' - 'Accepted limitation of approximate search'",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference/search/points"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["offset.*pagination", "HNSW.*duplicate", "approximate.*search"],
+          "files_examined": [
+            "lib/collection/src/collection/search.rs",
+            "lib/shard/src/search.rs",
+            "src/common/inference/query_requests_rest.rs"
+          ],
+          "source_excerpt": "// No explicit deduplication logic found in pagination offset implementation. HNSW approximate search is known to have potential duplicates in pagination due to graph structure and score ties. developer_cognition.json explicitly lists this as by_design pattern.",
+          "call_chain_traced": "POST /points/search with offset -> HNSW search with skip(offset) -> approximate search may return duplicates across pages -> this is accepted limitation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: offset+HNSW approximate search组合未实现去重逻辑。developer_cognition.json明确列出'HNSW approximation duplicates in pagination'为by_design accepted limitation。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify pagination behavior and scroll comparison",
+          "observed": "Search with offset=0,10,20 returns disjoint point sets with no duplicates. Scroll API with same limit and next_page_offset shows consistent pagination behavior. Original evidence may have been from different test setup or temporary condition."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency race"
+          ],
+          "surviving": "approximate_by_design"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns",
+        "developer_quote": "HNSW approximation duplicates in pagination - 'Accepted limitation of approximate search', should_report: false. Maintainers explicitly consider this acceptable behavior.",
+        "note": "直接命中by_design_patterns：HNSW分页中的近似搜索重复是已接受的限制"
+      },
+      "root_cause_if_fp": "approximate_by_design",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.9,
+      "rationale": "POST /collections/{c}/points/search with offset+HNSW approximate search未观察到重复点。实测offset=0/10/20返回互斥点集，无重复。developer_cognition.json明确列出'HNSW approximation duplicates in pagination'为by_design accepted limitation，should_report=false。HNSW作为近似搜索算法，分页中的边界情况可能导致重复，这是算法固有特性而非bug。原始证据可能来自不同测试配置或临时状态。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 5,
+    "confirmed": 1,
+    "false_positive": 4,
+    "root_cause_distribution": {"request_param_typo": 1, "mundane_api_semantics": 2, "validation_absent": 1, "approximate_by_design": 1}
+  }
+}

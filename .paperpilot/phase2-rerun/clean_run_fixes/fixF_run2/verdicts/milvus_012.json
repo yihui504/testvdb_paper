@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_012",
+      "endpoint": "collections+list",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/list with dbName=\"\" (empty string)",
+          "observed": "API accepts empty dbName and returns collections from default database. This is standard behavior for optional database parameter.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/list' -H 'Content-Type: application/json' -d '{\"dbName\": \"\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Assumption: empty string dbName should be rejected as invalid",
+            "Assumption: API should require explicit database name rather than defaulting"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "collections+list endpoint - dbName parameter has default value '_default'",
+            "API documentation indicates dbName defaults to default database when not provided"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["collections+list", "dbName", "default", "empty"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/request_v2.go: dbName is defined with default value '_default' in list collections request. Empty string or missing dbName parameter triggers default database lookup. This is standard API design for hierarchical resource listing.",
+          "call_chain_traced": "ListCollectionsRequest.dbName (default: '_default') -> empty string handled as default -> lists default database collections",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - parameter default behavior, not result falsification",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue",
+            "Request parameter error - empty dbName is valid input",
+            "API semantic misunderstanding - default parameter behavior is standard"
+          ],
+          "surviving": "default_parameter_handling"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "expected behavior - dbName defaults to '_default' when empty or not provided",
+        "note": "符合标准 API 设计模式：空字符串或缺失的层级参数应默认为父级资源。这属于 expected behavior。"
+      },
+      "root_cause_if_fp": "default_parameter_behavior",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "从三视角分析：契约视角 dbName 有默认值 '_default'（支持空字符串处理）（REFUTED）；物理视角无客观约束（NEUTRAL）；行为视角 API 按标准模式处理默认参数，源码显示这是有意设计（by_design_in_source）（REFUTED）。根据聚合规则，契约视角明确支持默认值且行为符合设计，判定为 FALSE_POSITIVE。空字符串 dbName 被视为'使用默认数据库'是合理的API语义。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "default_parameter_behavior": 1
+    }
+  }
+}

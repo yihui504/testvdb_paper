@@ -1,0 +1,98 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_040",
+      "endpoint": "entities+insert",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with schema containing JSON dataType field, passing plain string value: {\"meta\": \"plain_string\"}",
+          "observed": "Server returns HTTP 200 success, accepting plain string for JSON dataType field instead of requiring JSON object/array",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_json_semantics\", \"data\": [{\"id\": 100, \"vector\": [0.1, 0.2, 0.3, 0.4], \"meta\": \"plain_string\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "JSON dataType field should only accept valid JSON structures (objects or arrays)",
+            "Plain strings are not valid JSON unless they represent JSON primitives",
+            "Type coercion from string to JSON should be explicit, not implicit"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_type_json_041 - Valid dataType value: JSON",
+            "endpoint: entities+insert - Insert entities",
+            "JSON field semantic: should store JSON data, not arbitrary strings"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["anyToColumns", "DataType_JSON", "JSON.*case", "json.Marshal", "json.Unmarshal"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/utils.go line 1967-1968\n\ncase schemapb.DataType_JSON:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([][]byte), candi.v.Interface().([]byte))  // LINE 1968 - BUG: Direct byte conversion, no JSON validation\n    // When JSON field contains plain string 'plain_string', it's treated as raw bytes\n    // No validation that the input is actually valid JSON structure\n    // Should validate JSON format and reject non-JSON values",
+          "call_chain_traced": "REST v2 Insert → checkAndSetData(body) → gjson.GetBytes parses JSON → anyToColumns(rows, schema) → line 1968 does candi.v.Interface().([]byte) for JSON type without format validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert对JSON字段(line 1968)直接做字节转换,缺少JSON格式校验。当传入纯字符串'plain_string'时,应验证JSON格式并拒绝非JSON值,但实际服务端接受了无效数据,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Query the inserted record to verify invalid JSON was accepted: POST /v2/vectordb/entities/query with outputFields including meta field",
+          "observed": "Query confirms the record was stored with plain string value intact, demonstrating lack of JSON validation"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean Milvus 3.0.0)",
+            "Concurrent operation (single-threaded test)",
+            "Feature not documented (JSON dataType is well-documented)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "命中REST v2类型处理盲点: JSON字段缺少格式验证,属于开发者已识别的系统性类型处理问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Milvus REST v2 insert对JSON字段缺少格式验证,接受纯字符串'plain_string'而非要求有效的JSON结构。源码接地发现line 1968处直接字节转换缺少校验逻辑。实测复现证实服务端返回HTTP 200成功,query验证确认无效数据已存储,构成真缺陷。此缺陷命中REST v2类型处理盲点模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "JSON dataType fields should only accept valid JSON structures (constraint_id: milvus_type_json_041)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "JSON fields have physical format constraint - must be valid JSON (object/array/primitive), not arbitrary strings",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  }
+}

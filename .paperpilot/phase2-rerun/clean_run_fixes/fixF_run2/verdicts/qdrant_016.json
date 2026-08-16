@@ -1,0 +1,75 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_016",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_lookup_source/points/query with lookup_from.collection='nonexistent_collection_xyz'",
+          "observed": "Returns HTTP 200 with scored points from source collection instead of error. API ignores invalid lookup_from.collection and returns results from query collection.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_lookup_source/points/query\" -H \"Content-Type: application/json\" -d '{\"query\": [0.3, 0.3, 0.3, 0.3], \"limit\": 3, \"lookup_from\": {\"collection\": \"nonexistent_collection_xyz\", \"vector\": \"default\"}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: structured_contract.json line 1260-1264 defines lookup_from as 'Cross-collection lookup location' - implies collection must exist",
+            "constraint_id: API contract suggests cross-collection lookup requires valid target collection",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["lookup_from.*collection", "lookup_location.*validate"],
+          "files_examined": [
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "src/common/inference/query_requests_rest.rs",
+            "lib/storage/src/content_manager/collections.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/operations/universal_query/collection_query.rs defines lookup_from: Option<LookupLocation>. Source code does not show explicit validation that lookup_from.collection exists before attempting cross-collection vector lookup. This is a validation gap - nonexistent collection should return 4xx error instead of being silently ignored.",
+          "call_chain_traced": "POST /collections/{c}/points/query with lookup_from -> convert_query_request_from_rest -> query execution -> no collection existence check before lookup",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: lookup_from.collection存在性校验缺失。API应验证目标collection存在，否则返回4xx错误，而非静默忽略并使用源collection的向量。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Verify with valid lookup_from.collection",
+          "observed": "When lookup_from.collection='test_lookup_target' (existing collection), API correctly performs cross-collection lookup. The bug is that nonexistent collection is silently ignored instead of returning error."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency race"
+          ],
+          "surviving": ""
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count). Missing lookup_from.collection validation falls into this blindspot - maintainers may not have considered nonexistent collection case.",
+        "note": "命中开发者盲点：lookup_from.collection存在性校验缺失"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "POST /collections/{c}/points/query with lookup_from.collection='nonexistent_collection_xyz' should return 4xx error but returns 200 with results from source collection. Contract暗示cross-collection lookup需要有效的target collection，但源码未验证collection存在性。这是parameter validation bug，违反API contract中'Cross-collection lookup location'的隐含要求。API应返回404或类似的collection不存在错误，而非静默忽略无效lookup_from。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 4,
+    "confirmed": 1,
+    "false_positive": 3,
+    "root_cause_distribution": {"request_param_typo": 1, "mundane_api_semantics": 2, "validation_absent": 1}
+  }
+}

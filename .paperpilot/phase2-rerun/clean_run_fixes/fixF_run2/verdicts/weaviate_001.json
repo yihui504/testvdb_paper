@@ -1,0 +1,106 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_001",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with dynamicEfMin=500, dynamicEfMax=10 (inverted range)",
+          "observed": "API returned HTTP 200 and successfully created collection with inverted dynamicEf range (min > max)",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -d '{\"class\":\"TestEfBad\",\"vectorizer\":\"none\",\"vectorIndexConfig\":{\"dynamicEfMin\":500,\"dynamicEfMax\":10,\"dynamicEfFactor\":8}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Schema creation should validate that dynamicEfMin <= dynamicEfMax (logical semantic constraint)",
+            "Inverted range configuration violates the intended semantics of min/max parameters"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_range_schema_replication_001 (general parameter validation exists for schema endpoint)",
+            "API endpoint: POST /schema (vectorIndexConfig parameters)"
+          ],
+          "note": "While no explicit contract assertion exists for dynamicEf range validation, the general schema parameter validation pattern applies"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["dynamicEf", "ParseAndValidateConfig", "validate"],
+          "files_examined": [
+            "entities/vectorindex/hnsw/config.go",
+            "entities/vectorindex/hnsw/config_test.go",
+            "entities/vectorindex/dynamic/config_test.go"
+          ],
+          "source_excerpt": "// entities/vectorindex/hnsw/config.go lines 29-31\ntype UserConfig struct {\n\tDynamicEFMin             int               `json:\"dynamicEfMin\"`\n\tDynamicEFMax             int               `json:\"dynamicEfMax\"`\n\tDynamicEFFactor          int               `json:\"dynamicEfFactor\"`\n\t...\n}\n\n// Lines 177-193: ParseAndValidateConfig parses dynamicEf parameters without range validation\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMin\", func(v int) {\n\tuc.DynamicEFMin = v\n}); err != nil {\n\treturn uc, err\n}\nif err := vectorIndexCommon.OptionalIntFromMap(asMap, \"dynamicEfMax\", func(v int) {\n\tuc.DynamicEFMax = v\n}); err != nil {\n\treturn uc, err\n}\n\n// Lines 260-323: validate() function - NO dynamicEf range check present\nfunc (u *UserConfig) validate() error {\n\tvar errMsgs []string\n\tif u.MaxConnections < MinmumMaxConnections {\n\t\terrMsgs = append(errMsgs, fmt.Sprintf(\n\t\t\t\"maxConnections must be a positive integer with a minimum of %d\",\n\t\t\tMinmumMaxConnections,\n\t\t))\n\t}\n\t// ... other validations but NO check for dynamicEfMin <= dynamicEfMax\n\treturn nil\n}",
+          "call_chain_traced": "POST /schema → ParseAndValidateConfig → OptionalIntFromMap(dynamicEfMin/dynamicEfMax) → validate() → no range check",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms: dynamicEfMin and dynamicEfMax are parsed and stored but never validated for logical consistency (min <= max)"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify created schema retains inverted range",
+          "observed": "GET /schema/TestEfBad returned HTTP 200 with vectorIndexConfig showing dynamicEfMin=500, dynamicEfMax=10 - inverted range persisted in stored configuration",
+          "evidence_cmd": "curl -X GET http://localhost:18080/v1/schema/TestEfBad"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean environment)",
+            "API semantics misunderstanding (min > max is universally invalid)",
+            "Request parameter typo (parameters are correctly spelled)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation gaps at API boundaries",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_id": "BS-004",
+        "note": "Matches developer cognition signal: Input validation is often incomplete at API boundaries (blindspot_indicators)"
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Schema endpoint should validate parameter semantics (weaviate_range_schema_replication_001 establishes validation pattern)",
+          "source_implements_check": false,
+          "api_observed_value": "POST /schema with dynamicEfMin=500 > dynamicEfMax=10 returned HTTP 200 (accepts invalid range)",
+          "api_violates_assertion": true,
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "dynamicEfMin <= dynamicEfMax (logical constraint: min cannot exceed max)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "Source code shows no by-design handling for inverted ranges; missing validation is an implementation gap",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Source code validation gap confirmed: ParseAndValidateConfig in entities/vectorindex/hnsw/config.go parses dynamicEfMin and dynamicEfMax parameters but the validate() function (lines 260-323) contains no range consistency check. API accepts and stores inverted range (min=500 > max=10) without error. This matches developer cognition pattern BS-004 (Parameter Validation Issues in Request Parsing) and blindspot indicator 'Input validation is often incomplete at API boundaries'."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "validation_absent_in_source": 1
+    }
+  },
+  "self_check": "PASSED"
+}

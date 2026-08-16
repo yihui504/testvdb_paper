@@ -1,0 +1,79 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_009",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}",
+          "observed": "HTTP 200 with results returned. API accepts nprobe=0 without error.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/entities/search' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_nprobe_review\", \"data\": [[1.0, 2.0, 3.0, 4.0]], \"annsField\": \"vector\", \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "nprobe parameter should have lower bound validation (nprobe >= 1) for IVF indexes",
+            "searchParams should be validated for numeric bounds before being passed to search execution"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit contract assertion found for nprobe validation in structured_contract.json",
+            "entities+search endpoint documented but searchParams validation not specified"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["searchParams", "nprobe", "IVF", "validation", "range", "bound"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/core/src/segcore/SegmentGrowingIndexTest.cpp",
+            "internal/querynodev2/mock_data.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/request_v2.go line 142-180: type SearchReqV2 struct { DbName string; CollectionName string; PartitionNames []string; SearchParams map[string]interface{} json:'searchParams'; // Params accepted as generic map without validation }. No validation logic found for nprobe bounds checking in proxy layer. SearchParams passed through directly to query nodes without numeric range validation.",
+          "call_chain_traced": "SearchReqV2.SearchParams (map[string]interface{}) -> proxy layer -> no nprobe validation -> query node execution",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - parameter validation defect, not result inconsistency",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean Milvus 2.6.16 instance)",
+            "Request parameter typo (nprobe is valid search parameter)",
+            "API semantic misunderstanding (nprobe=0 is objectively invalid for IVF search)"
+          ],
+          "surviving": "missing_validation_layer"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 developer_cognition 中的 rejection_patterns 或 by_design_patterns。REST v2 API 数据类型序列化验证问题属于 blindspot_indicators 中提到的高频问题区域。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "源码接地确认 searchParams 作为 map[string]interface{} 在 proxy 层未做数值范围校验直接透传。IVF 索引的 nprobe 参数客观物理约束是 nprobe >= 1（探查单元数不能小于 1），但 API 成功接受并处理了 nprobe=0 的非法值。虽然 API 优雅返回了结果（无崩溃），但这属于 validation_absent 类型的真缺陷，违反了参数完整性原则。从三视角分析：契约视角无显式约束（NEUTRAL），物理视角确认客观约束违反（CONFIRMED），行为视角 API 优雅处理但无源码 by-design 证据（WEAK_REFUTED）。根据聚合规则，物理视角确认为 CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_validation_layer": 1
+    }
+  }
+}

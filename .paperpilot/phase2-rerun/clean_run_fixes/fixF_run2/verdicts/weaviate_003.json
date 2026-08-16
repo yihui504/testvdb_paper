@@ -1,0 +1,108 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.37.4",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_003",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with replicationConfig.factor=-1 (negative value)",
+          "observed": "API returned HTTP 200 but silently corrected invalid factor=-1 to factor=1 (default) instead of rejecting the request",
+          "evidence_cmd": "curl -X POST http://localhost:18080/v1/schema -d '{\"class\":\"TestRep\",\"vectorizer\":\"none\",\"replicationConfig\":{\"factor\":-1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Schema creation should validate that replicationConfig.factor >= 1 (replication factor cannot be negative or zero)",
+            "Invalid factor values should be rejected with error, not silently corrected"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: weaviate_range_schema_replication_001 (assertion: replicationConfig.factor >= 1)",
+            "API endpoint: POST /schema (replicationConfig.factor parameter)"
+          ],
+          "note": "Contract explicitly states replicationConfig.factor >= 1, but API behavior violates this by silently accepting and correcting negative values"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.37.4 @ v1.37.4",
+          "grep_queries": ["ValidateConfig", "replication.*factor", "factor.*<.*1"],
+          "files_examined": [
+            "usecases/replica/config.go",
+            "usecases/schema/class.go",
+            "entities/models/replication_config.go"
+          ],
+          "source_excerpt": "// usecases/replica/config.go lines 25-53: ValidateConfig function\nfunc ValidateConfig(class *models.Class, globalCfg replication.GlobalConfig) error {\n\tif class.ReplicationConfig == nil {\n\t\tclass.ReplicationConfig = &models.ReplicationConfig{\n\t\t\tFactor:           int64(globalCfg.MinimumFactor),\n\t\t\tDeletionStrategy: globalCfg.DeletionStrategy,\n\t\t}\n\t\treturn nil\n\t}\n\n\tif class.ReplicationConfig.Factor > 0 && class.ReplicationConfig.Factor < int64(globalCfg.MinimumFactor) {\n\t\treturn fmt.Errorf(\"invalid replication factor: setup requires a minimum replication factor of %d: got %d\",\n\t\t\tglobalCfg.MinimumFactor, class.ReplicationConfig.Factor)\n\t}\n\n\tif globalCfg.MaximumFactor > 0 && class.ReplicationConfig.Factor > int64(globalCfg.MaximumFactor) {\n\t\treturn fmt.Errorf(\"invalid replication factor: setup caps replication at %d: got %d\",\n\t\t\tglobalCfg.MaximumFactor, class.ReplicationConfig.Factor)\n\t}\n\n\t// BUG: Lines 44-46 silently correct invalid factor instead of rejecting\n\tif class.ReplicationConfig.Factor < 1 {\n\t\tclass.ReplicationConfig.Factor = int64(globalCfg.MinimumFactor)\n\t}\n\n\treturn nil\n}\n\n// usecases/schema/class.go lines 134-140: AddClass calling validation\nif err := h.setNewClassDefaults(cls, h.config.Replication); err != nil {\n\treturn nil, 0, err\n}\n\nif err := h.validateCanAddClass(ctx, cls, classGetterWithAuth, true); err != nil {\n\treturn nil, 0, err\n}",
+          "call_chain_traced": "POST /schema → AddClass → validateCanAddClass → replica.ValidateConfig → silently corrects factor < 1 to MinimumFactor",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "silent_correction_instead_of_validation",
+          "note": "Source code confirms bug: ValidateConfig at line 44-46 silently corrects factor < 1 to MinimumFactor instead of rejecting with error. This violates the contract assertion factor >= 1."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify created schema shows corrected factor value",
+          "observed": "GET /schema/TestRep returned HTTP 200 with replicationConfig.factor=1 - value was silently corrected from -1 to 1, no error was returned to client",
+          "evidence_cmd": "curl -X GET http://localhost:18080/v1/schema/TestRep"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean environment)",
+            "API semantics misunderstanding (silent correction is NOT standard API behavior)",
+            "Request parameter typo (parameter correctly spelled as 'factor')"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "Parameter validation gaps at API boundaries",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "pattern_id": "BS-004",
+        "note": "Matches developer cognition signal: Input validation is often incomplete at API boundaries (blindspot_indicators). Also relates to 'Error messages lack context for debugging' - silent correction provides no error feedback."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "replicationConfig.factor >= 1 (weaviate_range_schema_replication_001)",
+          "source_implements_check": true,
+          "api_observed_value": "POST /schema with factor=-1 returned HTTP 200 with corrected factor=1 (silent correction instead of rejection)",
+          "api_violates_assertion": true,
+          "note": "Source validates but uses silent correction instead of proper error rejection - violates contract's semantic expectation of validation",
+          "verdict_A": "CONFIRMED"
+        },
+        "physical": {
+          "objective_constraint": "replicationConfig.factor >= 1 (factor represents replica count, cannot be negative or zero)",
+          "api_accepts_violation": true,
+          "api_behavior": "Silently correct instead of reject",
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "note": "Silent correction is not by-design for validation errors; proper API behavior is 422 Unprocessable Entity with error message",
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_A=CONFIRMED + verdict_B=CONFIRMED + verdict_C=CONFIRMED → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.93,
+      "rationale": "Source code confirms validation bug: replica.ValidateConfig in usecases/replica/config.go (lines 44-46) silently corrects invalid factor < 1 to MinimumFactor instead of rejecting with error. This violates contract assertion factor >= 1 and deprives client of error feedback. API returns HTTP 200 with corrected value, masking the validation failure. This is a parameter validation gap (BS-004) where input validation exists but uses incorrect error handling (silent correction vs rejection)."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "silent_correction_instead_of_rejection": 1
+    }
+  },
+  "self_check": "PASSED"
+}

@@ -1,0 +1,26 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_021",
+      "endpoint": "entities+search",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1487-1676\n\nfunc (h *HandlersV2) search(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*SearchReqV2)\n\treq := &milvuspb.SearchRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tDsl:            httpReq.Filter,\n\t\tDslType:        commonpb.DslType_BoolExprV1,\n\t\tOutputFields:   httpReq.OutputFields,\n\t\tPartitionNames: httpReq.PartitionNames,\n\t}\n\t// ... parameter validation ...\n\tcollSchema, err := h.GetCollectionSchema(ctx, c, dbName, httpReq.CollectionName)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\t// NO LOAD STATE CHECK HERE - directly proceeds to search execution\n\t// ... parameter processing ...\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/Search\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.Search(reqCtx, req.(*milvuspb.SearchRequest))\n\t})\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "internal/distributed/proxy/httpserver/constant.go"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /entities/search on collection 'test_unloaded' succeeded with HTTP 200 and returned results, despite the collection never being loaded via /collections/load. Source code analysis (handler_v2.go:1487-1676) shows the search handler performs NO load state validation before proxy.Search() call - it only validates collection schema exists. Contract documentation states collections must be 'loaded into memory for searching and queries' (collections+load endpoint description), but API violates this contract. This is a Type1_IllegalSuccess defect matching REST_v2_data_type_handling shape - REST v2 fails to enforce core invariants that gRPC path validates."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

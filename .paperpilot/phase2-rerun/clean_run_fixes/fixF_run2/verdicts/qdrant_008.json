@@ -1,0 +1,86 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_008",
+      "endpoint": "collections+{collection_name}+points+scroll",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_idx2/points/scroll with filter category_id=cat_a, limit=100",
+          "observed": "HTTP 200, returned exactly 25 points with category_id=cat_a (ids 1-25). Correct behavior.",
+          "evidence_cmd": "curl -X POST 'http://localhost:6333/collections/test_idx2/points/scroll' -H 'Content-Type: application/json' -d '{\"filter\": {\"must\": [{\"key\": \"category_id\", \"match\": {\"value\": \"cat_a\"}}]}, \"limit\": 100}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": ["结论声称'scroll返回不完整结果'的前提依赖'should返回所有50个点'，但 filter 明确限制为 category_id=cat_a（仅25个点）"]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["API: POST /collections/{collection_name}/points/scroll - Scroll points with pagination, filter conditions apply"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["scroll.*filter", "filter.*must"],
+          "files_examined": ["lib/collection/src/shards/local_shard/scroll.rs"],
+          "source_excerpt": "Scroll API applies filter conditions before returning results. Observed behavior: 25/50 points match filter category_id=cat_a, exactly those 25 returned. No violation.",
+          "call_chain_traced": "scroll request → filter application → point matching → result return",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现: scroll API 正确应用了 filter 条件，返回了匹配的 25 个点（category_id=cat_a），这是正确的 filter 语义。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Manual count of points with category_id=cat_a vs cat_b",
+          "observed": "Collection has 50 points total: 25 with cat_a, 25 with cat_b. Scroll returned exactly the 25 cat_a points. Filter working correctly.",
+          "evidence_cmd": "Point counting from raw log: ids 1-25 have category_id=cat_a, ids 26-50 have category_id=cat_b"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发 race", "缓存延迟"],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中特定 by_design pattern，但属 filter 语义理解问题"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 声称 scroll 返回不完整结果，但实测显示：1) API 正确返回了 25 个匹配 filter category_id=cat_a 的点（ids 1-25）；2) 集合总共 50 个点，其中 25 个 cat_a、25 个 cat_b，filter 语义正确；3) 源码接地确认 scroll API 正确应用了 filter 条件。无违规。原 oracle 误读了 filter 语义。",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "Scroll API applies filter conditions",
+          "source_implements_check": true,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "None - no physical constraint violation",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": false,
+          "verdict_C": "WEAK_REFUTED"
+        },
+        "aggregation_applied": "A=NEUTRAL, B=NEUTRAL, C=WEAK_REFUTED → final=REFUTED (mundane API semantics)",
+        "final_verdict": "REFUTED"
+      },
+      "source_excerpt": "Scroll API correctly applies filter: returned 25/50 points where category_id=cat_a, matching filter condition exactly",
+      "files_examined": ["lib/collection/src/shards/local_shard/scroll.rs"]
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

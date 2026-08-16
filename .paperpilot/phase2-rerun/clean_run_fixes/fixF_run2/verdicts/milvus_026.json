@@ -1,0 +1,28 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_026",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1795-2062\n\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\t// NO COLLECTION NAME VALIDATION - does not check for naming restrictions like underscore prefix\n\t// ... proceeds directly to schema validation and proxy.CreateCollection() ...\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go",
+        "structured_contract.json"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /collections/create with collectionName='_test_collection' succeeded with HTTP 200. However, structured_contract.json contains NO constraints documenting restrictions on collection names starting with underscore. Source code analysis (handler_v2.go:1795-2062) shows createCollection handler performs no naming validation beyond basic schema processing. Without documented constraint prohibiting underscore prefix or reasonable technical justification (databases commonly allow underscore-prefixed names), this cannot be considered a defect. The assertion appears to be based on unstated naming conventions rather than documented contract violation. Matches mundane_api_semantics pattern."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

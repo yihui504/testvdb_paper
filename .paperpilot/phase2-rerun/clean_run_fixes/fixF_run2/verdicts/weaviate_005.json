@@ -1,0 +1,83 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.0",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_005",
+      "endpoint": "POST /schema",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /schema with {\"class\": \"TestNegRepro\", \"shardingConfig\": {\"desiredCount\": -1}}",
+          "observed": "HTTP 200 - Collection created successfully with negative desiredCount=-1",
+          "evidence_cmd": "curl -s -X POST http://localhost:18080/v1/schema -H \"Content-Type: application/json\" -d '{\"class\": \"TestNegRepro\", \"shardingConfig\": {\"desiredCount\": -1}}' -w \"\\nHTTP_STATUS:%{http_code}\\n\" → HTTP_STATUS:200"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["No explicit constraint for desiredCount in structured_contract.json, but developer_cognition indicates parameter validation gaps are bugs"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.0 @ v1.38.0",
+          "grep_queries": ["desiredCount", "shardingConfig", "validate"],
+          "files_examined": ["usecases/sharding/config/config.go", "usecases/schema/parser.go"],
+          "source_excerpt": "// usecases/sharding/config/config.go line 53-69\nfunc (c *Config) validate() error {\n\tif c.Key != \"_id\" {\n\t\treturn errors.Errorf(\"sharding only supported on key '_id' for now, \"+\n\t\t\t\"got: %s\", c.Key)\n\t}\n\n\tif c.Strategy != \"hash\" {\n\t\treturn errors.Errorf(\"sharding only supported with strategy 'hash' for now, \"+\n\t\t\t\"got: %s\", c.Strategy)\n\t}\n\n\tif c.Function != \"murmur3\" {\n\t\treturn errors.Errorf(\"sharding only supported with function 'murmur3' for now, \"+\n\t\t\t\"got: %s\", c.Function)\n\t}\n\n\treturn nil\n}\n\n// usecases/sharding/config/config.go line 148-175\nfunc optionalIntFromMap(in map[string]interface{}, name string,\n\tsetFn func(v int),\n) error {\n\tvalue, ok := in[name]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\tvar asInt64 int64\n\tvar err error\n\n\t// depending on whether we get the results from disk or from the REST API,\n\t// numbers may be represented slightly differently\n\tswitch typed := value.(type) {\n\tcase json.Number:\n\t\tasInt64, err = typed.Int64()\n\tcase int:\n\t\tasInt64 = int64(typed)\n\tcase float64:\n\t\tasInt64 = int64(typed)\n\t}\n\tif err != nil {\n\t\treturn errors.Wrapf(err, \"%s\", name)\n\t}\n\n\tsetFn(int(asInt64))\n\treturn nil\n}",
+          "call_chain_traced": "ParseConfig() → optionalIntFromMap() → setFn(int(asInt64)) → NO RANGE CHECK on desiredCount",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:desiredCount 参数在 optionalIntFromMap 中直接转换为 int 并设置，完全没有进行范围校验(如 >= 1 或 >= 0)。validate() 函数只检查 Key/Strategy/Function 字段，不检查 desiredCount 范围。这是真正的参数验证缺失。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "验证创建的集合确实包含负数值",
+          "observed": "集合创建成功后，可通过 GET /schema/TestNegRepro 确认 shardingConfig.desiredCount 确实为 -1，而非默认值或错误处理"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["环境问题", "并发竞争", "缓存延迟"],
+          "surviving": "parameter_validation_gap"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "BS-004",
+        "developer_quote": "Parameter validation gaps at API boundaries",
+        "note": "命中 developer_cognition.what_developers_consider_bugs[0]='Parameter validation gaps at API boundaries'"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit contract constraint for desiredCount range in structured_contract.json",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL"
+        },
+        "physical": {
+          "objective_constraint": "desiredCount represents physical shard count, semantically must be >= 1 for non-MT collections",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical violation) + verdict_C=CONFIRMED (no graceful handling) → final=CONFIRMED",
+        "final_verdict": "CONFIRMED"
+      },
+      "confidence": 0.95,
+      "rationale": "源码接地确认 ParseConfig() 中的 optionalIntFromMap() 对 desiredCount 参数完全没有进行范围校验，直接接受负值(-1)。根据 developer_cognition，参数验证缺口是维护者明确认为的 bug。虽然 contract 没有显式约束，但 shardingConfig.desiredCount 语义上代表物理分片数，负值无意义且可能导致后续计算错误(如 desiredVirtualCount = desiredCount * virtualPerPhysical 会产生负数)。CONFIRMED。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {"parameter_validation_gap": 1}
+  }
+}

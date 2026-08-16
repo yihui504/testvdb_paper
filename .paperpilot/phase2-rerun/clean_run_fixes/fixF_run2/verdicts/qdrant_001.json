@@ -1,0 +1,102 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.12.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_001",
+      "endpoint": "collections+{collection_name}+points",
+      "defect_type": "crash",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections/test_review/points?wait=true vs without wait parameter, both with empty vector []",
+          "observed": "With wait=true: HTTP 400 'Vector dimension error: expected dim: 4, got 0'. Without wait: HTTP 200 'operation_id':1,'status':'acknowledged'",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_review/points?wait=true' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 1, \"vector\": []}]}' → HTTP 400; curl -X PUT 'http://localhost:6333/collections/test_review/points' -H 'Content-Type: application/json' -d '{\"points\": [{\"id\": 2, \"vector\": []}]}' → HTTP 200"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_type_upsert_points_003 (vector type is array of floats or object)"],
+          "note": "Contract defines vector as 'array of floats' but does not explicitly specify non-empty constraint. However, the collection config specifies vectors.size=4, creating an implicit expectation."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.12.1 @ v1.12.1",
+          "grep_queries": ["PointInsertOperationsInternal.*validate", "PointsList.*validate", "Batch.*validate", "update_from_client.*wait"],
+          "files_examined": [
+            "lib/collection/src/operations/point_ops.rs",
+            "lib/collection/src/collection/point_ops.rs",
+            "lib/storage/src/content_manager/toc/point_ops.rs",
+            "src/actix/api/update_api.rs",
+            "lib/segment/src/common/operation_error.rs"
+          ],
+          "source_excerpt": "// lib/collection/src/operations/point_ops.rs line 420-427\nimpl Validate for PointInsertOperationsInternal {\n    fn validate(&self) -> Result<(), validator::ValidationErrors> {\n        match self {\n            PointInsertOperationsInternal::PointsBatch(batch) => batch.validate(),\n            PointInsertOperationsInternal::PointsList(_list) => Ok(()),  // <- ALWAYS returns Ok, bypasses validation!\n        }\n    }\n}\n\n// lib/collection/src/operations/point_ops.rs line 429-450\nimpl Validate for Batch {\n    fn validate(&self) -> Result<(), validator::ValidationErrors> {\n        // ...\n        self.vectors.validate()?;  // <- Batch DOES validate vectors\n        // ...\n    }\n}",
+          "call_chain_traced": "API handler (update_api.rs:38-63) → do_upsert_points → toc.update (point_ops.rs:407) → collection.update_from_client (point_ops.rs:133) → operation.validate() (point_ops.rs:140) → PointInsertOperations.validate → PointInsertOperationsInternal.validate (line 420-427). Critical divergence: PointsList returns Ok(()) unconditionally while Batch calls vectors.validate()",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:在 update_from_client 第140行调用 operation.validate() 时,存在验证不一致。PointsInsertOperationsInternal::PointsList 的 validate 实现无条件返回 Ok(()),完全跳过向量维度检查。而 PointsBatch 的 validate 调用 vectors.validate()?。这导致了当 wait=true 时(走同步路径,在 segment 层执行向量检查),空向量被拒绝并返回 HTTP 400;当 wait=false 时(走异步路径,operation.validate() 通过但数据实际无效),请求被接受返回 HTTP 200 acknowledged,但该点从未真正插入(points_count 保持 0)。这是真正的验证不一致缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "GET /collections/test_review after both requests",
+          "observed": "points_count=0 confirms the wait=false request did NOT actually insert the invalid point, despite returning HTTP 200 'acknowledged'",
+          "evidence_cmd": "curl -s 'http://localhost:6333/collections/test_review' | grep points_count → 'points_count':0 (证实无效点未插入,但API返回成功是误导性的)"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "environment_issue",
+            "concurrency_race",
+            "caching_delay",
+            "request_param_typo",
+            "api_semantics_misunderstanding"
+          ],
+          "surviving": "validation_inconsistency"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count) - similar validation gap pattern",
+        "note": "缺陷命中 developer_cognition.json 的 parameter_validation 盲点模式——验证在执行路径间不一致"
+      },
+      "root_cause_if_confirmed": "wait_parameter_dependent_validation",
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint in contract forbidding empty vectors, but collection config sets vectors.size=4, creating implicit dimension expectation",
+          "source_implements_check": false,
+          "verdict_A": "WEAK_REFUTED",
+          "note": "Contract层面无显式约束,但配置隐含要求维度=4"
+        },
+        "physical": {
+          "objective_constraint": "Empty vector (dimension 0) cannot match collection dimension requirement (size=4)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "物理约束违反:零维向量不可能匹配4维配置,但API在wait=false时接受"
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "行为不一致:wait=true拒绝(wait参数影响错误响应),wait=false接受但未实际插入(误导性成功响应)"
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED AND verdict_C=CONFIRMED → final=CONFIRMED (physical violation + inconsistent behavior)",
+        "final_verdict": "CONFIRMED"
+      },
+      "rationale": "这是一个验证不一致的真正缺陷。源码接地证实了 root cause:在 update_from_client 的第140行,所有操作都调用 operation.validate(),但 PointInsertOperationsInternal::PointsList 的 validate 实现无条件返回 Ok(()),完全跳过向量维度检查,而 PointsBatch 的 validate 会调用 vectors.validate()?。这导致了基于 wait 参数的执行路径分歧:当 wait=true 时,请求走同步路径,在 segment 层执行实际的向量维度检查,发现违规并返回 HTTP 400;当 wait=false 时,请求走异步路径,operation.validate() 被调用但 PointsList 版本跳过了检查,请求被接受返回 HTTP 200 acknowledged,但该点从未真正插入(points_count 保持 0,通过 falsification 独立验证)。这种不一致行为(同一无效输入在不同路径下返回不同结果)违反了 API 一致性原则,属于 Type1_IllegalSuccess 缺陷子类——异步路径接受了非法输入并返回成功响应,尽管实际操作失败。开发者认知模型显示这是 parameter_validation 类盲点的典型实例。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "wait_parameter_dependent_validation": 1
+    }
+  }
+}

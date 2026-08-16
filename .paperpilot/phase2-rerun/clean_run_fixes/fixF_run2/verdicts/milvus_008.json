@@ -1,0 +1,111 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.12",
+  "verdicts": [
+    {
+      "defect_id": "milvus_008",
+      "endpoint": "indexes+create",
+      "defect_type": "behavior",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/indexes/create on collection with auto-created default index",
+          "observed": "HTTP 200 with code 65535: 'CreateIndex failed: creating multiple indexes on same field is not supported'",
+          "evidence_cmd": "curl -s http://localhost:19530/v2/vectordb/indexes/create -d '{\"collectionName\":\"repro_milvus_008_devreview\",\"dbName\":\"default\",\"indexParams\":[{\"fieldName\":\"vector\",\"indexName\":\"idx_vec_second\",\"metricType\":\"COSINE\",\"indexType\":\"FLAT\",\"params\":{\"nlist\":8}}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes: API should allow creating multiple indexes on same field",
+            "Reality: quick-setup mode auto-creates default index on vector field",
+            "Root misunderstanding: treating by-design constraint as bug"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: indexes+create endpoint description",
+            "assertion: 'Create an index on a field in a collection' (no explicit one-index-per-field restriction mentioned)"
+          ],
+          "note": "Contract is silent on multiple indexes - this allows design flexibility"
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.12 @ v2.6.12",
+          "grep_queries": [
+            "multiple indexes",
+            "creating multiple indexes on same field",
+            "not support multiple indexes"
+          ],
+          "files_examined": [
+            "internal/datacoord/index_meta.go",
+            "internal/proxy/task.go",
+            "internal/datacoord/errors.go",
+            "tests/go_client/testcases/index_test.go"
+          ],
+          "source_excerpt": "// internal/datacoord/index_meta.go line 401-404\n\t\t// creating multiple indexes on same field is not supported\n\t\terrMsg := \"CreateIndex failed: creating multiple indexes on same field is not supported\"\n\t\tlog.Warn(errMsg)\n\t\treturn 0, errors.New(errMsg)",
+          "call_chain_traced": "CreateIndexRequest → indexMeta.validateReq() → fieldIndex loop → check FieldID match → return explicit error",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Source code contains EXPLICIT by-design comment and error handling - this is intentional constraint, not implementation bug"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test 1: Create collection with explicit schema (no auto-index) - manual index creation fails with same error\nTest 2: Drop auto-created index (fails on loaded collection) - constraint persists\nObservation: Error is consistent, deterministic, and stems from design constraint",
+          "observed": "Error appears even when auto-index is not explicitly present - suggests deeper architectural constraint beyond quick-setup behavior"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (clear error code)",
+            "Race condition (deterministic)",
+            "Cache/optimization delay (immediate failure)",
+            "Request parameter typo (valid params)"
+          ],
+          "surviving": "mundane_api_semantics - by-design architectural constraint"
+        }
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "None found - contract silent on multiple indexes",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract does not assert one-index-per-field requirement"
+        },
+        "physical": {
+          "objective_constraint": "None - multiple indexes are technically feasible in some databases",
+          "api_accepts_violation": false,
+          "verdict_B": "NEUTRAL",
+          "note": "No physical constraint prevents multiple indexes"
+        },
+        "behavioral": {
+          "api_graceful": true,
+          "by_design_in_source": true,
+          "verdict_C": "REFUTED",
+          "note": "Explicit by-design comment in source code: '// creating multiple indexes on same field is not supported'"
+        },
+        "aggregation_applied": "verdict_A=NEUTRAL, verdict_B=NEUTRAL, verdict_C=REFUTED → final_verdict=REFUTED (by-design in source)",
+        "final_verdict": "FALSE_POSITIVE"
+      },
+      "cognition_match": {
+        "matched_pattern": "BDP-001 (conceptually similar - explicit design constraint)",
+        "developer_quote": "// creating multiple indexes on same field is not supported",
+        "note": "While no exact BDP pattern exists for multiple indexes, the source comment pattern matches BDP-001 style (explicit exclusion comment)"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "Original defect report claims API incorrectly rejects creating multiple indexes on same field. However, source code at internal/datacoord/index_meta.go:401-404 contains EXPLICIT by-design comment '// creating multiple indexes on same field is not supported' with dedicated error handling. This is an intentional architectural constraint (likely for query planner simplicity, index consistency, or performance), not a bug. The contract (structured_contract.json) is silent on this, allowing implementation flexibility. Three-perspective analysis: A=NEUTRAL (contract silent), B=NEUTRAL (no physical constraint), C=REFUTED (by-design in source) → FALSE_POSITIVE. This is mundane API semantics - Milvus chooses one-index-per-field design."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  },
+  "self_check": "PASSED"
+}

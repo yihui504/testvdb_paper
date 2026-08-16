@@ -1,0 +1,77 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_016",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams containing invalid values: ef=-1, ef=0, nprobe=0",
+          "observed": "All three invalid parameter values are accepted by the API with HTTP 200 responses and successful search results, despite violating physical constraints",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:19530/v2/vectordb/entities/search\" -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_search_params\", \"data\": [[0.1, 0.2, 0.3, 0.4]], \"limit\": 5, \"searchParams\": {\"ef\": -1}}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_state_entities_search_001 - assertion: 'collection is loaded AND index exists on annsField'",
+            "No explicit contract constraints exist for search parameter validation (this is a gap in the formalized contract)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["generateSearchParams", "searchParams", "nprobe", "ef"],
+          "files_examined": [
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/utils.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/internal/distributed/proxy/httpserver/handler_v2.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/client/index/ivf.go",
+            "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16/client/index/scann.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/utils.go lines 2192-2246\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// ... deepEqual function ...\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s, in search_param: %v, in search_param.params: %v\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})\n\t\t}\n\t}\n\t// need to exposure ParamRoundDecimal in req?\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: ParamRoundDecimal, Value: \"-1\"})\n\treturn searchParams, nil\n}",
+          "call_chain_traced": "REST handler search() → generateSearchParams() → NO validation of parameter values → direct pass-through to proxy layer",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "The generateSearchParams function performs NO validation of parameter values. It only checks for parameter format consistency and marshals values directly. Invalid values like ef=-1, ef=0, nprobe=0 are passed through without any range checking or constraint validation."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test confirmed that invalid parameter values are accepted and executed successfully by the search API",
+          "observed": "API returns HTTP 200 with successful results for ef=-1, ef=0, nprobe=0 - no error or validation failure"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "This is not an environment issue, race condition, or transient failure",
+            "This is not a semantic misunderstanding or by-design behavior"
+          ],
+          "surviving": "rest_v2_data_type_handling"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus. Developers prioritize 'Performance optimization over data validation (REST v2 issues persist)'",
+        "note": "This defect matches the documented blindspot pattern for REST v2 API data type handling. Maintainers explicitly acknowledge this area has repeated validation issues and prioritize performance over comprehensive validation."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Confirmed defect: REST v2 entities/search API accepts invalid search parameter values that violate objective physical constraints. Physical constraints exist: nprobe >= 1 for IVF search (must probe at least 1 cluster), ef >= 1 for HNSW search (ef is the candidate list size). The generateSearchParams function in utils.go performs NO value validation - it only marshals parameters and passes them through. Invalid values like ef=-1, ef=0, nprobe=0 are accepted and executed without error. This matches the known 'rest-v2-data-type-handling' blindspot pattern where REST v2 API fails to properly validate data types and parameter ranges. The contract has no explicit constraints for search parameter validation, indicating a formalization gap, but the physical constraints are objective and should be enforced."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "rest_v2_data_type_handling": 1
+    }
+  }
+}

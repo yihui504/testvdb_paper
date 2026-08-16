@@ -1,0 +1,99 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_042",
+      "endpoint": "entities+insert",
+      "defect_type": "type_coercion",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/insert with vector field as string: {\"vector\": \"[0.1,0.2,0.3,0.4]\"} instead of array: {\"vector\": [0.1, 0.2, 0.3, 0.4]}",
+          "observed": "Server returns HTTP 200 success, treating string representation as valid vector data",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/insert -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_vec_str\", \"data\": [{\"id\": 0, \"vector\": \"[0.1,0.2,0.3,0.4]\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "Vector fields must be arrays of numeric values, not string representations",
+            "FloatVector dataType requires array format, not JSON string serialization",
+            "Type coercion from string to array should be explicit, not implicit"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_enum_datatype_float_vector_013 - Valid dataType value: FLOAT_VECTOR",
+            "endpoint: entities+insert - Insert entities",
+            "Vector field semantic: must be numeric array matching dimension, not string"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["anyToColumns", "DataType_FloatVector", "candi.v.Interface", "convertFloatVectorToArray"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/utils.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/validate.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/utils.go lines 1971-1972 (FloatVector type handling)\n\ncase schemapb.DataType_FloatVector:\n    nameColumns[field.Name] = append(nameColumns[field.Name].([][]float32), candi.v.Interface().([]float32))  // LINE 1972 - BUG: Direct type assertion, no string->array conversion\n    // When JSON contains {\"vector\": \"[0.1,0.2,0.3,0.4]\"}, candi.v holds a string, not []float32\n    // Should validate input is numeric array, reject string representations\n    // Missing call to convertFloatVectorToArray for string parsing",
+          "call_chain_traced": "REST v2 Insert → checkAndSetData(body) → gjson.GetBytes parses JSON → anyToColumns(rows, schema) → line 1972 does candi.v.Interface().([]float32) direct type assertion without string format handling",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 insert对FloatVector字段(line 1972)做直接类型断言,缺少字符串表示解析逻辑。当传入序列化的数组字符串'[0.1,0.2,0.3,0.4]'时,应拒绝或解析为数组,但实际服务端接受了非法格式,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Insert with string vector succeeds, then search verifies data was stored and is queryable",
+          "observed": "Search returns the record successfully, confirming the string representation was accepted and stored as valid vector data"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean Milvus 3.0.0)",
+            "Feature not documented (FloatVector format is well-documented)",
+            "Alternative input method (string is not valid input format per contract)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": "REST v2 API fails to properly serialize/deserialize complex data types",
+        "note": "命中REST v2类型处理盲点: 向量字段缺少格式验证,属于开发者已识别的系统性类型处理问题。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.90,
+      "rationale": "Milvus REST v2 insert对FloatVector字段缺少格式验证,接受序列化的数组字符串'[0.1,0.2,0.3,0.4]'而非要求数值数组。源码接地发现line 1972处直接类型断言缺少字符串解析逻辑。实测复现证实服务端返回HTTP 200成功且数据可查询,构成真缺陷。此缺陷命中REST v2类型处理盲点模式。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "FloatVector fields must be numeric arrays matching dimension, not string representations (constraint_id: milvus_enum_datatype_float_vector_013)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "FloatVector has physical type constraint - must be array of 32-bit floats, not JSON string",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  }
+}

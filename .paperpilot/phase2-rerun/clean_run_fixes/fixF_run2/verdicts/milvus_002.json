@@ -1,0 +1,107 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.10",
+  "verdicts": [
+    {
+      "defect_id": "milvus_002",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with searchParams={\"nprobe\": 0}",
+          "observed": "HTTP 200 OK with successful search results. API accepts nprobe=0 without validation.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H \"Content-Type: application/json\" -d '{\"collectionName\": \"test_nprobe_validation\", \"dbName\": \"default\", \"data\": [[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]], \"limit\": 3, \"searchParams\": {\"nprobe\": 0}, \"outputFields\": [\"id\"]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Defect assumes nprobe parameter should be validated to be >= 1 for IVF indexes",
+            "API is expected to reject invalid nprobe values (like 0) with an error response",
+            "REST v2 should have same parameter validation as gRPC path (developer_cognition blindspot: 'REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects')"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "No explicit constraint_id found for nprobe validation in structured_contract.json",
+            "milvus_type_entities_search_001: 'data must be array of float arrays, annsField must be a vector field, limit must be positive integer' - but no mention of searchParams validation",
+            "milvus_range_entities_search_001: 'vector dimensions in data must match collection vector dimension' - no searchParams validation"
+          ],
+          "contract_misread": false,
+          "note": "Contract has type constraints for search endpoint but no explicit parameter validation constraints for searchParams fields like nprobe. This indicates a gap in contract formalization, not a misread."
+        },
+        "falsification": {
+          "pass": true,
+          "note": "Falsification not applicable - bug confirmed at API parameter validation layer. The violation is accepting invalid input, not incorrect output behavior."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on clean setup)",
+            "Concurrent/race condition (single sequential request)",
+            "Request parameter typo (nprobe=0 is intentional test case)",
+            "API semantics misunderstanding (nprobe < 1 is objectively invalid for IVF)"
+          ],
+          "surviving_explanation": "Missing parameter validation in REST v2 API layer"
+        }
+      },
+      "source_grounding": {
+        "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10 @ v2.6.10",
+        "grep_queries": ["nprobe", "searchParams", "SearchParams", "generateSearchParams"],
+        "files_examined": [
+          "internal/distributed/proxy/httpserver/request_v2.go",
+          "internal/distributed/proxy/httpserver/handler_v2.go",
+          "internal/distributed/proxy/httpserver/utils.go"
+        ],
+        "source_excerpt": "// internal/distributed/proxy/httpserver/request_v2.go line 333-352\ntype SearchReqV2 struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tData             []interface{}          `json:\"data\" binding:\"required\"`\n\tAnnsField        string                 `json:\"annsField\"`\n\tPartitionNames   []string               `json:\"partitionNames\"`\n\tFilter           string                 `json:\"filter\"`\n\tGroupByField     string                 `json:\"groupingField\"`\n\tGroupSize        int32                  `json:\"groupSize\"`\n\tStrictGroupSize  bool                   `json:\"strictGroupSize\"`\n\tLimit            int32                  `json:\"limit\"`\n\tOffset           int32                  `json:\"offset\"`\n\tOutputFields     []string               `json:\"outputFields\"`\n\tSearchParams     map[string]interface{} `json:\"searchParams\"`  // <-- No validation tags, generic map\n\tConsistencyLevel string                 `json:\"consistencyLevel\"`\n\tExprParams       map[string]interface{} `json:\"exprParams\"`\n\tFunctionScore    FunctionScore          `json:\"functionScore\"`\n\tParams map[string]float64 `json:\"params\"`\n}\n\n// internal/distributed/proxy/httpserver/utils.go line 2076-2125 (generateSearchParams function)\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n\tvar searchParams []*commonpb.KeyValuePair\n\tvar params interface{}\n\tif val, ok := reqSearchParams[Params]; ok {\n\t\tparams = val\n\t}\n\n\tparamsMap := make(map[string]interface{})\n\tif params != nil {\n\t\tvar ok bool\n\t\tif paramsMap, ok = params.(map[string]interface{}); !ok {\n\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(\"searchParams.params must be a dict\")\n\t\t}\n\t}\n\n\t// [deepEqual function omitted]\n\n\tfor key, value := range reqSearchParams {\n\t\tif val, ok := paramsMap[key]; ok {\n\t\t\tif !deepEqual(val, value) {\n\t\t\t\treturn nil, merr.WrapErrParameterInvalidMsg(fmt.Sprintf(\"ambiguous parameter: %s, in search_param: %v, in search_param.params: %v\", key, value, val))\n\t\t\t}\n\t\t} else if key != Params {\n\t\t\tparamsMap[key] = value  // <-- No validation of specific parameter values like nprobe\n\t\t}\n\t}\n\n\tbs, _ := json.Marshal(paramsMap)\n\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: Params, Value: string(bs)})\n\n\tfor key, value := range reqSearchParams {\n\t\tif key != Params {\n\t\t\t// for compatibility\n\t\t\tif key == \"ignoreGrowing\" {\n\t\t\t\tkey = common.IgnoreGrowing\n\t\t\t}\n\t\t\tsearchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: fmt.Sprintf(\"%v\", value)})  // <-- Pass-through, no validation\n\t\t}\n\t}\n\treturn searchParams, nil\n}",
+        "call_chain_traced": "SearchReqV2.SearchParams (map[string]interface{}) → generateSearchParams() → pass-through to backend as KeyValuePair[] → NO nprobe range validation",
+        "source_verified_by_reviewer": true,
+        "verification_outcome": "validation_absent",
+        "note": "Source code confirms REST v2 search parameter handler does NOT validate nprobe range. SearchParams is a generic map[string]interface{} that gets serialized and passed to backend without any parameter-specific validation. No check for nprobe >= 1."
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects (maintainers treat cross-channel inconsistency as a defect and fix it)",
+        "pattern_id": "rest-v2-data-type-handling",
+        "note": "Defect directly matches developer cognition blindspot: REST v2 API lacking validation that gRPC path has. Maintainers explicitly treat this as a defect to be fixed."
+      },
+      "perspective_analysis": {
+        "contract": {
+          "explicit_requirement": "No explicit constraint for nprobe validation found in structured_contract.json for entities+search endpoint",
+          "source_implements_check": false,
+          "verdict_A": "NEUTRAL",
+          "note": "Contract has no constraint, so contract perspective cannot confirm or refute. Relies on physical constraint perspective."
+        },
+        "physical": {
+          "objective_constraint": "nprobe >= 1 for IVF index search (mathematical/physical constraint - nprobe represents number of inverted list cells to probe, must be at least 1)",
+          "api_accepts_violation": true,
+          "verdict_B": "CONFIRMED",
+          "note": "Physical constraint is clear: nprobe < 1 is mathematically invalid for IVF search. API accepts nprobe=0, violating physical constraint."
+        },
+        "behavioral": {
+          "api_graceful": false,
+          "by_design_in_source": false,
+          "verdict_C": "CONFIRMED",
+          "note": "API does not handle nprobe=0 gracefully - no error response, no default value application, no validation. Source code shows pass-through without checks."
+        },
+        "aggregation_applied": "verdict_B=CONFIRMED (physical constraint violation) → final=CONFIRMED (contract neutral but physical/behavioral confirm bug)",
+        "final_verdict": "CONFIRMED"
+      },
+      "root_cause_if_true": "REST v2 API missing parameter validation that should reject nprobe < 1",
+      "severity_after_review": "High",
+      "confidence": 0.92,
+      "rationale": "Milvus REST v2 entities/search accepts nprobe=0 (invalid for IVF indexes) without validation, returning HTTP 200 with successful search. Physical constraint: nprobe represents number of inverted list cells to probe, must be >= 1. Source code confirms SearchParams is processed as generic map[string]interface{} in generateSearchParams() with no parameter-specific validation - just pass-through serialization to backend. This matches developer cognition blindspot: 'REST v2 and gRPC divergent validation' is explicitly treated by maintainers as a defect. Contract has no explicit constraint for nprobe validation (gap in formalization), but physical constraint (nprobe >= 1) is objectively violated. No graceful handling or by-design evidence in source. True defect: missing REST v2 parameter validation."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {
+      "missing_rest_v2_parameter_validation": 1
+    }
+  }
+}

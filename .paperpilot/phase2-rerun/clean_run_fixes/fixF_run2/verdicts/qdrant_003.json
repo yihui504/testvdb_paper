@@ -1,0 +1,19 @@
+{
+  "judge": "dev-review",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_003",
+      "verdict": "CONFIRMED",
+      "confidence": 0.92,
+      "source_excerpt": "/// Return points with scores better than this threshold.\n    pub score_threshold: Option<ScoreType>,\n\n    /// Max number of points to return. Default is 10.\n    #[validate(range(min = 1))]\n    pub limit: Option<usize>,",
+      "files_examined": [
+        "lib/api/src/rest/schema.rs",
+        "lib/shard/src/search.rs",
+        "lib/common/common/src/types.rs",
+        "lib/collection/src/shards/local_shard/search.rs",
+        "lib/segment/src/types.rs"
+      ],
+      "rationale": "Step 1 (Clean Reproduction): Created collection with Cosine distance (valid range: -1.0 to 1.0). Inserted point with identical vector (score should be 1.0). Tested POST /collections/{c}/points/search with score_threshold=2.0 (mathematically impossible for Cosine). Server returns HTTP 200 with empty results instead of rejecting invalid input. Score threshold outside valid bounds is silently accepted.\n\nStep 2 (Premise Audit): Developer cognition lists 'Silent failure in recommend API with missing point IDs' as blindspot, indicating silent acceptance of invalid parameters is a known concern. This aligns with the observed behavior - API accepts score_threshold=2.0 without validation and returns empty results (silent failure). Defect_type='behavior' suggests API contract violation.\n\nStep 3 (Contract Verification): Contract defines score_threshold as 'Option<ScoreType>' with boundary description 'Return points with scores better than this threshold'. For Cosine similarity, valid scores are [-1.0, 1.0]. Value 2.0 is invalid but accepted.\n\nStep 4 (Source Grounding): SearchRequestInternal.score_threshold (lib/api/src/rest/schema.rs:573, 779, 1160) has NO #[validate(...)] attributes. Compare to limit field at line 576 which has #[validate(range(min = 1))]. ScoreType (lib/common/common/src/types.rs:8) is 'type ScoreType = f32' with no constraints. CoreSearchRequest.score_threshold (lib/shard/src/search.rs:31) is Option<ScoreType> with no validation. LocalShard search (lib/collection/src/shards/local_shard/search.rs:168) filters results: 'if let Some(threshold) = req.score_threshold { processed_res.take_while(...) }'. This applies the threshold but never validates the threshold value itself is within metric-specific bounds. No distance-metric-aware validation exists.\n\nStep 5 (Falsification): Cannot falsify - reproduced with score_threshold=2.0 for Cosine distance. Should return 400 Bad Request (invalid parameter) but returns 200 OK with empty results.\n\nStep 6 (Triviality Exclusion): Not trivial. Score thresholds are semantically meaningful only within distance-specific bounds. Cosine: [-1, 1], Euclidean: [0, ∞), Dot: [-∞, ∞]. API should validate threshold against collection's distance metric or at minimum reject mathematically impossible values (e.g., >1.0 for Cosine). Silent acceptance with empty results misleads users.\n\nThree-View Consensus: Contract perspective defines score_threshold as filter for valid scores; source perspective shows no bounds validation; reproduction perspective confirms acceptance of invalid score_threshold=2.0 with misleading empty response. CONFIRMED."
+    }
+  ]
+}

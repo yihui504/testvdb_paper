@@ -1,0 +1,81 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_013",
+      "endpoint": "collections+{collection_name}+points+query",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /collections/test_qnull_review/points/query with {\"query\": null, \"limit\": 5}",
+          "observed": "Returns HTTP 200 with points [{\"id\":1,\"version\":0,\"score\":1.0},{\"id\":5,\"version\":0,\"score\":1.0},{\"id\":10,\"version\":0,\"score\":1.0}]. API accepts null query and returns all points with score=1.0.",
+          "evidence_cmd": "curl -s -X POST \"http://localhost:6333/collections/test_qnull_review/points/query\" -H \"Content-Type: application/json\" -d '{\"query\": null, \"limit\": 5}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes null/None query parameter should be rejected with 4xx error",
+            "Candidate assumes query parameter must be an object, not nullable",
+            "Candidate assumes accepting null query is a validation bug rather than intentional design"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: structured_contract.json line 1202-1206 defines query as type=object, required=false (nullable is allowed by JSON schema)",
+            "constraint_id: No explicit constraint forbids null query in contract",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["missing without prefetches", "query.*Option<ScoringQuery>", "None.*scroll"],
+          "files_examined": [
+            "lib/api/src/rest/schema.rs",
+            "src/common/inference/query_requests_rest.rs",
+            "lib/collection/src/operations/universal_query/collection_query.rs",
+            "lib/shard/src/query/planned_query.rs"
+          ],
+          "source_excerpt": "// lib/api/src/rest/schema.rs:573-575\n/// Query to perform. If missing without prefetches, returns points ordered by their IDs.\n#[validate(nested)]\npub query: Option<QueryInterface>,\n\n// lib/shard/src/query/planned_query.rs:459-472\nNone => {\n    let scroll = QueryScrollRequestInternal {\n        scroll_order: Default::default(),\n        filter,\n        with_vector: WithVector::from(false),\n        with_payload: WithPayloadInterface::from(false),\n        limit,\n    };\n\n    let idx = scrolls.len();\n    scrolls.push(scroll);\n\n    Source::ScrollsIdx(idx)\n}",
+          "call_chain_traced": "POST /collections/{c}/points/query -> query_points() -> convert_query_request_from_rest() -> query.map() -> try_into_shard_request() -> match query { None => scroll operation }",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "源码接地发现: query参数为Option<QueryInterface>，显式允许None。当query=None时，源码在planned_query.rs:459-472处将其转换为scroll操作(按ID顺序返回点)。这是有明确注释的intentional design: 'If missing without prefetches, returns points ordered by their IDs.'"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify behavior with scroll operation and proper query",
+          "observed": "When query=null, API performs scroll (returns all points ordered by ID, all score=1.0). When query={\"nearest\": [0.1,0.2,0.3,0.4]}, API performs vector search with scores. When query={}, API treats empty object as None (also scrolls). Behavior is consistent with documented design for missing/null query."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issues",
+            "Concurrency race",
+            "Request param typo"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "by_design_patterns",
+        "developer_quote": "Lenient filter parsing: null / single-object / array forms are all accepted by design for filter condition fields (maintainers: 'This is fine and expected... it would be a breaking change'). Applies similarly to query parameter - None/null is accepted as intentional fallback to scroll.",
+        "note": "源码注释明确说明这是设计行为，开发者对可选参数采用lenient parsing策略"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "POST /collections/{c}/points/query with query=null is NOT a parameter validation bug. 源码lib/api/src/rest/schema.rs:573明确注释: 'If missing without prefetches, returns points ordered by their IDs.' 源码lib/shard/src/query/planned_query.rs:459-472显式处理None query -> scroll操作。Contract定义query为required=false, type=object (nullable allowed by JSON schema)。这是intentional API设计: null/None query triggers scroll fallback, not an error case. 参见developer_cognition.json: maintainers对可选参数采用lenient parsing (null/single-object/array all accepted)。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

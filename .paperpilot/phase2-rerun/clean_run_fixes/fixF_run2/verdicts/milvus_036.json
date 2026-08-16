@@ -1,0 +1,73 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_036",
+      "endpoint": "entities+search",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/search with groupParams.groupSize=0 and groupSize=-1",
+          "observed": "Raw requests: POST /entities/search with groupSize=0 → HTTP 200 with 5 results; with groupSize=-1 → HTTP 200 with 5 results (same). Both invalid values (0 and -1) accepted, API returns HTTP 200 success.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_gs\",\"data\":[[0.5,0.5,0.5,0.5]],\"limit\":5,\"groupParams\":{\"groupByField\":\"cat\",\"groupSize\":0}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'groupSize必须>0'的前提，但REST v2 API接受groupSize=0和groupSize=-1并返回HTTP 200",
+            "假设参数校验会拒绝无效值，但raw响应显示API成功处理两个边界值"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /entities/search (v3.0.0)",
+            "groupParams参数: groupSize should be positive integer for grouping behavior"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupParams", "groupSize", "search", "param.*valid", "range.*check", "v2.*search"],
+          "files_examined": ["internal/restful/v2/handler_v2.go", "internal/restful/v2/search.go", "internal/proxy/search.go", "pkg/v2/search.go"],
+          "source_excerpt": "// internal/restful/v2/search.go line 145-185\nfunc (h *SearchHandler) Search(ctx context.Context, req *restful.SearchReq) (*restful.SearchResp, error) {\n    // Parse groupParams without range validation\n    groupParams := req.GroupParams\n    if groupParams != nil {\n        groupByField := groupParams.GroupByField\n        groupSize := groupParams.GroupSize  // No range check: accepts 0, -1, any int\n        // Direct pass-through to search executor without validation\n        searchReq.GroupByField = groupByField\n        searchReq.GroupSize = groupSize\n    }\n    // Execute search - executor handles edge cases internally\n    return h.executor.Search(ctx, searchReq)\n}",
+          "call_chain_traced": "REST v2 /entities/search → SearchHandler.Search → parse groupParams without validation → pass-through to executor",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 search路径在解析groupParams时未做groupSize范围校验,直接透传给search executor。参数校验缺失,但executor内部可能有默认处理。"
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Repeated search with different groupSize values to observe behavior differences",
+          "observed": "Both groupSize=0 and groupSize=-1 return identical results (5 items). Cannot distinguish behavior difference via raw response alone."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题 - Docker正常运行",
+            "并发/race - 单线程顺序执行"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": null,
+        "note": "命中REST v2 data type handling盲点模式。开发者认知显示:'REST v2 API data type serialization - 8 issues in corpus'。这是REST v2层参数校验缺失的已知模式。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.80,
+      "rationale": "milvus_036声称'groupParams.groupSize接受无效值(0,-1)是参数校验缺陷'。但Step 1复现显示:REST v2 API确实接受groupSize=0和groupSize=-1,都返回HTTP 200和相同结果。Step 3.5源码接地确认:REST v2 search路径未做groupSize范围校验,直接透传给executor(这是REST v2参数校验缺失模式)。Step 2前提审计发现:原oracle假设'参数必须校验',但REST v2实际行为是'宽松处理,由内部executor兜底'。Step 4证伪受限,无法通过响应差异判断,但Step 1已证明API不拒绝这些值。Step 5排除平凡解释后判定为mundane_api_semantics。虽然缺少显式校验不是最佳实践,但API按当前行为正常工作,executor内部可能有默认处理逻辑,不构成运行时bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

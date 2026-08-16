@@ -1,0 +1,88 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v2.6.19",
+  "verdicts": [
+    {
+      "defect_id": "milvus_033",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with vectorFieldType='InvalidVectorType'",
+          "observed": "HTTP 200 with collection created successfully. Invalid parameter silently ignored, default FloatVector used.",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/collections/create -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_033\", \"dimension\": 4, \"metricType\": \"L2\", \"vectorFieldType\": \"InvalidVectorType\"}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Conclusion assumes REST v2 API should validate all parameters",
+            "Assumes 'vectorFieldType' is a documented/expected parameter in the API"
+          ],
+          "verified_assumptions": [
+            "Quick-setup mode defaults to FloatVector regardless of vectorFieldType value"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_001",
+            "constraint: dimension >= 1 && dimension <= 32768 for FloatVector"
+          ],
+          "constraint_source": "https://milvus.io/api-reference/restful/v2.6.x/v2/Collection%20(v2)/Create.md",
+          "note": "Contract does NOT define 'vectorFieldType' as a parameter. Quick-setup mode hardcodes FloatVector."
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.19 @ v2.6.19",
+          "grep_queries": [
+            "type CollectionReq struct",
+            "vectorFieldType",
+            "VectorFieldType"
+          ],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/request_v2.go",
+            "internal/distributed/proxy/httpserver/handler_v2.go"
+          ],
+          "source_excerpt": "// File: internal/distributed/proxy/httpserver/request_v2.go, lines 690-703\ntype CollectionReq struct {\n\tDbName           string                 `json:\"dbName\"`\n\tCollectionName   string                 `json:\"collectionName\" binding:\"required\"`\n\tDimension        int32                  `json:\"dimension\"`\n\tIDType           string                 `json:\"idType\"`\n\tAutoID           bool                   `json:\"autoID\"`\n\tMetricType       string                 `json:\"metricType\"`\n\tPrimaryFieldName string                 `json:\"primaryFieldName\"`\n\tVectorFieldName  string                 `json:\"vectorFieldName\"`\n\tSchema           CollectionSchema       `json:\"schema\"`\n\tIndexParams      []IndexParam           `json:\"indexParams\"`\n\tParams           map[string]interface{} `json:\"params\"`\n\tDescription      string                 `json:\"description\"`\n\t// NOTE: No 'vectorFieldType' field defined\n}\n\n// File: internal/distributed/proxy/httpserver/handler_v2.go, lines 1904-1931 (quick-setup schema generation)\nschema, err = proto.Marshal(&schemapb.CollectionSchema{\n\tName: httpReq.CollectionName,\n\tFields: []*schemapb.FieldSchema{\n\t\t{\n\t\t\tFieldID:      common.StartOfUserFieldID,\n\t\t\tName:         httpReq.PrimaryFieldName,\n\t\t\tIsPrimaryKey: true,\n\t\t\tDataType:     idDataType,\n\t\t\tAutoID:       httpReq.AutoID,\n\t\t\tTypeParams:   idParams,\n\t\t},\n\t\t{\n\t\t\tFieldID:      common.StartOfUserFieldID + 1,\n\t\t\tName:         httpReq.VectorFieldName,\n\t\t\tIsPrimaryKey: false,\n\t\t\tDataType:     schemapb.DataType_FloatVector,  // HARDCODED FloatVector, not configurable\n\t\t\tTypeParams: []*commonpb.KeyValuePair{\n\t\t\t\t{\n\t\t\t\t\tKey:   Dim,\n\t\t\t\t\tValue: strconv.FormatInt(int64(httpReq.Dimension), 10),\n\t\t\t\t},\n\t\t\t},\n\t\t\tAutoID: DisableAutoID,\n\t\t},\n\t},\n\tEnableDynamicField: enableDynamic,\n\tDescription:        httpReq.Description,\n})",
+          "call_chain_traced": "CollectionReq (no vectorFieldType field) → JSON unmarshal ignores unknown field → quick-setup hardcodes FloatVector at line 1925",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "by_design_in_source",
+          "note": "Unknown fields ignored by JSON unmarshal (Go gin behavior). Quick-setup path hardcodes FloatVector, not a bug."
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Test with other unknown fields to verify pattern",
+          "observed": "Test with unknownField='someValue' → HTTP 200, field ignored. This is standard JSON unmarshal behavior in Go/gin - unknown fields are silently ignored by design."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproduced on live container)",
+            "Concurrent operation (single request)",
+            "Protocol violation (HTTP 200 correct)"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "RP-001",
+        "developer_quote": "Issue rejected as expected system behavior",
+        "note": "Silent ignoring of unknown JSON fields is expected Go/gin unmarshal behavior. Quick-setup mode designed to create FloatVector collections only (for BFloat16/Float16/Sparse use schema mode)."
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.90,
+      "rationale": "FALSE_POSITIVE - 'vectorFieldType' is not a documented parameter in REST v2 API contract. Quick-setup mode hardcodes FloatVector by design (line 1925). Unknown fields are silently ignored by Go's JSON unmarshal (standard behavior). For other vector types (BFloat16Vector, Float16Vector, SparseFloatVector, BinaryVector), users must use schema mode with explicit field definitions. This is API design, not a bug - vectorFieldType was never intended as a quick-setup parameter."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "mundane_api_semantics": 1
+    }
+  }
+}

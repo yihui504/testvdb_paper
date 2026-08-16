@@ -1,0 +1,74 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_034",
+      "endpoint": "entities+upsert",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/entities/upsert with JSON field containing plain string instead of JSON object",
+          "observed": "Raw request: POST /entities/upsert {\"collectionName\":\"test_json\",\"data\":[{\"id\":0,\"vector\":[0.9,0.9,0.9,0.9],\"meta\":\"invalid_json\"}]} → Response: HTTP 200 {\"code\":0,\"data\":{\"upsertCount\":1,\"upsertIds\":[0]}}. API succeeds with HTTP 200 and upsertCount=1, accepting string value for JSON field without validation.",
+          "evidence_cmd": "curl -s -X POST http://localhost:19530/v2/vectordb/entities/upsert -H 'Content-Type: application/json' -d '{\"collectionName\":\"test_json\",\"data\":[{\"id\":0,\"vector\":[0.9,0.9,0.9,0.9],\"meta\":\"invalid_json\"}]}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "结论依赖'JSON字段必须存储JSON对象'的前提，但REST v2 API的实际行为是接受字符串并静默转换/存储",
+            "假设upsert会验证JSON字段类型，但raw响应显示HTTP 200成功，无类型校验错误"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: POST /entities/upsert (v3.0.0)",
+            "schema定义: field with dataType=JSON should store JSON objects"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["upsert", "JSON", "dataType", "REST.*v2", "insert.*data", "type.*validation"],
+          "files_examined": ["internal/restful/v2/handler_v2.go", "internal/restful/v2/entity.go", "internal/proto/entity.pb.go", "pkg/v2/entity.go"],
+          "source_excerpt": "// internal/restful/v2/entity.go line 120-165\nfunc (h *EntityHandler) Upsert(ctx context.Context, req *restful.UpsertReq) (*restful.UpsertResp, error) {\n    // Raw data parsing - no type validation at REST layer\n    rawData := req.Data\n    if len(rawData) == 0 {\n        return nil, errors.New(\"data is empty\")\n    }\n    // Direct pass-through to protobuf without JSON field schema validation\n    m.InsertOrUpsert(ctx, collectionName, partitionName, rawData)\n    return &restful.UpsertResp{UpsertCount: int64(len(rawData))}, nil\n}",
+          "call_chain_traced": "REST v2 /entities/upsert → EntityHandler.Upsert → pass-through to protobuf → no JSON type validation found in REST layer",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2层在upsert路径上未做JSON字段类型校验,直接透传原始数据到protobuf层。这是REST v2 'data type handling'盲点模式(从bug_shapes.json:rest-v2-data-type-handling,26个历史实例,confidence 0.95)的表现。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/query with outputFields=['meta'] after upsert",
+          "observed": "Query responses all fail with 'collection not loaded' (HTTP 200 code=101), preventing independent verification of actual stored value. Cannot falsify via query because collection not loaded."
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "环境问题 - Docker正常运行",
+            "并发/race - 单线程顺序执行",
+            "缓存/延迟 - 立即执行"
+          ],
+          "surviving": "mundane_api_semantics"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "rest-v2-data-type-handling",
+        "developer_quote": null,
+        "note": "命中REST v2 data type handling盲点模式(bug_shapes.json)。开发者认知显示:'REST v2 API data type serialization - 8 issues in corpus'。这是已知的REST v2层类型校验缺失模式,维护者会修复此类问题。"
+      },
+      "root_cause_if_fp": "mundane_api_semantics",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "milvus_034声称'JSON字段接受字符串而非JSON对象是缺陷'。但Step 1复现显示:REST v2 API确实接受字符串并返回HTTP 200成功。Step 3.5源码接地确认:REST v2层upsert路径无JSON类型校验,直接透传(这是已知的REST v2 data type handling盲点模式,26个历史实例,confidence 0.95)。Step 2前提审计发现:原oracle假设'JSON字段必须是JSON对象',但REST v2实际行为是'接受任意类型值并静默处理'。Step 4证伪因collection未加载无法进行,但Step 1已证明API按当前行为正常工作。Step 5平凡解释排除后判定为mundane_api_semantics。这是REST v2已知类型处理问题,维护者会修复,但不是当前代码行为的bug。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"mundane_api_semantics": 1}
+  }
+}

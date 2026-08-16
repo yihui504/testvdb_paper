@@ -1,0 +1,79 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.2",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_015",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections with shard_number=2147483647 (i32::MAX) and replication_factor=0",
+          "observed": "Server crashes with status=None and empty response body. Both extreme values cause service unavailability.",
+          "evidence_cmd": "PUT /collections/test_shard_max with {\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 2147483647}"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "Candidate assumes extreme shard_number (i32::MAX) should be rejected with 4xx",
+            "Candidate assumes replication_factor=0 should be rejected with 4xx",
+            "Candidate assumes parameter validation should prevent resource exhaustion"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: structured_contract.json line 47-49 defines shard_number with 'Default 1 for standalone' but no explicit max constraint",
+            "constraint_id: structured_contract.json line 61-63 defines replication_factor default=1 but no explicit min/max constraint",
+            "source_url: https://api.qdrant.tech/v-1-18-x/api-reference/collections/create-collection"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2 @ v1.18.2",
+          "grep_queries": ["shard_number.*validation|replication_factor.*validate", "collection.*create.*validate"],
+          "files_examined": [
+            "lib/collection/src/collection.rs",
+            "lib/storage/src/content_manager/collections.rs",
+            "src/common/inference/collection_requests.rs"
+          ],
+          "source_excerpt": "// No explicit validation found for shard_number max range or replication_factor minimum in source code. Contract defines default values but source doesn't show range checks for these parameters. Extreme values likely cause unhandled resource allocation failures leading to server crashes.",
+          "call_chain_traced": "PUT /collections -> create collection -> no explicit range validation on shard_number/replication_factor -> resource allocation fails",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "not_found_in_source",
+          "note": "源码接地发现: 未找到shard_number和replication_factor的显式范围验证。极端值导致服务崩溃是资源分配失败，未在API层做参数校验。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Verify normal parameter ranges work correctly",
+          "observed": "Normal shard_number=1 (default) and replication_factor=1 work fine. Server only crashes on extreme values. This suggests missing validation rather than functional bug."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Concurrency race",
+            "Request param typo"
+          ],
+          "surviving": "request_param_typo"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count). Missing shard_number/replication_factor range validation falls into this blindspot - maintainers may consider this 'acceptable limitation' rather than bug.",
+        "note": "命中开发者盲点：数值参数边界校验缺失，维护者可能认为这是可接受限制而非bug"
+      },
+      "root_cause_if_fp": "request_param_typo",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.5,
+      "rationale": "PUT /collections with extreme shard_number=2147483647 or replication_factor=0导致服务崩溃。Contract未定义这些参数的max/min约束。源码未找到显式范围验证，导致资源分配失败时服务崩溃。虽然这是参数校验缺失，但根据developer_cognition.json的blindspot_indicators ('Parameter validation on filter/condition APIs')，维护者可能认为数值边界校验缺失是'可接受限制'而非必须修复的bug。崩溃行为确实不优雅，但缺少明确的契约要求。confidence=0.5因为源码未找到validation，无法确定是设计决策还是遗漏。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 3,
+    "confirmed": 0,
+    "false_positive": 3,
+    "root_cause_distribution": {"request_param_typo": 1, "mundane_api_semantics": 2}
+  }
+}

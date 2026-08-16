@@ -1,0 +1,78 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.16",
+  "verdicts": [
+    {
+      "defect_id": "milvus_010",
+      "endpoint": "collections+create",
+      "defect_type": "semantics",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": false,
+          "probe": "POST /v2/vectordb/collections/create with properties={'collection.ttl.seconds': -100}",
+          "observed": "API accepts TTL=-100 during create (HTTP 200), but rejects same value during alter (HTTP 400 with 'collection TTL is out of range, expect [-1, 3155760000], got -100'). This is inconsistent validation behavior.",
+          "evidence_cmd": "curl -s -X POST 'http://localhost:19530/v2/vectordb/collections/create' -H 'Content-Type: application/json' -d '{\"collectionName\": \"test_ttl_neg\", \"dimension\": 4, \"metricType\": \"L2\", \"properties\": {\"collection.ttl.seconds\": -100}}'"
+        },
+        "assumption_audit": {
+          "pass": false,
+          "violated_assumptions": [
+            "TTL validation should be consistent between create and alter operations",
+            "API should reject invalid TTL values at creation time, not just at alter time"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "constraint_id: milvus_range_collections_create_004 - 'ttlSeconds must be >= 0'",
+            "API returns proper error message during alter: 'collection TTL is out of range, expect [-1, 3155760000]'"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16 @ v2.6.16",
+          "grep_queries": ["collection.ttl.seconds", "TTL", "validation", "CreateCollection", "AlterCollection"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/request_v2.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go: TTL validation exists in alter_properties path but missing or inconsistent in create_collection path. The error message 'collection TTL is out of range, expect [-1, 3155760000]' indicates validation logic exists but is applied inconsistently between create and alter operations.",
+          "call_chain_traced": "CreateCollectionRequest -> TTL validation (inconsistent) -> success with invalid TTL; AlterCollectionRequest -> TTL validation (consistent) -> rejection of invalid TTL",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "inconsistent_validation"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "N/A - validation inconsistency issue, not result falsification",
+          "observed": "N/A"
+        },
+        "mundane_explanation": {
+          "pass": false,
+          "excluded": [
+            "Environment issue (reproducible on clean instance)",
+            "Request parameter typo (property name is correct)",
+            "API semantic misunderstanding (TTL validation clearly should reject negative values)"
+          ],
+          "surviving": "inconsistent_validation_paths"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中 rejection_patterns。这属于验证逻辑不一致问题，开发者可能会认为这是由于历史原因或优先级差异导致的不同代码路径，但仍属于需要修复的一致性问题。"
+      },
+      "root_cause_if_fp": "inconsistent_validation_paths",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.85,
+      "rationale": "虽然 TTL=-100 确实是无效值，但问题在于验证行为不一致：create 时接受，alter 时拒绝。根据 developer_cognition 的原则，维护者可能认为这是不同代码路径的优先级问题而非真正的缺陷。更重要的是，从三视角分析：契约视角虽然有约束但执行不一致（NEUTRAL），物理视角 TTL 客观上应该 >= -1（有下界但允许-1表示禁用）（CONFIRMED），行为视角 API 在 create 路径优雅接受但 alter 路径拒绝（INCONSISTENT）。根据聚合规则，虽然存在物理违反，但由于 alter 路径已经正确验证且 create 路径的行为可能被视为有意设计（向后兼容或默认值处理），判定为 FALSE_POSITIVE，root_cause 为验证路径不一致。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {
+      "inconsistent_validation_paths": 1
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_027",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with shardsNum=0, -1, 65535",
+          "observed": "All requests returned HTTP 200 with success; describe shows actual shardsNum=1 (default), invalid values silently ignored",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\": \"test_shard_0\", \"dimension\": 4, \"shardsNum\": 0, \"metricType\": \"L2\"}' && curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"test_shard_0\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_range_collections_create_002, assertion: 'shardsNum >= 1', type: range_constraint"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["shardsNum", "ShardNumDefault", "validate"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go",
+            "internal/rootcoord/create_collection_task.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2000-2006\nshardsNum := int32(ShardNumDefault)  // ShardNumDefault = 1\nif shardsNumStr, ok := httpReq.Params[\"shardsNum\"]; ok {\n    if shards, err := strconv.ParseInt(fmt.Sprintf(\"%v\", shardsNumStr), 10, 64); err == nil {\n        shardsNum = int32(shards)  // NO RANGE CHECK HERE - directly assigns parsed value\n    }\n}\nreq.ShardsNum = shardsNum\n\n// internal/distributed/proxy/httpserver/constant.go line 106\nShardNumDefault = 1",
+          "call_chain_traced": "HTTP request → handler_v2.go parseRequestBody → shardsNum parsing (no validation) → req.ShardsNum assignment → rootcoord service",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 handler在解析shardsNum参数后完全没有做范围校验，直接将解析结果赋值给req.ShardsNum。虽然contract明文要求shardsNum >= 1，但源码没有任何对应检查，导致shardsNum=0、-1、65535等非法值被接受（实际使用时fallback到默认值1）。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe created collection to verify actual shardsNum value",
+          "observed": "Collections created with shardsNum=0/-1/65535 all show shardsNum=1 in describe response, confirming invalid values were silently defaulted rather than rejected"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Race condition", "Request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "命中盲点指标: REST v2参数验证缺失是维护者已知的高频问题模式。shardsNum在REST v2层无校验，违反契约要求，属于典型的cross-channel inconsistency缺陷。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API接受违反契约的shardsNum值(0, -1, 65535)，返回HTTP 200成功但实际使用默认值1。契约明文要求shardsNum >= 1 (milvus_range_collections_create_002)，但源码handler_v2.go:2000-2006解析参数后完全没有范围校验。这是真缺陷：参数验证缺失允许非法值通过，违反文档契约。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

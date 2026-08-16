@@ -1,0 +1,67 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_028",
+      "endpoint": "collections+create",
+      "defect_type": "param_validation",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/collections/create with metricType=\"\" (empty string)",
+          "observed": "Request with empty metricType returned HTTP 200 success; describe shows actual metricType=COSINE (default), empty string was silently accepted and defaulted",
+          "evidence_cmd": "curl -X POST 'http://localhost:19530/v2/vectordb/collections/create' -d '{\"collectionName\": \"test_mt_empty\", \"dimension\": 4, \"metricType\": \"\"}' && curl -X POST 'http://localhost:19530/v2/vectordb/collections/describe' -d '{\"collectionName\": \"test_mt_empty\"}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: milvus_type_collections_create_002, assertion: 'metricType in [L2, IP, COSINE]', type: type_constraint"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17 @ v2.6.17",
+          "grep_queries": ["metricType", "DefaultMetricType", "parse"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/distributed/proxy/httpserver/constant.go"
+          ],
+          "source_excerpt": "// internal/distributed/proxy/httpserver/handler_v2.go lines 2067-2075\nif len(httpReq.MetricType) == 0 {\n    httpReq.MetricType = DefaultMetricType  // DefaultMetricType = COSINE\n}\ncreateIndexReq := &milvuspb.CreateIndexRequest{\n    ExtraParams: []*commonpb.KeyValuePair{{Key: common.MetricTypeKey, Value: httpReq.MetricType}},\n}\n\n// internal/distributed/proxy/httpserver/constant.go line 195\nDefaultMetricType = metric.COSINE",
+          "call_chain_traced": "HTTP request → handler_v2.go parseRequestBody → metricType empty check → default to COSINE → CreateIndex",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现: REST v2 handler仅检查metricType是否为空(len=0)，若为空则默认为COSINE。完全没有验证metricType是否属于枚举值[L2, IP, COSINE]。empty string通过len检查被接受并默认，但如果是其他非法值(如'INVALID')也会同样被接受而不报错。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Describe created collection to verify actual metricType value",
+          "observed": "Collection created with metricType=\"\" shows indexes[0].metricType=COSINE in describe response, confirming empty string was defaulted rather than rejected per contract"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": ["Environment issue", "Race condition", "Request parameter typo", "API semantics misunderstanding"],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "REST_v2_data_type_handling",
+        "developer_quote": "REST v2 API data type serialization - 8 issues in corpus; REST v2 and gRPC divergent validation: REST v2 accepting values the gRPC path rejects",
+        "note": "命中盲点指标: REST v2参数验证缺失。metricType枚举值约束未被 enforced，非法值被接受。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "REST v2 API接受空字符串metricType并默认为COSINE，契约明文要求metricType in [L2, IP, COSINE] (milvus_type_collections_create_002)，但源码handler_v2.go:2067仅检查len==0后默认，无枚举值验证。这是真缺陷：参数验证缺失允许非法值通过。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

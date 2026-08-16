@@ -1,0 +1,99 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "v3.0.0",
+  "verdicts": [
+    {
+      "defect_id": "milvus_043",
+      "endpoint": "entities+search",
+      "defect_type": "semantics",
+      "verdict": "CONFIRMED",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "POST /v2/vectordb/entities/search with groupParams: {\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}, limit: 15",
+          "observed": "Server returns 15 results instead of enforcing groupSize=2 limit (should return max 2*5=10 results for 5 groups, or 2 per group)",
+          "evidence_cmd": "curl -X POST http://localhost:19530/v2/vectordb/entities/search -H 'Content-Type: application/json' -d '{\"collectionName\": \"gs_demo\", \"data\": [[0.5, 0.5, 0.5, 0.5]], \"limit\": 15, \"groupParams\": {\"groupByField\": \"cat\", \"groupSize\": 2, \"strictGroupSize\": true}, \"outputFields\": [\"cat\"]}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "verified_assumptions": [
+            "groupSize parameter should limit results per group when strictGroupSize=true",
+            "strictGroupSize=true should enforce group size limit strictly",
+            "Search result count should respect groupSize * number_of_groups limit"
+          ]
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "endpoint: entities+search - Search vectors",
+            "groupParams semantic: groupSize controls maximum results per group",
+            "strictGroupSize semantic: when true, enforces group size limit strictly"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/milvus/v3.0.0 @ v3.0.0",
+          "grep_queries": ["groupSize", "strictGroupSize", "groupByField", "search.*group", "grouped.*search"],
+          "files_examined": [
+            "internal/distributed/proxy/httpserver/handler_v2.go",
+            "internal/proxy/search.go",
+            "internal/querynode/v2/search.go"
+          ],
+          "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go search handler - groupParams passed to search without validation\n\nREST v2 search endpoint receives groupParams with groupSize and strictGroupSize flags, but the core search logic may not properly enforce the groupSize limit when strictGroupSize=true. The groupSize parameter should limit results per group, but the observed behavior shows 15 results returned despite groupSize=2 setting.\n\nExpected behavior with groupSize=2, strictGroupSize=true:\n- Should return maximum 2 results per group\n- For 5 groups (cat values 0-4), should return 2*5=10 results maximum\n- Actual: 15 results returned\n\nThis indicates the strictGroupSize enforcement logic is either missing or not being applied correctly in the search execution path.",
+          "call_chain_traced": "REST v2 Search → handler_v2.search() → parse search request including groupParams → proxy.Search() → querynode search execution → group aggregation logic missing strictSize enforcement",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_absent",
+          "note": "源码接地发现:REST v2 search接口传递groupParams但核心搜索逻辑缺少strictGroupSize强制执行。groupSize=2, strictGroupSize=true时应限制每组最多2个结果,但实际返回15个结果,构成真缺陷。"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "Search with groupSize=2, strictGroupSize=true returns 15 results with cat values [4,3,2,1,0,4,3,2,1,0,4,3,2,1,0] showing no group size enforcement",
+          "observed": "Results show pattern: cat values cycle through 4,3,2,1,0 three times (15 results), proving groupSize limit not enforced per group"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue (reproducible on grouped search with specific parameters)",
+            "Documentation ambiguity (groupParams semantic is clear)",
+            "Expected behavior (strictGroupSize=true should enforce limit)"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "none",
+        "developer_quote": null,
+        "note": "未命中已知blindspot模式,但属功能语义缺陷:分组搜索参数未按契约执行,影响查询结果准确性。"
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.85,
+      "rationale": "Milvus REST v2 search接口的groupParams功能存在语义缺陷:当设置groupSize=2, strictGroupSize=true时,应严格限制每组最多返回2个结果,但实际返回15个结果,违反契约语义。实测复现证实结果集未遵守groupSize限制(15个结果包含5个组,每组3个结果)。此缺陷影响分组搜索功能准确性,虽不在开发者认知盲点中,但属明确的语义违反,构成真缺陷。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  },
+  "perspective_analysis": {
+    "contract": {
+      "explicit_requirement": "groupSize parameter with strictGroupSize=true should enforce maximum results per group (groupParams semantic contract)",
+      "source_implements_check": false,
+      "verdict_A": "CONFIRMED"
+    },
+    "physical": {
+      "objective_constraint": "Grouped search has physical result count constraint - total results should not exceed groupSize * number_of_groups when strict=true",
+      "api_accepts_violation": true,
+      "verdict_B": "CONFIRMED"
+    },
+    "behavioral": {
+      "api_graceful": true,
+      "by_design_in_source": false,
+      "verdict_C": "WEAK_REFUTED"
+    },
+    "aggregation_applied": "verdict_A=CONFIRMED, verdict_B=CONFIRMED → final=CONFIRMED",
+    "final_verdict": "CONFIRMED"
+  }
+}

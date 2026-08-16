@@ -1,0 +1,66 @@
+{
+  "judge": "dev-review",
+  "target": "qdrant",
+  "version": "1.18.1",
+  "verdicts": [
+    {
+      "defect_id": "qdrant_005",
+      "endpoint": "collections+{collection_name}",
+      "defect_type": "param_validation",
+      "verdict": "FALSE_POSITIVE",
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "PUT /collections with shard_number=0 and shard_number=-1",
+          "observed": "shard_number=0: HTTP 422 'value 0 invalid, must be 1 or larger'; shard_number=-1: HTTP 400 'expected u32'",
+          "evidence_cmd": "curl -X PUT 'http://localhost:6333/collections/test_shard_zero' -H 'Content-Type: application/json' -d '{\"vectors\": {\"size\": 4, \"distance\": \"Cosine\"}, \"shard_number\": 0}'"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": ["constraint_id: qdrant_range_create_collection_001", "assertion: shard_number >= 1"]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.1 @ 1.18.1",
+          "grep_queries": ["shard_number", "NonZeroU32", "CollectionParams"],
+          "files_examined": ["lib/storage/src/content_manager/toc/create_collection.rs", "lib/collection/src/config.rs", "lib/collection/src/operations/validation.rs"],
+          "source_excerpt": "// lib/storage/src/content_manager/toc/create_collection.rs line 135-136\nlet collection_params = CollectionParams {\n    vectors,\n    sparse_vectors,\n    shard_number: NonZeroU32::new(shard_number)\n        .ok_or_else(|| StorageError::bad_input(\"`shard_number` cannot be 0\"))?,\n    ...\n};\n\n// lib/collection/src/config.rs line 89-97\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]\npub struct CollectionParams {\n    #[serde(default = \"default_shard_number\")]\n    #[anonymize(false)]\n    pub shard_number: NonZeroU32,\n}",
+          "call_chain_traced": "CreateCollection.request.shard_number → CollectionParams.shard_number (NonZeroU32 type constraint) → NonZeroU32::new() runtime validation",
+          "source_verified_by_reviewer": true,
+          "verification_outcome": "validation_present",
+          "note": "源码接地发现:shard_number 使用 NonZeroU32 类型（编译期保证非零）+ 运行时显式检查 'cannot be 0' → 验证存在且严格"
+        },
+        "falsification": {
+          "pass": true,
+          "probe": "无需反向证伪：原 oracle 声称的'违规'实际上是系统正确拒绝非法值的行为",
+          "observed": "系统正确返回 4xx 错误并拒绝无效值，符合预期"
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [],
+          "surviving": "validation_already_present"
+        }
+      },
+      "source_excerpt": "// lib/storage/src/content_manager/toc/create_collection.rs line 135-136\nlet collection_params = CollectionParams {\n    vectors,\n    sparse_vectors,\n    shard_number: NonZeroU32::new(shard_number)\n        .ok_or_else(|| StorageError::bad_input(\"`shard_number` cannot be 0\"))?,\n    ...\n};\n\n// lib/collection/src/config.rs line 89-97\n#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]\npub struct CollectionParams {\n    #[serde(default = \"default_shard_number\")]\n    #[anonymize(false)]\n    pub shard_number: NonZeroU32,\n}",
+      "files_examined": ["lib/storage/src/content_manager/toc/create_collection.rs", "lib/collection/src/config.rs", "lib/collection/src/operations/validation.rs"],
+      "cognition_match": {
+        "matched_pattern": "parameter_validation",
+        "developer_quote": "Parameter validation on filter/condition APIs (min_should, value_count)",
+        "note": "命中 parameter_validation 模式：shard_number 作为数值参数确实有边界验证（>=1），验证存在且工作正常"
+      },
+      "root_cause_if_fp": "validation_already_present",
+      "severity_after_review": "FALSE_POSITIVE",
+      "confidence": 0.95,
+      "rationale": "原 oracle 声称 shard_number=0/-1 应被拒绝但实际测试显示系统正确拒绝了这些非法值（422/400）。源码接地证实：shard_number 使用 NonZeroU32 类型（编译期保证非零）且在 create_collection.rs 中有显式运行时检查 'shard_number cannot be 0'。契约明文规定 'shard_number >= 1'（qdrant_range_create_collection_001）。系统行为完全符合契约和源码设计，不存在违规。"
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 0,
+    "false_positive": 1,
+    "root_cause_distribution": {"validation_already_present": 1}
+  }
+}

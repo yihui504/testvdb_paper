@@ -1,0 +1,80 @@
+{
+  "judge": "dev-review",
+  "target": "weaviate",
+  "version": "1.38.2",
+  "verdicts": [
+    {
+      "defect_id": "weaviate_010",
+      "endpoint": "DELETE /batch/objects",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "source_excerpt": "// From adapters/handlers/rest/handlers_batch_objects.go lines 183-197:\nres, err := h.manager.DeleteObjects(ctx, principal,\n\tparams.Body.Match, params.Body.DeletionTimeUnixMilli, params.Body.DryRun, params.Body.Output, repl, tenant)\nif err != nil {\n\th.metricRequestsTotal.logError(\"\", err)\n\tif errors.As(err, &objects.ErrInvalidUserInput{}) {\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else if errors.As(err, &objects.ErrMultiTenancy{}) {\n\t\treturn batch.NewBatchObjectsDeleteUnprocessableEntity().\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else if errors.As(err, &autherrs.Forbidden{}) {\n\t\treturn batch.NewBatchObjectsDeleteForbidden().\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t} else {\n\t\treturn batch.NewBatchObjectsDeleteInternalServerError().\n\t\t\tWithPayload(errPayloadFromSingleErr(principal, err))\n\t}\n}\n\n// From usecases/objects/batch_delete.go lines 127-137:\nif match == nil {\n\treturn nil, 0, errors.New(\"empty match clause\")\n}\n\nif len(match.Class) == 0 {\n\treturn nil, 0, errors.New(\"empty match.class clause\")\n}\n\nif match.Where == nil {\n\treturn nil, 0, errors.New(\"empty match.where clause\")\n}\n\n// BUG: The validation function returns plain errors.New() instead of objects.ErrInvalidUserInput.\n// This causes the REST handler to map these request-side validation failures to HTTP 500\n// instead of HTTP 422. The handler checks for ErrInvalidUserInput but validation never wraps it.",
+      "files_examined": [
+        "adapters/handlers/rest/handlers_batch_objects.go",
+        "usecases/objects/batch_delete.go",
+        "usecases/objects/errors.go"
+      ],
+      "steps": {
+        "clean_repro": {
+          "pass": true,
+          "probe": "DELETE /batch/objects with match={class: 'DevReview010'} (missing where clause) and match={} (missing class and where)",
+          "observed": "API returned HTTP 500 with error messages 'validate: empty match.where clause' and 'validate: empty match.class clause'. These are request-side validation failures but return 500 instead of 422.",
+          "evidence_cmd": "curl -s -X DELETE http://localhost:18080/v1/batch/objects -H 'Content-Type: application/json' -d '{\"match\": {\"class\": \"DevReview010\"}, \"output\": \"minimal\"}' returns status 500"
+        },
+        "assumption_audit": {
+          "pass": true,
+          "violated_assumptions": []
+        },
+        "contract_grounding": {
+          "pass": true,
+          "contract_refs": [
+            "developer_cognition blindspot_indicators: 'HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed'",
+            "Historical fixes mentioned: 500->422 merged PR 12049, 500->404 merged PR 12040, batch REST handler error-code fixes merged PR 11878, 500->202 with maintainer +1 on PR 12262",
+            "REST handler explicitly checks for ErrInvalidUserInput to return 422 (line 185-187)"
+          ]
+        },
+        "source_grounding": {
+          "local_clone": "C:/Users/11428/Desktop/vdb_src/weaviate/v1.38.2 @ v1.38.2",
+          "grep_queries": [
+            "ErrInvalidUserInput",
+            "validateBatchDelete",
+            "empty match clause",
+            "InternalServerError.*UnprocessableEntity"
+          ],
+          "verification_outcome": "validation_absent",
+          "note": "Source code confirms the bug: validateBatchDelete() returns plain errors.New() instead of wrapping in objects.ErrInvalidUserInput(). The REST handler has explicit error type checking but validation logic doesn't cooperate."
+        },
+        "falsification": {
+          "pass": false,
+          "probe": "Verify that changing validation to use ErrInvalidUserInput would result in HTTP 422",
+          "observed": "Confirmed - the REST handler at line 185-187 explicitly maps ErrInvalidUserInput to HTTP 422, but validation never uses this error type. This is a genuine implementation gap."
+        },
+        "mundane_explanation": {
+          "pass": true,
+          "excluded": [
+            "Environment issue - behavior is consistent and reproducible",
+            "Request parameter typo - the validation correctly identifies missing required fields",
+            "Race condition - single request, no concurrent operations",
+            "API semantics - developer cognition explicitly states 5xx for parameter errors is a defect pattern"
+          ],
+          "surviving": "none"
+        }
+      },
+      "cognition_match": {
+        "matched_pattern": "blindspot_indicators",
+        "developer_quote": "HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed",
+        "note": "This candidate directly matches the documented blindspot pattern. Maintainers have repeatedly fixed similar issues (500->422 PRs 12049, 12040, 11878, 12262). The bug is that validation errors are not wrapped in ErrInvalidUserInput, causing HTTP 500 instead of 422."
+      },
+      "root_cause_if_fp": null,
+      "severity_after_review": "High",
+      "confidence": 0.95,
+      "rationale": "This is CONFIRMED as a true defect. The candidate correctly identifies that DELETE /batch/objects returns HTTP 500 for request-side validation failures (missing match.where and match.class parameters). Source code analysis confirms: (1) REST handler (handlers_batch_objects.go lines 185-187) explicitly checks for objects.ErrInvalidUserInput to return HTTP 422. (2) Validation function (batch_delete.go lines 127-137) returns plain errors.New() instead of wrapping in objects.ErrInvalidUserInput. (3) This mismatch causes request-side parameter validation failures to return HTTP 500 instead of 422. (4) Developer cognition explicitly states this pattern is a defect: 'HTTP status-code semantics: server-side 5xx responses to request-side detectable errors (invalid or missing parameters, non-existent resources, mode-inapplicable operations) are treated as defects by maintainers and repeatedly fixed' with multiple historical PR references. (5) The fix is straightforward: wrap validation errors in objects.ErrInvalidUserInput so the REST handler correctly returns HTTP 422. This is a clear violation of HTTP semantics and documented maintainer expectations."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}

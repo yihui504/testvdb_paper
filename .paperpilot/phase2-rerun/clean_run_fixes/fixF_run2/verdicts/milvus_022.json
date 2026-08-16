@@ -1,0 +1,25 @@
+{
+  "judge": "dev-review",
+  "target": "milvus",
+  "version": "2.6.17",
+  "verdicts": [
+    {
+      "defect_id": "milvus_022",
+      "endpoint": "collections+create",
+      "defect_type": "behavior",
+      "verdict": "CONFIRMED",
+      "confidence": 0.95,
+      "source_excerpt": "internal/distributed/proxy/httpserver/handler_v2.go lines 1795-2062\n\nfunc (h *HandlersV2) createCollection(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n\thttpReq := anyReq.(*CollectionReq)\n\treq := &milvuspb.CreateCollectionRequest{\n\t\tDbName:         dbName,\n\t\tCollectionName: httpReq.CollectionName,\n\t\tProperties:     []*commonpb.KeyValuePair{},\n\t}\n\tc.Set(ContextRequest, req)\n\n\t// Schema validation and parameter processing...\n\t// NO DUPLICATE CHECK HERE - does not call hasCollection() before CreateCollection\n\t// Directly proceeds to proxy call:\n\tresp, err := wrapperProxyWithLimit(ctx, c, req, h.checkAuth, false, \"/milvus.proto.milvus.MilvusService/CreateCollection\", true, h.proxy, func(reqCtx context.Context, req any) (interface{}, error) {\n\t\treturn h.proxy.CreateCollection(reqCtx, req.(*milvuspb.CreateCollectionRequest))\n\t})\n}",
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "rationale": "Clean reproduction confirmed: POST /collections/create with collection_name='test_dup' succeeded twice in sequence (both returned HTTP 200 with empty body). Independent verification via has_collection() returns True after first creation, proving collection exists. Source code analysis (handler_v2.go:1795-2062) shows createCollection handler performs NO duplicate existence check before proxy.CreateCollection() call - it only validates schema and parameters. This allows duplicate creation to succeed silently, violating idempotency expectations and potentially causing resource leaks or inconsistency. This matches REST_v2_data_type_handling pattern - REST v2 fails to enforce validation invariants."
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1,
+    "confirmed": 1,
+    "false_positive": 0,
+    "root_cause_distribution": {}
+  }
+}
