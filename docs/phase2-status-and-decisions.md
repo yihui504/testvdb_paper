@@ -123,3 +123,20 @@ audit 0 FAIL；判词零残留于材料树；容器全清。
 - 留痕：MATERIAL_FIXES.json(173)、GT_FIXES.json、各 run 的 VOID_LOG/dispatch_log
 - 脚本：archive_verdict.py（归档校验）、analyze_fixa_runs.py / analyze_fixc.py、
   start_container.py、fix_intel_blindspot{,_b,_d}.py、fix_contract_assertions.py
+
+## 8. 论文结构决策（2026-08-17，用户确认）
+
+背景：三臂实验（71-case，PHASE2_FINAL_SYNTHESIS）完成后论文叙事重构。已与用户逐项确认：
+
+| 决策点 | 结论 |
+|---|---|
+| **等不等 phase3** | **不等**。论文按现有数据写，RQ2 detection capability 留空段（TODO 标注），能写的先写。phase3 forward reach 完成后回填 |
+| **RQ2 占位内容** | confirmation-only oracle 上界（93.3% recall，phase2 早期实验，文稿现成于 docs/phase2-rq2-draft.md §B）+ forward reach 留空 |
+| **RQ3 实验基座** | **71-case 三臂替换旧 48-case**。48-case 全删（operating points 表、per-run 图、bootstrap/held-out CV 段、跨模型段） |
+| **跨模型证据去留** | **全删**（2026-08-17 用户二次确认：零个人要求跨模型实验，不留降级句）；abstract/limitations 只保留中性 single-family 声明（"generalization across model families is untested"）。**全文单一实验基座 = 71-case 三臂** |
+| **两类失败模式挪移** | **弱版**：intro 留一句（FP problem, root causes in RQ3），完整论证收进 RQ3 开头作根因分析。强版（intro/approach 完全不提）被否——dev-reviewer 需要动机 |
+| **qdrant_005 GT 分歧** | 不进 threats；实验设置段一句话（contested GT，adopt clean_run adjudication 45/26）。两分母不在正文并存 |
+| **expectation 框架偏差** | **进 threats（construct validity）2-3 句**：Expected behavior 字段报告人视角规范性措辞，对 C 组系统性推向 CONFIRMED；只影响 precision/FP-supp（偏乐观），不影响 recall headline；Milvus FP 抑制低与 contract ambiguity 在该数据上不可分离。附带一句：probe 观察文本泄漏已被材料包机械审计剥净 |
+| **venue/anonymity** | 不阻塞，保持 TBD |
+
+机械修复清单（随重构一并做）：L208-209 断行 `\ref`；tab:arms 双 `\toprule`；L368 multi-persp 错位引用（指向 rq2 应指 rq3）；RQ2/RQ3 重排后全部 `\ref` 对位复核。
