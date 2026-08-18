@@ -1,0 +1,499 @@
+{
+ "milvus_001": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "non_deterministic_unreproducible",
+  "rationale": "Chain broken at execution layer (grade D) - pymilvus gRPC client produces no HTTP/gRPC wire traces. Claimed phenomenon 'Search fails with Code 0 immediately after Collection.load() returns success' cannot be verified. No Code 0 error captured, no timestamp evidence establishing temporal relationship. Source code confirms load() is asynchronous by-design (LoadCollectionJob orchestrates async segment distribution to query nodes), so any transient unavailability during Loading→Loaded transition window is expected behavior, not a Type4_StateViolation. Contract constraint milvus_state_entities_search_001 exists but no execution evidence shows it was violated. Mechanical aggregation: A=REFUTED → implied_verdict=NOT_DEFECT.",
+  "group": "milvus/2.3"
+ },
+ "milvus_002": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "nprobe=0 triggers auto-substitution with default value per component_param.go formatter - by-design behavior, not a validation defect",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_003": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "ef=0 for HNSW search accepted without validation - parameter passed through with default substitution by design",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_004": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "Filter 'age in [10,5]' is valid boolean expression; deleteCount=1 reflects normal partial match (age=10 exists, age=5 doesn't)",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_005": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Insert accepts invalid field names ('123field', '@field') but query rejects them - asymmetric validation violates identifier syntax constraints",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_006": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Dynamic fields intentionally skip type validation per utils.go:298-300 - storing integer in VARCHAR dynamic field is by-design flexibility",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_007": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "non_deterministic_unreproducible",
+  "rationale": "[main-process] rework 3-round cap reached: claimed phenomenon (code=65535 type mismatch) absent from log across all rounds; log only contains code=1801 dimension validation which is correct behavior. Conservative NOT_DEFECT per protocol.",
+  "group": "milvus/2.6.10"
+ },
+ "milvus_008": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Chain shows identical COSINE vector search returns distance 1.000000238418579 (slightly > 1.0). Contract contains no constraint defining expected COSINE distance output range. Source code (CosineImplPure) uses float32 with float64 intermediate conversion (math.Sqrt), confirming by-design floating-point precision artifact. No validation/clamping applied. This is expected floating-point behavior, not a defect.",
+  "group": "milvus/2.6.12"
+ },
+ "milvus_009": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "B视角机械判定触发HTTP语义恒真：limit=0被拒绝时返回200+code:65535且服务器自证'is invalid'，满足两条件（参数校验类错误+文档/契约有声称），而nprobe=0却被接受，违反对称性。源码显示validateLimit()存在且工作正确，但nprobe参数无对应验证函数，存在客观约束违反。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_010": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "A视角机械判定CONFIRMED：constraint_id存在且引文'ttlSeconds >= 0'为契约原文子串，api_violates_assertion=true。源码显示参数映射bug（properties字段未绑定到CollectionReq.Params），导致validateCollectionTTL()未被调用。D视角命中盲点指标REST/gRPC验证分歧，维护者视为缺陷。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_011": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "A视角机械判定CONFIRMED：constraint_id存在且引文'filter is a valid boolean expression'为契约原文，api_violates_assertion=true。执行证据显示filter=null/omitted/''均返回200+code:0并返回全行，违反类型约束。源码显示QueryReqV2.Filter字段无binding:'required'标签且无内容验证。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_012": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "候选声称的'collections/list with dbName empty'和'query on non-existent collection'是两个不同现象。链内主违规观测是c2（query不存在的集合被拒绝），但claim主现象是c1（dbName empty被接受）。两者参数/端点/违规方向均不一致——这是StateViolation的误判。API正确实现了状态约束（源码task_query.go:394-398显示GetCollectionID验证存在），对不存在集合返回code=100是正确行为，非缺陷。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_013": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "源码timeout_middleware.go:182-186显示strconv.ParseInt()解析失败时静默使用默认超时，这是by-design的优雅降级，而非验证缺失。D视角虽未直接匹配BDP-002（该模式是关于rollback），但维护者认知中有'The behavior looks reasonable on its own'的宽容倾向，支持NOT_DEFECT判定。Request-Timeout是HTTP层参数，非REST API body参数，契约未必要求格式验证。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_014": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "A视角quote_mismatch：契约断言'1 <= dimension <= 32768'，但源码错误消息说'range 2 ~ 32768'（下界1 vs 2的不一致）。然而api_violates_assertion=false，因为32768在契约范围内被接受，32769超出范围被拒绝，API行为正确符合约束。源码validateDimension()显示验证逻辑存在且工作正确，错误消息的下界不一致是文档/实现微小差异，非功能缺陷。",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_015": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Chain A: constraint exists, api_violates_assertion=false → A=REFUTED → NOT_DEFECT. REST correctly rejects index creation on non-existent collection with code=100. Source confirms validation present. FP: candidate mischaracterized expected error as defect.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_016": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain A: constraint exists, api_violates_assertion=true → A=CONFIRMED → DEFECT. Chain B: numeric lower bound violation - ef/nprobe accepting negative/zero violates domain semantics. Chain D confirms REST validation gaps are defects.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_017": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain A: constraint does not exist in contract → A=NEUTRAL. Chain B: empty string on required field violates type enum constraint. Control endpoint proves validation exists but inconsistently applied. Chain D confirms doc-behavior inconsistency is defect. GREY_ZONE resolved via B=CONFIRMED → DEFECT.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_018": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain A: constraint exists, api_violates_assertion=true → A=CONFIRMED → DEFECT. TOCTOU race: CheckIfCollectionRenamable uses RLock allowing concurrent create, violating mutual exclusion. Chain D confirms concurrency is acknowledged blindspot.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_019": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain A: constraint exists, api_violates_assertion=true → A=CONFIRMED → DEFECT. Observation shows rename to same name returns HTTP 200+code=0 when source explicitly checks and should reject. chain_broken_at=log indicates validation exists but not executed.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_020": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Chain A: constraint exists, api_violates_assertion=false → A=REFUTED → NOT_DEFECT. Stale search results do not violate constraint - constraint does not guarantee immediate freshness. Chain D reveals by-design eventual consistency. Matches BDP-001. NOT_DEFECT.",
+  "group": "milvus/2.6.16"
+ },
+ "milvus_021": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Search on never-loaded collection succeeds because Milvus auto-loads on first search (source: errIgnoredCreateCollection -> merr.Success()). Constraint milvus_state_entities_search_001 states 'collection is loaded' but doesn't prohibit implicit auto-load. This is documented by-design behavior, not a defect.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_022": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Contract explicitly permits re-creating with same schema as idempotent no-op returning 200. Source confirms errIgnoredCreateCollection -> merr.Success() is intentional. This is correct by-design behavior, not a defect.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_023": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Source confirms errIgnoredDropCollection -> merr.Success() is intentional idempotent behavior. Behavioral assertion in chain explicitly states drop returns 200 on non-existent. This is by-design, not a defect.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_024": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Objective constraint violation: filter and ids are mutually exclusive deletion modes (expression-based vs primary-key-based). API accepts both without validation (source: CollectionFilterReq struct only defines filter, ids silently ignored). B=CONFIRMED triggers DEFECT.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_025": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "doc",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Contract milvus_range_entities_insert_001 explicitly states 'no fixed upper bound on len(data)' and confirms 'inserts of any row count that fits the request payload are accepted (HTTP 200)'. Insert of 101 entities returning 200 with insertCount=101 satisfies contract. This is not a defect.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_026": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "assertion_depends_on_unrequested_field",
+  "rationale": "No constraint exists in structured_contract.json prohibiting collection names starting with underscore. Contract_grounding shows 'N/A' for constraint_id - candidate tests non-existent requirement. Leading underscore is allowed by default (source: only 'required' validation on collectionName field).",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_027": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "契约milvus_range_collections_create_002断言shardsNum>=1存在且被引用。执行证据显示shardsNum∈{0,-1,65535}均被HTTP 200+code=0接受，api_violates_assertion=true成立。源码证实仅检查上限缺失下界>=1校验，为真实Type1数值下界违反。",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_028": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "metricType=''与consistencyLevel='None'均在文档枚举集合之外但被接受（B=CONFIRMED枚举闭集违反）。源码证实createCollection路径缺失枚举校验。开发者认知确认REST v2与gRPC校验不一致被视为缺陷（D=SUPPORTS_DEFECT）。",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_029": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "契约milvus_type_entities_search_001断言limit>0，执行证据显示limit=0被正确拒绝（HTTP 200+code=65535含明确错误消息），api_violates_assertion=false成立。源码证实validateLimit()存在且工作，校验行为符合契约预期。",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_030": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "doc",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "[main-process] rework 3-round cap reached: password complexity constraint absent from structured_contract.json (only length constraint exists) and doc-level complexity claim unverifiable; conservative NOT_DEFECT per protocol.",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_031": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "契约引用来自过时文档版本（99af7351快照），doc_verification已记录事后提交12acf1cb更正文档为'must still include the primary key'。源码证实utils.go:692字段校验拒绝非schema字段，此为by_design行为非autoID失败。",
+  "group": "milvus/2.6.17"
+ },
+ "milvus_032": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract constraint milvus_type_collections_create_003 requires consistencyLevel in ['Strong', 'Session', 'Bounded', 'Eventually']; API accepts 'Invalid' returning HTTP 200 with default 'Bounded'; source shows handler.go:handleCreateCollection lacks convertConsistencyLevel() validation call present in Query/Search paths (handler_v2.go:1115-1123); cognition confirms REST v2/gRPC divergent validation is treated as defect by maintainers.",
+  "group": "milvus/2.6.19"
+ },
+ "milvus_033": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "vectorFieldType parameter not defined in CollectionReq struct (request_v2.go:690-703); Go encoding/json silently ignores unknown fields by design for API backward compatibility; no contract constraint violated; ignoring unknown parameters is acceptable API design pattern for forward compatibility, not a validation defect.",
+  "group": "milvus/2.6.19"
+ },
+ "milvus_034": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain complete: contract (milvus_type_json_001) exists and asserts dataType==JSON; execution shows REST upsert accepts bare string 'invalid_json' returning HTTP 200+code=0; source confirms validation_absent (utils.go:760-761 direct byte assignment without JSON.Unmarshal); cognition confirms REST v2 data type validation is known blindspot. All four perspectives align to DEFECT.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_035": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain complete: contract (milvus_type_int64_001) exists; execution shows inconsistent type coercion (string '123' accepted via auto-conversion but 'abc' rejected with code=1804); source confirms json.Number().Int64() conversion with selective rejection (utils.go:639-644). This violates type system consistency - Int64 should consistently reject or accept all strings. A=CONFIRMED → DEFECT.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_036": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain complete: contract (milvus_range_entities_search_002) asserts groupSize>=1; execution shows REST search accepts groupSize=0 and -1 returning HTTP 200+code=0; source confirms silent normalization (search_reduce.go:268-272: groupSize<=0 set to 1 without error). Numerical lower bound violation - parameter validation should reject <1 values before execution. A=CONFIRMED → DEFECT.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_037": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain complete: contract (milvus_type_entities_insert_001) asserts field values must match schema data types; execution shows REST insert accepts type mismatches (string '123' to Int64, int 123 to VarChar, string 'true' to Bool) all returning HTTP 200+code=0; source confirms auto-conversion in convertIDsToSchemapbIDs and anyToColumns (utils.go:258-281, 295-312, 615-620) without type validation. Schema type constraints bypassed via auto-conversion. A=CONFIRMED → DEFECT.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_038": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain complete with A=NEUTRAL (constraint milvus_semantic_search_grouping_001 not found in contract), but B=CONFIRMED: groupByField should accept only scalar fields per semantic typing norms; execution shows REST search accepts groupByField='vector' (FloatVector) returning HTTP 200+code=0; source confirms validateSearchAggregationFieldSupport only rejects JSON/dynamic/FLOAT/DOUBLE, not vector types (context_builder.go:298-306). Type constraint violated - vector is not scalar. Grey zone: B=CONFIRMED → DEFECT.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_039": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract requires Int64 for PK field, but REST API silently accepts string '100' and auto-converts via json.Number. Source confirms validation_absent. Matches REST v2 data type blindspot.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_040": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract requires JSON dataType, but REST insert accepts plain string 'plain_string' without validation. Source confirms gjson.Valid exists but unused for insert. Matches REST type blindspot.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_041": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Grey zone with A=NEUTRAL (constraints not in contract), but B=CONFIRMED: REST API performs implicit type coercion across 4 scalar types using github.com/spf13/cast, violating strict typing. Source confirms no validation. Matches REST type blindspot.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_042": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract requires FLOAT_VECTOR, but REST insert accepts string vector '[0.1,0.2,0.3,0.4]' and search succeeds. Source confirms no vector format validation. Matches REST type blindspot.",
+  "group": "milvus/3.0.0"
+ },
+ "milvus_043": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Grey zone with A=NEUTRAL (custom constraint not in contract), but B=CONFIRMED via HTTP语义恒真: docs claim strictGroupSize should enforce group size, but API returns 200+code:0 with 15 results instead of expected 10. Source shows implementation bug (group_capacity miscalculation). Matches doc-behavior consistency blindspot.",
+  "group": "milvus/3.0.0"
+ },
+ "qdrant_001": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract constraint qdrant_type_upsert_points_003 requires vector type validation ('array of floats'); execution evidence shows API enforces this conditionally - rejecting empty vector (dimension 0) with wait=true (HTTP 400 'Vector dimension error: expected dim: 4, got 0') but silently accepting it with wait=false (HTTP 200, zero points stored). Source confirms validation function check_vector_against_config exists and correctly detects dimension mismatch, but Validate trait bypasses check for PointsList path. Type constraint violated (empty array lacks floats) and numerical lower bound violated (0 < 4). No developer cognition pattern indicates this inconsistency is by-design.",
+  "group": "qdrant/1.12.1"
+ },
+ "qdrant_002": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Constraint qdrant_range_search_points_006 asserts hnsw_ef applicable only when exact=false. Execution evidence shows API accepts hnsw_ef=0 (invalid lower bound) with HTTP 200, no validation error. Source confirms check_limit_opt only validates maximum, not minimum >=1. Numeric lower bound violation objectively confirmed.",
+  "group": "qdrant/1.18.0"
+ },
+ "qdrant_003": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "OpenAPI schema defines score_threshold as number without range validation. Execution shows API accepts score_threshold=2.0 for Cosine distance (max possible score=1.0) returning empty results instead of rejection. Source confirms take_while filter without range validation. Numeric lower bound violation confirmed.",
+  "group": "qdrant/1.18.0"
+ },
+ "qdrant_004": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Contract qdrant_behavioral_005 asserts 4XX on validation error, but source shows dimension validation occurs asynchronously after upsert acknowledgment. Developer cognition confirms async operations are not promised atomic. HTTP 200 acknowledgment in async mode is by-design; dimension error surfaces synchronously only when wait=true. This is documented async behavior, not a defect.",
+  "group": "qdrant/1.18.0"
+ },
+ "qdrant_005": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "Contract constraint qdrant_range_create_collection_001 asserts shard_number >= 1. Execution evidence shows API correctly rejects shard_number=0 (HTTP 422) and shard_number=-1 (HTTP 400). Source code confirms NonZeroU32 wrapper and validate(range(min=1)) enforce this by design. No violation exists - this is proper parameter validation.",
+  "group": "qdrant/1.18.1"
+ },
+ "qdrant_006": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "No contract constraint exists about missing payload handling in filters. Execution evidence shows HTTP 200 with 4 results where all points have color='red'; points without 'color' field are excluded. Source code confirms check_empty() returns false by design, and test_filter_is_empty.py shows is_empty condition exists to explicitly query missing payloads. This is standard Qdrant filter semantics, not a defect.",
+  "group": "qdrant/1.18.1"
+ },
+ "qdrant_007": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "claim_error",
+  "rationale": "Claim contradicted by execution evidence. Contract states non-atomic. Early validation rejects batch.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_008": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "script_error",
+  "rationale": "[main-process] rework 3-round cap: output log contains zero count-endpoint operations (only scroll+index), claimed phenomenon unobservable in available material; conservative NOT_DEFECT per protocol.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_009": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Contract allows payload-only collections. Developer cognition confirms by-design.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_010": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Contract states collections without vector config support payload-only operations. By-design.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_011": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "No constraint requires null filter validation. Developer cognition confirms lenient parsing by-design.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_012": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "Contract uses MaybeOneOrMany deserializer allowing single object. Developer cognition confirms by-design.",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_013": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "both",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "链三查完备性/一致性/自洽性全过。视角 A（机械）：契约约束 qdrant_range_query_points_008 仅规定 limit 默认值，未要求 query 非 null，A=REFUTED。视角 B：null query 不属于数值下界/枚举闭集/类型恒真/互斥参数/HTTP 语义恒真五类客观约束，B=NEUTRAL。视角 C：源码 schema.rs:575 注释明确 'If missing without prefetches, returns points ordered by their IDs' 显式 by-design，C=REFUTED。视角 D：认知材料命中 'Lenient filter parsing: null / single-object / array forms are all accepted by design'，维护者明确视为 expected 行为，D=SUPPORTS_NOT_DEFECT。聚合：A=REFUTED → implied_verdict=NOT_DEFECT（机械化），verdict=NOT_DEFECT。FP 证据来源：doc（契约未约束 null query）+ source（显式 by-design 注释）。",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_014": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "链三查完备性/一致性/自洽性全过。视角 A（机械）：契约约束 qdrant_behavioral_014 规定 '200 on success; 404 if peer not found'，实测 standalone 模式下返回 HTTP 500，api_violates_assertion=true，A=CONFIRMED。视角 B：HTTP 语义恒真——错误属请求侧可判定（cluster-only 操作在 standalone 模式），契约对错误响应形态有声称（4xx），实测却是 5xx，B=CONFIRMED（Type2_PoorDiagnostics 方向）。视角 C：源码 cluster_api.rs 调用链返回 StorageError::service_error（而非客户端错误码），非优雅，C=CONFIRMED。视角 D：认知材料无命中（无关于 cluster 端点错误码的维护者态度），D=NO_SIGNAL。聚合：A=CONFIRMED → implied_verdict=DEFECT（机械化），verdict=DEFECT。",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_015": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "contract_misread",
+  "rationale": "链三查完备性/一致性/自洽性全过（对应性核查通过：claim 主观测=shard_number 下界缺失，链内 execution_evidence 覆盖了 INT_MAX 创建与 timeout，现象同构）。视角 A（机械）：契约约束 qdrant_range_create_collection_001+002 规定 shard_number>=1 与 replication_factor>=1，INT_MAX 满足 >=1（无上界），api_violates_assertion=false，A=REFUTED。视角 B：INT_MAX 不属于数值下界违规（它满足 >=1），也不属于其他客观约束类别，B=NEUTRAL。视角 C：源码 collection_meta_ops.rs:119-122 显式 #[validate(range(min=1))] 验证存在，下界已实现；timeout 是资源分配层 (2^31 shard map) 的副作用，非缺失验证，C=REFUTED（validation_present）。视角 D：认知材料无命中，D=NO_SIGNAL。聚合：A=REFUTED → implied_verdict=NOT_DEFECT（机械化），verdict=NOT_DEFECT。FP 证据来源：source（下界验证已存在，INT_MAX 通过范围检查）。",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_016": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "链三查完备性/一致性/自洽性全过。视角 A（机械）：契约无 lookup_from 条件行为约束（constraint_absent），A=NEUTRAL。视角 B：lookup_from.collection='nonexistent' 被接受不属于数值下界/枚举闭集/类型恒真/互斥参数/HTTP 语义恒真五类客观约束——条件行为是语义设计（raw vector 查询无 ID 引用故忽略 lookup_from），非物理违规，B=NEUTRAL。视角 C：源码 fetch_vectors.rs:422 显式条件 'if !referenced_ids.is_empty()' 仅在有 ID 引用时使用 lookup_from，raw vector 跳过验证属显式 by-design，C=REFUTED。视角 D：认知材料无命中（无关于 lookup_from 条件行为的维护者态度），D=NO_SIGNAL。聚合：GREY_ZONE（A=NEUTRAL, B=NEUTRAL, D=NO_SIGNAL, C=REFUTED）→ verdict=NOT_DEFECT（真 by-design in source）。FP 证据来源：source（显式条件分支证明 by-design）。",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_017": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "behavior",
+  "root_cause_if_fp": "non_deterministic_unreproducible",
+  "rationale": "链三查通过但链在 execution_evidence 自洽性断裂：claim 声称 'Search offset pagination returns duplicate point IDs'，但 execution_evidence.log_pattern 明确记录 'NO DUPLICATES OBSERVED - all point IDs are unique across pages (0-9, 10-19, 20-24)'，观测与 claim 矛盾 → chain_broken_at=execution_evidence。视角 A（机械）：契约无 dedup 约束，A=NEUTRAL。视角 B：未触发任何客观约束违规，B=NEUTRAL。视角 C：源码 search.rs offset 求总逻辑正确，tests 显示分页行为正确，C=REFUTED。视角 D：认知材料命中 'HNSW approximation duplicates in pagination'，维护者立场 'Accepted limitation of approximate search'（虽 issue 9523 标记 should_report=false），D=SUPPORTS_NOT_DEFECT。聚合：GREY_ZONE（A=NEUTRAL, B=NEUTRAL, D=SUPPORTS_NOT_DEFECT）→ verdict=NOT_DEFECT。FP 证据来源：behavior（执行证据自身不成立——实测无重复）。",
+  "group": "qdrant/1.18.2"
+ },
+ "qdrant_018": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "mundane_api_semantics",
+  "rationale": "Source code (lib/shard/src/count.rs:15-18) explicitly implements exact parameter with documented semantics: exact=false provides approximate counts which may differ from exact=true. The count difference (40 vs 24) is expected per documentation stating 'approximate count might be unreliable during indexing.' This is a documented design tradeoff, not a defect.",
+  "group": "qdrant/1.18.3"
+ },
+ "weaviate_001": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain shows grade B execution evidence with HTTP 200 accepting inverted dynamicEf range (500 > 10). Source validation_absent confirms no ordering check in validate(). B triggers on numerical constraint violation (min > max is objective lower bound violation). D has no signal for this parameter class.",
+  "group": "weaviate/1.37.4"
+ },
+ "weaviate_002": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain shows grade B execution evidence with HTTP 200 accepting negative flatSearchCutoff=-100. Source validation_absent confirms no non-negative check. B triggers on numerical constraint (cutoff parameter must be >= 0 to be semantically meaningful). D has no signal for this parameter class.",
+  "group": "weaviate/1.37.4"
+ },
+ "weaviate_003": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain shows grade A execution evidence with HTTP 200 accepting factor=-1 which auto-normalizes to 1. Source shows inconsistency: UpdateClass validates factor <= 0 with error, but AddClass silently normalizes. B triggers on numerical constraint violation (factor must be >= 1). Source confirms this is not by-design but inconsistent implementation.",
+  "group": "weaviate/1.37.4"
+ },
+ "weaviate_004": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "by_design_in_source",
+  "rationale": "Chain shows constraint_id=null (no contract assertion). Source explicitly documents DefaultEF = -1 as by-design sentinel value meaning 'let Weaviate pick'. HTTP 200 response is correct behavior for accepting this valid default value. C=REFUTED due to explicit by_design documentation in source code.",
+  "group": "weaviate/1.37.4"
+ },
+ "weaviate_005": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Chain shows desiredCount=-1 accepted with HTTP 200, violating numerical lower bound constraint (counts should be >= 0). Source config.go:53-67 shows validate() function missing DesiredCount range check. Contract has no constraint but objective constraint applies.",
+  "group": "weaviate/1.38.0"
+ },
+ "weaviate_006": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Mechanical A判定: constraint_id weaviate_type_schema_create_003 exists in contract (tokenization enum constraint), api_violates_assertion=true in chain. Source property.go:194 shows swag.IsZero('') bypasses enum validation.",
+  "group": "weaviate/1.38.0"
+ },
+ "weaviate_007": {
+  "verdict": "NOT_DEFECT",
+  "fp_evidence_source": "source",
+  "root_cause_if_fp": "approximate_by_design",
+  "rationale": "Contract has no distance constraint (only vectorIndexType). Accepting null and applying default 'cosine' is by-design behavior per hnsw/config.go:213-217 (OptionalStringFromMap) and config_handler DefaultVectorDistanceMetric.",
+  "group": "weaviate/1.38.0"
+ },
+ "weaviate_008": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Mechanical A判定: constraint_id weaviate_type_tenants_create_001 exists in contract (activityStatus enum {ACTIVE, INACTIVE}), api_violates_assertion=true in chain. Source tenant.go:110 shows swag.IsZero('') bypass, line 157-158 shows allowEmpty=true parameter.",
+  "group": "weaviate/1.38.0"
+ },
+ "weaviate_009": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Contract constraint weaviate_type_object_vector_001 asserts 'vector must be array of floats' but API accepts empty arrays []. Source code confirms no validation for len(vector)==0. Type constraint violated.",
+  "group": "weaviate/1.38.2"
+ },
+ "weaviate_010": {
+  "verdict": "DEFECT",
+  "fp_evidence_source": null,
+  "root_cause_if_fp": null,
+  "rationale": "Request-side detectable error (missing required match.where) returned as HTTP 500 instead of 4xx. This directly matches maintainer blindspot pattern about 5xx for client-side validation errors. B=CONFIRMED via HTTP semantics constraint.",
+  "group": "weaviate/1.38.2"
+ }
+}
