@@ -19,6 +19,8 @@ import re
 import subprocess
 import sys
 
+VRUN = os.environ.get('TESTVDB_VRUN', 'v71')
+
 sys.path.insert(0, r'C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/scripts')
 from check_physical_constraints import judge_physical  # noqa: E402
 
@@ -193,8 +195,8 @@ def main():
     if mode in ('builders', 'rework'):
         for did in dids:
             if mode == 'rework':
-                v71p = os.path.join(sess_root, 'debate_logs', 'chain_verdicts_v71.json')
-                cv = json.load(open(v71p, encoding='utf-8'))
+                vrp = os.path.join(sess_root, 'debate_logs', 'chain_verdicts_%s.json' % VRUN)
+                cv = json.load(open(vrp, encoding='utf-8'))
                 e = next(x for x in cv['verdicts'] if x['defect_id'] == did)
                 ro = e.get('rework_order') or {}
                 ro_txt = json.dumps(ro, ensure_ascii=False, indent=1)
@@ -206,7 +208,7 @@ def main():
                     sop=BUILDER_SOP, sess='%s/%s' % (sess_root, did), contract=contract,
                     clone=clone, did=did, anchor=claim_anchor(did)))
     else:
-        out = '%s/debate_logs/chain_verdicts_v71.json' % sess_root
+        out = '%s/debate_logs/chain_verdicts_%s.json' % (sess_root, VRUN)
         did_lines = '\n'.join('  - %s' % d for d in dids)
         mech = []
         for d in dids:
