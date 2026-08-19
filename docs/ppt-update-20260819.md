@@ -131,3 +131,45 @@ rework 打回闭环（NEEDS_MORE_EVIDENCE → 针对性工单重做，≤3 轮�
 2. 出内容稿（本文件）+ 大纲，你在 PPT 里手工重排版（保设计自由度）
 3. 两步走：我先把旧 7 反馈页标记"已处置"+删除 judges/convention/confidence 旧文案，
    新页你手工排
+
+---
+
+# 布局设计稿（2026-08-19 追加，用户手工排版用）
+
+设计语言（取自原模板 theme1）：白底 + 深蓝 #0A4A94 标题/主框 + 红 #FF0000 旧版对照
++ 主题色点缀（蓝 #6096E6 / 绿 #56CA95 / 橙 #FFBA55 / 红 #F18870 / 紫红 #EC5F74），
+Arial + 微软雅黑，页标题 24pt、区块标题 16pt、正文 14pt、脚注 11pt 灰。
+
+## 页 1a｜Step 1 动机+流程（替换 slide 10–13 → 两页之一）
+- 左窄右宽双栏：左 1/3 浅蓝底 #EAF1FD 圆角卡片"WHY an intermediate knowledge layer"
+  三要点（唯一联网 agent / 按端点组织 / 版本锚定）；右 2/3 纵向四步 PIPELINE
+  （Crawl → Formalize+verify → Tier → Classify，#6096E6 编号圆点串联）
+- 底部灰底横条：raw_knowledge.md → structured_claims.json 单一可信中间层
+
+## 页 1b｜防漏爬防幻觉（slide 12 六连问的直接回应）
+- 双栏对称：左"防漏爬 Completeness"绿框 #56CA95 描边（≥5 页全抓/OpenAPI 覆盖核对/
+  未达标不得标 source_verified）；右"防错爬 Authenticity"蓝框 #6096E6 描边
+  （OpenAPI cross-check/tag 缺失报错不降级/source verification 回验原文）
+- 底部红字对照行：convention 档 + confidence 自评已删
+
+## 页 2｜attack 策略矩阵（替换 slide 16 正文）
+- 三列等宽策略表：attack-boundary / attack-state / attack-semantic 列头深蓝底白字，
+  每列 7 条策略；策略名的 (Type-1/2/3) 标注用橙/红/紫红小字点缀呼应缺陷类型色
+- 底部两条机制：coverage-driven stopping（数量下限已删）+ contract chunking ≤12
+
+## 页 3｜Step 4 新架构（替换 slide 20/21/33/34 → 一页）
+- 左 70% 纵向三框流程：evidence-builder 蓝框（×N 并发）→ chain-auditor 绿框
+  （三查+四视角）→ novelty-check 橙框（终判后置+archived 归档）；框间箭头标注
+  "全部收口后"/"全轮结束·提交前"
+- 右 30% 灰底"What changed"卡片：删除项红字删除线（4 judges/dev-reviewer/
+  severity/投票聚合），新增项绿字（2 agents+终判/rework 闭环/fp_source 必注）
+
+## 页 4｜RQ2 过滤前后对比（替换 slide 26–35 → 一页）
+- 上 2/3 五行对比表：前三行旧链灰字、新链无注入行浅蓝底高亮、注入行浅绿底高亮；
+  表内数字加区间 [min–max]
+- 下 1/3 三点解读：架构轴增益/注入 ablation 分开呈现/方差分层表述
+- 表底 11pt 灰脚注：GT 分母差异披露（45/26 vs 44/27，9149 证伪）
+
+## 页序与删页
+- 删 7 个反馈页（12/14/17/22/25 部分/36/38——25 的 RQ1 部分留待重跑）
+- slide 24/25 RQ1 表占位等端到端；slide 37/38 RQ3 不动等对比实验
