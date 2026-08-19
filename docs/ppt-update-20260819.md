@@ -173,3 +173,87 @@ Arial + 微软雅黑，页标题 24pt、区块标题 16pt、正文 14pt、脚注
 ## 页序与删页
 - 删 7 个反馈页（12/14/17/22/25 部分/36/38——25 的 RQ1 部分留待重跑）
 - slide 24/25 RQ1 表占位等端到端；slide 37/38 RQ3 不动等对比实验
+
+---
+
+# 页 0（新增）｜raw knowledge 专页：为什么提 / 提什么 / 怎么组织
+
+> 位置：放在页 1a 之前（slide 10 后），是 Step 1 的"开场页"。
+> 导师六连问的前四问（为什么提 / 重点在哪 / 关心哪些信息 / 如何组织）全部由
+> raw_knowledge.md 的**结构模板本身**回答——讲这页就是讲这个模板。
+
+## 内容大纲（四问 → 四答，与模板段落一一对应）
+
+**Q1 为什么先提 raw knowledge（动机）**
+- 文档是自然语言、版本散布四站（milvus.io / qdrant.tech / weaviate.io / github），
+  无法直接驱动攻击生成——需要一个**版本锚定、可溯源、结构统一**的中间层
+- knowledge-extractor 是全流水线**唯一联网 agent**：爬取边界收敛一处，其余 agent
+  只消费 raw_knowledge.md——知识一旦入库，实验全程可复现、可审计
+
+**Q2 提取的重点（模板的骨架 = 四类约束）**
+- **type**：参数数据类型 / 维度有效范围 / 度量枚举值（cosine/euclidean/dot）
+- **range**：数值上下界 / 字符串长度 / 数组大小 / 批量最大元素数
+- **state**：操作原子性 / CRUD 一致性 / 并发安全性
+- **behavioral**：输入→响应映射契约（正常 200；非法/缺失→400/422；无权限→401/403；
+  资源不存在→404）——"行为声明"的主体，攻击脚本的直接靶点
+
+**Q3 关心哪些信息（模板的辅助段落）**
+- 每端点：Method / Path / Parameters / Constraints / **Expected Responses**
+- 环境可复现：SDK 版本 + Docker tags（实验环境固定）
+- 概念文档是约束主源（api-reference 只是参数清单源）——提取优先级显式区分
+
+**Q4 如何组织（模板结构 = 答案本身）**
+- `### {category} → #### {endpoint}` 两级章节，端点为原子单元
+- 每端点强制携带 **Source URL + Doc Version**（证据链追溯的锚）
+- 文件头 Document Metadata（doc_version / version_match / fetched_at）+
+  Document Sources 表——**版本漂移在入库时刻就被记录**，不靠事后猜
+
+## 布局设计（左问答右模板）
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ raw_knowledge.md: a version-anchored, auditable knowledge base     │ 24pt 深蓝
+├──────────────────────┬─────────────────────────────────────────────┤
+│ WHY（左 40%）         │  STRUCTURE TEMPLATE（右 60%，等宽字体代码块）  │
+│ 浅蓝底卡片            │                                             │
+│                      │  # {target} v{version} API Knowledge        │
+│ • 唯一联网 agent      │  ## Document Metadata ← 版本锚定             │
+│   （爬取边界收敛）     │  ## Document Sources  ← 每页一行·可溯源      │
+│ • 版本锚定·可溯源     │  ## SDK / Docker      ← 环境可复现           │
+│ • 实验可复现可审计    │  ## API Endpoints                            │
+│                      │    ### {category}                            │
+│ WHAT（四类约束）      │      #### {endpoint}                         │
+│ 四个小色块横排：      │        Method/Path/Source URL/Doc Version    │
+│ [type]  [range]      │        Parameters                            │
+│ [state] [behavioral] │        Constraints: type/range/state/        │
+│ （蓝/绿/橙/紫红       │          behavioral ← 攻击靶点（红字标注）    │
+│   四主题色）          │        Expected Responses                    │
+└──────────────────────┴─────────────────────────────────────────────┘
+  底部横条: 一句话总结——"结构模板即提取规范：抓什么、怎么存、带什么证据，全部写死在模板里"
+```
+
+## 可直接粘贴文案
+
+- 页标题：`raw_knowledge.md — a version-anchored, auditable knowledge base`
+- 左栏 WHY（14pt 三条）：
+  - `Single internet-access agent` — crawling boundary converges in one auditable place
+  - `Version-anchored` — doc_version vs target_version checked at ingestion; mismatches recorded, not guessed
+  - `Reproducible` — downstream agents never re-crawl; experiments replay from the frozen file
+- 左栏 WHAT 四色块（每块 13pt，块内两行）：
+  - `type` — data types, dimension ranges, metric enums
+  - `range` — numeric bounds, string length, array size, batch limits
+  - `state` — atomicity, CRUD consistency, concurrency safety
+  - `behavioral` — input→response contracts (the attack targets)
+- 右栏模板代码块（11–12pt 等宽 Consolas，中文注释列可保留）：
+  按上面 ASCII 布局中的模板树粘贴，其中 `Constraints: type/range/state/behavioral`
+  一行用红 `#FF0000` 标注 + 右侧小字 `← attack targets`；
+  `## Document Metadata` 行用蓝 `#6096E6` 标注 + 小字 `← version anchoring`
+- 底部横条（灰底 13pt）：
+  `The template IS the extraction spec — what to fetch, how to store, what evidence to carry.`
+
+## 讲述动线建议（30 秒版）
+
+1. 先指右栏模板："这就是 raw_knowledge.md 的结构"——模板树自上而下扫一遍
+2. 再指左栏 WHY 三条："为什么需要它"——联网收敛/版本锚定/可复现
+3. 落到四色块："我们只关心四类约束"——behavioral 是主靶（红字呼应）
+4. 收在底部横条："模板即规范——漏爬错爬在结构上无处藏身"（衔接页 1b 防漏爬防幻觉）
