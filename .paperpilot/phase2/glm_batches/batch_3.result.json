@@ -1,0 +1,110 @@
+[
+  {
+    "vendor": "milvus",
+    "number": 52310,
+    "verdict": "CONFIRMED",
+    "rationale": "REST accepts string 123 into INT64 field (HTTP 200) while gRPC rejects with DataNotMatch; Number Field docs define INT64 as numeric type requiring strict type checking. Cross-API inconsistency violates documented scalar field contract."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52311,
+    "verdict": "CONFIRMED",
+    "rationale": "REST accepts groupByField=vector field (HTTP 200) while gRPC rejects with unsupported data type; Grouping Search docs specify grouping by scalar fields only. REST path silently violates documented constraint that vectors cannot be equality-grouped."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52312,
+    "verdict": "CONFIRMED",
+    "rationale": "REST upsert accepts string primary key 100 (HTTP 200, overwrites record) while gRPC rejects with DataNotMatch expecting int64; Primary Field docs define Int64 as numeric. Same coercion gap as insert, creates data integrity risk."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52313,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "REST insert plain string returns HTTP 200 code 65535 (error), not success; query fails due to collection not loaded, not asymmetric storage. Evidence does not prove REST stores different bytes or causes round-trip failure as claimed."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52314,
+    "verdict": "CONFIRMED",
+    "rationale": "REST upsert accepts string true into BOOL field and string 42 into INT16 (HTTP 200) while Number Field docs define distinct DOUBLE/BOOL/INT16 types requiring strict validation. Undocumented cross-type coercion violates scalar type contract."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52315,
+    "verdict": "CONFIRMED",
+    "rationale": "REST accepts string-encoded vector (HTTP 200, searchable) while gRPC rejects with DataNotMatch expecting float_vector; Dense Vector docs specify arrays of floating-point numbers, not serialized strings. REST silently violates documented vector format contract."
+  },
+  {
+    "vendor": "milvus",
+    "number": 52325,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "REST search with strictGroupSize returns 15 results matching gRPC control (both 15); no evidence the parameter is ignored. REST and gRPC return identical counts, contradicting claim that REST silently ignores strictGroupSize."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 8688,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Identical self-match cosine score is 1.0 (within upper bound); evidence does not show scores exceeding 1.0. Claim of f32 rounding producing 1.0000001 is not substantiated by probe observations."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9017,
+    "verdict": "CONFIRMED",
+    "rationale": "Server accepts hnsw_ef=0 (HTTP 200, returns results) despite hnsw_ef=0 meaning consider zero candidates which cannot search; similar params (limit min=1, offset min=0) validated in OpenAPI. Accepting zero violates semantic constraint that candidate list must be non-empty."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9027,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "score_threshold=2.0 returns empty results, threshold=-0.5 returns all results; behavior is semantically consistent with threshold semantics (no minimum score exists above 2.0, all scores exceed -0.5). OpenAPI does not document range constraint for score_threshold."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9039,
+    "verdict": "CONFIRMED",
+    "rationale": "Async upsert (wait=false) accepts 3-dim vector into 4-dim collection (HTTP 200 acknowledged, count=0) while sync returns 400 Vector dimension error; acknowledged implies received but data is discarded. Silent discard with success response violates diagnostic contract."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9044,
+    "verdict": "CONFIRMED",
+    "rationale": "Server accepts size=65536 (HTTP 200) while FAQ states up to 65,535 dimensions; size=65537 rejected with 422. Documentation/code mismatch: FAQ promises max 65535 but implementation allows 65536, violating documented limit."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9045,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Async empty-vector upsert returns HTTP 200 (count=0) and server remains healthy (HTTP 200 after probe); no panic observed. Sync path rejects with 400 as expected. Evidence does not demonstrate server crash or zero-length assertion failure."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9149,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "shard_number=0 returns 422 rejected, shard_number=-1 returns 400 rejected; both invalid values are properly rejected. Claim that 0 or negative values are accepted is contradicted by probe evidence showing rejection."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9255,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Filter color=red returns 4 points, none with missing payload (missing_payload_ids=[]); all returned points correctly have color=red. Claim that missing payload points are included is not substantiated by evidence."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9364,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Mixed batch (2 valid + 1 invalid) returns HTTP 400 with count unchanged (3 to 3); atomicity is preserved. Claim that valid points persisted despite error is contradicted by evidence showing no state change."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9365,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Indexed filter for cat_a returns 25 of 25 expected points (100% recall); no index corruption or miss rate observed. Claim of 2 of 25 matching is contradicted by probe showing correct results."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9366,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "After insert, update, delete lifecycle, named-vector search returns HTTP 200 with 5 results (same as baseline); no corruption or 400 error observed. Collection intact (count=18 after deletion). Claim of returns 400 is contradicted by evidence."
+  }
+]

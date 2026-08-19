@@ -1,0 +1,42 @@
+【任务】按你的 agent 规范（SOP）审计以下候选的全部证据链并产出组级判词。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/chain-auditor.md
+
+## 材料
+- 版本组前缀: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10（各 case 子目录 evidence_chain/）
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/structured_contract.json
+- 认知材料（视角 D）: C:/Users/11428/Desktop/tvdb_sessions/intelligence/milvus/developer_cognition.json
+
+## 审计对象（每 case 的 C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/{did}/evidence_chain/{did}.json）
+  - milvus_002
+  - milvus_003
+  - milvus_004
+  - milvus_005
+  - milvus_006
+  - milvus_007
+
+## 机械预跑结果（主进程已用 SOP 同源脚本对每条链预计算——视角 A 与机械 B 的值直接采信填入
+   perspective_analysis，不得改判；implied_verdict 定案分支按 SOP 聚合层机械化执行；
+   rationale 仍须转述该 case 的 A/B 判定依据；你只需行使 GREY_ZONE 灰区的 LLM 兜底与三查/第 4 查）
+  milvus_002: verdict_A=NEUTRAL(no_reference) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（nprobe should be validated (1 
+  milvus_003: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_004: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_005: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（data field types match collect
+  milvus_006: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_007: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=NOT_TRIGGERED() trigger=
+
+## 候选现象声称对照材料（第 4 查用，packet raw_observation/title 原文）
+  milvus_002: 候选现象声称（packet raw_observation 原文）： | ['[c1] IVF search with nprobe=0 -> http=200, code=0, returned 10 results']
+  milvus_003: 候选现象声称（packet raw_observation 原文）： | ['[c1] HNSW search with ef=0 -> http=200, code=0, returned 10 results']
+  milvus_004: 候选现象声称（packet raw_observation 原文）： | ['[c1] search with descending IN range -> http=200, code=0, 1 result', '[c2] search with empty IN range -> http=200, code=0, 0 results']
+  milvus_005: 候选现象声称（packet raw_observation 原文）： | ["[c1] insert dynamic field names '123field'/'@field' -> http=200, code=0", "[c1_q] query field '123field' -> http=200, code=65535, message: parse output field name failed: 123field", '[c2] control: insert valid field name -> http=200, code=0', '[c2_q] control: query valid field -> http=200, code=101, message: collection not loaded']
+  milvus_006: 候选现象声称（packet raw_observation 原文）： | ['[c1] insert int into VARCHAR dynamic field -> http=200, code=0', '[c1_q] query text_field -> http=200, code=0, data: id=1 text_field=hello, id=2 text_field=12345']
+  milvus_007: 候选现象声称（packet raw_observation 原文）： | ['[c1] empty query vector -> MilvusException code=65535 (server message: ...vector type must be the same, field vector - type VECTOR_FLOAT, search info type VECTOR_SPARSE_U32_F32...)']
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/debate_logs/chain_verdicts_v9c.json + touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/debate_logs/chain_verdicts_v9c.json.done（不覆盖其他版本判词文件）
+
+## 汇报
+一行/case：<defect_id> verdict=… fp_src=… root_cause=… rework=y/n
+【目标 DB 容器】
+  milvus gRPC localhost:19530 (pymilvus) + REST v2 http://localhost:19530/v2/vectordb

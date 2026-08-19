@@ -1,0 +1,54 @@
+【任务】按你的 agent 规范（SOP）审计以下候选的全部证据链并产出组级判词。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/chain-auditor.md
+
+## 材料
+- 版本组前缀: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/3.0.0（各 case 子目录 evidence_chain/）
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/3.0.0/structured_contract.json
+- 认知材料（视角 D）: C:/Users/11428/Desktop/tvdb_sessions/intelligence/milvus/developer_cognition.json
+
+## 审计对象（每 case 的 C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/3.0.0/{did}/evidence_chain/{did}.json）
+  - milvus_034
+  - milvus_035
+  - milvus_036
+  - milvus_037
+  - milvus_038
+  - milvus_039
+  - milvus_040
+  - milvus_041
+  - milvus_042
+  - milvus_043
+
+## 机械预跑结果（主进程已用 SOP 同源脚本对每条链预计算——视角 A 与机械 B 的值直接采信填入
+   perspective_analysis，不得改判；implied_verdict 定案分支按 SOP 聚合层机械化执行；
+   rationale 仍须转述该 case 的 A/B 判定依据；你只需行使 GREY_ZONE 灰区的 LLM 兜底与三查/第 4 查）
+  milvus_034: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_035: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_036: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(数值下界) trigger=计数参数 groupsize=-1.0（负值）被接受（[REQ 5] REST search with groupSiz
+  milvus_037: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（data field values must match c
+  milvus_038: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_039: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（dataType == Int64 | REST API r
+  milvus_040: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_041: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_042: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_043: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（When strictGroupSize=true and 
+
+## 候选现象声称对照材料（第 4 查用，packet raw_observation/title 原文）
+  milvus_034: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST upsert bare string into JSON field -> http=200, code=0', '[c1_q] query meta after REST upsert -> http=200, code=101, message: collection not loaded', '[c1_grpc_get] gRPC get id=0 -> code=101, message: collection not loaded', '[c1b] gRPC upsert plain string -> DataNotMatchException code=1, message: Invalid JSON string']
+  milvus_035: 候选现象声称（packet raw_observation 原文）： | ["[c1] REST insert string PK '123' -> http=200, code=0", '[c1_q] query id=123 -> http=200, code=101, message: collection not loaded', '[c1_grpc] gRPC insert string PK -> DataNotMatchException code=1, message: id field should be int64, got str', "[c2] REST insert non-numeric string PK 'abc' -> http=200, code=1804", '[c2_q] query id=0 -> http=200, code=101, message: collection not loaded']
+  milvus_036: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST search with groupSize=0 -> http=200, code=0', '[c1_grpc] gRPC search with group_size=0 -> MilvusException code=1100, message: metric type not match: expected=COSINE, actual=L2', '[c2] REST search with groupSize=-1 -> http=200, code=0']
+  milvus_037: 候选现象声称（packet raw_observation 原文）： | ["[c1] REST insert string '123' into INT64 field -> http=200, code=0", '[c1_q] query int64_f -> http=200, code=101, message: collection not loaded', '[c2] REST insert int 123 into VarChar field -> http=200, code=0', '[c2_q] query varchar_f -> http=200, code=101, message: collection not loaded', "[c3] REST insert string 'true' into BOOL field -> http=200, code=0", '[c3_q] query bool_f -> http=200, code=101, message: collection not loaded']
+  milvus_038: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST search with groupByField=vector -> http=200, code=0', '[c1_grpc] gRPC search with group_by=vector -> MilvusException code=1100, message: metric type not match: expected=COSINE, actual=L2']
+  milvus_039: 候选现象声称（packet raw_observation 原文）： | ["[c1] REST upsert string PK '100' -> http=200, code=0", '[c1_q] query id=100 after string-PK upsert -> http=200, code=0, data: id=100 vector=[0.9,0.9,0.9,0.9]', '[c1_grpc] gRPC upsert string PK -> DataNotMatchException code=1, message: id field should be int64, got str']
+  milvus_040: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST insert plain-string into JSON field -> http=200, code=0', '[c2] gRPC insert plain string -> DataNotMatchException code=1, message: Invalid JSON string', '[c_q] query meta -> http=200, code=0, data: id=100 meta=plain_string', '[c_grpc_get] gRPC get -> error: unexpected character (REST-written value unreadable)']
+  milvus_041: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST upsert string into DOUBLE field -> http=200, code=0', "[c2] REST upsert string 'true' into BOOL field -> http=200, code=0", '[c3] REST upsert int 1 into BOOL field -> http=200, code=0', "[c4] REST upsert string '42' into INT16 field -> http=200, code=0"]
+  milvus_042: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST insert string-encoded vector -> http=200, code=0', '[c1_s] search after string-vector insert -> http=200, code=0, data: id=0 distance=1', '[c1_grpc] gRPC insert string vector -> DataNotMatchException code=1, message: vector field should be float_vector, got str']
+  milvus_043: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST search with strictGroupSize=true, groupSize=5 -> http=200, code=0, returned 15 results', '[c1_grpc] gRPC search with strict_group_size -> returned 15 results']
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/3.0.0/debate_logs/chain_verdicts_v9b.json + touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/3.0.0/debate_logs/chain_verdicts_v9b.json.done（不覆盖其他版本判词文件）
+
+## 汇报
+一行/case：<defect_id> verdict=… fp_src=… root_cause=… rework=y/n
+【目标 DB 容器】
+  milvus gRPC localhost:19530 (pymilvus) + REST v2 http://localhost:19530/v2/vectordb

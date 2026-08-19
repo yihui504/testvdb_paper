@@ -8,8 +8,9 @@
 - **任务1（Phase 2 confirmation 有效性评估）**：✅ 完成。结论见下「Phase 2 有效性」。
 - **任务2（实验版 testvdb4exp 落地）**：✅ 8 项改造全部完成并推送。
 - **任务3（档1 存在版本定位 + gt.json）**：✅ 完成（2026-08-14）。45 bugs → 15 存在版本，见下「档1 产出」。
+- **档1.5（probe 存在性复验）**：✅ 完成（2026-08-17）。7 跨版本触发确认 + 9045 standalone-unreachable + **9149 disproved（GT 45→44）**，见下「档1.5 产出」。
 - **档4 测试套件**：✅ 完成（2026-08-14）。111 测试全绿（1 个预期失败已改为守护新语义）。
-- **整体**：工具与 GT 材料就绪；下一步 = probe 存在性复验（档1.5）→ 档2 设施 / 档3 实验。
+- **整体**：工具与 GT 材料就绪；下一步 = 9149 改判的论文数字同步 → 档2 设施 / 档3 实验。
 
 ## 档1 产出（2026-08-14，`.paperpilot/phase3/`）
 
@@ -74,11 +75,32 @@ baseline = `yihui504/TestVDB@b80b95d`（142 tracked 文件，单 baseline commit
 
 处置选项：写进论文 threats-to-validity；或在 phase 3 对齐 judge 里缓解（中性措辞 + sanitize observation）。
 
+## 档1.5 产出（2026-08-17 收口，`.paperpilot/phase3/recheck/`）
+
+45 条中 37 条与 phase2 报告版本相同（复用 phase2 probe 结论），8 条跨版本全部实跑 reprobe：
+
+| 条目 | 版本跳跃 | 结果 |
+|---|---|---|
+| milvus_49843 | v2.6.16→v2.6.18 | ✅ code 0 静默接受（bug 在） |
+| milvus_49890 | v2.6.16→v2.6.17 | ✅ float/非整数 Request-Timeout 均 code 0 |
+| milvus_50355 | v2.6.17→v2.6.18 | ✅ upsert no-PK on autoID → code 1804（bug 即应成功却失败） |
+| qdrant_9017 | v1.18.0→v1.18.2 | ✅ hnsw_ef=0 search 200 accepted |
+| qdrant_9045 | v1.12.1→v1.18.0 | ⚠️ 9 次 empty-vector upsert 未 panic → 确认 `standalone-unreachable`（与 plan §2 预期一致，保留分母单独分析） |
+| **qdrant_9149** | v1.18.1→v1.18.2 | **🔴 bug 从不存在，已移出 GT**（见下） |
+| qdrant_10120 | v1.18.3→v1.19.0 | ✅ count exact=false 少计 24 vs 40（-40%） |
+| weaviate_11729 | v1.38.0→v1.38.1 | ✅ desiredCount=-1 → 200 accepted |
+
+**qdrant_9149 处置（GT 分母 45→44）**：v1.18.1/v1.18.2 均拒绝（422/400）→ 继续回溯 v1.18.0/v1.17.1/v1.17.0/v1.16.3/v1.12.1 **共 7 版本全部拒绝**非法 shard_number → 该 bug 从未被触发过。根因：报告人误报；fix-PR #9178 标题即 "Add test to validate shard number..."（changed_files=1），实为**补测试**而非修 bug，定位脚本把 merge 时间映射到 v1.18.2 引出矛盾，probe 复验反证。处置：presence-versions.csv 标 `DISPROVED`；gt/qdrant/v1.18.2/gt.json 已移除该条（5→4 bugs）；gt-bug-catalog.json 加 note；GT 分类 TP_FIXED_PR 应改 FP。
+**连锁影响**：这同时解决了 phase2 遗留的 qdrant_005 GT 分歧（三臂里 fixF 判 FP 与 phase1 裁定冲突）——phase3 复验站在 fixF 一边。oracle 上界重算：42/44 = 95.5%（9149 从 FN 变 TN；precision/FP-supp 分母微动，见论文影响清单）。9149 与 9520 同为 shard_number 但一为下界（0/-1）一为上界（INT_MAX crash，issue 仍 open），互不影响。
+
+**版本池 15→仍 15**（v1.18.2 组 5→4 bugs，组不消失）。
+
 ## 待办（按优先级 / 关键路径）
 
 ### 档1.5 — probe 存在性复验（跑实验前最后一道数据关）
-- [ ] 45 条 bug 在各自存在版本上确认可触发（与 phase2 报告版本相同的可复用 phase2 结论）。
-- [ ] 重点：qdrant_9045（v1.12.1→v1.18.0 跨 6 个 minor）、milvus_50355（doc-fix 型）、milvus_47635（race，低概率）。
+- [x] 45 条 bug 在各自存在版本上确认可触发（2026-08-17 收口：37 复用 + 8 实跑，7 触发 / 1 standalone-unreachable / 1 disproved）。
+- [x] 重点：qdrant_9045（确认 standalone 不可达）、milvus_50355（doc-fix 型，触发）、milvus_47635（race，低概率——同版本复用 phase2）。
+- [ ] 9149 GT 改判的下游同步：论文 limitations 里 qdrant_005 分歧表述改为「phase3 复验 7 版本全拒绝，维持 FP 判定」；RQ2 上界数字 42/45→42/44（93.3%→95.5%）及混淆矩阵连带更新。
 - [ ] 版本池 15 个 > plan 预估 ~10：可考虑合并 1-bug 小组（v2.3.22/v2.6.12/v1.19.0/v1.38.1/v1.38.2）以省算力——但合并 = 换存在版本需重验，**默认不合并**。
 
 ### 档2 — phase3-plan §2 设计了、还没建的设施

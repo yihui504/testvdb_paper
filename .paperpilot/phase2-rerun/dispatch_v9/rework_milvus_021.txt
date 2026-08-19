@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_021
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_021
+候选现象声称（packet raw_observation 原文）：
+['[c1] search on never-loaded collection -> http=200, code=0']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "[c1] search on never-loaded collection -> http=200, code=0",
+ "chain_covered": "REQ4 search on test_unloaded (never loaded) -> HTTP200/code0 with results",
+ "drift_point": "verdict_A=CONFIRMED（契约锚点 assert loaded）与 source 锚点（by_design auto-load / REST 层未校验 load 态）冲突：契约引用对准的是搜索载入态，无法判定 200 是契约违规还是 by-design",
+ "targeted_instruction": "重读 output_milvus_021.log 全文与 handler_v2.go 的 search 实现，确定该集合是否被 REST 快速创建模式 auto-load（对照认知锚点#50319 by_design），补一条明确锚定真信号的契约/doc/源码引用，消除 anchor_conflict"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_021/evidence_chain/milvus_021.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_021/evidence_chain/milvus_021.json.done
+
+## 汇报
+一行：milvus_021 done=<y/n> rework_applied=<y/n>

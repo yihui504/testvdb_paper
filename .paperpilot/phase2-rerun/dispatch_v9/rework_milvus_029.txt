@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_029
+候选现象声称（packet raw_observation 原文）：
+['[c1] search with limit=0 -> http=200, code=65535', '[c2] search 64-dim vector on dim=4 collection -> http=200, code=1801']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "[c1] search with limit=0 -> http=200, code=65535; [c2] 64-dim on dim=4 -> http=200, code=1801",
+ "chain_covered": "search limit=0 -> HTTP200/code65535 'topk[0] is invalid...range[1,16384]'; 64-dim on dim=4 -> HTTP200/code1801",
+ "drift_point": "violates=False（validateLimit 已生效，limit>=1 被满足）与 机械 B 触发冲突：约束引用 milvus_type_entities_search_001 对准的是 limit>0,而真信号是 HTTP200+业务码包装（Type2_PoorDiagnostics）。约束引用可能错位",
+ "targeted_instruction": "围绕真信号（search 客户端错误以 HTTP200+code 而非 4xx 返回）重建 execution_evidence，补 doc/HTTP 语义锚点论证 4xx 应为错误形态；limit/dim 校验本身已存在，不再作为契约违规主张"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029/evidence_chain/milvus_029.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029/evidence_chain/milvus_029.json.done
+
+## 汇报
+一行：milvus_029 done=<y/n> rework_applied=<y/n>

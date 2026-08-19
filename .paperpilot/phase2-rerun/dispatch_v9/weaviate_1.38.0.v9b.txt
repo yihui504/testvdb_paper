@@ -1,0 +1,37 @@
+【任务】按你的 agent 规范（SOP）审计以下候选的全部证据链并产出组级判词。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/chain-auditor.md
+
+## 材料
+- 版本组前缀: C:/Users/11428/Desktop/tvdb_sessions/sessions/weaviate/1.38.0（各 case 子目录 evidence_chain/）
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/weaviate/1.38.0/structured_contract.json
+- 认知材料（视角 D）: C:/Users/11428/Desktop/tvdb_sessions/intelligence/weaviate/developer_cognition.json
+
+## 审计对象（每 case 的 C:/Users/11428/Desktop/tvdb_sessions/sessions/weaviate/1.38.0/{did}/evidence_chain/{did}.json）
+  - weaviate_005
+  - weaviate_006
+  - weaviate_007
+  - weaviate_008
+
+## 机械预跑结果（主进程已用 SOP 同源脚本对每条链预计算——视角 A 与机械 B 的值直接采信填入
+   perspective_analysis，不得改判；implied_verdict 定案分支按 SOP 聚合层机械化执行；
+   rationale 仍须转述该 case 的 A/B 判定依据；你只需行使 GREY_ZONE 灰区的 LLM 兜底与三查/第 4 查）
+  weaviate_005: verdict_A=NEUTRAL(no_reference) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(数值下界) trigger=计数参数 desiredcount=-1.0（负值）被接受（[c1] POST /schema with desired
+  weaviate_006: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  weaviate_007: verdict_A=NEUTRAL(quote_mismatch) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(类型恒真) trigger=distance=null 被接受且契约声称 must be/required（[c1] POST schema wit
+  weaviate_008: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+
+## 候选现象声称对照材料（第 4 查用，packet raw_observation/title 原文）
+  weaviate_005: 候选现象声称（packet raw_observation 原文）： | ['[c1] control: POST schema with desiredCount=0 -> http=422', '[c2] POST schema with desiredCount=-1 -> http=200']
+  weaviate_006: 候选现象声称（packet raw_observation 原文）： | ["[c1] POST schema with tokenization='' -> http=200"]
+  weaviate_007: 候选现象声称（packet raw_observation 原文）： | ['[c1] POST schema with distance=null -> http=200, stored distance=cosine']
+  weaviate_008: 候选现象声称（packet raw_observation 原文）： | ['[c1] POST schema TestTenant (multi-tenancy enabled) -> http=200', "[c2] control: create tenant with activityStatus='ACTIVE' -> http=200", "[c3] create tenant with activityStatus='' -> http=200"]
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/weaviate/1.38.0/debate_logs/chain_verdicts_v9b.json + touch C:/Users/11428/Desktop/tvdb_sessions/sessions/weaviate/1.38.0/debate_logs/chain_verdicts_v9b.json.done（不覆盖其他版本判词文件）
+
+## 汇报
+一行/case：<defect_id> verdict=… fp_src=… root_cause=… rework=y/n
+【目标 DB 容器】
+  weaviate REST http://localhost:18080/v1
+  环境变量 WEAVIATE_BASE=http://localhost:18080/v1

@@ -1,0 +1,57 @@
+【任务】按你的 agent 规范（SOP）审计以下候选的全部证据链并产出组级判词。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/chain-auditor.md
+
+## 材料
+- 版本组前缀: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17（各 case 子目录 evidence_chain/）
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 认知材料（视角 D）: C:/Users/11428/Desktop/tvdb_sessions/intelligence/milvus/developer_cognition.json
+
+## 审计对象（每 case 的 C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/{did}/evidence_chain/{did}.json）
+  - milvus_021
+  - milvus_022
+  - milvus_023
+  - milvus_024
+  - milvus_025
+  - milvus_026
+  - milvus_027
+  - milvus_028
+  - milvus_029
+  - milvus_030
+  - milvus_031
+
+## 机械预跑结果（主进程已用 SOP 同源脚本对每条链预计算——视角 A 与机械 B 的值直接采信填入
+   perspective_analysis，不得改判；implied_verdict 定案分支按 SOP 聚合层机械化执行；
+   rationale 仍须转述该 case 的 A/B 判定依据；你只需行使 GREY_ZONE 灰区的 LLM 兜底与三查/第 4 查）
+  milvus_021: verdict_A=CONFIRMED(id+quote_ok_anchor_conflict) implied_verdict=CONFLICT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_022: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_023: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_024: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_025: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_026: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_027: verdict_A=CONFIRMED(id+quote_ok_anchor_conflict) implied_verdict=CONFLICT | verdict_B=CONFIRMED(数值下界) trigger=shardsNum=0.0 < 1.0 且被接受（[c0] create with shardsNum=0 -> htt
+  milvus_028: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（should be in range）
+  milvus_029: verdict_A=REFUTED(id+quote_ok_conflict) implied_verdict=CONFLICT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（is invalid）
+  milvus_030: verdict_A=NEUTRAL(quote_mismatch) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（out of range）
+  milvus_031: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+
+## 候选现象声称对照材料（第 4 查用，packet raw_observation/title 原文）
+  milvus_021: 候选现象声称（packet raw_observation 原文）： | ['[c1] search on never-loaded collection -> http=200, code=0']
+  milvus_022: 候选现象声称（packet raw_observation 原文）： | ['[c1] first create -> http=200, code=0', '[c1b] duplicate identical create -> http=200, code=0']
+  milvus_023: 候选现象声称（packet raw_observation 原文）： | ['[c1] drop non-existent collection -> http=200, code=0']
+  milvus_024: 候选现象声称（packet raw_observation 原文）： | ['[c1] delete with both filter and ids -> http=200, code=0']
+  milvus_025: 候选现象声称（packet raw_observation 原文）： | ['[c1] insert 101 entities -> http=200, code=0, insertCount=101']
+  milvus_026: 候选现象声称（packet raw_observation 原文）： | ['[c1] create collection with leading-underscore name -> http=200, code=0']
+  milvus_027: 候选现象声称（packet raw_observation 原文）： | ['[c0] create with shardsNum=0 -> http=200, code=0', '[c1] create with shardsNum=-1 -> http=200, code=0', '[c2] create with shardsNum=65535 -> http=200, code=0']
+  milvus_028: 候选现象声称（packet raw_observation 原文）： | ['[c1] create with metricType=empty -> http=200, code=0', '[c2] create with consistencyLevel=None -> http=200, code=0', '[c3] create with dimension=32769 -> http=200, code=65535']
+  milvus_029: 候选现象声称（packet raw_observation 原文）： | ['[c1] search with limit=0 -> http=200, code=65535', '[c2] search 64-dim vector on dim=4 collection -> http=200, code=1801']
+  milvus_030: 候选现象声称（packet raw_observation 原文）： | ["[c1] users/create with all-lowercase password 'abcdefgh' -> http=200, code=0", "[c2] control: users/create with complex password 'ValidP@ss1' -> http=200, code=0", "[c3] users/create with short password 'a' -> http=200, code=1100"]
+  milvus_031: 候选现象声称（packet raw_observation 原文）： | ['[c1] upsert without PK on autoID collection -> http=200, code=1804', '[c2] control: insert without PK -> http=200, code=1804']
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/debate_logs/chain_verdicts_v9.json + touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/debate_logs/chain_verdicts_v9.json.done（不覆盖其他版本判词文件）
+
+## 汇报
+一行/case：<defect_id> verdict=… fp_src=… root_cause=… rework=y/n
+【目标 DB 容器】
+  milvus gRPC localhost:19530 (pymilvus) + REST v2 http://localhost:19530/v2/vectordb

@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_018
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16
+
+## 候选
+defect_id=milvus_018
+候选现象声称（packet raw_observation 原文）：
+['[c1] concurrent rename->dst and create(dst): rename -> http=200, code=0; create -> http=200, code=0']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "concurrent rename->dst and create(dst): rename -> http=200, code=0; create -> http=200, code=0 (双方均成功)",
+ "chain_covered": "rename(src->dst) 返回 code=65535 'duplicated new collection name'; create(dst) 返回 code=0",
+ "drift_point": "候选声称【双成功】主现象而链仅审【rename失败+create成功】结局；且认知锚点 #50192（concurrent rename+create 幂等 by-design）与 A=CONFIRMED 冲突，约束引用与锚点适用边界未厘清",
+ "targeted_instruction": "重跑并发 rename->dst + create(dst) 实验，精确记录时序与双方返回值，区分为双成功(code=0/code=0) 与 rename失败(65535)+create成功 两种结局；据此校准 milvus_state_collections_rename_001 引用与 by-design 锚点 #50192 的适用边界，并明确 TOCTOU 是否在真实时序下复现"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_018/evidence_chain/milvus_018.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_018/evidence_chain/milvus_018.json.done
+
+## 汇报
+一行：milvus_018 done=<y/n> rework_applied=<y/n>

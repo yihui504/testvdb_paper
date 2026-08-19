@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.0/qdrant_003
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.0/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0
+
+## 候选
+defect_id=qdrant_003
+候选现象声称（packet raw_observation 为空，用该 issue 标题原文）：
+score_threshold_range_issue
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "score_threshold_range_issue（score_threshold=2.0 超出 Cos 距离可达区间仍被接受）",
+ "chain_covered": "score_threshold=2.0 -> HTTP 200 空结果；c5 有效阈值 -0.5 -> HTTP 200 返回结果",
+ "drift_point": "契约锚点缺失：引用的 constraint_id 实为参数路径 'collections+{collection_name}+points+search.score_threshold'（description 'Minimum score threshold'），非独立 constraint_id，导致 A=NEUTRAL(constraint_absent)；文档被域名拦截无法核验是否存在 score_threshold 取值范围拒绝的断言",
+ "targeted_instruction": "核对 Qdrant v1.18.x 文档是否对 score_threshold 声明取值范围/越界拒绝语义；若文档声明越界应 4xx 拒绝则在契约中以正式 constraint_id 添加该断言并重建 contract_grounding，否则明确记录为无越界拒绝声明（支撑 NOT_DEFECT 的 mundane 语义）。"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.0/qdrant_003/evidence_chain/qdrant_003.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.0/qdrant_003/evidence_chain/qdrant_003.json.done
+
+## 汇报
+一行：qdrant_003 done=<y/n> rework_applied=<y/n>

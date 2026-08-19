@@ -1,0 +1,110 @@
+[
+  {
+    "vendor": "qdrant",
+    "number": 9371,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe shows batch with mixed valid/invalid operations returns 400 with persisted=False, meaning no data was written. The claimed violation (valid points persisting despite 400) is not reproduced; the observed behavior is consistent with batch rejection."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9372,
+    "verdict": "CONFIRMED",
+    "rationale": "Internal inconsistency: max_query_limit=0 is correctly rejected (422), but filter_max_conditions=0 and upsert_max_batchsize=0 are accepted (200) yet create unusable collections. The same class of limit-type fields has inconsistent validation."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9373,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe reproduction shows indexed filter returns 25/25 matching points (total=50). The reported index incompleteness (2/25 points) is not reproduced; the observed behavior is correct."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9416,
+    "verdict": "CONFIRMED",
+    "rationale": "Silently accepts vectors={} during collection creation (200) but subsequent upsert fails with \"Not existing vector name error.\" The API accepts invalid configuration creating an unusable collection rather than rejecting the config upfront."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9417,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Missing vectors field is accepted with 200 and the collection exists. If Qdrant intentionally supports vectorless collections (as API docs suggest with required=false), omitting vectors is legitimate design, not a defect."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9418,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "filter.should=null is accepted and returns results (200). The report claims null is ignored but evidence shows it returned 2 points. Accepting null as a valid filter value (equivalent to absent) appears to be intentional behavior, not a contract violation."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9419,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "must_not as object returns 200 with 1 point, and the result shows expected exclusion behavior. The report claims it is ignored, but evidence suggests the filter worked; accepting object instead of array may be intentional leniency."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9420,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "query=null returns 200 with ids=[1,5,10]. The report claims this returns all points by ID, but evidence shows only 3 specific IDs returned. The behavior appears to be documented fallback (when query is absent/null), not a defect."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9421,
+    "verdict": "CONFIRMED",
+    "rationale": "RFC 7231 contract violation: calling a cluster-only operation on a standalone instance is a client error (predictable mode), not a server failure. The endpoint returns HTTP 500 (server error) instead of 4xx (client error), violating REST status code semantics."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9520,
+    "verdict": "CONFIRMED",
+    "rationale": "shard_number=INT_MAX causes read timeout (server crash/hang), while replication_factor=0 is properly rejected with 422. Inconsistent upper-bound validation allows extreme values to crash the server instead of being rejected upfront."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9521,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe shows named-vector upsert into single-vector collection is rejected with 400 (status=400, count=0). The reported silent data loss with 200 OK is not reproduced; the correct behavior is observed."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9522,
+    "verdict": "CONFIRMED",
+    "rationale": "lookup_from referencing a non-existent collection returns 200 with source results. The API reference requires the lookup collection to exist; silently accepting invalid references without 404/400 error violates the documented contract."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9523,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe reproduction shows offset pagination returns non-overlapping pages (page1: 0-9, page2: 10-19, page3: 20-24) with no duplicates. The reported pagination duplication is not reproduced; observed behavior is correct."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9524,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe tests show all invalid filter cases return None/timeout status. Without actual 200 OK responses recorded, the claim that invalid filters are silently accepted cannot be substantiated from the evidence provided."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9525,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "All observed errors return proper 400 status codes. The report focuses on diagnostic quality (parameter names, Rust type leakage), but the contract (success/failure) is correctly signaled. This is an ergonomics issue, not a contract violation."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9869,
+    "verdict": "CONFIRMED",
+    "rationale": "OpenAPI schema declares timeout minimum:1, but runtime accepts timeout=0 with 200. Schema/code inconsistency allows values the contract explicitly prohibits; runtime must enforce published schema constraints."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 9942,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Probe shows VectorParams.size schema endpoint returns 404 (schema=None), not a missing constraint. The server correctly enforces size<=65536 at runtime (422 for 70000). Without evidence of the actual schema, the claimed discrepancy cannot be confirmed."
+  },
+  {
+    "vendor": "qdrant",
+    "number": 10120,
+    "verdict": "CONFIRMED",
+    "rationale": "count exact=false on is_empty returns 25 vs exact=true ground truth 40 (-38% undercount). OpenAPI documentation only warns approximate counts \"might be unreliable during indexing\"; a consistent 35% undercount at steady state violates this contract."
+  }
+]

@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_019
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.16
+
+## 候选
+defect_id=milvus_019
+候选现象声称（packet raw_observation 原文）：
+['[c1] get_stats after insert+load -> http=200, code=0, rowCount=0', '[c1_q] query after insert+load -> http=200, code=0, returned 5 rows (id 0-4)']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "get_stats after insert+load -> http=200, code=0, rowCount=0; query 返回 5 rows",
+ "chain_covered": "insert 5 → load → get_stats rowCount=0; query 返回 5 rows (id 0-4)（链内已完整覆盖现象）",
+ "drift_point": "机械 A=CONFIRMED 确认违反 count 一致性不变式，但与视角D 认知锚点 #50193（get_stats 仅统计 flushed 数据，by-design）冲突；不变式 milvus_invariant_count_consistency_001 是否以 get_stats 为合法测量通道未厘清，约束引用可能错位",
+ "targeted_instruction": "核对不变式 milvus_invariant_count_consistency_001 的测量语义是否应为 get_stats；若 get_stats 语义为 flushed-only 的 by-design，则改为补/对齐契约引用（如以 query 返回 5 行作为真信号通道）或换不依赖 flush 时序的约束，并给出两者协调的一致结论"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_019/evidence_chain/milvus_019.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/milvus_019/evidence_chain/milvus_019.json.done
+
+## 汇报
+一行：milvus_019 done=<y/n> rework_applied=<y/n>

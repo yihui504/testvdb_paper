@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_027
+候选现象声称（packet raw_observation 原文）：
+['[c0] create with shardsNum=0 -> http=200, code=0', '[c1] create with shardsNum=-1 -> http=200, code=0', '[c2] create with shardsNum=65535 -> http=200, code=0']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "[c0] create with shardsNum=0 -> http=200, code=0; [c1] ... shardsNum=-1 -> 200/0; [c2] ... shardsNum=65535 -> 200/0",
+ "chain_covered": "create with shardsNum in {0,-1,65535} 全部 HTTP200/code0",
+ "drift_point": "verdict_A=CONFIRMED（契约断言 shardsNum>=1 被违反）与 机械 B=CONFIRMED 均触发，但源码 handler_v2.go 仅从 params.shardsNum 读 shardsNum——top-level shardsNum 可能未被消费（认知 BDP #50351 视为 by-design）。约束引用可能错位：应核实脚本以何种路径（top-level vs params）传参",
+ "targeted_instruction": "重读 output_milvus_027.log 确认 shardsNum 传参层级；若为 top-level 未被消费字段，则改锚到被实际消费的 params.shardsNum 并补相应观测，消除 anchor_conflict；若确为 consumed 字段且 0/-1/65535 被接受，则补源码 lower-bound 缺失引用固定 DEFECT"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json.done
+
+## 汇报
+一行：milvus_027 done=<y/n> rework_applied=<y/n>

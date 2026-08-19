@@ -1,0 +1,2216 @@
+{
+  "items": [
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9017,
+      "version": "1.18.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "hnsw_ef accepts 0",
+      "defect_class": "param_validation",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_hnsw_bug {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_hnsw_bug/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with params.hnsw_ef=0 (semantically invalid; should be rejected)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_hnsw_bug/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 3,
+              "params": {
+                "hnsw_ef": 0
+              }
+            }
+          },
+          "observe": "HTTP status and body. Bug: 200 OK returning result {id:1,score:1.0}. Fix: 400/422 with descriptive error."
+        }
+      ],
+      "expectation": "Server should reject hnsw_ef<1 with 400/422 because an HNSW dynamic candidate list of size 0 cannot search. Other params like limit(min=1)/offset(min=0) are validated in OpenAPI; hnsw_ef should be too.",
+      "contract_hint": "Issue body: hnsw_ef of 0 means 'consider zero candidates'; the OpenAPI/schema pattern validates limit>=1 and offset>=0, and SearchParams.hnsw_ef has no minimum.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 8688,
+      "version": "1.17.1",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "[Bug]: Cosine similarity score strictly exceeds upper bound of 1.0 for identical vectors",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "Create collection test_cosine_bound {\"vectors\":{\"size\":128,\"distance\":\"Cosine\"}}",
+        "Use an external driver: for i in 0..100: generate a deterministic 128-dim float32 vector v, upsert {id:1,vector:v}, then search with the identical vector. Driver handles the loop; REST is called per iteration."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with the exact same vector that was just upserted, limit=1, with_payload",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_cosine_bound/points/search",
+            "json_payload": {
+              "vector": "<identical 128-dim float32 vector>",
+              "limit": 1,
+              "with_payload": false
+            }
+          },
+          "observe": "Example search request shown with placeholder vector (driver substitutes it); observe returned score: Bug: score can exceed 1.0 (e.g. 1.0000001). Fixed: score clamps to >= -1.0 and <= 1.0; exact self-match yields 1.0."
+        }
+      ],
+      "expectation": "For COSINE metric, the similarity score is mathematically bounded to [-1.0, 1.0]; an identical vector should score exactly 1.0 and never exceed it. Any value > 1.0 violates the metric contract.",
+      "contract_hint": "Issue body: cosine similarity of a normalized vector to itself should be 1.0 (upper bound); f32 dot-product rounding can produce 1.0000001.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9027,
+      "version": "1.18.0",
+      "gt_category": "BY_DESIGN",
+      "title": "score_threshold_range_issue",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_score_threshold_bug {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_score_threshold_bug/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with score_threshold=2.0 (above Cosine max)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_score_threshold_bug/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 5,
+              "score_threshold": 2.0
+            }
+          },
+          "observe": "Bug: 200 OK with empty result (threshold higher than any score). If Qdrant starts rejecting out-of-range thresholds, expect 400/422."
+        },
+        {
+          "case_id": "c2",
+          "desc": "search with score_threshold=-0.5 (below min score)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_score_threshold_bug/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 5,
+              "score_threshold": -0.5
+            }
+          },
+          "observe": "Bug: 200 OK returning the point (negative threshold passes everything). If rejection is added, expect 400/422."
+        }
+      ],
+      "expectation": "score_threshold defines a minimum score filter. Values outside the Cosine score range [0,1] are semantically meaningless (2.0 returns empty, -0.5 returns all). Whether this is a defect is the subject of the issue; probe documents current behavior and tests whether new validation rejects it.",
+      "contract_hint": "Issue body: semantic consistency of score as a threshold on similarity; no range constraint in OpenAPI/OpenAPI number type with no min/max.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9039,
+      "version": "1.18.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "Bug: Async upsert silently discards dimension-mismatched vectors (Poor Diagnostics)",
+      "defect_class": "type_coercion",
+      "endpoint": "PUT /collections/{name}/points",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "upsert 3-dim vector into 4-dim collection with wait omitted (async default)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test/points",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 2,
+                  "vector": [
+                    0.1,
+                    0.2,
+                    0.3
+                  ]
+                }
+              ]
+            }
+          },
+          "observe": "HTTP status/body, then GET /collections/test points_count. Bug: 200 {'status':'acknowledged'} and point discarded (count stays 0). Fix: reject with 4xx or surface a diagnostic."
+        },
+        {
+          "case_id": "c2",
+          "desc": "same operation with wait=true for comparison",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 1,
+                  "vector": [
+                    0.1,
+                    0.2,
+                    0.3
+                  ]
+                }
+              ]
+            }
+          },
+          "observe": "Control: should be 400 'Vector dimension error: expected dim: 4, got 3'. Confirms the validation exists only on the wait path."
+        }
+      ],
+      "expectation": "Async (wait=false) upserts should not silently discard dimension-mismatched data while returning 200 success; at least the server should surface a diagnostic or reject, matching the wait=true behavior which returns 400.",
+      "contract_hint": "Issue body: wait=true returns 400 with 'Vector dimension error', wait=false returns 200 'acknowledged' while discarding the point; acknowledged means received by WAL, not validated/stored.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9044,
+      "version": "1.12.1",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "Collection creation accepts `size=65536` despite FAQ stating maximum is 65,535 (off-by-one)",
+      "defect_class": "doc_mismatch",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections never (probes create distinct collections)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create collection with size=65536 (FAQ says max 65535)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_65536",
+            "json_payload": {
+              "vectors": {
+                "size": 65536,
+                "distance": "Cosine"
+              }
+            }
+          },
+          "observe": "Bug: 200 accepted. If code aligned to FAQ, expect 422."
+        },
+        {
+          "case_id": "c2",
+          "desc": "create collection with size=65537 (above any stated max)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_65537",
+            "json_payload": {
+              "vectors": {
+                "size": 65537,
+                "distance": "Cosine"
+              }
+            }
+          },
+          "observe": "Control: 422 rejected by both code and FAQ (upper bound is 65535/65536)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "create with size=65535 (FAQ max)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_65535",
+            "json_payload": {
+              "vectors": {
+                "size": 65535,
+                "distance": "Cosine"
+              }
+            }
+          },
+          "observe": "Control: 200 accepted per FAQ."
+        }
+      ],
+      "expectation": "Qdrant FAQ states dense vectors support up to 65,535 dimensions, so size=65536 should be rejected (or the FAQ updated). size=65536 currently accepted is the doc/code mismatch under test.",
+      "contract_hint": "Issue body: FAQ says 'up to 65,535 dimensions'; code uses <=65536; maintainer @timvisee confirmed 'current limit for dense vectors is 65536'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9045,
+      "version": "1.12.1",
+      "gt_category": "TP_FIXED_PR",
+      "title": "Bug: Empty vector `[]` upsert with `wait=false` can trigger server panic (zero-length assertion failure)",
+      "defect_class": "crash",
+      "endpoint": "PUT /collections/{name}/points",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "upsert empty vector [] with wait=true (sync path)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 1,
+                  "vector": []
+                }
+              ]
+            }
+          },
+          "observe": "Control: 400 rejection (zero-length validation active on sync path)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "upsert empty vector [] with wait=false (async path)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test/points",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 2,
+                  "vector": []
+                }
+              ]
+            }
+          },
+          "observe": "Bug: 200 'acknowledged'. Risk: in sharded/distributed deployments a later search may hit a zero-length assertion (e.g. fixed_length_priority_queue 'length must be greater than zero') and panic the server. Also check server stays alive and count stays 0."
+        }
+      ],
+      "expectation": "Zero-length vectors must be rejected at the API boundary (vector.is_empty()-style check or dim==0 validation), never reach code paths that assert non-zero length, and must not cause a server panic. Sync path already rejects; async path should not accept-and-risk-crash.",
+      "contract_hint": "Issue body: try_from_flatten rejects dim==0 ('MultiDenseVector cannot have zero dimension'); validate_vector_parameters only in debug_assert; #7967 documents a 'length must be greater than zero' panic.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9149,
+      "version": "1.18.1",
+      "gt_category": "TP_FIXED_PR",
+      "title": "shard_number=0 and negative values accepted during collection creation",
+      "defect_class": "param_validation",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create collection with shard_number=0",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_shard_zero",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "shard_number": 0
+            }
+          },
+          "observe": "Bug: 200 accepted (creates zero-shard collection). Fix: 400 'shard_number must be a positive integer'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "create collection with shard_number=-1",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_shard_neg",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "shard_number": -1
+            }
+          },
+          "observe": "Bug: 200 accepted. Fix: 4xx rejecting non-positive shard_number."
+        }
+      ],
+      "expectation": "shard_number must be a positive integer (>=1); 0 or negative values are invalid and should be rejected at the API boundary, consistent with replication_factor/write_consistency_factor which reject 0.",
+      "contract_hint": "Issue body: shard_number=0 creates a collection with zero shards; other params in the same endpoint have validation (e.g. vectors.size upper bound).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9255,
+      "version": "1.18.1",
+      "gt_category": "FP_NOT_REPRO",
+      "title": "Payload filter returns points with missing payload field (payload=None)",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_payload_filter {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Insert 10 points (wait=true): even ids color=red, odd ids color=blue, ids 3 and 6 have NO color payload at all (see issue body exact payloads)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with must filter color=red, limit=10, with_payload=true",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_payload_filter/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 10,
+              "with_payload": true,
+              "filter": {
+                "must": [
+                  {
+                    "key": "color",
+                    "match": {
+                      "value": "red"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: response includes points with payload=None or missing color (ids 3,6). Correct: only 4 even-red points (ids 1,4,7,9) returned, missing-key points excluded."
+        }
+      ],
+      "expectation": "A must+match condition on a payload key must only return points whose key exists and equals the value. Points missing the key must be excluded since a missing key cannot satisfy a match. (GT labels this FP_NOT_REPRO, so running it tests whether the reported corruption actually reproduces.)",
+      "contract_hint": "Issue body: a match condition requires the key to exist and value to match; a missing key cannot satisfy a match and should return false.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9364,
+      "version": "1.18.2",
+      "gt_category": "SELF_CLOSED",
+      "title": "Bug: Batch operations partially apply despite returning HTTP 400 error (atomicity violation)",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/batch",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_batch {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Upsert 3 valid 4-dim points individually (ids 1,2,3).",
+        "Record baseline points_count (expect 3)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "POST a mixed batch: 2 valid 4-dim + 1 invalid 3-dim point",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_batch/points/batch",
+            "json_payload": {
+              "operations": [
+                {
+                  "upsert": {
+                    "points": [
+                      {
+                        "id": 4,
+                        "vector": [
+                          0.1,
+                          0.2,
+                          0.3,
+                          0.4
+                        ]
+                      },
+                      {
+                        "id": 5,
+                        "vector": [
+                          0.5,
+                          0.6,
+                          0.7,
+                          0.8
+                        ]
+                      },
+                      {
+                        "id": 6,
+                        "vector": [
+                          0.1,
+                          0.2,
+                          0.3
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "If atomic: return 400 or 422 AND count stays 3. If non-atomic: returns 400 but count increased (bug). Note: issue body reports this as state-dependent; may not reproduce on a fresh container."
+        }
+      ],
+      "expectation": "A batch returning an error (4xx) should apply no operations; point count should remain unchanged. A 4xx response means the request was rejected and no state modified. (GT is SELF_CLOSED; probe tests whether partial-apply reproduces or is correct.)",
+      "contract_hint": "Issue body: batch returns 400 'Vector dimension error' but count 3->5 (valid points persisted); standard REST contract says 4xx means no state modified.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9365,
+      "version": "1.18.2",
+      "gt_category": "SELF_CLOSED",
+      "title": "Bug: Payload index returns incorrect filtered results — index corruption after creation",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/scroll",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_index {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Insert 50 points (wait=true): 25 with payload.category_id=\"cat_a\", 25 with \"cat_b\".",
+        "PUT /collections/test_index/index {\"field_name\":\"category_id\",\"field_schema\":{\"type\":\"keyword\"},\"wait\":true}",
+        "Wait for index build (sleep ~2s)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "scroll/filter for category_id=cat_a, limit=100",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_index/points/scroll",
+            "json_payload": {
+              "filter": {
+                "must": [
+                  {
+                    "key": "category_id",
+                    "match": {
+                      "value": "cat_a"
+                    }
+                  }
+                ]
+              },
+              "limit": 100
+            }
+          },
+          "observe": "Bug: returns far fewer than 25 (issue observed 2 points). Correct: all 25 cat_a points. Count GET /collections/test_index should still show 50 (data intact, index query wrong)."
+        }
+      ],
+      "expectation": "After a keyword payload index is built with wait=true (HTTP 200), an indexed-field filter for cat_a should return all 25 matching points. A significant miss rate (2/25) with correct point count is an index/query correctness defect. (GT is SELF_CLOSED; probe tests reproduction.)",
+      "contract_hint": "Issue body: after creating a keyword index on category_id with wait=true, filtered search returns only 2 of 25 matching points.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9366,
+      "version": "1.18.2",
+      "gt_category": "SELF_CLOSED",
+      "title": "Bug: Named vector lifecycle operations (update+delete) corrupt search — returns 400",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_named {\"vectors\":{\"image_vector\":{\"size\":4,\"distance\":\"Cosine\"}}}",
+        "Insert 20 points with named vector image_vector values (wait=true).",
+        "Put named-vector index on image_vector if applicable."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search via named vector image_vector (baseline)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_named/points/search",
+            "json_payload": {
+              "vector": {
+                "name": "image_vector",
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              "limit": 5
+            }
+          },
+          "observe": "Baseline: 200 OK with results."
+        },
+        {
+          "case_id": "c2",
+          "desc": "update named vectors on some points",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_named/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 3,
+                  "vector": {
+                    "image_vector": [
+                      0.2,
+                      0.3,
+                      0.4,
+                      0.5
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "Expect 200."
+        },
+        {
+          "case_id": "c3",
+          "desc": "delete named vectors from points ids 1 and 2",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_named/points/delete",
+            "json_payload": {
+              "points": [
+                1,
+                2
+              ],
+              "vectors": [
+                "image_vector"
+              ]
+            }
+          },
+          "observe": "Expect 200; then count GET /collections/test_named still 20."
+        },
+        {
+          "case_id": "c4",
+          "desc": "search again via named vector after update+delete lifecycle",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_named/points/search",
+            "json_payload": {
+              "vector": {
+                "name": "image_vector",
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              "limit": 5
+            }
+          },
+          "observe": "Bug (per issue): returns 400 'broken'. Correct: 200 with results for remaining points."
+        }
+      ],
+      "expectation": "Search via a named vector must keep working after vector update+delete lifecycle operations on specific points; the collection remains intact (count unchanged) and searches should return results. (GT is SELF_CLOSED; probe tests reproduction.)",
+      "contract_hint": "Issue body: after insert->update->delete of named vectors, subsequent named-vector search returns HTTP 400 while point count stays 20.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9371,
+      "version": "1.18.2",
+      "gt_category": "BY_DESIGN",
+      "title": "Bug: Batch operations not atomic — valid points persisted despite HTTP 400 error",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/batch",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_batch2 {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Run significant preceding CRUD on the container, because issue reports it is state-dependent (may not reproduce on a fresh container).",
+        "Upsert 3 valid 4-dim points (ids 1,2,3); record baseline count=3."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "mixed batch 2 valid + 1 invalid (dim=3)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_batch2/points/batch",
+            "json_payload": {
+              "operations": [
+                {
+                  "upsert": {
+                    "points": [
+                      {
+                        "id": 4,
+                        "vector": [
+                          0.1,
+                          0.2,
+                          0.3,
+                          0.4
+                        ]
+                      },
+                      {
+                        "id": 5,
+                        "vector": [
+                          0.5,
+                          0.6,
+                          0.7,
+                          0.8
+                        ]
+                      },
+                      {
+                        "id": 6,
+                        "vector": [
+                          0.1,
+                          0.2,
+                          0.3
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "Issue: HTTP 400 returned but GET /collections/test_batch2/points/count shows count 3->5 (valid points persisted). Correct (atomic): 400 and count unchanged at 3. Note BY_DESIGN: Qdrant may reject-with-partial-apply by design; probe documents which behavior the current version exhibits."
+        }
+      ],
+      "expectation": "Whether a 400 on a batch must roll back all operations. Standard REST 'rejected' semantics imply no state change, but Qdrant may define batch as non-transactional. Probe records the actual behavior on the target version. (GT is BY_DESIGN.)",
+      "contract_hint": "Issue body: batch handler validates per-operation; writes may already be dispatched when a later operation fails, so valid points persist despite the 400.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9372,
+      "version": "1.18.2",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "Strict mode inconsistently validates zero values — allows creation of unusable collections",
+      "defect_class": "param_validation",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "control: strict_mode_config.max_query_limit=0 (correctly rejected)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/ctl",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "strict_mode_config": {
+                "enabled": true,
+                "max_query_limit": 0
+              }
+            }
+          },
+          "observe": "Correct: 422 'max_query_limit: value 0 invalid, must be 1 or larger'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "filter_max_conditions=0 (the defect)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/exp_a",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "strict_mode_config": {
+                "enabled": true,
+                "filter_max_conditions": 0,
+                "max_query_limit": 100
+              }
+            }
+          },
+          "observe": "Bug: 200 accepted, creating a poisoned collection. Then any scroll with a filter condition fails 400 'Filter condition limit reached (1 > 0)'."
+        },
+        {
+          "case_id": "c3",
+          "desc": "upsert_max_batchsize=0 (the defect)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/exp_b",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "strict_mode_config": {
+                "enabled": true,
+                "upsert_max_batchsize": 0,
+                "max_query_limit": 100
+              }
+            }
+          },
+          "observe": "Bug: 200 accepted; subsequent upsert fails 400 'Limit exceeded 1 > 0 for upsert limit'."
+        }
+      ],
+      "expectation": "All limit-type fields in strict_mode_config should have consistent validation. max_query_limit/max_timeout/max_points_count reject 0; filter_max_conditions and upsert_max_batchsize should also reject values < 1 instead of creating an unusable collection.",
+      "contract_hint": "Issue body: consistency matrix shows 3 fields reject 0 (422) while filter_max_conditions and upsert_max_batchsize accept 0 (200) producing a poisoned collection.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9373,
+      "version": "1.18.2",
+      "gt_category": "FP_NOT_REPRO",
+      "title": "Bug: Payload index silently returns severely incomplete results — 2/25 matching points after wait:true",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/scroll",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "Issue reports state-dependence: a fresh container returns correct results. To reproduce, run sustained CRUD for hours (create/delete 10+ collections, thousands of points, index build/drop) first.",
+        "PUT /collections/test_idx2 {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Insert 50 points: 25 category_id=cat_a, 25 =cat_b (ids 1..50) with wait=true.",
+        "PUT /collections/test_idx2/index {\"field_name\":\"category_id\",\"field_schema\":{\"type\":\"keyword\"},\"wait\":true}",
+        "Sleep ~2s."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "filter for category_id=cat_a after index build",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_idx2/points/scroll",
+            "json_payload": {
+              "filter": {
+                "must": [
+                  {
+                    "key": "category_id",
+                    "match": {
+                      "value": "cat_a"
+                    }
+                  }
+                ]
+              },
+              "limit": 100
+            }
+          },
+          "observe": "Bug: returns 2 of 25 (92% miss). Correct: all 25. GET /collections/test_idx2 count should be 50 (data intact). Control run on a fresh container returns 25/25."
+        }
+      ],
+      "expectation": "With wait=true (index build returns 200), once the index is built all existing points must be queryable via the indexed field; cat_a filter should return 25. A persistent 2/25 result with intact point count is an index-completeness defect. (GT is FP_NOT_REPRO; probe tests reproduction.)",
+      "contract_hint": "Issue body: wait param means 'wait for changes to actually happen before responding'; index returned 200 but indexed field filter returned only 2/25.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9416,
+      "version": "1.18.2",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "`vectors={}` silently accepted during collection creation — produces unusable collection",
+      "defect_class": "param_validation",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create collection with vectors={} (empty object)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/broken",
+            "json_payload": {
+              "vectors": {}
+            }
+          },
+          "observe": "Bug: 200 accepted. (Also verify collection exists via GET /collections/broken.) Then PUT /collections/broken/points returns 400 'Default vector config is not found in collection'. Whether that creation acceptance is a defect is the subject (GT=FP_BY_DESIGN)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "confirm the poisoned collection is unusable",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/broken/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 1,
+                  "vector": [
+                    0.1,
+                    0.2,
+                    0.3,
+                    0.4
+                  ]
+                }
+              ]
+            }
+          },
+          "observe": "Retrospectively demonstrates collection has no default vector config; insert fails 400."
+        }
+      ],
+      "expectation": "A collection should either be created with usable vector config or rejected; accepting vectors={} creates an unusable collection whose insert fails. (GT is FP_BY_DESIGN: Qdrant may allow vectorless collections by design; probe records actual behavior.)",
+      "contract_hint": "Issue body: API doc marks vectors required=false; vectors={} accepted 200 then any point op fails 'Default vector config is not found in collection'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9417,
+      "version": "1.18.2",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "Missing `vectors` field silently accepted during collection creation — produces unusable collection",
+      "defect_class": "param_validation",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create collection without a vectors field",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/broken2",
+            "json_payload": {
+              "shard_number": 1
+            }
+          },
+          "observe": "Bug: 200 accepted (collection exists, no vector config). Then any point op fails 400 'Default vector config is not found'. (GT=FP_BY_DESIGN.)"
+        }
+      ],
+      "expectation": "Whether omitting vectors must be rejected. If Qdrant intentionally supports vectorless collections, omitting is legitimate; otherwise it should be 422. Probe records actual behavior (creation acceptance + subsequent insert failure). (GT is FP_BY_DESIGN.)",
+      "contract_hint": "Issue body: vectors is object required=false; omitting it still returns 200 but the collection cannot serve vector ops.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9418,
+      "version": "1.18.2",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "`filter.should=null` silently accepted in query/search — null filter condition ignored",
+      "defect_class": "param_validation",
+      "endpoint": "POST /collections/{name}/points/query",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_filter_null {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_filter_null/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"payload\":{\"tag\":\"A\"}},{\"id\":2,\"vector\":[0.1,0.2,0.3,0.4],\"payload\":{\"tag\":\"B\"}}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "query with filter.should=null",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_filter_null/points/query",
+            "json_payload": {
+              "query": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 5,
+              "filter": {
+                "should": null
+              }
+            }
+          },
+          "observe": "Bug: 200 OK returning both points (null filter silently ignored, no filtering). If strict: 4xx rejecting null for an array-typed field. Control for contrast: filter.should='some_string' returns 400 type error but null returns 200."
+        }
+      ],
+      "expectation": "filter.should is documented as an array of conditions; explicit null is not a valid value and should be rejected rather than silently ignored as 'no filter'. A null should not be indistinguishable from an absent field. (GT is FP_BY_DESIGN; probe records actual behavior.)",
+      "contract_hint": "Issue body: string value is rejected but null is accepted-and-ignored; serde maps JSON null to Option::None, indistinguishable from absent.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9419,
+      "version": "1.18.2",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "`filter.must_not` accepts object instead of array — type mismatch silently ignored",
+      "defect_class": "param_validation",
+      "endpoint": "POST /collections/{name}/points/query",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_mustnot {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_mustnot/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"payload\":{\"tag\":\"x\"}},{\"id\":2,\"vector\":[0.1,0.2,0.3,0.4],\"payload\":{\"tag\":\"y\"}}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "query with filter.must_not as a single object instead of array",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_mustnot/points/query",
+            "json_payload": {
+              "query": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 5,
+              "filter": {
+                "must_not": {
+                  "key": "tag",
+                  "match": {
+                    "value": "x"
+                  }
+                }
+              }
+            }
+          },
+          "observe": "Bug: 200 returning all points (object silently ignored, must_not not applied). If strict: 400 type mismatch 'expected a sequence'. Note expected correct filter would exclude tag=x leaving only tag=y."
+        }
+      ],
+      "expectation": "filter.must_not is an array of conditions; a single object is a type mismatch that should be rejected (as other type mismatches are), not silently ignored, so that exclusion filters are not silently dropped. (GT is FP_BY_DESIGN; probe records actual behavior.)",
+      "contract_hint": "Issue body: must_not expects an array; passing an object returns 200 with unfiltered results, type mismatch not surfaced.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9420,
+      "version": "1.18.2",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "`query=null` silently accepted — returns all points instead of being rejected",
+      "defect_class": "param_validation",
+      "endpoint": "POST /collections/{name}/points/query",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_qnull {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_qnull/points {\"points\":[{\"id\":10,\"vector\":[0.5,0.5,0.5,0.5]},{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]},{\"id\":5,\"vector\":[0.3,0.3,0.3,0.3]}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "query with query=null",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_qnull/points/query",
+            "json_payload": {
+              "query": null,
+              "limit": 5
+            }
+          },
+          "observe": "Bug: 200 returning all points ordered by ID [1,5,10] (null query silently falls back to 'no query'). If strict: 4xx rejecting null. The doc fallback (return-by-ID) is specified for an ABSENT query, not explicit null."
+        }
+      ],
+      "expectation": "An explicit query=null is semantically invalid and should be rejected, not treated as 'no query' returning all points by ID. The documented return-by-ID fallback applies only when query is absent. (GT is FP_BY_DESIGN; probe records actual behavior.)",
+      "contract_hint": "Issue body: docs say 'if missing without prefetches, returns points ordered by ID' — describes absent query, not explicit null.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9421,
+      "version": "1.18.2",
+      "gt_category": "TP_FIXED_PR",
+      "title": "`POST /cluster/recover` returns HTTP 500 in standalone mode — should return 4xx",
+      "defect_class": "behavior",
+      "endpoint": "POST /cluster/recover",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "Confirm standalone: GET /cluster returns {\"result\":{\"status\":\"disabled\"},\"status\":\"ok\"}."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "call cluster recover in standalone mode",
+          "request": {
+            "method": "POST",
+            "path": "/cluster/recover",
+            "json_payload": null
+          },
+          "observe": "Bug: 500 'Service internal error: Qdrant is running in standalone mode'. Fix: 4xx (400/405) 'Cluster operations not available'. The error body already correctly names standalone mode; it is the status class that is wrong."
+        }
+      ],
+      "expectation": "Calling a cluster-only operation on a standalone instance is a client error, not a server failure; the HTTP status should be 4xx (400 Bad Request or 405), never 500 internal-server-error.",
+      "contract_hint": "Issue body: RFC 7231 — 4xx is client error, 5xx is server failure; predictable standalone mode should be 4xx, body correctly names the cause.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9520,
+      "version": "1.18.2",
+      "gt_category": "TP_FIXED_PR",
+      "title": "Server crash on collection creation with shard_number=INT_MAX — missing upper-bound validation unlike replication_factor",
+      "defect_class": "crash",
+      "endpoint": "PUT /collections/{name}",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create collection with shard_number=2147483647 (INT_MAX)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_shard_max",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "shard_number": 2147483647
+            }
+          },
+          "observe": "Bug: request hangs ~25s then connection closed (curl 52 'Empty reply'); server becomes unresponsive. Fix: 400/422 validation. Monitor server health after (GET / should respond)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: replication_factor=0 correctly rejected",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_rep0",
+            "json_payload": {
+              "vectors": {
+                "size": 4,
+                "distance": "Cosine"
+              },
+              "replication_factor": 0
+            }
+          },
+          "observe": "Compare: 422 'replication_factor: value 0 invalid...' — demonstrates validation exists for replication_factor but missing for shard_number upper bound."
+        }
+      ],
+      "expectation": "The server should validate shard_number and reject an extreme value (e.g. INT_MAX) with 400/422 rather than attempting to allocate billions of shards and crashing/hanging. A syntactically valid parameter must never take down the server.",
+      "contract_hint": "Issue body: shard_number=2147483647 causes resource allocation for 2B+ shards -> hang + connection close; replication_factor=0 is properly rejected with 422 showing inconsistent validation.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9521,
+      "version": "1.18.2",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "Silent data loss: named vector upsert in single-vector collection returns 200 OK but point is discarded",
+      "defect_class": "type_coercion",
+      "endpoint": "PUT /collections/{name}/points",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_named_vec {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}  (single-vector collection)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "upsert a point using named vector format into a single-vector collection",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_named_vec/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 102,
+                  "vector": {
+                    "name": [
+                      0.1,
+                      0.2,
+                      0.3,
+                      0.4
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "Bug: 200 {'status':'acknowledged'} but point NOT stored. Verify with POST /collections/test_named_vec/points/count {\"exact\":true} -> count 0 (silent data loss)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: wrong-dimension vector correctly rejected",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/test_named_vec/points?wait=true",
+            "json_payload": {
+              "points": [
+                {
+                  "id": 103,
+                  "vector": [
+                    0.1,
+                    0.2,
+                    0.3,
+                    0.4,
+                    0.5,
+                    0.6
+                  ]
+                }
+              ]
+            }
+          },
+          "observe": "Compare: 400 'Vector dimension error: expected dim: 4, got 6' — shows dimension is validated but format is not."
+        }
+      ],
+      "expectation": "The vector format (named vs unnamed) must match the collection configuration; upserting a named vector into a single-vector (unnamed) collection should be rejected with 4xx, not silently accepted with 200 while discarding the point. Silent data loss with a success response violates the write contract.",
+      "contract_hint": "Issue body: collection has unnamed vectors; named-vector format is accepted 200/acknowledged but point discarded (count=0); wrong-dimension is correctly rejected 400.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9522,
+      "version": "1.18.2",
+      "gt_category": "TP_FIXED_PR",
+      "title": "Query API silently returns 200 OK when lookup_from references a non-existent collection",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/query",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_lookup_source {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Seed source with 5 points (ids 0..4, payload tag/category) wait=true.",
+        "PUT /collections/test_lookup_target {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Seed target with 5 points (ids 0..4) wait=true."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "query source with lookup_from.collection pointing at a NON-EXISTENT collection",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_lookup_source/points/query",
+            "json_payload": {
+              "query": [
+                0.3,
+                0.3,
+                0.3,
+                0.3
+              ],
+              "limit": 3,
+              "lookup_from": {
+                "collection": "nonexistent_collection_xyz",
+                "vector": "default"
+              }
+            }
+          },
+          "observe": "Bug: 200 returning source results as if lookup_from ignored. Correct: 404/400 'Collection not found' for the lookup target."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: same query with a VALID lookup_from.collection",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_lookup_source/points/query",
+            "json_payload": {
+              "query": [
+                0.3,
+                0.3,
+                0.3,
+                0.3
+              ],
+              "limit": 3,
+              "lookup_from": {
+                "collection": "test_lookup_target",
+                "vector": "default"
+              }
+            }
+          },
+          "observe": "Control: 200 OK (lookup target exists). Confirms the only difference is existence of the referenced collection."
+        }
+      ],
+      "expectation": "lookup_from.collection references a cross-collection lookup source that must exist; a non-existent collection should produce 404 (or 400), not a silent 200 that makes the lookup indistinguishable from being ignored. (Per API reference lookup collection must exist.)",
+      "contract_hint": "Issue body: API reference requires the lookup collection to exist; v1.18.2 does not validate its existence and returns 200 with source results.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9523,
+      "version": "1.18.2",
+      "gt_category": "BY_DESIGN",
+      "title": "Search offset pagination returns duplicate point IDs across pages (HNSW approximation)",
+      "defect_class": "behavior",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_pagination_dedup {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "Seed 25 points (ids 0..24) with the sequential vectors and payload in the issue body, wait=true."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "page 1: search offset=0 limit=10",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_pagination_dedup/points/search",
+            "json_payload": {
+              "vector": [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ],
+              "limit": 10,
+              "offset": 0,
+              "with_payload": false
+            }
+          },
+          "observe": "Record returned point IDs."
+        },
+        {
+          "case_id": "c2",
+          "desc": "page 2: search offset=10 limit=10",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_pagination_dedup/points/search",
+            "json_payload": {
+              "vector": [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ],
+              "limit": 10,
+              "offset": 10,
+              "with_payload": false
+            }
+          },
+          "observe": "Record IDs; check overlap with page 1. Issue observed duplicates (e.g. ids 11,22,23,24)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "page 3: search offset=20 limit=10",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_pagination_dedup/points/search",
+            "json_payload": {
+              "vector": [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ],
+              "limit": 10,
+              "offset": 20,
+              "with_payload": false
+            }
+          },
+          "observe": "Record IDs; check additional overlap. Issue: union has 25 total with only 19 unique."
+        },
+        {
+          "case_id": "c4",
+          "desc": "control via scroll (cursor pagination, non-overlapping)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_pagination_dedup/points/scroll",
+            "json_payload": {
+              "limit": 10
+            }
+          },
+          "observe": "Control: scroll returns non-overlapping results — contrast with offset search."
+        }
+      ],
+      "expectation": "Standard pagination implies successive pages are non-overlapping and union to the full result set. If HNSW approximation cannot guarantee this, offset pagination may return duplicates; the issue discusses documenting or auto-exact. (GT is BY_DESIGN; probe records whether duplicates still occur.)",
+      "contract_hint": "Issue body: offset pagination with HNSW is non-deterministic; scroll cursor pagination does not have this problem.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9524,
+      "version": "1.18.2",
+      "gt_category": "OPEN_NO_LABEL",
+      "title": "Invalid filter conditions silently accepted (200 OK) with poor error diagnostics across search/query/scroll endpoints",
+      "defect_class": "param_validation",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_filter_validation {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_filter_validation/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.1,0.1,0.1],\"payload\":{\"category\":\"A\",\"score\":10}},{\"id\":2,\"vector\":[0.2,0.2,0.2,0.2],\"payload\":{\"category\":\"B\",\"score\":20}}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with an empty must array",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_filter_validation/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ],
+              "limit": 5,
+              "filter": {
+                "must": []
+              }
+            }
+          },
+          "observe": "Bug: 200 returning results (empty must accepted). If validation added: 400. Issue expects empty arrays rejected."
+        },
+        {
+          "case_id": "c2",
+          "desc": "search referencing a non-existent payload field",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_filter_validation/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ],
+              "limit": 5,
+              "filter": {
+                "must": [
+                  {
+                    "key": "nonexistent_field_xyz",
+                    "match": {
+                      "value": "A"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: 200 with empty results (field not validated). If validation added: reject."
+        },
+        {
+          "case_id": "c3",
+          "desc": "search with a contradictory range (gt>lt)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_filter_validation/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ],
+              "limit": 5,
+              "filter": {
+                "must": [
+                  {
+                    "key": "score",
+                    "range": {
+                      "gt": 50,
+                      "lt": 10
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: 200 with empty results. If validation added: 400 'gt must be < lt'."
+        },
+        {
+          "case_id": "c4",
+          "desc": "diagnostics: filter with a null key (rejected but message quality)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_filter_validation/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ],
+              "limit": 5,
+              "filter": {
+                "must": [
+                  {
+                    "key": null,
+                    "match": {
+                      "value": "A"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Already rejected (400) but observe the error text: poor = raw serde 'Invalid type unit value ... at line 1 column N' without naming the 'key' parameter."
+        }
+      ],
+      "expectation": "Invalid or self-contradictory filter conditions should be rejected with clear, parameter-naming error messages rather than silently returning 200. Cases under test: empty arrays, non-existent fields, contradictory ranges, and diagnostic quality for actually-rejected conditions.",
+      "contract_hint": "Issue body: 5 classes of invalid filters silently accepted (empty must, nonexistent field, type mismatch, contradictory range, wrong structure); rejected cases lack parameter names in serde messages.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9525,
+      "version": "1.18.2",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "Systemic: serde deserialization errors across 7 endpoints expose Rust internal types (usize/u32/f32) and lack parameter names",
+      "defect_class": "doc_mismatch",
+      "endpoint": "POST /collections/{name}/points/search",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_serde_errors {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_serde_errors/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4],\"payload\":{\"group\":\"A\",\"score\":10}}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search limit=-1 (type underflow for usize)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_serde_errors/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": -1
+            }
+          },
+          "observe": "Poor: 400 'invalid value: integer -1, expected usize at line 1 column N' (leaks Rust type, no param name). Quality improved if message is 'limit must be a positive integer'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "search score_threshold as a string",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_serde_errors/points/search",
+            "json_payload": {
+              "vector": [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "limit": 5,
+              "score_threshold": "not_a_number"
+            }
+          },
+          "observe": "Poor: 400 '... expected f32 at line 1 column N'."
+        },
+        {
+          "case_id": "c3",
+          "desc": "recommend strategy as integer",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_serde_errors/points/recommend",
+            "json_payload": {
+              "positive": [
+                1
+              ],
+              "limit": 5,
+              "strategy": 123
+            }
+          },
+          "observe": "Poor: 400 'invalid type: integer 123, expected string or map'. Contrast strategy='invalid' -> 400 listing enum values (good diagnostic)."
+        },
+        {
+          "case_id": "c4",
+          "desc": "scroll limit=-1",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_serde_errors/points/scroll",
+            "json_payload": {
+              "limit": -1
+            }
+          },
+          "observe": "Poor: 400 '... expected usize'. Same pattern."
+        },
+        {
+          "case_id": "c5",
+          "desc": "query limit=-1",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_serde_errors/points/query",
+            "json_payload": {
+              "query": {
+                "nearest": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              "limit": -1
+            }
+          },
+          "observe": "Poor: 400 '... expected usize'."
+        }
+      ],
+      "expectation": "Error messages for invalid parameter values should name the parameter, use domain-friendly type names (positive integer instead of usize), and not require JSON column counting. These are diagnostics-quality (contract/enum) expectations, not functional correctness.",
+      "contract_hint": "Issue body: serde echoes Rust types (usize/u32/f32) and column offsets without parameter names; application-level validation (e.g. limit=0 -> 422 names param) proves Qdrant can produce good messages.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9869,
+      "version": "1.18.2",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "Write operations accept `timeout=0` despite the OpenAPI schema declaring `minimum: 1`",
+      "defect_class": "doc_mismatch",
+      "endpoint": "POST /collections/{name}/points/payload",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/test_timeout {\"vectors\":{\"size\":4,\"distance\":\"Cosine\"}}",
+        "PUT /collections/test_timeout/points {\"points\":[{\"id\":1,\"vector\":[0.1,0.2,0.3,0.4]}]}"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "set payload with timeout=0 (forbidden by schema minimum:1)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_timeout/points/payload?timeout=0",
+            "json_payload": {
+              "payload": {
+                "x": 1
+              },
+              "points": [
+                1
+              ]
+            }
+          },
+          "observe": "Bug (doc/code mismatch): 200 with status completed/ok. If server enforced schema, expect 422. Also report whether timeout=0 is treated as valid (no-wait) by comparing to timeout=1 which also returns 200."
+        },
+        {
+          "case_id": "c2",
+          "desc": "same call with timeout=1 (documented minimum) for comparison",
+          "request": {
+            "method": "POST",
+            "path": "/collections/test_timeout/points/payload?timeout=1",
+            "json_payload": {
+              "payload": {
+                "x": 1
+              },
+              "points": [
+                1
+              ]
+            }
+          },
+          "observe": "Control: 200 OK. If timeout=0 and timeout=1 behave identically, the schema minimum:1 is not enforced."
+        }
+      ],
+      "expectation": "The OpenAPI schema declares timeout (integer minimum:1) on write operations. Either the server must reject timeout=0 with 422, or timeout=0 carries valid 'no-wait' semantics and the schema should be minimum:0. The runtime behavior and published contract must agree.",
+      "contract_hint": "Issue body: OpenAPI declares timeout as integer minimum:1; server accepts 0 with 200 on set payload/delete/create/update vectors — schema/code discrepancy.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 9942,
+      "version": "1.18.2",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "OpenAPI schema for `VectorParams.size` is missing the enforced `maximum: 65536` constraint",
+      "defect_class": "doc_mismatch",
+      "endpoint": "GET /openapi.json",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)"
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "fetch the published OpenAPI schema to inspect VectorParams.size",
+          "request": {
+            "method": "GET",
+            "path": "/openapi.json",
+            "json_payload": null
+          },
+          "observe": "In components.schemas.VectorParams.properties.size: bug = {'minimum':1} with NO maximum. Sibling DenseVectorConfig.properties.size has {'minimum':1,'maximum':65536}. Missing maximum = schema/implementation mismatch."
+        },
+        {
+          "case_id": "c2",
+          "desc": "runtime: create collection with size=70000 (>65536)",
+          "request": {
+            "method": "PUT",
+            "path": "/collections/repro2",
+            "json_payload": {
+              "vectors": {
+                "size": 70000,
+                "distance": "Cosine"
+              }
+            }
+          },
+          "observe": "Runtime enforces 422 'vectors.size: value 70000 invalid, must be from 1 to 65536' even though schema has no maximum; run with a NEW collection name distinct from c1."
+        }
+      ],
+      "expectation": "The OpenAPI schema should declare maximum:65536 on VectorParams.size to match the server's enforced 65536 upper bound, so schema-driven clients see the same limit (contract = implementation). If size>65536 is intended valid, the server bound should change; the schema and runtime must agree.",
+      "contract_hint": "Issue body: server rejects size=70000 with 422 'must be from 1 to 65536' but VectorParams.size schema only declares minimum:1; DenseVectorConfig.size already has maximum:65536.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 10120,
+      "version": "1.18.3",
+      "gt_category": "TP_FIXED_PR",
+      "title": "`count` `exact=false` on `is_empty` under-counts ~35% consistently; `is_null` on the same field is correct",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/count",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/c {\"vectors\":{\"size\":2,\"distance\":\"Cosine\"},\"optimizer_config\":{\"indexing_threshold\":1}}",
+        "Data structure: total N=200 (also try 500, 1000); for i in 0..N-1, point id=i+1, vector=[1,0]; if i%5 != 0 give payload {\"kw\":\"red\"} else NO kw field (so is_empty matches the ~20% missing-kw points). wait=true.",
+        "PUT /collections/c/index {\"field_name\":\"kw\",\"field_schema\":\"keyword\"}  (integer field schema is keyword here)",
+        "Sleep ~3s after indexing so the count runs at steady state (outside the documented 'unreliable during indexing' window)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "count exact=true on is_empty kw (ground truth)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": true,
+              "filter": {
+                "must": [
+                  {
+                    "is_empty": {
+                      "key": "kw"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Returns correct count (e.g. ~40 of 200)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "count exact=false on is_empty kw (the defect)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "is_empty": {
+                      "key": "kw"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: under-counts ~-35% consistently (e.g. 25 vs 40)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "control: is_null on the same field",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "is_null": {
+                      "key": "kw"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Control: returns correct (0) on both paths — isolates the bug to is_empty estimation, not the field/index."
+        }
+      ],
+      "expectation": "At steady state (after indexing), count exact=false should approximate exact=true. The documentation only warns approximate counts 'might be unreliable during the indexing process'; a consistent ~35% is_empty under-count at steady state falls outside that caveat. (Per OpenAPI: exact=false means approximate count faster.)",
+      "contract_hint": "Issue body: OpenAPI declares exact=false 'approximate count might be unreliable during indexing'; is_empty under-counts ~35% at steady state while is_null is exact-correct, isolating the estimator path.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 10124,
+      "version": "1.18.3",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "`count` `exact=false` on numeric/datetime `range` filter returns bidirectionally-wrong counts (histogram estimator)",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/count",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/c {\"vectors\":{\"size\":2,\"distance\":\"Cosine\"},\"optimizer_config\":{\"indexing_threshold\":1}}",
+        "Data: N=500 (also 200/1000/10000), seeded with random.Random(42); point id=i+1, vector=[1,0], payload {\"n\": random.randint(0,1000)}. wait=true.",
+        "PUT /collections/c/index {\"field_name\":\"n\",\"field_schema\":\"integer\"}  (integer indexed)",
+        "Sleep ~3s (steady state)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "count exact=true on range n 100..200 (ground truth)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": true,
+              "filter": {
+                "must": [
+                  {
+                    "range": {
+                      "key": "n",
+                      "range": {
+                        "gte": 100,
+                        "lte": 200
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Correct count (e.g. ~50)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "count exact=false on the same range (the defect)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "range": {
+                      "key": "n",
+                      "range": {
+                        "gte": 100,
+                        "lte": 200
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: off by +/-5-10% (e.g. 46 vs 50)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "count exact=false on range gte:500",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "range": {
+                      "key": "n",
+                      "range": {
+                        "gte": 500
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Observe error direction flips (+7% per issue): some ranges over-count, others under-count."
+        },
+        {
+          "case_id": "c4",
+          "desc": "count exact=false on range lte:300",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "range": {
+                      "key": "n",
+                      "range": {
+                        "lte": 300
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Observe error (-8% per issue); bidirectional error confirms histogram estimator bias, not a fixed fallback."
+        }
+      ],
+      "expectation": "At steady state count exact=false should track exact=true; the docs only disclaim reliability 'during the indexing process'. A bidirectional +/-5-10% steady-state error on range counts (with exact=true always correct) violates that contract.",
+      "contract_hint": "Issue body: FieldCondition.range 'check if points value lies in a given range'; exact=false uses a histogram estimator with stable +/-5-10% error at steady state; exact=true always correct.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 10125,
+      "version": "1.18.3",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "`count` `exact=false` on compound filter under-counts 20-60% when conditions touch the same field (independence assumption)",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/count",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/c {\"vectors\":{\"size\":2,\"distance\":\"Cosine\"},\"optimizer_config\":{\"indexing_threshold\":1}}",
+        "Data: N=500 (also 200/1000/10000), random.Random(42); kws=[red,blue,green,yellow]; point id=i+1, vector=[1,0], payload {\"kw\":random.choice(kws),\"cat\":random.choice([\"x\",\"y\"])}. wait=true.",
+        "Index both fields: PUT /collections/c/index for kw (keyword) and cat (keyword).",
+        "Sleep ~3s (steady state)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "control: single condition must kw=red, exact=true and false",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "value": "red"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Control: single-condition exact=false should equal exact=true (~130) — the leaf estimator is correct."
+        },
+        {
+          "case_id": "c2",
+          "desc": "same-field compound: must kw=red AND must_not kw=blue",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "value": "red"
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "value": "blue"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: under-counts (issue ~130 vs ~100, -23%). Correct: red excludes blue => result set is exactly red, so count should equal the single-condition count (~130)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "cross-field compound: must kw=red AND must cat=x",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "value": "red"
+                    }
+                  },
+                  {
+                    "key": "cat",
+                    "match": {
+                      "value": "x"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Also under-counts (issue ~73 vs ~62, -14%) — independence assumption is wrong for same-field and milder for cross-field."
+        }
+      ],
+      "expectation": "At steady state, count exact=false on a compound filter should approximate the true count; the estimator assumes condition independence (P(A AND B) ≈ P(A)*P(B)), which under-counts same-field mutually-exclusive conditions (red AND NOT blue == red). The docs only disclaim reliability 'during the indexing process'.",
+      "contract_hint": "Issue body: cardinality estimator assumes independence across combined conditions; same-field (red AND must_not blue) under-counts ~20-60% while single-condition is exact.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 10126,
+      "version": "1.18.3",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": "`count` `exact=false` on `geo_radius` degenerates: medium radii collapse to a fixed value, large radii return the collection total",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/count",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/c {\"vectors\":{\"size\":2,\"distance\":\"Cosine\"},\"optimizer_config\":{\"indexing_threshold\":1}}",
+        "Data: N=1000; random.Random(42); point id=i+1, vector=[1,0], payload {\"loc\":{\"lat\":random.uniform(-89,89),\"lon\":random.uniform(-179,179)}}. wait=true.",
+        "PUT /collections/c/index {\"field_name\":\"loc\",\"field_schema\":\"geo\"}",
+        "Sleep ~3s (steady state)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "count exact=true on geo_radius 2000km (center 0,0)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": true,
+              "filter": {
+                "must": [
+                  {
+                    "key": "loc",
+                    "geo_radius": {
+                      "center": {
+                        "lat": 0,
+                        "lon": 0
+                      },
+                      "radius": 2000000
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Correct exact count (issue: ~18)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "count exact=false on geo_radius 2000km (the defect)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "loc",
+                    "geo_radius": {
+                      "center": {
+                        "lat": 0,
+                        "lon": 0
+                      },
+                      "radius": 2000000
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: collapses to fixed ~133 regardless of true count (issue +639%)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "count exact=false on geo_radius 5000km vs 2000km",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "loc",
+                    "geo_radius": {
+                      "center": {
+                        "lat": 0,
+                        "lon": 0
+                      },
+                      "radius": 5000000
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: also returns ~133 even though true count is much larger (~112) — two very different radii give the same fixed estimate."
+        },
+        {
+          "case_id": "c4",
+          "desc": "count exact=false on a large geo_radius 10000km",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "loc",
+                    "geo_radius": {
+                      "center": {
+                        "lat": 0,
+                        "lon": 0
+                      },
+                      "radius": 10000000
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: returns collection total (1000) for true 503 — saturates to total."
+        }
+      ],
+      "expectation": "At steady state, count exact=false on a geo_radius filter should track the radius's true selectivity; collapsing to a fixed sub-fraction or saturating to the collection total violates the approximate-count contract. Docs only disclaim reliability 'during the indexing process'; exact=true is always correct.",
+      "contract_hint": "Issue body: FieldCondition.geo_radius 'check if geo point is within a given radius'; estimator degenerates at medium radii (fixed value) and large radii (returns total), worst +639% error.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "number": 10127,
+      "version": "1.18.3",
+      "gt_category": "PENDING_SELF_LABELED",
+      "title": " `count` `exact=false` on `match_any` (multi-value) under-counts, increasingly with value count (independent-OR assumption)",
+      "defect_class": "semantics",
+      "endpoint": "POST /collections/{name}/points/count",
+      "setup": [
+        "docker run -p 6333:6333 qdrant/qdrant:v<VER>",
+        "wait for http://localhost:6333 ready (poll GET /)",
+        "PUT /collections/c {\"vectors\":{\"size\":2,\"distance\":\"Cosine\"},\"optimizer_config\":{\"indexing_threshold\":1}}",
+        "Data: N=500; random.Random(42); kws=[red,blue,green,yellow,purple]; point id=i+1, vector=[1,0], payload {\"kw\":random.choice(kws)}. wait=true.",
+        "PUT /collections/c/index {\"field_name\":\"kw\",\"field_schema\":\"keyword\"}",
+        "Sleep ~3s (steady state)."
+      ],
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "control: match_any single value [red], exact=false",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "any": [
+                        "red"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Control: single value is exact-correct on both paths (issue: 107=107)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "match_any two values [red,blue], exact=false (the defect)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "any": [
+                        "red",
+                        "blue"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: under-counts (issue -11%, 189 vs 213)."
+        },
+        {
+          "case_id": "c3",
+          "desc": "match_any five values, exact=false (all kws, whole field)",
+          "request": {
+            "method": "POST",
+            "path": "/collections/c/points/count",
+            "json_payload": {
+              "exact": false,
+              "filter": {
+                "must": [
+                  {
+                    "key": "kw",
+                    "match": {
+                      "any": [
+                        "red",
+                        "blue",
+                        "green",
+                        "yellow",
+                        "purple"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observe": "Bug: under-count grows (-33%, 337 vs 500) even though match_any of all five covers the entire field and should equal total."
+        }
+      ],
+      "expectation": "At steady state, count exact=false on match_any should approximate exact=true. For single keyword fields the values are mutually exclusive so the true count is the sum of per-value counts (capped at total); the independent-OR estimator under-counts and the error grows with the number of values. Docs only disclaim 'during indexing'.",
+      "contract_hint": "Issue body: MatchAny 'exact match on any of the given values'; estimator uses independent-OR 1-prod(1-p_i) which is always below the mutually-exclusive sum and grows with value count.",
+      "needs_manual": false,
+      "manual_reason": ""
+    }
+  ]
+}

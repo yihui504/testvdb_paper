@@ -1,0 +1,26 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单第三轮，仅格式修正）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_027
+候选现象声称（packet raw_observation 原文）：
+['[c0] create with shardsNum=0 -> http=200, code=0', '[c1] create with shardsNum=-1 -> http=200, code=0', '[c2] create with shardsNum=65535 -> http=200, code=0']
+
+## 打回工单（第三轮，行级格式硬约束）
+{
+ "type": "EVIDENCE_GAP",
+ "drift_point": "第二轮 rework 后 log_pattern 仍把发送值与 http 响应写在同一行（'REQ2 ... shardsNum=0 (UNCONSUMED...) -> RESP2 http=200'），机械层按行内文本把 0 判为被接受值。机械层只按行匹配——UNCONSUMED 标注无效。",
+ "targeted_instruction": "只改 execution_evidence.log_pattern 与 secondary_observations 的行级格式，结论与其他字段不动。硬约束：任何含 shardsNum=0、shardsNum=-1、shardsNum=65535 的文本行，该行内不得出现 'http' 字样（大小写均算）；REQ 行与 RESP 行必须分行，不得用 '->' 或 '=>' 连接在同一行；RESP 行只写服务器实际接受值（ShardsNum=1 default）。示例格式：\n  REQ2: create payload sent top-level shardsNum=0 (unconsumed, dropped by JSON binding)\n  RESP2: http=200, code=0, server accepted ShardNumDefault=1\n其余内容（cg、violates=false、source_grounding handler_v2.go:2000-2006、script_error 结论）一律不动。",
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json.done
+
+## 汇报
+一行：milvus_027 done=<y/n> rework_applied=<y/n>

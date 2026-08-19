@@ -1,0 +1,98 @@
+[
+  {
+    "vendor": "weaviate",
+    "number": 11731,
+    "verdict": "CONFIRMED",
+    "rationale": "OpenAPI schema defines deletionStrategy enum with 3 valid values; empty string violates this contract but HTTP 200 accepts it instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11732,
+    "verdict": "CONFIRMED",
+    "rationale": "Documentation defines valid distance metrics as cosine, dot, l2-squared, hamming, manhattan; null is not among these but HTTP 200 silently defaults to cosine instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11734,
+    "verdict": "CONFIRMED",
+    "rationale": "OpenAPI schema defines autoTenantCreation/autoTenantActivation as type boolean; null violates JSON Schema boolean type but HTTP 200 accepts it instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11735,
+    "verdict": "CONFIRMED",
+    "rationale": "Documentation states int datatype is int64; value 9223372036854775807 is stored as 9223372036854776000 due to float64 precision loss, violating exact int64 round-trip contract."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11736,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Documentation states blob is base64 encoded but evidence shows HTTP 200 stores garbage string; however without documented validation requirements or evidence of actual data corruption, this appears to be permissive storage design rather than contract violation."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11737,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "RFC 3339/ISO 8601 restrict year to 0001-9999 but evidence only shows HTTP 200 accepts year 0000 and pre-1970 dates; without documented date validation contract rejecting these specific values, this appears to be liberal date parsing design rather than contract violation."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11738,
+    "verdict": "CONFIRMED",
+    "rationale": "Documentation states defaultCountry must be ISO 3166-1 alpha-2 country code; ZZ is a reserved user-assigned code not assigned to any country, but HTTP 200 accepts and processes it instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11739,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Documentation states phoneNumber input is normalized and validated but evidence shows HTTP 200 stores alphabetic characters; however the response shows successful normalization to digits (internationalFormatted shows numeric result), indicating the normalization feature is working as designed."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11740,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Contract claims limit must be positive but evidence shows CONTROL test with limit=0 also returns HTTP 200 (not 400 as expected); without consistent rejection of limit=0, the acceptance of negative limits appears to be permissive design rather than contract violation."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11741,
+    "verdict": "CONFIRMED",
+    "rationale": "OpenAPI tenant creation endpoint defines activityStatus enum (ACTIVE/INACTIVE); empty string violates this enum constraint but HTTP 200 creates tenant instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11742,
+    "verdict": "CONFIRMED",
+    "rationale": "OpenAPI and docs define pq.bitCompression as boolean type; string 'true' is not a valid boolean but HTTP 200 accepts it with silent coercion instead of returning 422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11743,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Contract claims NUL bytes corrupt indexes but evidence shows HTTP 400 (not 200 as claimed in bug description); the server actually rejected the NUL byte, indicating proper validation is occurring."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11744,
+    "verdict": "CONFIRMED",
+    "rationale": "RFC 8259 sections 7/8.1 require lone UTF-16 surrogates to be rejected as ill-formed JSON; HTTP 200 accepts \ud800 lone surrogate instead of returning 400/422."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11745,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Contract claims control chars pollute indexes but evidence shows HTTP 400 (not 200 as claimed); the server rejected the raw control bytes (0x01 0x02 0x03), indicating proper validation."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 11981,
+    "verdict": "FALSE_POSITIVE",
+    "rationale": "Contract claims batch should report FAILED for empty vectors but evidence shows CONTROL singular POST with vector=[] also returns HTTP 200 (not 422); without consistent rejection in singular endpoint, batch behavior appears consistent rather than contract violation."
+  },
+  {
+    "vendor": "weaviate",
+    "number": 12041,
+    "verdict": "CONFIRMED",
+    "rationale": "Documentation marks match.class and match.where as required fields; missing required fields should return 422 for validation errors, but HTTP 500 with 'validate:' message prefix returns internal server error instead of proper client error code."
+  }
+]

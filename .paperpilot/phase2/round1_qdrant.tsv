@@ -1,0 +1,33 @@
+qdrant	8688	FALSE_POSITIVE	identical self-match cosine=1.0 within [-1,1]; no value exceeding bound observed
+qdrant	9017	CONFIRMED	hnsw_ef=0 means zero candidates yet search returned 1 result status=200; OpenAPI validates similar params min=1
+qdrant	9027	FALSE_POSITIVE	threshold 2.0 returns 0 and -0.5 returns 1; semantically consistent, no documented range constraint
+qdrant	9039	CONFIRMED	async upsert of 3-dim vector into 4-dim collection acknowledged status=200 (count stays 0) while sync returns 400; inconsistent validation across wait modes
+qdrant	9044	CONFIRMED	FAQ states up to 65535 dimensions but size=65536 accepted status=200 while 65537 rejected 422; doc/code mismatch
+qdrant	9045	FALSE_POSITIVE	async empty-vector upsert returns 200 count=0 and server stays healthy; reported panic not reproduced
+qdrant	9149	FALSE_POSITIVE	shard_number=0 rejected 422 and -1 rejected 400; both properly rejected, claim contradicted by evidence
+qdrant	9255	FALSE_POSITIVE	filter color=red returns 4 results with missing_payload_ids empty; reported missing-payload inclusion not reproduced
+qdrant	9364	FALSE_POSITIVE	mixed batch returns 400 with count 3->3 unchanged; atomicity preserved, partial-apply claim not reproduced
+qdrant	9365	FALSE_POSITIVE	indexed filter returns 25/25 expected points; index corruption claim not reproduced
+qdrant	9366	FALSE_POSITIVE	named-vector search after lifecycle returns 200 with 5 results matching baseline; corruption claim not reproduced
+qdrant	9371	FALSE_POSITIVE	mixed batch returns 400 with persisted=False; valid-points-persisted claim not reproduced
+qdrant	9372	CONFIRMED	max_query_limit=0 rejected 422 but filter_max_conditions=0 and upsert_max_batchsize=0 accepted 200 creating unusable collections; same class validated inconsistently
+qdrant	9373	FALSE_POSITIVE	indexed filter returns 25/25 expected points; 2/25 undercount claim not reproduced
+qdrant	9416	FALSE_POSITIVE	API doc marks vectors required=false; vectors={} accepted 200 is consistent with documented optional field
+qdrant	9417	FALSE_POSITIVE	API doc marks vectors required=false; omitting it accepted 200 is consistent with documented optional field
+qdrant	9418	FALSE_POSITIVE	filter.should=null accepted as 200 returning 2 points; treating null as absent filter is lenient design, not a contract violation
+qdrant	9419	FALSE_POSITIVE	must_not as object returns 200 with expected exclusion behavior; type leniency appears intentional
+qdrant	9420	FALSE_POSITIVE	query=null returns 200 with 3 specific ids; documented fallback when query absent, not all-points return
+qdrant	9421	CONFIRMED	cluster recover in standalone returns 500 server error instead of 4xx for a predictable client-error mode; violates RFC 7231 status semantics
+qdrant	9520	CONFIRMED	shard_number=INT_MAX causes read timeout (server crash/hang) while replication_factor=0 rejected 422; inconsistent upper-bound validation
+qdrant	9521	FALSE_POSITIVE	named-vector upsert into single-vector collection rejected 400 count=0; silent data loss not reproduced
+qdrant	9522	CONFIRMED	lookup_from referencing non-existent collection returns 200 with results; API requires lookup collection to exist
+qdrant	9523	FALSE_POSITIVE	offset pagination returns non-overlapping pages (0-9, 10-19); duplication claim not reproduced
+qdrant	9524	FALSE_POSITIVE	all invalid-filter probes returned status=None (read timeout); claim of 200-OK acceptance not substantiated by evidence
+qdrant	9525	FALSE_POSITIVE	all invalid filters return proper 400; contract (success/failure) correctly signaled, only diagnostics differ
+qdrant	9869	CONFIRMED	OpenAPI declares timeout minimum:1 but server accepts timeout=0 status=200; schema/code mismatch
+qdrant	9942	FALSE_POSITIVE	schema endpoint returns 404 (no schema) and runtime rejects size=70000 with 422; claimed schema discrepancy cannot be confirmed
+qdrant	10120	CONFIRMED	count exact=false on is_empty returns 25 vs exact=true 40 (-38%); OpenAPI only excuses unreliability during indexing, not steady-state
+qdrant	10124	CONFIRMED	count exact=false on range returns 65 vs exact 48 (+35%); violates documented steady-state approximate-count contract
+qdrant	10125	CONFIRMED	count exact=false on compound filter returns 101 vs single-condition 130; undercount violates approximate-count contract
+qdrant	10126	CONFIRMED	count exact=false on geo_radius collapses to 127 regardless of radius vs exact 20; estimator degeneracy violates approximate-count contract
+qdrant	10127	CONFIRMED	count exact=false on match_any under-counts (107/192/337 vs total 500); violates approximate-count contract

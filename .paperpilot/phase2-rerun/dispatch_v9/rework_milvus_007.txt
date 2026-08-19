@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/milvus_007
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10
+
+## 候选
+defect_id=milvus_007
+候选现象声称（packet raw_observation 原文）：
+['[c1] empty query vector -> MilvusException code=65535 (server message: ...vector type must be the same, field vector - type VECTOR_FLOAT, search info type VECTOR_SPARSE_U32_F32...)']
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "PHENOMENON_MISMATCH",
+ "claim": "[c1] empty query vector -> MilvusException code=65535 (server message: ...vector type must be the same, field vector - type VECTOR_FLOAT, search info type VECTOR_SPARSE_U32_F32...)",
+ "chain_covered": "code=1801 空数组维度校验 + code=65535 重复创建索引(均与主观测不同现象)",
+ "drift_point": "应审'空查询向量导致 sparse/dense 向量类型不匹配 code=65535'，链却审了维度校验(1801)与重复索引(65535)两种无关现象",
+ "targeted_instruction": "重读 output_milvus_007.log 全文，构造并复现真正触发 sparse/dense 向量类型不匹配 code=65535 的 search 请求(向 float 向量字段提交 sparse 搜索信息，如 data=[[]] 配 sparse index)，围绕该主观测重建 execution_evidence；code=1801/重复索引入次观测作辅助，不得作为主观测替代"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/milvus_007/evidence_chain/milvus_007.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.10/milvus_007/evidence_chain/milvus_007.json.done
+
+## 汇报
+一行：milvus_007 done=<y/n> rework_applied=<y/n>

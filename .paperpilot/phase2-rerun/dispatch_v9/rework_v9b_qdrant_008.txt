@@ -1,0 +1,28 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.2/qdrant_008
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.2/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.2
+
+## 候选
+defect_id=qdrant_008
+候选现象声称（packet raw_observation 为空，用该 issue 标题原文）：
+Bug: Payload index silently returns severely incomplete results — 2/25 matching points after wait:true
+
+## 打回工单（auditor 产出，按工单针对性重做）
+{
+ "type": "PHENOMENON_MISMATCH",
+ "claim": "Payload index silently returns severely incomplete results — 2/25 matching points after wait:true",
+ "chain_covered": "scroll with indexed filter + index creation (25 cat_a points) — 测错现象",
+ "drift_point": "应审 POST /collections/{name}/points/count 的 exact=true/false 对 count 完整性的影响，却审了 points/scroll filtered query",
+ "targeted_instruction": "重读 output log 全文，围绕 count endpoint 的 exact 参数（exact=false 返回近似/不完整计数 vs exact=true 全扫描）重建 execution_evidence；scroll+index 观测仅作辅助，主观测必须是 count 请求"
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.2/qdrant_008/evidence_chain/qdrant_008.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/qdrant/1.18.2/qdrant_008/evidence_chain/qdrant_008.json.done
+
+## 汇报
+一行：qdrant_008 done=<y/n> rework_applied=<y/n>

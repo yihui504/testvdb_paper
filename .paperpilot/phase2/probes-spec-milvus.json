@@ -1,0 +1,6187 @@
+{
+  "items": [
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47635,
+      "version": "2.3",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: Search fails with Code 0 immediately after Collection.load() returns success",
+      "defect_class": "behavior",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "No REST v2 for this (v2.3 gRPC-era issue); use pymilvus. Create collection test_47635: id VARCHAR(64) pk, vector FLOAT_VECTOR dim=4. Insert 1 row, flush, create_index FLAT/L2, collection.load(), then immediately collection.search with no sleep. Repeat a few times to hit the race (standalone has low success rate).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search immediately after load returns code=0 with 'collection not loaded'",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47635",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "annsField": "vector",
+            "metric_type": "L2",
+            "limit": 1
+          },
+          "observe": "Capture MilvusException code+message right after load() returns. Defect if code==0 while message indicates a failure (collection not loaded)."
+        }
+      ],
+      "expectation": "Code 0 == Success per Milvus R.Status; a failing search must return a proper error code (e.g. 101), or load() must not return success before the collection is ready.",
+      "contract_hint": "Code 0 is defined as Success in the Milvus API specification; search failing with code=0 violates the contract.",
+      "needs_manual": true,
+      "manual_reason": "v2.3 gRPC-era (pre REST-v2): needs a live v2.3/v2.6 gRPC server and a timing race (low standalone success rate). Requires manual/CI concurrency orchestration."
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47636,
+      "version": "2.3",
+      "gt_category": "STALE_NO_FIX",
+      "title": "[Bug]: Expr parser returns code=0 (Success) and leaks internal lexer errors",
+      "defect_class": "behavior",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "No REST v2 priority for this (v2.3 gRPC-era). Create pymilvus collection test_47636: id VARCHAR(64) pk, vector FLOAT_VECTOR dim=4, tag VARCHAR(64). Insert 1 row, flush, create_index FLAT/L2, load. Search with invalid expr 'tag === {q}x{q}'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "invalid boolean expr returns code=0 and leaks ANTLR lexer error",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47636",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "annsField": "vector",
+            "limit": 10,
+            "expr": "tag === 'x'"
+          },
+          "observe": "Capture MilvusException code+message. Defect if code==0 and message contains lexer/parser internals ('token recognition error'); expected code!=0 (IllegalArgument) with clean message."
+        }
+      ],
+      "expectation": "Code 0 == Success; an unparsable expression must return a proper error code (IllegalArgument) with a sanitized message, not expose parser internals.",
+      "contract_hint": "Code 0 defined as Success; invalid expressions should trigger IllegalArgument per HighlevelAPI search() spec.",
+      "needs_manual": true,
+      "manual_reason": "v2.3 gRPC-era issue, STALE_NO_FIX: behavior may differ on the harness image; probe is informational and gRPC-only."
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47729,
+      "version": "2.6.10",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: Index parameter nprobe validation missing - accepts nprobe=0",
+      "defect_class": "param_validation",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "Create pymilvus Collection test_47729: id INT64 pk auto_id=False, vector FLOAT_VECTOR dim=128. Insert 10 rows, flush, create_index IVF_FLAT/L2 nlist=100, load.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "IVF_FLAT search with nprobe=0 accepted (should fail)",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47729",
+            "data": [
+              [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            ],
+            "annsField": "vector",
+            "metric_type": "L2",
+            "params": {
+              "nprobe": 0
+            },
+            "limit": 10
+          },
+          "observe": "Whether search returns results/code 0 (defect) or a clear validation error (nprobe>0 required)."
+        }
+      ],
+      "expectation": "IVF-family nprobe must be a positive integer; nprobe=0 should be rejected with a clear error.",
+      "contract_hint": "Index doc: 'nprobe: Number of cluster units to search ... Must be a positive integer.'",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47752,
+      "version": "2.6.10",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: Index parameter ef validation missing - accepts ef=0",
+      "defect_class": "param_validation",
+      "endpoint": "milvus_client.search (pymilvus)",
+      "setup": "Use MilvusClient uri=http://localhost:19530. create_collection('test_47752', dimension=128, metric_type='L2'). Insert 1 row. create_index HNSW {M:16, efConstruction:100}. Search with search_params={'ef':0}.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "HNSW search with ef=0 accepted (should fail)",
+          "request": {
+            "method": "pymilvus",
+            "path": "client.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47752",
+            "data": [
+              [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            ],
+            "limit": 10,
+            "search_params": {
+              "ef": 0
+            }
+          },
+          "observe": "Whether search succeeds (defect) or returns a clear validation error."
+        }
+      ],
+      "expectation": "HNSW ef must be a positive integer; ef<=0 should be rejected.",
+      "contract_hint": "HNSW doc: 'ef must be a positive integer'; symmetric to nprobe validation expectation.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47755,
+      "version": "2.6.10",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: Filter expression validation too lenient",
+      "defect_class": "param_validation",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "Create pymilvus Collection test_47755: id INT64 pk, vector FLOAT_VECTOR dim=128, age INT64. Insert 10 rows (age 0,10,...,90), flush, create_index IVF_FLAT/L2 nlist=100, load.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "descending IN range 'age in [10,5]' accepted instead of rejected/normalized",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47755",
+            "data": [
+              [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            ],
+            "annsField": "vector",
+            "metric_type": "L2",
+            "params": {
+              "nprobe": 10
+            },
+            "limit": 10,
+            "expr": "age in [10, 5]"
+          },
+          "observe": "Whether search succeeds (defect) or rejects with a range-order error."
+        },
+        {
+          "case_id": "c2",
+          "desc": "empty IN range 'age in []' accepted instead of rejected",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47755",
+            "data": [
+              [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            ],
+            "annsField": "vector",
+            "metric_type": "L2",
+            "params": {
+              "nprobe": 10
+            },
+            "limit": 10,
+            "expr": "age in []"
+          },
+          "observe": "Whether search succeeds (defect) or rejects empty range."
+        }
+      ],
+      "expectation": "Semantically invalid filter expressions (descending / empty IN range) should be rejected or normalized, not silently accepted.",
+      "contract_hint": "Boolean Expression doc: filter expressions should be validated for semantic correctness (ascending, non-empty ranges).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47763,
+      "version": "2.6.10",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]:  Field name validation missing - accepts invalid field names causing data inaccessibility",
+      "defect_class": "doc_mismatch",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_47763 with schema id Int64 pk + vector FloatVector dim=4, enableDynamicField=True. Insert rows with dynamic keys '123field','@field','my-field','valid_field'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "insert invalid dynamic field names accepted, then query/read-back fails",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_47763",
+            "data": [
+              {
+                "id": 1,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "123field": "v1"
+              },
+              {
+                "id": 2,
+                "vector": [
+                  0.2,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "@field": "v2"
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0/200). Then entities/query with outputFields ['123field'] and ['@field']; expect 'parse output field name failed' confirming data written but unreadable."
+        },
+        {
+          "case_id": "c2",
+          "desc": "valid field name control",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_47763",
+            "data": [
+              {
+                "id": 3,
+                "vector": [
+                  0.3,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "valid_field": "ok"
+              }
+            ]
+          },
+          "observe": "insert and query should both work for the valid field."
+        }
+      ],
+      "expectation": "Resource (field) names must start with letter/underscore and contain [A-Za-z0-9_]; writing a field that can't be read back breaks data accessibility.",
+      "contract_hint": "Milvus Limitations doc: 'A resource name must start with a letter or an underscore'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47766,
+      "version": "2.6.10",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: Data type validation missing - accepts integer into string field",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_47766 dimension=4 (dynamic field enabled by default). Insert row1 with text_field='hello' (establishes VARCHAR), then row2 with text_field=12345.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "second insert of int into established VARCHAR dynamic field accepted (type mismatch)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_47766",
+            "data": [
+              {
+                "id": 2,
+                "vector": [
+                  0.2,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "text_field": 12345
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0/200). Then query id in [1,2] output text_field and check str-vs-int type inconsistency in same field."
+        }
+      ],
+      "expectation": "Entities in one collection must share per-field data types; inserting INT64 into a VARCHAR-established dynamic field should be rejected.",
+      "contract_hint": "Insert Entities doc: 'entities within the same Collection have the same attributes (field names, data types...)'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47767,
+      "version": "2.6.10",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Empty query vector accepted in search - no validation error",
+      "defect_class": "behavior",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "Create pymilvus Collection test_47767: id VARCHAR(64) pk, vector FLOAT_VECTOR dim=2. Insert 2 rows, flush, create_index FLAT/L2, load. Search with data=[[]] (empty query vector).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "empty query vector [] accepted in search",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_47767",
+            "data": [
+              []
+            ],
+            "annsField": "vector",
+            "metric_type": "L2",
+            "params": {},
+            "limit": 10
+          },
+          "observe": "Whether search returns results (claimed defect) or a dimension/empty-vector error. GT=BY_DESIGN; report observed behavior for GLM."
+        }
+      ],
+      "expectation": "Query vector dimension must be >0 and match the collection dim; an empty [] query vector violates this.",
+      "contract_hint": "Java SDK withDimension: 'dimension must be greater than zero'; dense vectors are fixed-length arrays.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 47785,
+      "version": "2.6.11",
+      "gt_category": "SELF_PR_CLOSED",
+      "title": "fix: add nprobe parameter validation for IVF index search",
+      "defect_class": "param_validation",
+      "endpoint": "collection.search (milvus-io/milvus PR)",
+      "setup": "Self-authored PR; payload is fully covered by parent issue #47729 (nprobe=0 validation). No standalone probe.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "PR content traces to #47729; no separate probe",
+          "request": null,
+          "json_payload": null,
+          "observe": "Skip probe; treat as duplicate/dependency of #47729."
+        }
+      ],
+      "expectation": "PR adds nprobe>0 validation for IVF-family indexes; the asserted behavior is exercised by the #47729 probe.",
+      "contract_hint": "PR description: 'adds validation for the nprobe search parameter to ensure it must be greater than 0' (Fixes #47729).",
+      "needs_manual": true,
+      "manual_reason": "This is a fix PR (SELF_PR_CLOSED), not a default-state defect to replay; it changes server code. The #47729 probe covers the behavioral claim. Not executed as a standalone probe."
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49059,
+      "version": "2.6.12",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: COSINE Metric Returns Distance > 1.0 for Identical Vectors (Precision Overflow)",
+      "defect_class": "crash",
+      "endpoint": "collection.search (pymilvus gRPC)",
+      "setup": "Create pymilvus Collection test_49059: pk INT64 auto_id=True, embeddings FLOAT_VECTOR dim=128. Insert 10000 normalized unit vectors (numpy), flush. create_index IVF_FLAT/COSINE nlist=128, load. Search with data set to normalized vectors, limit=1.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "COSINE distance for identical normalized vectors exceeds 1.0 (float precision)",
+          "request": {
+            "method": "pymilvus",
+            "path": "collection.search"
+          },
+          "json_payload": {
+            "collectionName": "test_49059",
+            "data": [
+              [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            ],
+            "annsField": "embeddings",
+            "metric_type": "COSINE",
+            "params": {
+              "nprobe": 10
+            },
+            "limit": 1
+          },
+          "observe": "Check hits[0].distance for the self-match; defect if >1.0. 10k-row insert is heavy; may reduce row count to speed up."
+        }
+      ],
+      "expectation": "COSINE similarity of identical normalized vectors is mathematically <= 1.0; returning >1.0 violates the metric bound (needs clamp).",
+      "contract_hint": "Milvus metric doc: cosine similarity bounded in [-1,1]; >1.0 indicates unclamped precision error.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49823,
+      "version": "2.6.16",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2 accepts nprobe=0 in search requests without validation",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_nprobe dimension=4 metricType=L2 (AUTOINDEX/IVF family). Insert 3 rows. Load.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with nprobe=0 returns success instead of validation error",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_nprobe",
+            "data": [
+              [
+                1.0,
+                2.0,
+                3.0,
+                4.0
+              ]
+            ],
+            "limit": 3,
+            "searchParams": {
+              "nprobe": 0
+            }
+          },
+          "observe": "HTTP status + JSON code/message. Defect if code==0 with results; expected nprobe range error."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: limit=0 correctly rejected",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_nprobe",
+            "data": [
+              [
+                1.0,
+                2.0,
+                3.0,
+                4.0
+              ]
+            ],
+            "limit": 0,
+            "searchParams": {
+              "nprobe": 1
+            }
+          },
+          "observe": "Expect code=65535 'topk [0] is invalid' confirming topk validated but nprobe is not."
+        }
+      ],
+      "expectation": "IVF-family nprobe must be >=1 to probe buckets; nprobe=0 should be rejected like limit=0.",
+      "contract_hint": "Milvus validates topk/limit range but not nprobe; nprobe semantic contract requires probing at least one bucket.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49824,
+      "version": "2.6.16",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug]: REST API v2 returns success when creating a collection with a duplicate name",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_dup dimension=4 metricType=L2 twice; verify collections/list shows one.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "re-creating an existing collection returns code=0 instead of error",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_dup",
+            "dimension": 4,
+            "metricType": "L2"
+          },
+          "observe": "First create code 0; second identical create also code 0 (defect: duplicate create should error). Then list to confirm only one collection exists."
+        }
+      ],
+      "expectation": "Duplicate object creation should error ('collection already exists'); code=0 for a no-op create masks the condition.",
+      "contract_hint": "Consistent with other DBs: re-creating an existing collection should fail with an error.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49843,
+      "version": "2.6.16",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API v2 silently drops negative collection.ttl.seconds on collection create",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_ttl_neg dimension=4 metricType=L2 properties collection.ttl.seconds=-100. Compare describe vs alter_properties.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "create with negative TTL returns success but property silently dropped",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_ttl_neg",
+            "dimension": 4,
+            "metricType": "L2",
+            "properties": {
+              "collection.ttl.seconds": -100
+            }
+          },
+          "observe": "create code (defect if 0/200). describe -> if collection.ttl.seconds absent while create returned success => property silently dropped."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: alter_properties rejects negative TTL",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/alter_properties"
+          },
+          "json_payload": {
+            "collectionName": "test_ttl_neg",
+            "properties": {
+              "collection.ttl.seconds": -100
+            }
+          },
+          "observe": "Expect code=1100 'collection TTL is out of range, expect [-1, 3155760000], got -100'."
+        }
+      ],
+      "expectation": "create must validate collection.ttl.seconds the same as alter_properties (range [-1,3155760000]); silently dropping a negative TTL violates this.",
+      "contract_hint": "alter_properties error message; PR #46717 added TTL validation to createCollectionTask.PreExecute but REST create bypasses it.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49844,
+      "version": "2.6.16",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "[Bug]: REST API v2 query accepts null/missing filter and silently returns all entities",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/query",
+      "setup": "Create REST collection test_coll dimension=4, insert 2 rows. Query with filter null / omitted / ''.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "query with filter:null returns all entities instead of rejecting",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/query"
+          },
+          "json_payload": {
+            "collectionName": "test_coll",
+            "filter": null,
+            "outputFields": [
+              "id"
+            ]
+          },
+          "observe": "JSON code and data. Claim: filter required; null/missing should error but returns all rows (code 0)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "query with filter omitted returns all entities",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/query"
+          },
+          "json_payload": {
+            "collectionName": "test_coll",
+            "outputFields": [
+              "id"
+            ]
+          },
+          "observe": "Whether all rows returned code 0 (defect) vs error."
+        },
+        {
+          "case_id": "c3",
+          "desc": "control: filter='' documented path to query all",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/query"
+          },
+          "json_payload": {
+            "collectionName": "test_coll",
+            "filter": "",
+            "outputFields": [
+              "id"
+            ]
+          },
+          "observe": "Expect success (all rows) as the documented way; distinguishes from null/missing."
+        }
+      ],
+      "expectation": "REST filter is documented required; null/missing should error (use '' to skip filtering). Returning all rows on null leaks data silently.",
+      "contract_hint": "REST v2 Query: 'filter (string, required)'; PyMilvus: use '' to skip scalar filtering.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49849,
+      "version": "2.6.16",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug]: REST API v2 insert returns insertCount=1 for duplicate primary key (upsert semantics)",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_coll_sem dimension=4 metricType=L2. Insert one row id=1, then insert same id=1 with a different vector; query to verify overwrite.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "duplicate-PK insert reports insertCount=1 although it is an overwrite",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_coll_sem",
+            "data": [
+              {
+                "id": 1,
+                "vector": [
+                  0.9,
+                  0.8,
+                  0.7,
+                  0.6
+                ]
+              }
+            ]
+          },
+          "observe": "Second insert response insertCount. Claim: returns insertCount=1 (misleading) though it overwrote; verify by querying id==1 vector is the second value. Report insertCount and stored value."
+        }
+      ],
+      "expectation": "A 200/0-for-duplicate insert is an upsert-overwrite; insertCount=1 misreports a new insert. At minimum should document or distinguish overwrite count.",
+      "contract_hint": "Issue: 'The endpoint is called insert, not upsert. When insert reports success with insertCount=1, expectation is a new row was added.'",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49850,
+      "version": "2.6.16",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug]: REST API v2 describe indexes requires indexName, cannot list all indexes",
+      "defect_class": "doc_mismatch",
+      "endpoint": "POST /v2/vectordb/indexes/describe",
+      "setup": "Create REST collection test_idx with an index (AUTOINDEX on vector). Call indexes/describe without indexName and with indexName='vector'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "describe indexes without indexName returns 'missing required parameters: IndexName'",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/indexes/describe"
+          },
+          "json_payload": {
+            "collectionName": "test_idx"
+          },
+          "observe": "JSON code/message. Claim: describe without indexName cannot list all indexes (error), unlike SDK list_indexes."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: describe with indexName succeeds",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/indexes/describe"
+          },
+          "json_payload": {
+            "collectionName": "test_idx",
+            "indexName": "vector"
+          },
+          "observe": "Expect code 0 with index details."
+        }
+      ],
+      "expectation": "Collection-level describe should list all indexes when indexName omitted, consistent with SDK list_indexes.",
+      "contract_hint": "Issue: SDK client.list_indexes returns all names without indexName; describe collection works with only collectionName.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49889,
+      "version": "2.6.16",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2 accepts empty string for `dbName` parameter",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/list",
+      "setup": "No explicit collection needed for list. Send collections/list with dbName=''. Compare to filter='' on query which is rejected.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "collections/list with dbName='' returns success instead of validation error",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/list"
+          },
+          "json_payload": {
+            "dbName": ""
+          },
+          "observe": "JSON code/data. Claim: code 0 with data [] (silently defaults to default db) instead of rejecting empty dbName."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: filter='' on query rejected (shows pattern)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/query"
+          },
+          "json_payload": {
+            "collectionName": "some_coll",
+            "filter": ""
+          },
+          "observe": "Expect code !=0 'filter cannot be empty' illustrating empty-string validation exists elsewhere."
+        }
+      ],
+      "expectation": "dbName is documented 'name of an existing database'; empty string is invalid and should be rejected, like filter=''.",
+      "contract_hint": "REST v2 List: 'dbName: The name of an existing database.'",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49890,
+      "version": "2.6.16",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API v2 accepts non-integer `Request-Timeout` header values",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/list",
+      "setup": "Send collections/list {} with Request-Timeout headers 3.5 and 'abc'; compare with valid integer 10.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "float Request-Timeout header accepted (fraction silently discarded)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/list",
+            "headers": {
+              "Request-Timeout": "3.5"
+            }
+          },
+          "json_payload": {},
+          "observe": "HTTP status + JSON code. Defect if code 0 (success) — float should be rejected as non-integer."
+        },
+        {
+          "case_id": "c2",
+          "desc": "string Request-Timeout header accepted (ignored)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/list",
+            "headers": {
+              "Request-Timeout": "abc"
+            }
+          },
+          "json_payload": {},
+          "observe": "Whether code 0 (defect) or a type error."
+        }
+      ],
+      "expectation": "Request-Timeout documented as integer; float/string values should be rejected, not truncated/ignored.",
+      "contract_hint": "v2.3.x API reference lists Request-Timeout as `integer` header.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49928,
+      "version": "2.6.16",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Default proxy.maxDimension=32768 is too permissive, potential DoS risk via high-dimensional collection creation",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Using REST collections/create with explicit schema: try dim=32768 (accepted), dim=32769 (rejected), dim=-1 (rejected).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "collection with dim=32768 created successfully (default max too high)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_large_dim",
+            "schema": {
+              "autoID": false,
+              "enableDynamicField": true,
+              "fields": [
+                {
+                  "fieldName": "id",
+                  "dataType": "Int64",
+                  "isPrimary": true
+                },
+                {
+                  "fieldName": "vector",
+                  "dataType": "FloatVector",
+                  "elementTypeParams": {
+                    "dim": 32768
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "JSON code. Claim: dim=32768 accepted (code 0/200) though it risks OOM; expected default max lower (e.g. 4096/8192). Report code."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: dim=32769 correctly rejected",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_large_dim2",
+            "schema": {
+              "autoID": false,
+              "enableDynamicField": true,
+              "fields": [
+                {
+                  "fieldName": "id",
+                  "dataType": "Int64",
+                  "isPrimary": true
+                },
+                {
+                  "fieldName": "vector",
+                  "dataType": "FloatVector",
+                  "elementTypeParams": {
+                    "dim": 32769
+                  }
+                }
+              ]
+            }
+          },
+          "observe": "Expect code=65535 'invalid dimension ... should be in range 2 ~ 32768'."
+        }
+      ],
+      "expectation": "DoS-hardening suggestion: default proxy.maxDimension 32768 too permissive for real embeddings; high dims should be capped lower.",
+      "contract_hint": "Issue: common embeddings <=3072 dims; 32768-dim vectors consume ~128KB each.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49929,
+      "version": "2.6.16",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: REST API and PyMilvus SDK have inconsistent default index creation behavior",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create + /v2/vectordb/indexes/create",
+      "setup": "REST path: create collection without indexParams, then create_index (expect success). SDK path: client.create_collection(dimension=4) auto-creates AUTOINDEX, then client.create_index fails.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST create_index succeeds when collection created without indexParams",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/indexes/create"
+          },
+          "json_payload": {
+            "collectionName": "test_rest_idx",
+            "indexParams": [
+              {
+                "fieldName": "vector",
+                "metricType": "L2",
+                "indexType": "IVF_FLAT"
+              }
+            ]
+          },
+          "observe": "JSON code. REST-created bare collection allows create_index (code 0)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "SDK create_collection(dimension=4) auto-index then create_index fails (cross-API divergence)",
+          "request": {
+            "method": "pymilvus",
+            "path": "client.create_index"
+          },
+          "json_payload": null,
+          "observe": "client.create_collection('test_sdk_idx', dimension=4); then client.create_index -> AUTOINDEX already exists exception. Report divergence vs REST."
+        }
+      ],
+      "expectation": "REST create without indexParams leaves no index so later create_index succeeds; SDK quick-create auto-makes AUTOINDEX so create_index fails — should be consistent.",
+      "contract_hint": "Issue: same logical operation (create -> create_index) yields different outcomes across REST and SDK.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 49930,
+      "version": "2.6.16",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2 accepts invalid searchParams (ef=0/-1 for HNSW, nprobe=0/-1 for IVF_FLAT) without validation",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create HNSW collection (dim=4 indexParams HNSW efConstruction=128 M=16) + insert 1 row; create IVF_FLAT collection (nlist=128) + insert 2 rows.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "HNSW search with ef=-1 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_hnsw_ef",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "limit": 5,
+            "searchParams": {
+              "ef": -1
+            }
+          },
+          "observe": "HTTP + code. Defect if code 0 with results; expected ef range rejection."
+        },
+        {
+          "case_id": "c2",
+          "desc": "HNSW search with ef=0 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_hnsw_ef",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "limit": 5,
+            "searchParams": {
+              "ef": 0
+            }
+          },
+          "observe": "Defect if code 0 with results."
+        },
+        {
+          "case_id": "c3",
+          "desc": "IVF_FLAT search with nprobe=0 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_ivf_nprobe",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "limit": 5,
+            "searchParams": {
+              "nprobe": 0
+            }
+          },
+          "observe": "Defect if code 0 with results; expected nprobe range [1,nlist]."
+        }
+      ],
+      "expectation": "searchParams (index-specific ef/nprobe) must be range-validated like limit/offset; ef<=0 and nprobe<1 are semantically invalid.",
+      "contract_hint": "Issue: limit/offset validated, searchParams not; ef should be >=1, nprobe in [1,nlist].",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50018,
+      "version": "2.6.16",
+      "gt_category": "TP_ACK_CLOSED_NOFIX",
+      "title": "[Bug]: REST API v2 aliases/list accepts empty collectionName while other endpoints properly reject it",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/aliases/list",
+      "setup": "Create REST collection test_aliases with an alias. Call aliases/list with collectionName=''. Compare to collections/describe with collectionName='' which returns code=1802.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "aliases/list with collectionName='' returns code=0 instead of error",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/aliases/list"
+          },
+          "json_payload": {
+            "collectionName": "",
+            "dbName": "default"
+          },
+          "observe": "JSON code/data. Claim defect if code 0 (empty list) instead of code=1802 missing-required error."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: collections/describe with collectionName='' correctly rejected",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/describe"
+          },
+          "json_payload": {
+            "collectionName": "",
+            "dbName": "default"
+          },
+          "observe": "Expect code=1802 'Field validation for CollectionName failed' confirming other endpoints validate."
+        }
+      ],
+      "expectation": "collectionName is required for aliases/list; an empty string should be rejected like other endpoints (code=1802).",
+      "contract_hint": "Issue: most endpoints return code=1802 for empty collectionName; aliases/list misses this validation.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50192,
+      "version": "2.6.16",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug] Concurrent rename and create with same target name both succeed, causing state violation",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/rename + /v2/vectordb/collections/create",
+      "setup": "Create source collection test_rename_src with data. Concurrently run rename(source->new_name) and create(new_name). Both target the same new name.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "concurrent rename-to-N and create-N both return code 0 (state violation)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/rename"
+          },
+          "json_payload": {
+            "collectionName": "test_rename_src",
+            "newCollectionName": "test_rename_dst"
+          },
+          "observe": "Run rename thread and create-conflict thread concurrently; capture both response codes. Defect claim if BOTH code 0, i.e. two collections with same name reconcile into an ambiguous state."
+        }
+      ],
+      "expectation": "Two collections must not share the same name; rename and create targeting the same name must mutually exclude so only one succeeds.",
+      "contract_hint": "Issue: rename/create lack a lock, so both succeed concurrently leaving ambiguous state.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50193,
+      "version": "2.6.16",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug] get_stats returns rowCount=0 after successful insert and load (v2.6.16, regression from #30663)",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/get_stats",
+      "setup": "Create REST collection test_rowcount (id Int64 pk, vector FloatVector dim=4, value Int64). Insert 5 rows, load, then get_stats.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "get_stats returns rowCount=0 after insert+load",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/get_stats"
+          },
+          "json_payload": {
+            "collectionName": "test_rowcount"
+          },
+          "observe": "JSON rowCount. Claim defect if rowCount=0 while entities/query with filter returns 5 rows. Report both."
+        }
+      ],
+      "expectation": "get_stats rowCount must reflect the number of entities after insert+load, matching query results.",
+      "contract_hint": "Issue: get_stats returns 0 while query returns 5 (regression of #30663).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50194,
+      "version": "2.6.16",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug] Concurrent delete and search returns stale/deleted data",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_stale_data (id/pk, vector dim=4, value). Insert 10 rows, create HNSW index, load. Concurrently delete ids [1..5] and search; then search again.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search concurrent with delete returns deleted ids (stale data)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_stale_data",
+            "data": [
+              {
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              }
+            ],
+            "limit": 10,
+            "outputFields": [
+              "id"
+            ]
+          },
+          "observe": "Run delete(filter id in [1..5]) thread and search thread concurrently; collect search result ids. Defect if any deleted id (1-5) appears after delete."
+        }
+      ],
+      "expectation": "After deletion, searches must not return deleted entities (read-after-delete visibility).",
+      "contract_hint": "Issue: delete and search are not synchronized; search reads a segment not reflecting the delete.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50305,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Search on unloaded collection returns valid results (code=0)",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_unloaded (dimension=4 metricType=COSINE idType=Int64 autoID=False), insert 1 row, DO NOT load. Then search.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search on never-loaded collection returns code=0 with data instead of 'not loaded' error",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_unloaded",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "annsField": "vector",
+            "limit": 5
+          },
+          "observe": "JSON code + data. Claim defect if code 0 with results without a load call; expected code!=0 'collection not loaded'."
+        }
+      ],
+      "expectation": "Contract requires load() before search/query; searching an unloaded collection should return 'collection not loaded'.",
+      "contract_hint": "Issue: REST contract requires load before search; returns code 0 + results, bypassing collection lifecycle.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50306,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Duplicate collection creation returns code=0 instead of error",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_dup (dimension=4 metricType=COSINE) once, then create same name again.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "second create with existing name returns code=0 instead of 'already exists'",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_dup",
+            "dimension": 4,
+            "metricType": "COSINE",
+            "idType": "Int64",
+            "autoID": false
+          },
+          "observe": "First create code 0; second identical create also code 0 (defect: duplicate create should error)."
+        }
+      ],
+      "expectation": "Re-creating an existing collection should return 'collection already exists'; two identical successes hide the condition.",
+      "contract_hint": "Issue: Type-1 Illegal Success — duplicate create returns identical code 0.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50307,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Drop non-existent collection returns code=0 instead of code=4",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/drop",
+      "setup": "Call REST collections/drop on a name that does not exist (e.g. nonexistent_xyz).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "drop non-existent collection returns code=0 instead of code=4",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/drop"
+          },
+          "json_payload": {
+            "collectionName": "nonexistent_xyz",
+            "dbName": "default"
+          },
+          "observe": "JSON code. Claim defect if code 0; expected code=4 (CollectionNotExists)."
+        }
+      ],
+      "expectation": "Dropping a non-existent collection should return CollectionNotExists (code=4), not an unqualified success.",
+      "contract_hint": "Issue: REST error-code doc defines code=4 for CollectionNotExists; drop returns 0, indistinguishable from a success.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50308,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Delete accepts both filter and ids (mutually exclusive) silently",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/delete",
+      "setup": "Create REST collection test_del (dimension=4), insert 1 row id=1. Delete with BOTH filter and ids.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "delete with both filter and ids accepted (should be rejected as mutually exclusive)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/delete"
+          },
+          "json_payload": {
+            "collectionName": "test_del",
+            "dbName": "default",
+            "filter": "id > 0",
+            "ids": [
+              1,
+              2,
+              3
+            ]
+          },
+          "observe": "JSON code + deleteCount. Claim defect if code 0 (no validation error) and deleteCount 0 or 1; expected mutual-exclusivity error."
+        }
+      ],
+      "expectation": "filter and ids are mutually exclusive; supplying both must be rejected, not silently resolved.",
+      "contract_hint": "Issue: delete documents filter OR ids as mutually exclusive; both silently accepted.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50309,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Consistency level silently accepts invalid values and defaults to Bounded",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_cl (dimension=4) with consistencyLevel='InvalidLevel'. Then describe to read back the consistencyLevel.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "invalid consistencyLevel accepted and silently defaulted to Bounded",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_cl",
+            "dimension": 4,
+            "consistencyLevel": "InvalidLevel"
+          },
+          "observe": "create code (defect if 0/200). Then collections/describe -> expect data.consistencyLevel 'Bounded' (silent substitution) instead of rejection."
+        }
+      ],
+      "expectation": "Valid consistencyLevel values are Strong/Bounded/Session/Eventually; an invalid string should be rejected, not defaulted to Bounded.",
+      "contract_hint": "Issue: valid values Strong, Bounded, Session, Eventually; invalid silently defaults to Bounded.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50310,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] REST API: Insert accepts 101 entities (exceeding documented 100 limit)",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection t (dimension=4). Insert 101 entities in one call.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "insert 101 entities accepted (documented limit 100)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "t",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 1,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 2,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 3,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 4,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 5,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 6,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 7,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 8,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 9,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 10,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 11,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 12,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 13,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 14,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 15,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 16,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 17,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 18,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 19,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 20,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 21,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 22,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 23,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 24,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 25,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 26,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 27,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 28,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 29,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 30,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 31,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 32,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 33,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 34,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 35,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 36,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 37,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 38,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 39,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 40,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 41,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 42,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 43,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 44,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 45,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 46,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 47,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 48,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 49,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 50,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 51,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 52,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 53,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 54,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 55,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 56,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 57,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 58,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 59,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 60,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 61,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 62,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 63,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 64,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 65,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 66,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 67,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 68,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 69,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 70,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 71,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 72,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 73,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 74,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 75,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 76,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 77,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 78,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 79,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 80,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 81,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 82,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 83,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 84,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 85,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 86,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 87,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 88,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 89,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 90,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 91,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 92,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 93,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 94,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 95,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 96,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 97,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 98,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 99,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 100,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              }
+            ]
+          },
+          "observe": "JSON code + insertCount. Claim defect if code 0 with insertCount=101 (no server-side enforcement of the 100 limit)."
+        }
+      ],
+      "expectation": "REST insert documents a 100-entity-per-call limit; exceeding it should be rejected or at least enforced.",
+      "contract_hint": "Issue: REST docs state 100 entities per call; insertCount=101 confirms no enforcement.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50311,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] REST API: Unicode-only collection names silently accepted",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection with a Chinese-only name such as '测试集合' (dimension=128).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "Unicode-only collection name accepted despite [a-zA-Z0-9_] rule",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "测试集合",
+            "dimension": 128,
+            "metricType": "COSINE"
+          },
+          "observe": "JSON code. Claim defect if code 0 (created); expected naming-rule rejection."
+        }
+      ],
+      "expectation": "Collection names should match [a-zA-Z0-9_]; Unicode-only names must be rejected.",
+      "contract_hint": "Issue: relies on #19273 confirming names restricted to [a-zA-Z0-9_].",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50312,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Rename collection to its own name returns code=0",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/rename",
+      "setup": "Create REST collection test_rename (dimension=4). Rename it to its own name.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "rename collection to its own current name returns code=0 (no-op not rejected)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/rename"
+          },
+          "json_payload": {
+            "collectionName": "test_rename",
+            "newCollectionName": "test_rename",
+            "dbName": "default"
+          },
+          "observe": "JSON code. Claim defect if code 0 (silent no-op) instead of rejecting an invalid rename."
+        }
+      ],
+      "expectation": "Renaming to the same name is a no-op and should be rejected as an invalid operation.",
+      "contract_hint": "Issue: Type-1 Illegal Success — no-op rename indistinguishable from a successful rename.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50313,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Search on unloaded collection returns valid results (code=0)",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_unloaded (dimension=4 metricType=COSINE idType=Int64 autoID=False), insert 1 row, DO NOT load. Search and query.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search AND query on never-loaded collection return code=0 with data",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_unloaded",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "annsField": "vector",
+            "limit": 5
+          },
+          "observe": "JSON code+data for search; then same for entities/query. Defect if code 0 with results on an unloaded collection (expected 'collection not loaded')."
+        }
+      ],
+      "expectation": "load() must precede search/query; operating on an unloaded collection should return 'collection not loaded'.",
+      "contract_hint": "Duplicate of #50305; REST contract requires load before search/query.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50314,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Duplicate collection creation returns code=0 instead of error",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_dup (dimension=4) twice with identical payload.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "second create with existing name returns code=0 (illegal success)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_dup",
+            "dimension": 4,
+            "metricType": "COSINE",
+            "idType": "Int64",
+            "autoID": false
+          },
+          "observe": "First and second create both code 0 -> defect; duplicate create indistinguishable."
+        }
+      ],
+      "expectation": "Duplicate create must return a non-zero 'already exists' error.",
+      "contract_hint": "Duplicate of #50306/#49824.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50315,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Drop non-existent collection returns code=0 instead of code=4",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/drop",
+      "setup": "Drop a non-existent collection (e.g. nonexistent_collection_xyz).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "drop non-existent collection returns code=0 instead of code=4",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/drop"
+          },
+          "json_payload": {
+            "collectionName": "nonexistent_collection_xyz",
+            "dbName": "default"
+          },
+          "observe": "JSON code. Defect if 0; expected code=4 CollectionNotExists."
+        }
+      ],
+      "expectation": "Drop of a non-existent collection should return code=4, not success.",
+      "contract_hint": "Duplicate of #50307.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50316,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Delete endpoint accepts both filter and ids (mutually exclusive) silently",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/delete",
+      "setup": "Create REST collection test_del (dimension=4), insert 1 row id=1. Delete with both filter and ids.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "delete with both filter and ids (mutually exclusive) silently accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/delete"
+          },
+          "json_payload": {
+            "collectionName": "test_del",
+            "dbName": "default",
+            "filter": "id > 0",
+            "ids": [
+              1,
+              2,
+              3
+            ]
+          },
+          "observe": "JSON code+deleteCount. Defect if code 0 (no validation error), filter takes precedence; expected mutual-exclusion error."
+        }
+      ],
+      "expectation": "filter and ids are mutually exclusive; both supplied must be rejected.",
+      "contract_hint": "Duplicate of #50308.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50317,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] REST API: Insert accepts 101 entities (exceeding documented 100 limit)",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_limit (dimension=4). Insert 101 entities.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "insert 101 entities accepted (documented limit 100)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_limit",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 1,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 2,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 3,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 4,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 5,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 6,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 7,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 8,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 9,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 10,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 11,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 12,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 13,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 14,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 15,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 16,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 17,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 18,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 19,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 20,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 21,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 22,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 23,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 24,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 25,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 26,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 27,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 28,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 29,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 30,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 31,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 32,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 33,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 34,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 35,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 36,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 37,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 38,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 39,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 40,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 41,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 42,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 43,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 44,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 45,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 46,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 47,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 48,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 49,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 50,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 51,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 52,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 53,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 54,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 55,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 56,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 57,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 58,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 59,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 60,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 61,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 62,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 63,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 64,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 65,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 66,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 67,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 68,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 69,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 70,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 71,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 72,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 73,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 74,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 75,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 76,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 77,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 78,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 79,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 80,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 81,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 82,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 83,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 84,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 85,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 86,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 87,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 88,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 89,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 90,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 91,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 92,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 93,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 94,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 95,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 96,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 97,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 98,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 99,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 100,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              }
+            ]
+          },
+          "observe": "JSON code+insertCount. Defect if code 0 with insertCount=101 (100-limit not enforced)."
+        }
+      ],
+      "expectation": "Insert has a documented 100-entity limit; exceeding it should be rejected.",
+      "contract_hint": "Duplicate of #50310.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50318,
+      "version": "2.6.17",
+      "gt_category": "SELF_CLOSED",
+      "title": "[Bug] Collection names with leading underscore accepted despite naming rules",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection with name '_test_collection' (dimension=128).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "collection name starting with underscore accepted though rule requires letter start",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "_test_collection",
+            "dimension": 128,
+            "metricType": "COSINE"
+          },
+          "observe": "JSON code. Defect if code 0 (created); expected naming-rule rejection for leading underscore."
+        }
+      ],
+      "expectation": "Collection names should start with a letter per [a-zA-Z][a-zA-Z0-9_]*; a leading underscore should be rejected.",
+      "contract_hint": "Issue: relies on #19273 naming convention [a-zA-Z][a-zA-Z0-9_]*.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50319,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Search on unloaded collection returns valid results (code=0)",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_unloaded (dimension=4), insert 1 row, DO NOT load. Search.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search on unloaded collection returns code=0 with data",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_unloaded",
+            "data": [
+              [
+                0.1,
+                0.2,
+                0.3,
+                0.4
+              ]
+            ],
+            "annsField": "vector",
+            "limit": 5
+          },
+          "observe": "JSON code+data. GT=BY_DESIGN; report observed behavior for GLM. Claim: expected 'collection not loaded' error."
+        }
+      ],
+      "expectation": "load() must precede search; search on unloaded collection should error.",
+      "contract_hint": "Duplicate of #50305; marked BY_DESIGN.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50321,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Duplicate collection creation returns code=0 instead of error",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection test_dup twice with identical payload.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "second duplicate create returns code=0 (illegal success)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_dup",
+            "dimension": 4,
+            "metricType": "COSINE",
+            "idType": "Int64",
+            "autoID": false
+          },
+          "observe": "Both creates return code 0 -> defect per issue; GT=BY_DESIGN so report observed."
+        }
+      ],
+      "expectation": "Duplicate create must return 'already exists' error.",
+      "contract_hint": "Duplicate of #50306; marked BY_DESIGN.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50322,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Drop non-existent collection returns code=0 instead of code=4",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/collections/drop",
+      "setup": "Drop a non-existent collection name.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "drop non-existent collection returns code=0 instead of code=4",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/drop"
+          },
+          "json_payload": {
+            "collectionName": "nonexistent_collection_xyz",
+            "dbName": "default"
+          },
+          "observe": "JSON code. GT=BY_DESIGN; report observed. Claim: expected code=4."
+        }
+      ],
+      "expectation": "Drop of a non-existent collection should return code=4.",
+      "contract_hint": "Duplicate of #50307; marked BY_DESIGN.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50323,
+      "version": "2.6.17",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: Delete endpoint accepts both filter and ids (mutually exclusive) silently",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/delete",
+      "setup": "Create REST collection test_del (dimension=4), insert 1 row. Delete with both filter and ids.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "delete with both filter and ids silently accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/delete"
+          },
+          "json_payload": {
+            "collectionName": "test_del",
+            "dbName": "default",
+            "filter": "id > 0",
+            "ids": [
+              1,
+              2,
+              3
+            ]
+          },
+          "observe": "JSON code+deleteCount. Defect if code 0 (no validation error); filter wins and ids ignored."
+        }
+      ],
+      "expectation": "filter and ids mutually exclusive; both must be rejected.",
+      "contract_hint": "Duplicate of #50308; accepted for triage.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50324,
+      "version": "2.6.17",
+      "gt_category": "FP_BY_DESIGN",
+      "title": "[Bug]: REST API: Insert accepts 101 entities (exceeding documented 100 limit)",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_limit (dimension=4). Insert 101 entities.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "insert 101 entities accepted (documented limit 100)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_limit",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 1,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 2,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 3,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 4,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 5,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 6,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 7,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 8,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 9,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 10,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 11,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 12,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 13,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 14,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 15,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 16,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 17,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 18,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 19,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 20,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 21,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 22,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 23,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 24,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 25,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 26,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 27,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 28,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 29,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 30,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 31,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 32,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 33,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 34,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 35,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 36,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 37,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 38,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 39,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 40,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 41,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 42,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 43,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 44,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 45,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 46,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 47,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 48,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 49,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 50,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 51,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 52,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 53,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 54,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 55,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 56,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 57,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 58,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 59,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 60,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 61,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 62,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 63,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 64,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 65,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 66,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 67,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 68,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 69,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 70,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 71,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 72,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 73,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 74,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 75,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 76,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 77,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 78,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 79,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 80,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 81,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 82,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 83,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 84,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 85,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 86,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 87,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 88,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 89,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 90,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 91,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 92,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 93,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 94,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 95,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 96,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 97,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 98,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 99,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              },
+              {
+                "id": 100,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              }
+            ]
+          },
+          "observe": "JSON code+insertCount. Report observed; GT=FP_BY_DESIGN (False Positive) so the 100-limit may not actually be a real enforced constraint."
+        }
+      ],
+      "expectation": "Insert 100-entity limit is claimed in issue; GT marks this as False Positive so treat observed behavior as reference, not necessarily a defect.",
+      "contract_hint": "Duplicate of #50310; GT=FP_BY_DESIGN.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50325,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: Collection names with leading underscore accepted despite naming rules",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection with name '_test_collection' (dimension=128).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "collection name with leading underscore accepted (should be rejected)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "_test_collection",
+            "dimension": 128,
+            "metricType": "COSINE"
+          },
+          "observe": "JSON code. Report observed; GT=BY_DESIGN."
+        }
+      ],
+      "expectation": "Collection names should start with a letter; leading underscore should be rejected.",
+      "contract_hint": "Duplicate of #50318; marked BY_DESIGN.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50351,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: REST API v2: shardsNum=0/-1/65535 accepted with HTTP 200 + code=200",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collections with shardsNum in {0,-1,65535} (dimension=4).",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "shardsNum=0 accepted with HTTP 200 + code=200",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_shard_0",
+            "dimension": 4,
+            "shardsNum": 0,
+            "metricType": "L2"
+          },
+          "observe": "HTTP status + JSON code. Claim defect if HTTP 200 + code=200 success for invalid shardsNum (min documented 1). Report for all three values."
+        },
+        {
+          "case_id": "c2",
+          "desc": "shardsNum=-1 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_shard_neg",
+            "dimension": 4,
+            "shardsNum": -1,
+            "metricType": "L2"
+          },
+          "observe": "HTTP+code; defect if success."
+        },
+        {
+          "case_id": "c3",
+          "desc": "shardsNum=65535 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_shard_max",
+            "dimension": 4,
+            "shardsNum": 65535,
+            "metricType": "L2"
+          },
+          "observe": "HTTP+code; defect if success (resource-exhaustion risk)."
+        }
+      ],
+      "expectation": "shardsNum has documented minimum 1; out-of-range values should be rejected (HTTP 4xx), not silently accepted as success.",
+      "contract_hint": "Issue: REST docs/PyMilvus default num_shards=1 implies min 1; invalid values return success code.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50352,
+      "version": "2.6.17",
+      "gt_category": "BY_DESIGN",
+      "title": "[Bug]: REST API v2: metricType=\"\" and consistencyLevel=\"None\" silently accepted on collections/create",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collections with dimension=0/-1/32769, metricType=''/'INVALID'/'l2'/'123', consistencyLevel=''/'STRONG'/'strong'/'None'/'ReadCommitted'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "metricType='' accepted (code=200 success)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_mt_empty",
+            "dimension": 4,
+            "metricType": ""
+          },
+          "observe": "HTTP + JSON code. Defect if code==200 success (empty metricType undefined similarity behavior)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "consistencyLevel='None' accepted (non-existent level)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_cl_none",
+            "dimension": 4,
+            "metricType": "L2",
+            "consistencyLevel": "None"
+          },
+          "observe": "HTTP + JSON code. Defect if code==200 success; 'None' is not a valid consistency level."
+        },
+        {
+          "case_id": "c3",
+          "desc": "dimension=32769 returns error but via HTTP 200 (should be 400)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "test_dim_high",
+            "dimension": 32769,
+            "metricType": "COSINE"
+          },
+          "observe": "HTTP status vs JSON code; defect if body has error code but HTTP 200."
+        }
+      ],
+      "expectation": "metricType must be one of L2/IP/COSINE and consistencyLevel one of Strong/Bounded/Session/Eventually; empty or non-existent enum values should be rejected (HTTP 4xx).",
+      "contract_hint": "Milvus metric/consistency docs list valid enums; empty strings and 'None'/'ReadCommitted' are invalid but accepted.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50353,
+      "version": "2.6.17",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2: search returns HTTP 200 for limit=0/-1 and dimension mismatch",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test (dimension=4). Search with limit 0/-1 and vector dim 64/128/2 on a dim=4 collection.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search limit=0 returns HTTP 200 with body error instead of HTTP 400",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test",
+            "data": [
+              [
+                1.0,
+                2.0,
+                3.0,
+                4.0
+              ]
+            ],
+            "limit": 0
+          },
+          "observe": "HTTP status + JSON code. Defect claim: invalid limit placed only in body (code 65535) with HTTP 200; expected 400."
+        },
+        {
+          "case_id": "c2",
+          "desc": "dimension mismatch (64-dim on dim=4) returns HTTP 200 instead of 400",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test",
+            "data": [
+              [
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ]
+            ],
+            "limit": 3
+          },
+          "observe": "HTTP status + code; defect if body error but HTTP 200."
+        }
+      ],
+      "expectation": "Invalid limit and dimension mismatch should yield HTTP 4xx (400), not HTTP 200 with error only in the body.",
+      "contract_hint": "Issue: REST returns HTTP 200 for all invalid search params; errors only in JSON body.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50354,
+      "version": "2.6.17",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2: password complexity not enforced — \"abcdefgh\" accepted on users/create",
+      "defect_class": "doc_mismatch",
+      "endpoint": "POST /v2/vectordb/users/create",
+      "setup": "Call REST users/create with distinct usernames and passwords: '' / 'a' / 'abcdefgh' / 'ValidP@ss1'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "all-lowercase password 'abcdefgh' accepted (complexity not enforced)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/users/create"
+          },
+          "json_payload": {
+            "userName": "testuser8char",
+            "password": "abcdefgh"
+          },
+          "observe": "HTTP + JSON code. Defect if HTTP 200 + code 200 (user created) for a password with no char-type variety; docs require 3 of 4 types."
+        },
+        {
+          "case_id": "c2",
+          "desc": "complex password control 'ValidP@ss1' accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/users/create"
+          },
+          "json_payload": {
+            "userName": "testuservalid",
+            "password": "ValidP@ss1"
+          },
+          "observe": "Expect HTTP 200 + code 200 — valid control."
+        },
+        {
+          "case_id": "c3",
+          "desc": "short password 'a' returns body error via HTTP 200",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/users/create"
+          },
+          "json_payload": {
+            "userName": "testuser1ch",
+            "password": "a"
+          },
+          "observe": "HTTP status vs code; report length validation and its HTTP status."
+        }
+      ],
+      "expectation": "Password must include at least 3 of 4 char types (uppercase/lowercase/numbers/special) and be 8-64 chars; simple all-lowercase passwords should be rejected.",
+      "contract_hint": "REST Create User doc: password must include at least three character types.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 50355,
+      "version": "2.6.17",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: Upsert fails on autoID=true collections despite documentation claiming support",
+      "defect_class": "behavior",
+      "endpoint": "POST /v2/vectordb/entities/upsert",
+      "setup": "Create REST collection test_upsert_autoid with autoID=True primaryFieldName='uid'. Upsert WITHOUT a primary key.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "upsert without PK on autoID=true collection returns code=1100 instead of auto-generating id",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_autoid",
+            "data": [
+              {
+                "vector": [
+                  1.0,
+                  2.0,
+                  3.0,
+                  4.0
+                ],
+                "color": "red"
+              }
+            ]
+          },
+          "observe": "JSON code/message. Defect claim: upsert without PK fails (code 1100) though docs say autoID generates PK; contrast control insert on same collection succeeds."
+        },
+        {
+          "case_id": "c2",
+          "desc": "control: insert without PK on autoID=true succeeds (proves autoID mechanism works)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_autoid",
+            "data": [
+              {
+                "vector": [
+                  5.0,
+                  6.0,
+                  7.0,
+                  8.0
+                ],
+                "color": "blue"
+              }
+            ]
+          },
+          "observe": "Expect code 200 (auto-generated id) — control proving only upsert breaks."
+        }
+      ],
+      "expectation": "With autoID=true and no PK provided, upsert should auto-generate the primary key like insert; failing suggests doc/impl mismatch.",
+      "contract_hint": "Upsert Entities doc override mode claims autoID support; Limits section contradicts; impl rejects both with and without PK.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 51084,
+      "version": "2.6.19",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API silently substitutes invalid `consistencyLevel` enum value with default instead of rejecting",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection audit1 with consistencyLevel='Invalid' (dimension=4, metricType=L2, idType=Int64, autoID=true, vectorFieldType=FloatVector). Then describe.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "invalid consistencyLevel 'Invalid' silently substituted to 'Bounded' on create",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "audit1",
+            "dimension": 4,
+            "metricType": "L2",
+            "idType": "Int64",
+            "autoID": true,
+            "vectorFieldType": "FloatVector",
+            "consistencyLevel": "Invalid"
+          },
+          "observe": "create HTTP+code (code 0 = success). Then collections/describe -> check data.consistencyLevel: if 'Bounded' while `Invalid` submitted => silent substitution (defect); expected rejection."
+        }
+      ],
+      "expectation": "Invalid enum values must be rejected, not silently default-substituted (Bounded); silent substitution masks client typos.",
+      "contract_hint": "Issue: REST default-substitutes unparseable consistencyLevel to Bounded instead of rejecting.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 51085,
+      "version": "2.6.19",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API silently substitutes invalid `vectorFieldType` enum value with default instead of rejecting",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/collections/create",
+      "setup": "Create REST collection audit5 with vectorFieldType='InvalidVectorType' (dimension=4, metricType=L2, idType=Int64, autoID=true). Then describe.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "invalid vectorFieldType 'InvalidVectorType' silently substituted to FloatVector",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/collections/create"
+          },
+          "json_payload": {
+            "collectionName": "audit5",
+            "dimension": 4,
+            "metricType": "L2",
+            "idType": "Int64",
+            "autoID": true,
+            "vectorFieldType": "InvalidVectorType"
+          },
+          "observe": "create HTTP+code. Then collections/describe -> check vector field type is FloatVector (silent substitution) vs expected rejection."
+        }
+      ],
+      "expectation": "Invalid vectorFieldType enum must be rejected, not default-substituted to FloatVector (silent, misleading for binary/sparse users).",
+      "contract_hint": "Issue: REST default-substitutes unparseable vectorFieldType to FloatVector instead of rejecting.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 51809,
+      "version": "2.6.20",
+      "gt_category": "SELF_PR_OPEN",
+      "title": "fix: validate vector search params via knowhere Config::Load at plan creation (#47729)",
+      "defect_class": "param_validation",
+      "endpoint": "collection.search (milvus-io/milvus PR)",
+      "setup": "Self-authored open PR routing search params through knowhere Config::Load so nprobe/ef range/type validation is owned by knowhere. Behavioral claim covered by #47729/#49823/#49930 probes.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "PR deduplicates to nprobe=0 validation family; no standalone probe",
+          "request": null,
+          "json_payload": null,
+          "observe": "Skip probe; behavior asserted by nprobe-0 probes (#47729/#49823/#49930)."
+        }
+      ],
+      "expectation": "PR: nprobe in {0,-1,...} rejected on IVF_FLAT with knowhere message; HNSW unaffected. Valid nprobe passes.",
+      "contract_hint": "PR approach routes search params through knowhere Config::Load(SEARCH) at plan creation.",
+      "needs_manual": true,
+      "manual_reason": "This is a fix PR (SELF_PR_OPEN), not a default-state defect to replay; changes server code. It does not run as a standalone probe — the nprobe range defect is covered by #47729/#49823/#49930."
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52307,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: entities/upsert JSON field — plain string overwrites valid JSON; written value unreadable via gRPC; REST/gRPC store inconsistent formats",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/upsert",
+      "setup": "Create REST collection test_json with schema (autoId False, enableDynamicField False): id Int64 pk, vector FloatVector dim=4, meta JSON. indexParams vector AUTOINDEX COSINE. Insert valid JSON record id=0 with meta={'important':'data'}. Then REST upsert id=0 with meta='invalid_json'; gRPC upsert id=1 with meta='grpc_plain_str'; then query; then gRPC get ids=[0,1].",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST upsert plain string into JSON field overwrites valid JSON and round-trip fails via gRPC",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_json",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ],
+                "meta": "invalid_json"
+              }
+            ]
+          },
+          "observe": "upsert HTTP+code (defect if 0/200 = accepted). Then entities/query output meta -> confirm original {'important':'data'} replaced by bare 'invalid_json'; then pymilvus mc.get ids=[0,1] output_fields=['meta'] -> MilvusException 'Expected object or value' (round-trip failure)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "gRPC upsert plain string accepted and stored JSON-encoded (format divergence)",
+          "request": {
+            "method": "pymilvus",
+            "path": "client.upsert"
+          },
+          "json_payload": null,
+          "observe": "mc.upsert('test_json',[{'id':1,'vector':[0.8]*4,'meta':'grpc_plain_str'}]) accepted; query shows id=1 meta '\"grpc_plain_str\"' (quoted) vs id=0 bare string — same input, different stored bytes."
+        }
+      ],
+      "expectation": "A JSON-field value must be readable back via the official gRPC client (round-trip integrity); REST and gRPC must store the same logical value identically; upsert must not silently scalarize structured JSON.",
+      "contract_hint": "JSON Field docs describe type as structured key-value data; server must not accept a write it cannot serve back.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52308,
+      "version": "3.0.0",
+      "gt_category": "TP_DUP_TRACKED",
+      "title": "[Bug]: REST API v2 `entities/insert` accepts string numbers for Int64 primary key (type coercion gap; gRPC rejects)",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_pk with schema autoId False: id Int64 pk, vector FloatVector dim=4. indexParams vector AUTOINDEX COSINE. Insert with id='123' (string), then id='abc'. gRPC control: pymilvus insert id='123'.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST insert with string PK '123' accepted and stored as integer 123",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_pk",
+            "data": [
+              {
+                "id": "123",
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ]
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0). Then query filter id==123 output id -> stored as integer 123, not string. gRPC control mc.insert id='123' -> should raise DataTypeVariableSetException (imports rejection behavior)."
+        },
+        {
+          "case_id": "c2",
+          "desc": "REST insert with non-numeric string PK 'abc' also accepted (stored as 0)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_pk",
+            "data": [
+              {
+                "id": "abc",
+                "vector": [
+                  0.5,
+                  0.5,
+                  0.5,
+                  0.5
+                ]
+              }
+            ]
+          },
+          "observe": "insert code; if accepted, query to see what integer the string was coerced to (claim 'abc' -> 0)."
+        }
+      ],
+      "expectation": "Int64 PK fields must enforce strict type checking; string '123' should be rejected, consistent with gRPC.",
+      "contract_hint": "Primary Field docs define Int64/VarChar PK; REST silently coerces strings instead of rejecting.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52309,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API v2 `entities/search` accepts `group_size=0` and `-1` (gRPC rejects as \"negative\")",
+      "defect_class": "param_validation",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_gs dimension=4. Insert 10 rows (id 0..9, vector, cat=i%3). Search with groupParams groupByField='cat' groupSize=0 and -1. gRPC control with group_size=0.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search with groupSize=0 accepted (should be rejected, positive required)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_gs",
+            "data": [
+              [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ]
+            ],
+            "limit": 5,
+            "groupParams": {
+              "groupByField": "cat",
+              "groupSize": 0
+            }
+          },
+          "observe": "search HTTP+code (defect if code 0 with results). gRPC control: mc.search group_size=0 -> expect code=1100 'group size:0 is negative'. Report both."
+        },
+        {
+          "case_id": "c2",
+          "desc": "search with groupSize=-1 accepted",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_gs",
+            "data": [
+              [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ]
+            ],
+            "limit": 5,
+            "groupParams": {
+              "groupByField": "cat",
+              "groupSize": -1
+            }
+          },
+          "observe": "Defect if code 0 with results; group_size must be positive."
+        }
+      ],
+      "expectation": "group_size increases results per group and must be a positive integer (>=1); REST should reject 0/negative as gRPC does.",
+      "contract_hint": "Grouping Search docs: group_size controls 'number of results to return per group'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52310,
+      "version": "3.0.0",
+      "gt_category": "TP_DUP_TRACKED",
+      "title": "[Bug]: REST API v2 `entities/insert` silently coerces scalar types (string→Int64, int→VarChar, string→Bool); gRPC rejects all",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create collection test_coerce via pymilvus schema (id INT64 pk, vector FLOAT_VECTOR dim=4, int64_f INT64 nullable, varchar_f VARCHAR(64) nullable, bool_f BOOL nullable). REST insert cross-type values; gRPC controls.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST insert string '123' into INT64 field accepted (stored as 123)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_coerce",
+            "data": [
+              {
+                "id": 1,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "int64_f": "123"
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0). Query back int64_f type/value. gRPC control raises 'field type mismatch'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "REST insert int 123 into VarChar field accepted (stored as string)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_coerce",
+            "data": [
+              {
+                "id": 2,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "varchar_f": 123
+              }
+            ]
+          },
+          "observe": "insert code; query value becomes '123' string."
+        },
+        {
+          "case_id": "c3",
+          "desc": "REST insert string 'true' into BOOL field accepted (stored as true)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_coerce",
+            "data": [
+              {
+                "id": 3,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "bool_f": "true"
+              }
+            ]
+          },
+          "observe": "insert code; query bool value true."
+        }
+      ],
+      "expectation": "Scalar fields (Int64/VarChar/Bool/Float) must enforce strict type checking on both REST and gRPC; cross-type coercion is not documented.",
+      "contract_hint": "Number Field docs define distinct INT64/BOOL/FLOAT types; REST still coerces (gRPC fixed in 2.6.14).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52311,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API v2 silently accepts `group_by_field` on vector fields (gRPC rejects \"unsupported data type\")",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create REST collection test_gv dimension=4. Insert 10 rows (id 0..9, vector). Search with groupParams groupByField='vector' (the vector field). gRPC control.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "search groupByField='vector' accepted and grouping silently ignored",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "test_gv",
+            "data": [
+              [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ]
+            ],
+            "limit": 5,
+            "groupParams": {
+              "groupByField": "vector",
+              "groupSize": 1
+            }
+          },
+          "observe": "search HTTP+code (defect if code 0, returns normal ungrouped results). gRPC control: mc.search group_by_field='vector' -> expect code=2001 'unsupported data type VECTOR_FLOAT for group by'. Compare."
+        }
+      ],
+      "expectation": "Grouping is only valid on scalar fields; groupByField on a vector field must be rejected (not silently ignored).",
+      "contract_hint": "Grouping Search docs describe grouping by scalar fields; vectors cannot be equality-grouped.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52312,
+      "version": "3.0.0",
+      "gt_category": "TP_DUP_TRACKED",
+      "title": "[Bug]: REST API v2 `entities/upsert` accepts string numbers for Int64 primary key (gRPC rejects)",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/upsert",
+      "setup": "Create REST collection test_upsert_pk dimension=4. Insert id=100 (integer). REST upsert id='100' (string) to overwrite. gRPC control.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST upsert with string PK '100' accepted and overwrites existing record",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_pk",
+            "data": [
+              {
+                "id": "100",
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ]
+              }
+            ]
+          },
+          "observe": "upsert code (defect if 0). gRPC control mc.upsert id='100' -> expect DataNotMatchException 'id field should be a int64'. Higher risk than insert because it overwrites existing data."
+        }
+      ],
+      "expectation": "Int64 PK fields must enforce strict type on upsert, consistent with gRPC; a string PK should be rejected, not used to overwrite.",
+      "contract_hint": "Primary Field docs define Int64 as numeric; same coercion gap as insert (higher risk on upsert).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52313,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: entities/insert JSON field — plain strings stored in inconsistent formats across REST/gRPC; written values unreadable via gRPC (round-trip failure)",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_json (autoId False, enableDynamicField False): id Int64 pk, vector FloatVector dim=4, meta JSON. indexParams AUTOINDEX COSINE. Insert id=100 via REST meta='plain_string'; id=101 via gRPC meta='plain_string'. Then query and gRPC get both ids.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST-inserted plain-string JSON value becomes unreadable via gRPC; format diverges from gRPC-written row",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_json",
+            "data": [
+              {
+                "id": 100,
+                "vector": [
+                  0.1,
+                  0.2,
+                  0.3,
+                  0.4
+                ],
+                "meta": "plain_string"
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0). Then query -> meta id=100 bare 'plain_string' vs id=101 (gRPC-written) '\"plain_string\"'. Then mc.get ids=[100,101]: gRPC-written reads back OK, REST-written raises 'Expected object or value'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "gRPC insert same plain string accepted and stored JSON-encoded (format divergence)",
+          "request": {
+            "method": "pymilvus",
+            "path": "client.insert"
+          },
+          "json_payload": null,
+          "observe": "mc.insert('test_json',[{'id':101,'vector':[0.1,0.2,0.3,0.4],'meta':'plain_string'}]) accepted; stored quoted. Asymmetric round-trip is the decisive evidence."
+        }
+      ],
+      "expectation": "A record inserted through any official API must be readable via the gRPC client (round-trip integrity); REST and gRPC must store the same value in the same format.",
+      "contract_hint": "Issue: REST/gRPC persist different bytes for the same JSON-string input; REST-written rows unreadable via gRPC.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52314,
+      "version": "3.0.0",
+      "gt_category": "TP_ACK_OPEN",
+      "title": "[Bug]: REST API v2 `entities/upsert` silently coerces scalar types (string→DOUBLE, string→BOOL, int→BOOL, string→INT16)",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/upsert",
+      "setup": "Create collection test_upsert_scalar via pymilvus schema (id INT64 pk, vector FLOAT_VECTOR dim=4, dbl_f DOUBLE nullable, bool_f BOOL nullable, i16_f INT16 nullable). REST upsert cross-type values; gRPC controls.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST upsert string '3.14159' into DOUBLE accepted (stored 3.14159)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_scalar",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ],
+                "dbl_f": "3.14159"
+              }
+            ]
+          },
+          "observe": "upsert code (defect if 0). gRPC control same input -> code=1100 'field type mismatch'."
+        },
+        {
+          "case_id": "c2",
+          "desc": "REST upsert string 'true' into BOOL accepted (stored true)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_scalar",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ],
+                "bool_f": "true"
+              }
+            ]
+          },
+          "observe": "upsert code; gRPC control rejects."
+        },
+        {
+          "case_id": "c3",
+          "desc": "REST upsert int 1 into BOOL accepted (stored true)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_scalar",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ],
+                "bool_f": 1
+              }
+            ]
+          },
+          "observe": "upsert code; gRPC control rejects."
+        },
+        {
+          "case_id": "c4",
+          "desc": "REST upsert string '42' into INT16 accepted (stored 42)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/upsert"
+          },
+          "json_payload": {
+            "collectionName": "test_upsert_scalar",
+            "data": [
+              {
+                "id": 0,
+                "vector": [
+                  0.9,
+                  0.9,
+                  0.9,
+                  0.9
+                ],
+                "i16_f": "42"
+              }
+            ]
+          },
+          "observe": "upsert code; gRPC control rejects."
+        }
+      ],
+      "expectation": "Scalar field types on the UPSERT endpoint must enforce strict type checking, consistent with gRPC; coercion is undocumented.",
+      "contract_hint": "Number Field docs define DOUBLE/BOOL/INT16 as distinct; same root cause as #47766 (gRPC fixed, REST not).",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52315,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST API v2 `entities/insert` accepts string-encoded vector values (gRPC rejects)",
+      "defect_class": "type_coercion",
+      "endpoint": "POST /v2/vectordb/entities/insert",
+      "setup": "Create REST collection test_vec_str dimension=4. Insert with vector as string '[0.1,0.2,0.3,0.4]' (not an array). gRPC control.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST insert with string-encoded vector accepted and stored as real float vector",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/insert"
+          },
+          "json_payload": {
+            "collectionName": "test_vec_str",
+            "data": [
+              {
+                "id": 0,
+                "vector": "[0.1,0.2,0.3,0.4]"
+              }
+            ]
+          },
+          "observe": "insert code (defect if 0, insertCount 1). Then search with [[0.1,0.2,0.3,0.4]] -> id 0 returns distance 1.0 confirming it was parsed. gRPC control mc.insert vector '[0.1,..]' -> DataNotMatchException 'should be float_vector, got str'."
+        }
+      ],
+      "expectation": "Vector fields must accept JSON arrays of numbers only, not string-encoded arrays; REST should be consistent with gRPC.",
+      "contract_hint": "Dense Vector docs: vectors are 'arrays of floating-point numbers', not serialized strings.",
+      "needs_manual": false,
+      "manual_reason": ""
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "number": 52325,
+      "version": "3.0.0",
+      "gt_category": "TP_FIXED_PR",
+      "title": "[Bug]: REST v2 entities/search silently ignores strictGroupSize",
+      "defect_class": "semantics",
+      "endpoint": "POST /v2/vectordb/entities/search",
+      "setup": "Create collection gs_demo via pymilvus (id INT64 pk auto_id=False, vector FLOAT_VECTOR dim=4, cat INT64). Insert 15 points (5 cat values x 3 each), create AUTOINDEX COSINE, load. Search groupByField=cat groupSize=2 strictGroupSize=true limit=15 via REST; gRPC control.",
+      "probe_cases": [
+        {
+          "case_id": "c1",
+          "desc": "REST search with strictGroupSize=true returns 15 (should cap at 5 groups x 2 = 10)",
+          "request": {
+            "method": "POST",
+            "path": "/v2/vectordb/entities/search"
+          },
+          "json_payload": {
+            "collectionName": "gs_demo",
+            "data": [
+              [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ]
+            ],
+            "limit": 15,
+            "groupParams": {
+              "groupByField": "cat",
+              "groupSize": 2,
+              "strictGroupSize": true
+            },
+            "outputFields": [
+              "cat"
+            ]
+          },
+          "observe": "REST result count vs gRPC control (mc.search group_size=2, strict_group_size=True -> 10). Defect if REST returns 15 (strictGroupSize ignored)."
+        }
+      ],
+      "expectation": "strictGroupSize=true must cap each group at groupSize entities; REST silently ignoring it returns more rows than requested.",
+      "contract_hint": "REST v2 Search docs: 'strictGroupSize: Whether to return only the top k entities for each group'.",
+      "needs_manual": false,
+      "manual_reason": ""
+    }
+  ]
+}

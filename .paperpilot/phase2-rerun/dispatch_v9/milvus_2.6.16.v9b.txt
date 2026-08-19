@@ -1,0 +1,60 @@
+【任务】按你的 agent 规范（SOP）审计以下候选的全部证据链并产出组级判词。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/chain-auditor.md
+
+## 材料
+- 版本组前缀: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16（各 case 子目录 evidence_chain/）
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/structured_contract.json
+- 认知材料（视角 D）: C:/Users/11428/Desktop/tvdb_sessions/intelligence/milvus/developer_cognition.json
+
+## 审计对象（每 case 的 C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/{did}/evidence_chain/{did}.json）
+  - milvus_009
+  - milvus_010
+  - milvus_011
+  - milvus_012
+  - milvus_013
+  - milvus_014
+  - milvus_015
+  - milvus_016
+  - milvus_017
+  - milvus_018
+  - milvus_019
+  - milvus_020
+
+## 机械预跑结果（主进程已用 SOP 同源脚本对每条链预计算——视角 A 与机械 B 的值直接采信填入
+   perspective_analysis，不得改判；implied_verdict 定案分支按 SOP 聚合层机械化执行；
+   rationale 仍须转述该 case 的 A/B 判定依据；你只需行使 GREY_ZONE 灰区的 LLM 兜底与三查/第 4 查）
+  milvus_009: verdict_A=NEUTRAL(constraint_absent) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（is invalid）
+  milvus_010: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（out of range）
+  milvus_011: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_012: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（dbName == "" -> reject with er
+  milvus_013: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_014: verdict_A=NEUTRAL(quote_mismatch) implied_verdict=GREY_ZONE | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 服务器自证（should be in range）
+  milvus_015: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_016: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=CONFIRMED(HTTP语义恒真) trigger=HTTP 2xx + 业务错误码 且 契约/观测声称应拒绝（data is array[array[float]] AN
+  milvus_017: verdict_A=CONFIRMED(id+quote_ok) implied_verdict=DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_018: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_019: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+  milvus_020: verdict_A=REFUTED(id+quote_ok) implied_verdict=NOT_DEFECT | verdict_B=NOT_TRIGGERED() trigger=
+
+## 候选现象声称对照材料（第 4 查用，packet raw_observation/title 原文）
+  milvus_009: 候选现象声称（packet raw_observation 原文）： | ['[c1] search with nprobe=0 on IVF/autoindex -> http=200, code=0', '[c2] control: search with limit=0 -> http=200, code=65535']
+  milvus_010: 候选现象声称（packet raw_observation 原文）： | ['[c1] create with negative TTL -> http=200, code=0', '[c1_rb] describe collection after negative-TTL create -> http=200', '[c2] control: alter_properties with negative TTL -> http=200, code=1100']
+  milvus_011: 候选现象声称（packet raw_observation 原文）： | ['[c1] query with filter=null -> http=200, code=0, returned all rows', '[c2] query with filter omitted -> http=200, code=0, returned all rows', "[c3] control: query with filter='' -> http=200, code=0"]
+  milvus_012: 候选现象声称（packet raw_observation 原文）： | ['[c1] collections/list with dbName empty -> http=200, code=0', "[c2] control: query with filter='' -> http=200, code=100"]
+  milvus_013: 候选现象声称（packet raw_observation 原文）： | ['[c1] Request-Timeout=3.5 (float) header -> http=200, code=0', '[c2] Request-Timeout=abc (string) header -> http=200, code=0', '[c3] control: Request-Timeout=10 (integer) -> http=200, code=0']
+  milvus_014: 候选现象声称（packet raw_observation 原文）： | ['[c1] create collection with dim=32768 -> http=200, code=0', '[c2] control: create with dim=32769 -> http=200, code=65535']
+  milvus_015: 候选现象声称（packet raw_observation 原文）： | ['[c1] REST create_index on bare collection -> http=200, code=100', '[c2] SDK create_index after quick-create -> MilvusException code=65535 (message: CreateIndex failed: creating multiple indexes on same field is not supported)']
+  milvus_016: 候选现象声称（packet raw_observation 原文）： | ['[c1] HNSW search with ef=-1 -> http=200, code=0', '[c2] HNSW search with ef=0 -> http=200, code=0', '[c3] IVF_FLAT search with nprobe=0 -> http=200, code=0']
+  milvus_017: 候选现象声称（packet raw_observation 原文）： | ['[c1] aliases/list with collectionName empty -> http=200, code=0', '[c2] control: collections/describe with empty name -> http=200, code=1802']
+  milvus_018: 候选现象声称（packet raw_observation 原文）： | ['[c1] concurrent rename->dst and create(dst): rename -> http=200, code=0; create -> http=200, code=0']
+  milvus_019: 候选现象声称（packet raw_observation 原文）： | ['[c1] get_stats after insert+load -> http=200, code=0, rowCount=0', '[c1_q] query after insert+load -> http=200, code=0, returned 5 rows (id 0-4)']
+  milvus_020: 候选现象声称（packet raw_observation 原文）： | ['[c1_before] search before delete -> http=200, code=0, 10 results (id 0-9)', '[c1] search after deleting ids 1-5 -> http=200, code=0, returned ids [0,1,2,3,4,5,6,7,8,9]']
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/debate_logs/chain_verdicts_v9b.json + touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.16/debate_logs/chain_verdicts_v9b.json.done（不覆盖其他版本判词文件）
+
+## 汇报
+一行/case：<defect_id> verdict=… fp_src=… root_cause=… rework=y/n
+【目标 DB 容器】
+  milvus gRPC localhost:19530 (pymilvus) + REST v2 http://localhost:19530/v2/vectordb

@@ -1,0 +1,27 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单第二轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_027
+候选现象声称（packet raw_observation 原文）：
+['[c0] create with shardsNum=0 -> http=200, code=0', '[c1] create with shardsNum=-1 -> http=200, code=0', '[c2] create with shardsNum=65535 -> http=200, code=0']
+
+## 打回工单（第二轮，观测表述校准）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "[c0] create with shardsNum=0 -> http=200, code=0（等三条）",
+ "drift_point": "第一轮 rework 已证明 0/-1/65535 从未到达服务器（handler 只读 Params 嵌套，顶层 shardsNum 被 JSON binding 静默丢弃，实际送达 ShardNumDefault=1）。但 log_pattern 把发送值与响应写在同一行（'REQ2 create payload top-level shardsNum=0 -> http=200 code=0'），机械层按文本把 0 当作被接受值，与 quote 的下界断言构成矛盾触发。机械层只读文本——被接受的观测必须写被服务器实际处理的值。",
+ "targeted_instruction": "保持现有结论不变（script_error：参数未到达被消费域）。只校准 log_pattern 的 REQ/RESP 分离表述：REQ 行写发送 payload（含顶层 shardsNum=0/-1/65535，标注未到达服务器）；RESP 行写服务器实际处理并接受的值（ShardsNum=1 默认值）——RESP 行中不得出现 0/-1/65535 与 http=200 同行的写法。其余字段（cg 引用、violates=false、source_grounding handler_v2.go:2000-2006 证据）不动。",
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_027/evidence_chain/milvus_027.json.done
+
+## 汇报
+一行：milvus_027 done=<y/n> rework_applied=<y/n>

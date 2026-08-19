@@ -1,0 +1,403 @@
+{
+  "_doc": "Per-probe cleaned observations (threat-2 fix). Key '{vendor}_{num}' -> list of factual observation lines (case_id + action + raw result). Verdict language ('defect if'/'claim'/'FP note'/'expect'/'should'/'BUG'/'correct:') removed; all factual content (action, http status, code, response) preserved. gen_glm_prompts.py prefers this over raw load_log when the key is present. Reviewed individually 2026-08-13.",
+  "milvus_47767": [
+    "[c1] empty query vector -> MilvusException code=65535 (server message: ...vector type must be the same, field vector - type VECTOR_FLOAT, search info type VECTOR_SPARSE_U32_F32...)"
+  ],
+  "milvus_49844": [
+    "[c1] query with filter=null -> http=200, code=0, returned all rows",
+    "[c2] query with filter omitted -> http=200, code=0, returned all rows",
+    "[c3] control: query with filter='' -> http=200, code=0"
+  ],
+  "milvus_49928": [
+    "[c1] create collection with dim=32768 -> http=200, code=0",
+    "[c2] control: create with dim=32769 -> http=200, code=65535"
+  ],
+  "milvus_49929": [
+    "[c1] REST create_index on bare collection -> http=200, code=100",
+    "[c2] SDK create_index after quick-create -> MilvusException code=65535 (message: CreateIndex failed: creating multiple indexes on same field is not supported)"
+  ],
+  "milvus_50192": [
+    "[c1] concurrent rename->dst and create(dst): rename -> http=200, code=0; create -> http=200, code=0"
+  ],
+  "milvus_50193": [
+    "[c1] get_stats after insert+load -> http=200, code=0, rowCount=0",
+    "[c1_q] query after insert+load -> http=200, code=0, returned 5 rows (id 0-4)"
+  ],
+  "milvus_50194": [
+    "[c1_before] search before delete -> http=200, code=0, 10 results (id 0-9)",
+    "[c1] search after deleting ids 1-5 -> http=200, code=0, returned ids [0,1,2,3,4,5,6,7,8,9]"
+  ],
+  "milvus_50319": [
+    "[c1] search on never-loaded collection -> http=200, code=0"
+  ],
+  "milvus_50321": [
+    "[c1] first create -> http=200, code=0",
+    "[c1b] duplicate identical create -> http=200, code=0"
+  ],
+  "milvus_50322": [
+    "[c1] drop non-existent collection -> http=200, code=0"
+  ],
+  "milvus_50324": [
+    "[c1] insert 101 entities -> http=200, code=0, insertCount=101"
+  ],
+  "milvus_50325": [
+    "[c1] create collection with leading-underscore name -> http=200, code=0"
+  ],
+  "milvus_50351": [
+    "[c0] create with shardsNum=0 -> http=200, code=0",
+    "[c1] create with shardsNum=-1 -> http=200, code=0",
+    "[c2] create with shardsNum=65535 -> http=200, code=0"
+  ],
+  "milvus_50352": [
+    "[c1] create with metricType=empty -> http=200, code=0",
+    "[c2] create with consistencyLevel=None -> http=200, code=0",
+    "[c3] create with dimension=32769 -> http=200, code=65535"
+  ],
+  "qdrant_9364": [
+    "[c1] mixed batch (2 valid + 1 invalid) -> status=400, count 3->3"
+  ],
+  "qdrant_9421": [
+    "[setup] GET /cluster -> status=disabled",
+    "[c1] cluster recover in standalone -> status=500, body: Service internal error: Qdrant is running in standalone mode"
+  ],
+  "qdrant_9520": [
+    "[c1] create with shard_number=INT_MAX -> status=None (read timeout)",
+    "[server_health] GET / after INT_MAX create -> status=200",
+    "[c2] control: create with replication_factor=0 -> status=422, body: replication_factor: value 0 invalid, must be 1 or larger"
+  ],
+  "qdrant_9522": [
+    "[c1] lookup referencing non-existent collection -> status=200, 3 results",
+    "[c2] control: lookup referencing valid collection -> status=200"
+  ],
+  "qdrant_9525": [
+    "[c1] search with limit=-1 -> status=400, body: invalid value: integer `-1`, expected usize",
+    "[c2] search with score_threshold=string -> status=400, body: invalid type: string, expected f32",
+    "[c3] recommend with strategy=123 -> status=400, body: invalid type: integer `123`, expected string or map",
+    "[c4] scroll with limit=-1 -> status=400, body: invalid value: integer `-1`, expected usize",
+    "[c5] query with limit=-1 -> status=400, body: invalid value: integer `-1`, expected usize"
+  ],
+  "qdrant_9942": [
+    "[c1] GET VectorParams.size schema -> status=404 (schema=None)",
+    "[c2] create with size=70000 -> status=422, body: vectors.size: value 70000 invalid, must be from 1 to 65536"
+  ],
+  "qdrant_10127": [
+    "[c1] count match_any [red] exact=false -> 107",
+    "[c2] count match_any [red,blue] exact=false -> 192",
+    "[c3] count match_any all 5 values exact=false -> 337 (total=500)"
+  ],
+  "weaviate_11732": [
+    "[c1] POST schema with distance=null -> http=200, stored distance=cosine"
+  ],
+  "weaviate_11738": [
+    "[c1] POST schema with phoneNumber property -> http=200",
+    "[c2] POST object with phone.defaultCountry=ZZ -> http=200"
+  ],
+  "milvus_47636": [
+    "[setup] setup failed: DataNotMatchException code=1 (id field expected int64, got str)"
+  ],
+  "milvus_47763": [
+    "[c1] insert dynamic field names '123field'/'@field' -> http=200, code=0",
+    "[c1_q] query field '123field' -> http=200, code=65535, message: parse output field name failed: 123field",
+    "[c2] control: insert valid field name -> http=200, code=0",
+    "[c2_q] control: query valid field -> http=200, code=101, message: collection not loaded"
+  ],
+  "milvus_47766": [
+    "[c1] insert int into VARCHAR dynamic field -> http=200, code=0",
+    "[c1_q] query text_field -> http=200, code=0, data: id=1 text_field=hello, id=2 text_field=12345"
+  ],
+  "milvus_49059": [
+    "[c1] COSINE identical-vector search over 100 queries: max_distance=1.000000238418579, 11 queries with distance>1.0"
+  ],
+  "milvus_49823": [
+    "[c1] search with nprobe=0 on IVF/autoindex -> http=200, code=0",
+    "[c2] control: search with limit=0 -> http=200, code=65535"
+  ],
+  "milvus_49824": [
+    "[c1] first create -> http=200, code=0",
+    "[c1b] second identical create -> http=200, code=0",
+    "[c1c] collections/list -> http=200, count=1 (test_dup present)"
+  ],
+  "milvus_49843": [
+    "[c1] create with negative TTL -> http=200, code=0",
+    "[c1_rb] describe collection after negative-TTL create -> http=200",
+    "[c2] control: alter_properties with negative TTL -> http=200, code=1100"
+  ],
+  "milvus_49849": [
+    "[c1] duplicate-PK insert (overwrite) -> http=200, code=0, insertCount=1",
+    "[c1_rb] query id=1 after overwrite -> http=200, code=0, data: id=1 vector=[0.9,0.8,0.7,0.6]"
+  ],
+  "milvus_49850": [
+    "[c1] describe indexes without indexName -> http=200, code=1802",
+    "[c2] control: describe with indexName -> http=200, code=0"
+  ],
+  "milvus_49889": [
+    "[c1] collections/list with dbName empty -> http=200, code=0",
+    "[c2] control: query with filter='' -> http=200, code=100"
+  ],
+  "milvus_49890": [
+    "[c1] Request-Timeout=3.5 (float) header -> http=200, code=0",
+    "[c2] Request-Timeout=abc (string) header -> http=200, code=0",
+    "[c3] control: Request-Timeout=10 (integer) -> http=200, code=0"
+  ],
+  "milvus_49930": [
+    "[c1] HNSW search with ef=-1 -> http=200, code=0",
+    "[c2] HNSW search with ef=0 -> http=200, code=0",
+    "[c3] IVF_FLAT search with nprobe=0 -> http=200, code=0"
+  ],
+  "milvus_50018": [
+    "[c1] aliases/list with collectionName empty -> http=200, code=0",
+    "[c2] control: collections/describe with empty name -> http=200, code=1802"
+  ],
+  "milvus_50305": [
+    "[c1] search on never-loaded collection -> http=200, code=0"
+  ],
+  "milvus_50306": [
+    "[c1] first create -> http=200, code=0",
+    "[c1b] duplicate create -> http=200, code=0"
+  ],
+  "milvus_50307": [
+    "[c1] drop non-existent collection -> http=200, code=0"
+  ],
+  "milvus_50308": [
+    "[c1] delete with both filter and ids -> http=200, code=0"
+  ],
+  "milvus_50309": [
+    "[c1] create with consistencyLevel=InvalidLevel -> http=200, code=0",
+    "[c1_rb] describe collection -> http=200, code=0, consistencyLevel=Bounded"
+  ],
+  "milvus_50310": [
+    "[c1] insert 101 entities -> http=200, code=0, insertCount=101"
+  ],
+  "milvus_50311": [
+    "[c1] create with Unicode-only collection name -> http=200, code=1100"
+  ],
+  "milvus_50312": [
+    "[c1] rename collection to its own name -> http=200, code=1100"
+  ],
+  "milvus_50313": [
+    "[c1] search on never-loaded collection -> http=200, code=0",
+    "[c1q] query on never-loaded collection -> http=200, code=0"
+  ],
+  "milvus_50314": [
+    "[c1] first create -> http=200, code=0",
+    "[c1b] duplicate identical create -> http=200, code=0"
+  ],
+  "milvus_50315": [
+    "[c1] drop non-existent collection -> http=200, code=0"
+  ],
+  "milvus_50316": [
+    "[c1] delete with both filter and ids -> http=200, code=0"
+  ],
+  "milvus_50317": [
+    "[c1] insert 101 entities -> http=200, code=0, insertCount=101"
+  ],
+  "milvus_50318": [
+    "[c1] create collection with leading-underscore name -> http=200, code=0"
+  ],
+  "milvus_50323": [
+    "[c1] delete with both filter and ids -> http=200, code=0"
+  ],
+  "milvus_50353": [
+    "[c1] search with limit=0 -> http=200, code=65535",
+    "[c2] search 64-dim vector on dim=4 collection -> http=200, code=1801"
+  ],
+  "milvus_50354": [
+    "[c1] users/create with all-lowercase password 'abcdefgh' -> http=200, code=0",
+    "[c2] control: users/create with complex password 'ValidP@ss1' -> http=200, code=0",
+    "[c3] users/create with short password 'a' -> http=200, code=1100"
+  ],
+  "milvus_50355": [
+    "[c1] upsert without PK on autoID collection -> http=200, code=1804",
+    "[c2] control: insert without PK -> http=200, code=1804"
+  ],
+  "milvus_51084": [
+    "[c1] create with consistencyLevel=Invalid -> http=200, code=0",
+    "[c1_rb] describe collection -> http=200, code=0, consistencyLevel=Bounded"
+  ],
+  "milvus_51085": [
+    "[c1] create with vectorFieldType=InvalidVectorType -> http=200, code=0",
+    "[c1_rb] describe collection -> http=200, code=0, vector field type=FloatVector"
+  ],
+  "milvus_52307": [
+    "[c1] REST upsert bare string into JSON field -> http=200, code=0",
+    "[c1_q] query meta after REST upsert -> http=200, code=101, message: collection not loaded",
+    "[c1_grpc_get] gRPC get id=0 -> code=101, message: collection not loaded",
+    "[c1b] gRPC upsert plain string -> DataNotMatchException code=1, message: Invalid JSON string"
+  ],
+  "milvus_52308": [
+    "[c1] REST insert string PK '123' -> http=200, code=0",
+    "[c1_q] query id=123 -> http=200, code=101, message: collection not loaded",
+    "[c1_grpc] gRPC insert string PK -> DataNotMatchException code=1, message: id field should be int64, got str",
+    "[c2] REST insert non-numeric string PK 'abc' -> http=200, code=1804",
+    "[c2_q] query id=0 -> http=200, code=101, message: collection not loaded"
+  ],
+  "milvus_52309": [
+    "[c1] REST search with groupSize=0 -> http=200, code=0",
+    "[c1_grpc] gRPC search with group_size=0 -> MilvusException code=1100, message: metric type not match: expected=COSINE, actual=L2",
+    "[c2] REST search with groupSize=-1 -> http=200, code=0"
+  ],
+  "milvus_52310": [
+    "[c1] REST insert string '123' into INT64 field -> http=200, code=0",
+    "[c1_q] query int64_f -> http=200, code=101, message: collection not loaded",
+    "[c2] REST insert int 123 into VarChar field -> http=200, code=0",
+    "[c2_q] query varchar_f -> http=200, code=101, message: collection not loaded",
+    "[c3] REST insert string 'true' into BOOL field -> http=200, code=0",
+    "[c3_q] query bool_f -> http=200, code=101, message: collection not loaded"
+  ],
+  "milvus_52311": [
+    "[c1] REST search with groupByField=vector -> http=200, code=0",
+    "[c1_grpc] gRPC search with group_by=vector -> MilvusException code=1100, message: metric type not match: expected=COSINE, actual=L2"
+  ],
+  "milvus_52312": [
+    "[c1] REST upsert string PK '100' -> http=200, code=0",
+    "[c1_q] query id=100 after string-PK upsert -> http=200, code=0, data: id=100 vector=[0.9,0.9,0.9,0.9]",
+    "[c1_grpc] gRPC upsert string PK -> DataNotMatchException code=1, message: id field should be int64, got str"
+  ],
+  "milvus_52313": [
+    "[c1] REST insert plain-string into JSON field -> http=200, code=0",
+    "[c2] gRPC insert plain string -> DataNotMatchException code=1, message: Invalid JSON string",
+    "[c_q] query meta -> http=200, code=0, data: id=100 meta=plain_string",
+    "[c_grpc_get] gRPC get -> error: unexpected character (REST-written value unreadable)"
+  ],
+  "milvus_52314": [
+    "[c1] REST upsert string into DOUBLE field -> http=200, code=0",
+    "[c2] REST upsert string 'true' into BOOL field -> http=200, code=0",
+    "[c3] REST upsert int 1 into BOOL field -> http=200, code=0",
+    "[c4] REST upsert string '42' into INT16 field -> http=200, code=0"
+  ],
+  "milvus_52315": [
+    "[c1] REST insert string-encoded vector -> http=200, code=0",
+    "[c1_s] search after string-vector insert -> http=200, code=0, data: id=0 distance=1",
+    "[c1_grpc] gRPC insert string vector -> DataNotMatchException code=1, message: vector field should be float_vector, got str"
+  ],
+  "milvus_52325": [
+    "[c1] REST search with strictGroupSize=true, groupSize=5 -> http=200, code=0, returned 15 results",
+    "[c1_grpc] gRPC search with strict_group_size -> returned 15 results"
+  ],
+  "qdrant_9372": [
+    "[c1] create with max_query_limit=0 -> status=422",
+    "[c2] create with filter_max_conditions=0 -> status=200; filtered scroll -> status=400, body: Filter condition limit reached (1 > 0)",
+    "[c3] create with upsert_max_batchsize=0 -> status=200; upsert -> status=400, body: Limit exceeded 1 > 0 for upsert limit"
+  ],
+  "weaviate_11729": [
+    "[c1] control: POST schema with desiredCount=0 -> http=422",
+    "[c2] POST schema with desiredCount=-1 -> http=200"
+  ],
+  "weaviate_11730": [
+    "[c1] POST schema with tokenization='' -> http=200"
+  ],
+  "weaviate_11731": [
+    "[c1] POST schema with deletionStrategy='' -> http=200"
+  ],
+  "weaviate_11734": [
+    "[c1] POST schema with autoTenantCreation/Activation=null -> http=200, stored multiTenancyConfig: autoTenantActivation=False, autoTenantCreation=False, enabled=True"
+  ],
+  "weaviate_11736": [
+    "[c1] POST schema with blob property -> http=200",
+    "[c2] POST object blob_field=<100 'x' chars> -> http=200, stored_id=78e82acf-9560-45ca-a5c8-fa5fc566cb93"
+  ],
+  "weaviate_11739": [
+    "[c1] POST schema with phoneNumber property -> http=200",
+    "[c2] POST object with phone.input='+1-555-CALL-NOW' (alphabetic) -> http=200, body: phone.input='+1-555-CALL-NOW', internationalFormatted='+1 555-225-5669'"
+  ],
+  "weaviate_11741": [
+    "[c1] POST schema TestTenant (multi-tenancy enabled) -> http=200",
+    "[c2] control: create tenant with activityStatus='ACTIVE' -> http=200",
+    "[c3] create tenant with activityStatus='' -> http=200"
+  ],
+  "weaviate_11742": [
+    "[c1] POST schema with pq.bitCompression='true' (string) -> http=200, stored bitCompression=False"
+  ],
+  "weaviate_11743": [
+    "[c1] POST schema with text property -> http=200",
+    "[c2] POST object with raw NUL byte in text_field -> http=400, id=None"
+  ],
+  "weaviate_11745": [
+    "[c1] POST schema TestText -> http=200",
+    "[c2] POST object with raw 0x01 0x02 0x03 control bytes in text_field -> http=400"
+  ],
+  "weaviate_12041": [
+    "[c1] POST schema BoundaryTestBatchDelete -> http=200",
+    "[c2] batch delete with class but missing where -> http=500, body: validate: empty match.where clause",
+    "[c3] batch delete with empty match {} -> http=500, body: validate: empty match.class clause"
+  ],
+  "weaviate_11660": [
+    "[c1] GET /v1/objects?limit=-1 -> http=200, body: objects=[]"
+  ],
+  "weaviate_11661": [
+    "[c1] GET /v1/objects?limit=10001 (over QUERY_MAXIMUM_RESULTS=10000) -> http=500, body: list objects: query maximum results exceeded"
+  ],
+  "weaviate_11737": [
+    "[c1] POST schema with date property -> http=200",
+    "[c2] POST object with date_field='0000-01-01T00:00:00Z' (year 0000) -> http=200",
+    "[c3] POST object with date_field='1800-06-15T08:30:00Z' (pre-epoch) -> http=200"
+  ],
+  "weaviate_11740": [
+    "[c1] POST schema TestLimit -> http=200",
+    "[c2] control: GraphQL limit=0 -> http=200",
+    "[c3] GraphQL limit=-1 -> http=200",
+    "[c4] GraphQL limit=-100 -> http=200"
+  ],
+  "weaviate_11744": [
+    "[c1] POST schema TestText -> http=200",
+    "[c2] control: POST object with text 'hello world' -> http=200",
+    "[c3] POST object with text_field=lone surrogate (\\ud800) -> http=200"
+  ],
+  "weaviate_11981": [
+    "[c1] POST schema BatchVectorBugRepro -> http=200",
+    "[c2] control: singular POST with vector=[] -> http=200",
+    "[c3] batch with empty-vector item -> http=200, per-item statuses=None"
+  ],
+  "qdrant_9255": [
+    "[c1] filter color=red -> status=200, 4 results (ids=[10,2,8,4]), missing_payload_ids=[]"
+  ],
+  "qdrant_10120": [
+    "[c1] count exact=true is_empty -> status=200, count=40",
+    "[c2] count exact=false is_empty -> status=200, count=25 (exact=true gave 40)",
+    "[c3] control: count exact=false is_null -> status=200, count=0"
+  ],
+  "qdrant_10124": [
+    "[c1] count exact=true range 100..200 -> status=200, count=48",
+    "[c2] count exact=false range 100..200 -> status=200, count=65 (exact=true gave 48)",
+    "[c3] count exact=false gte=500 -> status=200, count=242",
+    "[c4] count exact=false lte=300 -> status=200, count=166"
+  ],
+  "qdrant_10125": [
+    "[c1] control: count exact=false kw=red -> status=200, count=130",
+    "[c2] count exact=false compound (kw=red AND NOT kw=blue) -> status=200, count=101 (single kw=red gave 130)",
+    "[c3] count exact=false cross-field (kw=red AND cat=x) -> status=200, count=63"
+  ],
+  "qdrant_10126": [
+    "[c1] count exact=true geo_radius=2000km -> status=200, count=20",
+    "[c2] count exact=false geo_radius=2000km -> status=200, count=127 (exact=true gave 20)",
+    "[c3] count exact=false geo_radius=5000km -> status=200, count=127",
+    "[c4] count exact=false geo_radius=10000km -> status=200, count=1000"
+  ],
+  "milvus_47729": [
+    "[c1] IVF search with nprobe=0 -> http=200, code=0, returned 10 results"
+  ],
+  "milvus_47752": [
+    "[c1] HNSW search with ef=0 -> http=200, code=0, returned 10 results"
+  ],
+  "milvus_47755": [
+    "[c1] search with descending IN range -> http=200, code=0, 1 result",
+    "[c2] search with empty IN range -> http=200, code=0, 0 results"
+  ],
+  "qdrant_9366": [
+    "[c1] baseline named-vector search -> status=200, 5 results",
+    "[c2] update id=3 image_vector -> status=200",
+    "[c3] delete named vectors ids 1,2 -> status=200, count=18",
+    "[c4] search after lifecycle -> status=200, 5 results"
+  ],
+  "qdrant_9524": [
+    "[c1] search with empty must [] -> status=None (read timeout, no response)",
+    "[c2] search with non-existent field -> status=None (read timeout, no response)",
+    "[c3] search with contradictory range (gt>lt) -> status=None (read timeout, no response)",
+    "[c4] search with null key -> status=None (read timeout)"
+  ],
+  "weaviate_11735": [
+    "[c1] POST schema with int property -> http=200",
+    "[c2] POST object with int_field=9223372036854775807 -> http=200, id=f0638bd9-a7c4-41b9-92ad-1893eeedb398",
+    "[c3] GET object int_field -> http=200, stored value=9223372036854776000"
+  ]
+}

@@ -1,0 +1,27 @@
+【任务】按你的 agent 规范（SOP）处理以下单个候选（重做工单第二轮）。
+
+SOP 文件（你的 agent 定义同源，可 Read 交叉核对）: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/agents/evidence-builder.md
+
+## 材料
+- SESSION_DIR: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029
+- 契约: C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/structured_contract.json
+- 源码 clone: C:/Users/11428/Desktop/vdb_src/milvus/v2.6.17
+
+## 候选
+defect_id=milvus_029
+候选现象声称（packet raw_observation 原文）：
+['[c1] search with limit=0 -> http=200, code=65535', '[c2] search 64-dim vector on dim=4 collection -> http=200, code=1801']
+
+## 打回工单（第二轮，约束引用校准）
+{
+ "type": "EVIDENCE_GAP",
+ "claim": "[c1] search with limit=0 -> http=200, code=65535; [c2] 64-dim on dim=4 -> http=200, code=1801",
+ "drift_point": "第一轮 rework 后 violates=false 正确（limit>0 与维度校验均在服务器生效、非法值被拒），但 constraint_id 仍引用 milvus_type_entities_search_001——该断言约束的是值域（limit>0/维度匹配），而链的真信号是错误形态（客户端错误以 HTTP 200+业务码返回而非 4xx）。契约中不存在错误形态（HTTP status code 语义）断言——引用的约束与真信号不匹配，机械层把 violates=false 与独立 HTTP 语义信号判为矛盾。",
+ "targeted_instruction": "contract_grounding.constraint_id 留空（契约无错误形态断言可引用），api_violates_assertion 置 null，note 写明：limit/dim 值域约束未违反（校验生效），真信号为错误形态问题（客户端错误以 HTTP 200+业务码返回，HTTP 层无状态码区分），契约无对应断言故不引用。execution_evidence 完整保留两条 HTTP 2xx+业务码观测与 http_semantics 记录（服务器自证消息原文），source_grounding 保留 validateLimit/维度校验源码证据。",
+}
+
+## 产出
+Write C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029/evidence_chain/milvus_029.json 后 Bash touch C:/Users/11428/Desktop/tvdb_sessions/sessions/milvus/2.6.17/milvus_029/evidence_chain/milvus_029.json.done
+
+## 汇报
+一行：milvus_029 done=<y/n> rework_applied=<y/n>
