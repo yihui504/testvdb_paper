@@ -80,15 +80,15 @@ def claim_anchor(did: str) -> str:
     return '候选现象声称：（无 packet raw_observation，按 log 全文自定主观测）'
 
 
-def mech_line(did: str, chain: str, contract: str) -> str:
-    """预跑两个机械脚本，产出一行注入文本。"""
+def mech_line(did: str, chain: str, contract: str, src_dir: str = None) -> str:
+    """预跑两个机械脚本，产出一行注入文本。src_dir 传入使规则4 走源码 grep（机械）。"""
     r = subprocess.run([sys.executable, GROUNDING, chain, contract],
                        capture_output=True, text=True, encoding='utf-8', errors='replace')
     try:
         a = json.loads(r.stdout)
     except Exception:
         a = {'verdict_A': 'RUN_ERROR', 'implied_verdict': 'GREY_ZONE', 'reason': r.stdout[:60]}
-    b = judge_physical(json.load(open(chain, encoding='utf-8')))
+    b = judge_physical(json.load(open(chain, encoding='utf-8')), src_dir=src_dir)
     trg = (b.get('trigger') or '')[:60].replace('\n', ' ')
     return ('%s: verdict_A=%s(%s) implied_verdict=%s | verdict_B=%s(%s) trigger=%s'
             % (did, a.get('verdict_A'), a.get('reason'), a.get('implied_verdict'),
@@ -213,7 +213,7 @@ def main():
         mech = []
         for d in dids:
             chain = '%s/%s/evidence_chain/%s.json' % (sess_root, d, d)
-            mech.append('  %s' % mech_line(d, chain, contract))
+            mech.append('  %s' % mech_line(d, chain, contract, src_dir=clone))
         anchors = '\n'.join('  %s: %s' % (d, claim_anchor(d).replace('\n', ' | ')) for d in dids)
         outs.append(AUDITOR_TMPL.format(
             sop=AUDITOR_SOP, sess_root=sess_root, contract=contract, intel=intel,

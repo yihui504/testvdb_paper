@@ -65,3 +65,21 @@ v7.1 配置（机械层预跑注入）再复跑两遍（v7.2/v7.3），测 audit
 - `rq2_v7x_three_runs.json`（三轮 71 案判词汇总）
 - `rq2_v7[123]_rework_state.json`
 - 本报告
+
+## 附：规则4 机械性改进（2026-08-20）
+
+mechbacktest 审查发现规则4（资源边界）的第二条件依赖 builder 的 `source_excerpt` 自由文本（grep "lower-bound only|no upper"），破坏机械性——builder 措辞方差会泄漏进机械层。
+
+**改法**（`check_physical_constraints.py`）：
+- `judge_physical` 加 `src_dir` 参数
+- 新增 `_grep_bound_in_source(src_dir, files, param_names)`：从链 `source_grounding.files_examined` 取源码文件，直接 grep 校验注解
+- 参数名从 `obs` 提取（如 shard_number），精准定位字段定义行上方 3 行内的 `range(min`/`range(max` 注解——避免同文件其他参数的 max 注解污染
+- 规则4：`src_dir` 提供时走源码 grep（机械）；未提供时回退旧 excerpt 逻辑（向后兼容）
+- `gen_dispatch_v71.py` 的 `mech_line` 传入 `src_dir=clone`
+
+**验证**：
+- 71 案同链对比（旧 excerpt 路径 vs 新源码 grep 路径）：**0 差异**——判定结果不变，v7.x 三轮指标不受影响
+- 去耦合：qdrant_015 的 `source_excerpt` 清空/改措辞，新路径仍 CONFIRMED；旧路径清空即 NOT_TRIGGERED
+- 结论：改进只提升机械性（规则4 真机械），不改判定。qdrant_015 的 CONFIRMED 不再依赖 builder 措辞巧合
+
+**注意**：`check_physical_constraints.py` 在插件 cache（`~/.claude/plugins/cache/testvdb/.../scripts/`），非 git 追踪。若采纳需同步到主插件仓库 `mftui/TestVDB`。
