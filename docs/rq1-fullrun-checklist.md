@@ -12,7 +12,7 @@
 | 3 | qdrant | v1.19.0 | 1 (10120) | [x] 2026-08-21 | 1/1 all_reached | 7/14 | 0（2 UNVERIFIED 含 GT 靶挂 PR#10116/10128 交叉印证） | 1h51m | R1 approximate_by_design 驳 → R2 规模矩阵+对照组翻案；reporter fallback×2 |
 | 4 | weaviate | v1.37.4 | 3 (11399,11400,11401) | [x] 2026-08-21 | 3/3 all_reached 单轮 | 10/11 | 1 NOVEL | ~2h | weaviate 首跑：spec 无 requestBody，源码 Go struct 补参数面；8 DEFECT 挂 PR#11439（GT 官方修复 PR）100% 重合 |
 | 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [x] 2026-08-21 | 3/3 all_reached 单轮 | 10/17 | 10（含 3 GT 链=本项目 phase3 已报 open issue，无 PR，gate 判 NOVEL 正确；7 全新） | ~1h55m 有效（跨 compact 中断：前半场 53m+恢复 62m；wall-clock 5h52m） | R1 跨 compact 中断后恢复补齐三族；GT 三 issue 均为 phase3 自报（yihui504 2026-06-16）；11732 盲评通过（同缺陷：GT=null 默认化 vs 本链=空串 Type1 持久化，同校验缺口/修复点；双口径均 3/3）；机制修复×2：injector/novelty_gate 双形态（d25438a）+ find_logs rglob（04d6e9d）；auditor 两段式首次全量 17 链一次过 |
-| 6 | weaviate | v1.38.1 | 1 (11729) | [ ] | /1 | / | / | — | |
+| 6 | weaviate | v1.38.1 | 1 (11729) | [x] 2026-08-22 | 1/1 all_reached 单轮双口径（exact 命中） | 17/19 | 17（含 1=phase3 自报 closed issue #11729，修复未进本版实测仍复现；#5 同族 4 条重现） | ~1h37m（23:23→01:01 单轮无中断） | 11729 closed 但 -1 仍 200（0 的 422 实为运行时非校验）；契约 desiredCount 需源码回填（spec 无 requestBody）；白名单+5 前缀（acb8f1c）首次实测命中；dos_002 两度 OOM 打挂容器（DoS 型缺陷自身）；reporter 首轮虚报→重派 17/17；asyncEnabled 判定漂移 #5=DEFECT→#6=NME 在案 |
 | 7 | weaviate | v1.38.2 | 1 (12041) | [ ] | /1 | / | / | — | |
 | 8 | milvus | v2.3.22 | 1 (47635) | [ ] | /1 | / | / | — | milvus 首跑：fetch 无规则（exit 3 不阻塞） |
 | 9 | milvus | v2.6.10 | 5 (47729,47752,47755,47763,47766) | [ ] | /5 | / | / | — | |
