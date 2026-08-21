@@ -11,7 +11,7 @@
 | ~~2~~ | ~~qdrant~~ | ~~v1.18.2~~ | ~~4~~ | pilot rerun 已跑 | 4/4 | 15/17 | 2 | —（不计入） | **不计入 15 版本**（拍板 2026-08-21：pilot 软门验证轮，正式 15 版本需修复后管线重跑该版本或直接跳过——执行序从 #1 v1.18.0 开始顺延） |
 | 3 | qdrant | v1.19.0 | 1 (10120) | [x] 2026-08-21 | 1/1 all_reached | 7/14 | 0（2 UNVERIFIED 含 GT 靶挂 PR#10116/10128 交叉印证） | 1h51m | R1 approximate_by_design 驳 → R2 规模矩阵+对照组翻案；reporter fallback×2 |
 | 4 | weaviate | v1.37.4 | 3 (11399,11400,11401) | [x] 2026-08-21 | 3/3 all_reached 单轮 | 10/11 | 1 NOVEL | ~2h | weaviate 首跑：spec 无 requestBody，源码 Go struct 补参数面；8 DEFECT 挂 PR#11439（GT 官方修复 PR）100% 重合 |
-| 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [ ] | /3 | / | / | — | |
+| 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [x] 2026-08-21 | 3/3 all_reached 单轮 | 10/17 | 10（含 3 GT 链=本项目 phase3 已报 open issue，无 PR，gate 判 NOVEL 正确；7 全新） | ~1h55m 有效（跨 compact 中断：前半场 53m+恢复 62m；wall-clock 5h52m） | R1 跨 compact 中断后恢复补齐三族；GT 三 issue 均为 phase3 自报（yihui504 2026-06-16）；⚠️11732 攻击值口径差异待盲评（GT=null 默认化 vs 本链=空串持久化）；机制修复×2：injector/novelty_gate 双形态（d25438a）+ find_logs rglob（04d6e9d）；auditor 两段式首次全量 17 链一次过 |
 | 6 | weaviate | v1.38.1 | 1 (11729) | [ ] | /1 | / | / | — | |
 | 7 | weaviate | v1.38.2 | 1 (12041) | [ ] | /1 | / | / | — | |
 | 8 | milvus | v2.3.22 | 1 (47635) | [ ] | /1 | / | / | — | milvus 首跑：fetch 无规则（exit 3 不阻塞） |
@@ -52,7 +52,7 @@
 - [ ] C5 retry 分类器 + feedback 派修（记录 坏/regen/修好/超限）
 - [ ] C6 候选提取 + L1（REFUTED 从 candidates.jsonl 移除）
 - [ ] C7 builder fan-out（≤12/批，>12 分批）
-- [ ] C8 auditor（≤12/批；NME>0 → 补证轮 ≤1 次）
+- [ ] C8 auditor（两段式固定：文本判定行+主进程落盘，见 chain-auditor.md「输出模式」节；NME>0 → 补证轮 ≤1 次）
 - [ ] C9 轮收口：pipeline_state 推进 + GT_HINT 计数核对（应递增或持平，**倒退=异常即停**）
 - [ ] C10 **容器内存监控**（pilot 教训）：`docker stats --no-stream`，>1.6G/2G → `docker restart` 后本轮脚本健康重跑
 - [ ] C11 终止判定：GT_HINT all_reached（x==y）→ 收口；否则满 4-6 轮（GT 密集版本可到 8）收口
