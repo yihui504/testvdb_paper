@@ -9,7 +9,7 @@
 |---|---|---|---|---|---|---|---|---|
 | 1 | qdrant | v1.18.0 | 2 (9039, 9045⚠️) | [x] 2026-08-21 | 1/2 inj · 2/2 语义 | 10/15 | 0（3 PR-covered） | 2h12m | 9045 静默丢弃路径已测达（panic 路径 standalone-unreachable 单列）；gate 3 COVERED_BY_PR(PR#9261/#4312×2) |
 | ~~2~~ | ~~qdrant~~ | ~~v1.18.2~~ | ~~4~~ | pilot rerun 已跑 | 4/4 | 15/17 | 2 | —（不计入） | **不计入 15 版本**（拍板 2026-08-21：pilot 软门验证轮，正式 15 版本需修复后管线重跑该版本或直接跳过——执行序从 #1 v1.18.0 开始顺延） |
-| 3 | qdrant | v1.19.0 | 1 (10120) | [ ] | /1 | / | / | — | |
+| 3 | qdrant | v1.19.0 | 1 (10120) | [x] 2026-08-21 | 1/1 all_reached | 7/14 | 0（2 UNVERIFIED 含 GT 靶挂 PR#10116/10128 交叉印证） | 1h51m | R1 approximate_by_design 驳 → R2 规模矩阵+对照组翻案；reporter fallback×2 |
 | 4 | weaviate | v1.37.4 | 3 (11399,11400,11401) | [ ] | /3 | / | / | — | weaviate 首跑：GitHub tag spec 规则验证 |
 | 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [ ] | /3 | / | / | — | |
 | 6 | weaviate | v1.38.1 | 1 (11729) | [ ] | /1 | / | / | — | |
@@ -33,6 +33,7 @@
 - [ ] A3 spec 预取：`py -3 scripts/fetch_openapi_spec.py {t} {v}`（milvus exit 3 = 无规则，记录后继续）
 - [ ] A4 容器起：`{T}_VERSION={v} docker compose -f docker/{t}.yml up -d --wait`（image tag 格式见 preflight 注：qdrant/milvus 带 v，weaviate 不带）
 - [ ] A5 镜像版本核验：`curl /` 或 version 端点确认运行版本 == 目标版本
+- [ ] A6 源码预 clone（fullrun#1 教训：NME 补证轮质量依赖精确版本源码）：`git clone --depth 1 --branch {v} https://github.com/{org}/{repo}.git {CACHE}/.{t}-src-{ver}`（qdrant/qdrant、milvus-io/milvus、weaviate/weaviate）；派 builder 时指明此路径
 
 ### B. 知识与契约（Step 4-6）
 - [ ] B1 派 extractor（绝对路径派发词 + 版本锚定）
