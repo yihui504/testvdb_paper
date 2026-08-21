@@ -5,23 +5,23 @@
 
 ## 执行顺序（每版本一个 checkbox，跑完勾选 + 填数字）
 
-| # | target | version | GT bugs | 状态 | reach | DEFECT/链 | NOVEL | 备注 |
+| # | target | version | GT bugs | 状态 | reach | DEFECT/链 | NOVEL | 时长 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| 1 | qdrant | v1.18.0 | 2 (9039, 9045⚠️) | [ ] | /2 | / | / | 9045=standalone-unreachable，分母单独分析 |
-| 2 | qdrant | v1.18.2 | 4 (9017,9421,9520,9522) | [x] pilot rerun 已跑 | 4/4 | 15/17 | 2 | **不计入全量**（pilot 软门验证轮）；若算作首版本需确认口径 |
-| 3 | qdrant | v1.19.0 | 1 (10120) | [ ] | /1 | / | / | |
-| 4 | weaviate | v1.37.4 | 3 (11399,11400,11401) | [ ] | /3 | / | / | weaviate 首跑：GitHub tag spec 规则验证 |
-| 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [ ] | /3 | / | / | |
-| 6 | weaviate | v1.38.1 | 1 (11729) | [ ] | /1 | / | / | |
-| 7 | weaviate | v1.38.2 | 1 (12041) | [ ] | /1 | / | / | |
-| 8 | milvus | v2.3.22 | 1 (47635) | [ ] | /1 | / | / | milvus 首跑：fetch 无规则（exit 3 不阻塞） |
-| 9 | milvus | v2.6.10 | 5 (47729,47752,47755,47763,47766) | [ ] | /5 | / | / | |
-| 10 | milvus | v2.6.12 | 1 (49059) | [ ] | /1 | / | / | |
-| 11 | milvus | v2.6.16 | 4 (49823,49889,49930,50018) | [ ] | /1→4 | / | / | |
-| 12 | milvus | v2.6.17 | 4 (49890,50323,50353,50354) | [ ] | /4 | / | / | 47635 race 同版复用 phase2 结论 |
-| 13 | milvus | v2.6.18 | 2 (49843,50355) | [ ] | /2 | / | / | 50355=doc-fix 型 |
-| 14 | milvus | v2.6.19 | 2 (51084,51085) | [ ] | /2 | / | / | |
-| 15 | milvus | v3.0.0 | 10 (52307-52315,52325) | [ ] | /10 | / | / | 最大单版本；预留双倍时长 |
+| 1 | qdrant | v1.18.0 | 2 (9039, 9045⚠️) | [x] 2026-08-21 | 1/2 inj · 2/2 语义 | 10/15 | 0（3 PR-covered） | 2h12m | 9045 静默丢弃路径已测达（panic 路径 standalone-unreachable 单列）；gate 3 COVERED_BY_PR(PR#9261/#4312×2) |
+| ~~2~~ | ~~qdrant~~ | ~~v1.18.2~~ | ~~4~~ | pilot rerun 已跑 | 4/4 | 15/17 | 2 | —（不计入） | **不计入 15 版本**（拍板 2026-08-21：pilot 软门验证轮，正式 15 版本需修复后管线重跑该版本或直接跳过——执行序从 #1 v1.18.0 开始顺延） |
+| 3 | qdrant | v1.19.0 | 1 (10120) | [ ] | /1 | / | / | — | |
+| 4 | weaviate | v1.37.4 | 3 (11399,11400,11401) | [ ] | /3 | / | / | — | weaviate 首跑：GitHub tag spec 规则验证 |
+| 5 | weaviate | v1.38.0 | 3 (11730,11732,11741) | [ ] | /3 | / | / | — | |
+| 6 | weaviate | v1.38.1 | 1 (11729) | [ ] | /1 | / | / | — | |
+| 7 | weaviate | v1.38.2 | 1 (12041) | [ ] | /1 | / | / | — | |
+| 8 | milvus | v2.3.22 | 1 (47635) | [ ] | /1 | / | / | — | milvus 首跑：fetch 无规则（exit 3 不阻塞） |
+| 9 | milvus | v2.6.10 | 5 (47729,47752,47755,47763,47766) | [ ] | /5 | / | / | — | |
+| 10 | milvus | v2.6.12 | 1 (49059) | [ ] | /1 | / | / | — | |
+| 11 | milvus | v2.6.16 | 4 (49823,49889,49930,50018) | [ ] | /1→4 | / | / | — | |
+| 12 | milvus | v2.6.17 | 4 (49890,50323,50353,50354) | [ ] | /4 | / | / | — | 47635 race 同版复用 phase2 结论 |
+| 13 | milvus | v2.6.18 | 2 (49843,50355) | [ ] | /2 | / | / | — | 50355=doc-fix 型 |
+| 14 | milvus | v2.6.19 | 2 (51084,51085) | [ ] | /2 | / | / | — | |
+| 15 | milvus | v3.0.0 | 10 (52307-52315,52325) | [ ] | /10 | / | / | — | 最大单版本；预留双倍时长 |
 
 **顺序原则**：qdrant（管线已验证）→ weaviate（验证 GitHub tag spec 路径）→ milvus（无 spec 规则，走 extractor 原生路径 + Step 4.5 降级警告）。首跑每家先 1 个版本稳定再继续。
 
@@ -37,7 +37,7 @@
 ### B. 知识与契约（Step 4-6）
 - [ ] B1 派 extractor（绝对路径派发词 + 版本锚定）
 - [ ] B2 覆盖率机械核对：`py -3 scripts/validate_doc_coverage.py {t} {v}` → doc_coverage_report.json 落盘；**记录 pct**
-- [ ] B3 pct < 60% → 先把 missing_endpoints 喂 extractor 补爬一轮再核对（阈值拍板见下）
+- [ ] B3 pct < 90% → 先把 missing_endpoints 喂 extractor 补爬一轮再核对（拍板 2026-08-21：阈值 90%）
 - [ ] B4 派 formalizer（骨架条目只登记不提参数）
 - [ ] B5 Step 5.5 机械回填：`py -3 scripts/enrich_contract_from_spec.py results/{t}/{v} --fill-missing-fields`
 - [ ] B6 passport 验证（enrich 已含重签，直接 verify 确认 PASS）
@@ -72,12 +72,14 @@
 4. 容器版本漂移 / 内存持续打满重启无效
 5. 单版本连续 2 轮零新候选且 GT_HINT 计数不动
 
-## 待拍板（跑首个版本前定）
-- [ ] B3 阈值 60% 是否合适（pilot rerun qdrant 97.3%；milvus 无 spec 时 pct=N/A 如何门控）
-- [ ] pilot rerun 的 qdrant v1.18.2 计不计入 15 版本（建议：计入，序号 2 已标；contract 是修复后管线产物）
-- [ ] reach 对齐口径：param 匹配（injector 语义）+ 人工 LLM 盲评复核（pilot 用的双确认）——全量沿用双确认还是仅 param 匹配 + 抽查
+## 已拍板（2026-08-21）
+- [x] B3 覆盖率阈值 = **90%**（milvus 无 spec 时 pct=N/A：记录后放行，门控降级为 B7 GT 参数面抽查）
+- [x] pilot rerun qdrant v1.18.2 **不计入 15 版本**（pilot 软门验证轮；正式清单跳过该版本）
+- [x] reach 对齐口径 = **双确认**（全量沿用 pilot 方式：injector param 匹配 + 人工 LLM 盲评复核，两个口径都记录进 summary.md）
+- [x] 新增指标：**总时长**（每版本记录：A1 起到 D7 止的 wall-clock，含轮次明细 R1..Rn 各耗时；这是 RQ1 效率维度的论文指标）
 
 ## 汇总口径（每版本收口时进 summary.md）
 - reach = chain_verdicts DEFECT 全集 ∩ gt.json param（injector _reached 语义：精确/容器前缀/多值拆分）
 - DEFECT/链/NME、NOVEL/COVERED_BY_PR/UNVERIFIED/BY_DESIGN、retry 四数、doc_coverage_pct、GT 参数面 X/Y
 - 9045（standalone-unreachable）单独报，不进 reach 分母
+- **总时长**：wall-clock（A1→D7）+ 各轮耗时明细；双确认两口径的 reach（injector param 匹配 / 人工 LLM 盲评）都记录
