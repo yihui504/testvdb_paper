@@ -61,7 +61,7 @@
   },
   {
    "defect_id": "boundary_limit_offset_008",
-   "verdict": "DEFECT",
+   "verdict": "NEEDS_MORE_EVIDENCE",
    "fp_evidence_source": null,
    "perspective_analysis": {
     "contract": {
@@ -84,7 +84,7 @@
    },
    "chain_broken_at": null,
    "root_cause_if_fp": null,
-   "rationale": "重锚成功消解R1 CONFLICT：新约束milvus_range_v2_query_limit_001引文为契约原文，A=CONFIRMED→聚合唯一DEFECT。limit=0/-1被200+code 200接受并全量返回（handler_v2.go:565 'Limit>0'静默丢弃），vein_query_limit0_002跨脚本互证，v1同参数65535拒绝对照在案。",
+   "rationale": "R1 原判恢复（R2 重审作废）：implied=CONFLICT 约束引用错位",
    "rework_order": null
   },
   {
@@ -282,7 +282,7 @@
   },
   {
    "defect_id": "semantic_load_state_07",
-   "verdict": "NOT_DEFECT",
+   "verdict": "NEEDS_MORE_EVIDENCE",
    "fp_evidence_source": "both",
    "perspective_analysis": {
     "contract": {
@@ -306,7 +306,7 @@
    },
    "chain_broken_at": null,
    "root_cause_if_fp": "approximate_by_design",
-   "rationale": "R2重锚后契约显式声明v2 create auto-load例外（handler_v2.go:1165无条件LoadCollection，官方test Times(6)固化），实测Loaded/100恰落例外域，行为==契约；A机械判NEUTRAL仅因引文含R2注释后缀非原文子串，灰区C=REFUTED定NOT_DEFECT。原DEFECT/NEEDS_MORE_EVIDENCE判定撤销。",
+   "rationale": "R1 原判恢复（R2 重审作废）：契约自冲突致 A=NEUTRAL",
    "rework_order": null
   },
   {
@@ -503,98 +503,13 @@
    "chain_broken_at": null,
    "root_cause_if_fp": null,
    "rationale": "更正：D 命中 SUPPORTS_NOT_DEFECT（契约明文记录该分歧为预期行为）→ 按聚合表 final=NOT_DEFECT；但 D 材料为契约转述而非 issue 级 developer_quote，置信降级。观测（同 payload 双面 autoID 相反）真实存在但 '契约如实记录的 by-design 是否算 defect' 不属链审计可裁——建议主进程人工复核面间一致性主张。"
-  },
-  {
-   "defect_id": "state_r2_release_inflight_004",
-   "verdict": "DEFECT",
-   "fp_evidence_source": null,
-   "perspective_analysis": {
-    "contract": {
-     "verdict_A": "NEUTRAL",
-     "agent_suspects_contract_wrong": false
-    },
-    "physical": {
-     "verdict_B": "CONFIRMED",
-     "objective_constraint_class": "HTTP语义恒真"
-    },
-    "behavioral": {
-     "verdict_C": "CONFIRMED"
-    },
-    "cognition": {
-     "verdict_D": "NO_SIGNAL",
-     "matched_pattern": null,
-     "developer_quote": null
-    },
-    "aggregation_applied": "GREY_ZONE → 机械B=CONFIRMED（HTTP 200+code 65535 非枚举码）→ DEFECT（采信机械触发，不得改判）"
-   },
-   "chain_broken_at": "log",
-   "root_cause_if_fp": null,
-   "rationale": "机械B触发HTTP语义恒真：release竞态下search返回200+65535（errUnexpected兜底,errors.go:153），不在envelope枚举{100,1802,1804}；lb_policy.go:188 delegator文案与claim逐字吻合。主观测raw未固化已如实降级（grade C/flaky），但机械触发无改判空间，竞态窄窗属现象本身。",
-   "rework_order": null
-  },
-  {
-   "defect_id": "state_r2_insert_search_visibility_005",
-   "verdict": "NOT_DEFECT",
-   "fp_evidence_source": "source",
-   "perspective_analysis": {
-    "contract": {
-     "verdict_A": "NEUTRAL",
-     "agent_suspects_contract_wrong": false
-    },
-    "physical": {
-     "verdict_B": "NEUTRAL",
-     "objective_constraint_class": "无",
-     "note": "Type4语义不一致，非参数接受非法值，不属四类客观约束"
-    },
-    "behavioral": {
-     "verdict_C": "REFUTED"
-    },
-    "cognition": {
-     "verdict_D": "NO_SIGNAL",
-     "matched_pattern": null,
-     "developer_quote": null
-    },
-    "aggregation_applied": "GREY_ZONE → B=NEUTRAL/D=NO_SIGNAL/C=REFUTED（源码显式by-design）→ NOT_DEFECT"
-   },
-   "chain_broken_at": null,
-   "root_cause_if_fp": "approximate_by_design",
-   "rationale": "meta.go:265 GetNumRowsOfCollection仅汇总已flush segment的num_rows，growing segment（可搜的50行）不计入——rowCount与搜索可见集分属datacoord/querynode两子系统，源码级by-design；四方复现（grade A）现象真实但聚合表C=REFUTED定NOT_DEFECT。契约疑义（未披露flush延迟语义）留主进程复核。",
-   "rework_order": null
-  },
-  {
-   "defect_id": "state_r2_upsert_delete_race_007",
-   "verdict": "DEFECT",
-   "fp_evidence_source": null,
-   "perspective_analysis": {
-    "contract": {
-     "verdict_A": "NEUTRAL",
-     "agent_suspects_contract_wrong": false
-    },
-    "physical": {
-     "verdict_B": "CONFIRMED",
-     "objective_constraint_class": "HTTP语义恒真"
-    },
-    "behavioral": {
-     "verdict_C": "CONFIRMED"
-    },
-    "cognition": {
-     "verdict_D": "NO_SIGNAL",
-     "matched_pattern": null,
-     "developer_quote": null
-    },
-    "aggregation_applied": "GREY_ZONE → 机械B=CONFIRMED（HTTP 200+code 65535+C++断言透出）→ DEFECT（采信机械触发）"
-   },
-   "chain_broken_at": null,
-   "root_cause_if_fp": null,
-   "rationale": "log:3-4逐字固化：并发delete返回200+65535且message透出C++ Assert宏实参'std::max(data_barrier,'与内部dml通道名；透出链全闭合（ExecExprVisitor.cpp:325→EasyAssert.h:122 #expr→FailureCStatus strdup逐字透传→lb_policy.go:188→65535）。结构保证的Type2泄露+Type3运行时失败，机械B触发采信。",
-   "rework_order": null
   }
  ],
  "summary": {
   "total": 21,
-  "defect": 15,
-  "not_defect": 5,
-  "needs_more_evidence": 1,
+  "defect": 12,
+  "not_defect": 3,
+  "needs_more_evidence": 3,
   "fp_evidence_source_distribution": {
    "doc": 3,
    "source": 2,
@@ -605,7 +520,8 @@
    "contract_misread": 2,
    "approximate_by_design": 3
   },
-  "note": "R2 收口主进程机械校正：条目实数 15/5/1（原 auditor summary 13/7/0 计数漂移）；vein_v1v2_autoid_005 字段=NME 而 rationale 文字倾向 NOT_DEFECT，保守取字段值"
+  "note": "VOIDED 2026-08-22: 见版本根 VOIDED.md"
  },
- "notes": "两条 NEEDS_MORE_EVIDENCE：boundary_limit_offset_008（A/B 冲突→rework 工单）、semantic_load_state_07（契约自冲突消解）。vein_v1v2_autoid_005 按聚合表 D=SUPPORTS_NOT_DEFECT 判 NOT_DEFECT 但带降置信与人工复核建议。rowCount 三链同根因各自独立判 DEFECT（B/D 兜底，A 均 quote_mismatch 灰区）。"
+ "notes": "两条 NEEDS_MORE_EVIDENCE：boundary_limit_offset_008（A/B 冲突→rework 工单）、semantic_load_state_07（契约自冲突消解）。vein_v1v2_autoid_005 按聚合表 D=SUPPORTS_NOT_DEFECT 判 NOT_DEFECT 但带降置信与人工复核建议。rowCount 三链同根因各自独立判 DEFECT（B/D 兜底，A 均 quote_mismatch 灰区）。",
+ "total_chains": 18
 }

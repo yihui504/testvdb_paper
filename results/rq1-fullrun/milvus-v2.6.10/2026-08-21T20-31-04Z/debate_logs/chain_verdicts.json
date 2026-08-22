@@ -1,353 +1,151 @@
 {
-  "auditor": "chain-auditor (两批 12+9 合并)",
-  "audited_at": "2026-08-21T21:30:17Z",
-  "target": "milvus",
-  "version": "v2.6.10",
-  "total_chains": 21,
-  "verdicts": [
-    {
-      "defect_id": "boundary_quick_schema_conflict_003",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A=CONFIRMED机械定案：dimension+schema同传code:0，违反互斥断言1100；handler_v2.go无冲突校验(validation_absent)"
-    },
-    {
-      "defect_id": "boundary_name_len_255_007",
-      "verdict": "NOT_DEFECT",
-      "fp": "source",
-      "rationale": "A=REFUTED：'_'长8合规于len<=255；源码util.go:1331首字符显式允许'_'，by_design_in_source"
-    },
-    {
-      "defect_id": "boundary_shards_16_010",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A=CONFIRMED机械定案：numShards=17/1000/0/-1全code:0；注：REST顶层参数被丢弃实为1分片，描述截断取证缺失记疑义"
-    },
-    {
-      "defect_id": "boundary_insert_dimmismatch_012",
-      "verdict": "NOT_DEFECT",
-      "fp": "both",
-      "rationale": "R2 重锚：ghost 为合法名，动态字段收纳是文档化功能(by_design_in_source)；dim/pk 对照全 1804 正确拒，封死 R1 错锚（NME 消解）"
-    },
-    {
-      "defect_id": "boundary_consistency_enum_015",
-      "verdict": "NOT_DEFECT",
-      "fp": "source",
-      "rationale": "GREY区：''/None走convertConsistencyLevel默认Bounded(断言自注default)；非空非法串全1100；C=REFUTED(by_design)"
-    },
-    {
-      "defect_id": "boundary_idtype_autoaid_020",
-      "verdict": "NOT_DEFECT",
-      "fp": "source",
-      "rationale": "GREY区：'int64'与''均为handler_v2.go显式case别名分支，真非法枚举1100拒绝；B=NEUTRAL、C=REFUTED(by_design)"
-    },
-    {
-      "defect_id": "boundary_load_double_021",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A=CONFIRMED机械定案：未load search code:0空结果违state_002(应101)；双脚本互证grade A；源码TopK==0降级为抗辩记录不翻案"
-    },
-    {
-      "defect_id": "semantic_efrecall_06",
-      "verdict": "NOT_DEFECT",
-      "fp": "both",
-      "rationale": "GREY区：契约verified条目自注'REST不校验透传'，字符串ef与int结果一致；generateSearchParams %v透传by_design；C=REFUTED"
-    },
-    {
-      "defect_id": "semantic_filterdiag_04",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A=CONFIRMED机械定案：filter引用不存在字段code:0违'valid boolean expr'；dyn集合NULL匹配by_design抗辩与静态1100对照记疑义不翻案"
-    },
-    {
-      "defect_id": "semantic_limitdefault_08",
-      "verdict": "NEEDS_MORE_EVIDENCE",
-      "fp": "-",
-      "rationale": "implied=CONFLICT：violates=False(范围校验生效65535拒绝)与机械B冲突；rework EVIDENCE_GAP要求对准65535码泛化真信号"
-    },
-    {
-      "defect_id": "semantic_loadcycle_03",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A=CONFIRMED机械定案：create后未load即search code:0应101；grade A独立脚本与021同机制互证；源码降级路径不翻案"
-    },
-    {
-      "defect_id": "boundary_topk_limit_013",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "机械B=CONFIRMED(数值下界)采信不得改判；注：trigger引-1被接受与log(-1->65535拒)不符，且None默认100为契约002允许，疑义留主进程复核"
-    },
-    {
-      "defect_id": "state_load_lifecycle_01",
-      "verdict": "NOT_DEFECT",
-      "fp": "doc",
-      "rationale": "机械A=REFUTED（id存在引文一致，violates=False）：断言域为search|query且二者实测101；refresh_load 65535属契约覆盖缺口非断言违反"
-    },
-    {
-      "defect_id": "state_drop_recreate_05",
-      "verdict": "NOT_DEFECT",
-      "fp": "both",
-      "rationale": "A=NEUTRAL(quote_mismatch)灰区；B未触发非客观类；C=REFUTED（drop_collection_task.go:61 alias前置拒绝为显式设计）且契约断言域是load state与alias正交"
-    },
-    {
-      "defect_id": "vein_unknown_field_silent_accept_1",
-      "verdict": "NOT_DEFECT",
-      "fp": "source",
-      "rationale": "A灰区；B=NEUTRAL（非数值/枚举/互斥/类型类）；schema.go:468动态字段回落+parser_visitor显式调用为by_design_in_source，C=REFUTED"
-    },
-    {
-      "defect_id": "vein_insert_type_coercion_2",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A灰区机械B未触发但LLM兜底类型恒真：Int64列接受非数字字符串5静默落库读回int，同列bool串1804被拒证明校验能力存在"
-    },
-    {
-      "defect_id": "vein_searchparams_silent_default_3",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A灰区；B兜底类型恒真：数值参数ef接受true/16等六非法值全部code:0且结果与默认逐位同；utils.go:2076纯透传无键校验"
-    },
-    {
-      "defect_id": "vein_query_limit_semantic_drift_4",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A灰区；B=CONFIRMED数值下界：query limit=0/-5被当Unlimited全表、offset=-5当0（grade A），同值search侧65535拒绝；handler_v2.go:1074 '>0'过滤替代校验"
-    },
-    {
-      "defect_id": "vein_v1_internal_path_leak_5",
-      "verdict": "NEEDS_MORE_EVIDENCE",
-      "fp": "-",
-      "rationale": "A灰区；B=NEUTRAL（信息泄露非四客观类）；C=CONFIRMED四层包装零脱敏但无by_design源证，D无锚点——按保守分支走主进程复核"
-    },
-    {
-      "defect_id": "vein_outputfields_silent_drop_6",
-      "verdict": "NOT_DEFECT",
-      "fp": "source",
-      "rationale": "A灰区；B=NEUTRAL；translateOutputFields EnableDynamicField分支为显式设计C=REFUTED；control FAIL仅为filter分支对照失效，主观测outputField静默丢已覆盖且与根因一致"
-    },
-    {
-      "defect_id": "vein_hybrid_subsearch_params_7",
-      "verdict": "DEFECT",
-      "fp": "-",
-      "rationale": "A灰区；B兜底类型恒真：子搜索ef=abc/-3静默替换默认，同请求rerank非法值65535（function_score.go:194白名单）——同请求校验不对称"
-    },
-    {
-      "defect_id": "boundary_r2b_rowfield_names_01",
-      "verdict": "DEFECT",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "NEUTRAL",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "CONFIRMED",
-          "objective_constraint_class": "枚举闭集"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "NO_SIGNAL",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "A=NEUTRAL(GAP)→灰区；B=CONFIRMED(LLM兜底)→DEFECT"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "机械A constraint_absent(回滚契约无行键命名断言)；insert '1abc'/'my-key'/'a b'/'$'/中文 全 200+code:0 而 readback 65535 'parse output field name failed'——写侧 utils.go:592 无校验接受了系统自身读侧 Plan.g4:139 Identifier 文法闭域之外的键，写入即不可点名检索，非品味问题。",
-      "rework_order": null
-    },
-    {
-      "defect_id": "boundary_r2b_dyn_crosstype_02",
-      "verdict": "DEFECT",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "NEUTRAL",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "CONFIRMED",
-          "objective_constraint_class": "HTTP语义恒真"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "NO_SIGNAL",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "A=NEUTRAL(GAP)→灰区；机械B=CONFIRMED→DEFECT（采信不改判）"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "check_physical_constraints 触发 HTTP语义恒真（同 key 跨 6 类型全 200+code:0 零拒绝信号，upsert Int→String 改写 code:0）；fillDynamicRow 按行独立转换无跨行比对源码确证。契约无该域断言+by-design 抗辩存留记入疑义，供主进程人工复核。",
-      "rework_order": null
-    },
-    {
-      "defect_id": "boundary_r2b_upsert_rowface_03",
-      "verdict": "DEFECT",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "CONFIRMED",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "CONFIRMED",
-          "objective_constraint_class": "类型恒真"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "NO_SIGNAL",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "verdict_A=CONFIRMED（机械 implied_verdict=DEFECT）→ final=DEFECT"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "check_chain_grounding: milvus_type_entities_insert_001 引文一致且 api_violates_assertion=true——upsert Int64 pk as string → 200+code:0 (upsertIds:[1]) 违反行类型断言；utils.go:442 json.Number 显式 permissive cast 源码定位；vector as string 对照组被 1804 拒绝非对称佐证。",
-      "rework_order": null
-    },
-    {
-      "defect_id": "boundary_r2b_insert_param_confusion_04",
-      "verdict": "NOT_DEFECT",
-      "fp_evidence_source": "doc",
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "REFUTED",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "NEUTRAL",
-          "objective_constraint_class": "无"
-        },
-        "behavioral": {
-          "verdict_C": "WEAK_REFUTED"
-        },
-        "cognition": {
-          "verdict_D": "SUPPORTS_NOT_DEFECT",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "verdict_A=REFUTED（机械 implied_verdict=NOT_DEFECT）→ final=NOT_DEFECT"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": "mundane_api_semantics",
-      "rationale": "milvus_behavioral_envelope_003 引文一致且未被违反：结构错误对照 1801/1802 精确复现契约；partitionNames/timeout 字符串 code:0 属未知/错型参数静默丢弃（request struct 未声明），契约无参数级类型断言，D 侧 BDP-4 印证 200 信封为维护者明示 by-design。",
-      "rework_order": null
-    },
-    {
-      "defect_id": "semantic_r2b_dynfield_readback_03",
-      "verdict": "NEEDS_MORE_EVIDENCE",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "NEUTRAL",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "NEUTRAL",
-          "objective_constraint_class": "无"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "NO_SIGNAL",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "A=NEUTRAL(GAP)→灰区；B=NEUTRAL，D=NO_SIGNAL，C=CONFIRMED→保守 NEEDS_MORE_EVIDENCE"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "get(*) 200+code:0 完整返回 meta.details/camélia vs query 点名同字段 65535——util.go:1612 通配分支绕过 ParseIdentifier 的读写不对称 grade A 证据成立；但现象是同域双分支不一致而非接受闭域外值，不落任何客观约束类，契约回滚版无读路径一致性断言可锚定。",
-      "rework_order": {
-        "type": "EVIDENCE_GAP",
-        "claim": "get(*) 可读 vs query 点名 65535（点号/Unicode 字段）",
-        "chain_covered": "同一现象，双分支读写不对称已取证",
-        "drift_point": "无漂移；缺契约/文档锚点——回滚契约无 get/query 读路径一致性断言，灰区无法定案",
-        "targeted_instruction": "补一轮：在线核验 milvus.io 2.6 文档对 outputFields 标识符字符集的声称（若文档点名支持点号/Unicode 字段则 C 侧可升格）；否则补 query 侧 error 文案与 Plan.g4 文法的官方文档对应关系，供 A 侧锚点"
-      }
-    },
-    {
-      "defect_id": "semantic_r2b_nprobe_diag_05",
-      "verdict": "DEFECT",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "NEUTRAL",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "CONFIRMED",
-          "objective_constraint_class": "HTTP语义恒真"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "SUPPORTS_NOT_DEFECT",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "A=NEUTRAL(GAP)→灰区；机械B=CONFIRMED→DEFECT（采信不改判，D 不能推翻 B）"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "searchParams 未知键 'nprobes'/空串均 200+code:0 且正常返回结果（VERDICT 0/6），拼写错误零提示；同端点 limit 越界有显式文案（milvus_range_entities_search_001 基线），诊断粒度不一致。BDP-4 表明 200 信封 by design，但本链违规在参数校验诊断缺失而非信封形态。",
-      "rework_order": null
-    },
-    {
-      "defect_id": "semantic_r2b_nprobe_domain_01",
-      "verdict": "DEFECT",
-      "fp_evidence_source": null,
-      "perspective_analysis": {
-        "contract": {
-          "verdict_A": "NEUTRAL",
-          "agent_suspects_contract_wrong": false
-        },
-        "physical": {
-          "verdict_B": "CONFIRMED",
-          "objective_constraint_class": "类型恒真"
-        },
-        "behavioral": {
-          "verdict_C": "CONFIRMED"
-        },
-        "cognition": {
-          "verdict_D": "NO_SIGNAL",
-          "matched_pattern": "null",
-          "developer_quote": null
-        },
-        "aggregation_applied": "A=NEUTRAL(GAP，候选标签 type_coercion 为派发侧噪声)→灰区；机械B=CONFIRMED→DEFECT（采信不改判）"
-      },
-      "chain_broken_at": null,
-      "root_cause_if_fp": null,
-      "rationale": "nprobe=4.5（float 传 int 参数）/-1/0/INT_MAX 全 200+code:0 且结果与 baseline nprobe=4 完全一致——透传层无校验源码确证，域外值无声无效化；类型恒真触发客观成立。疑义记录：-1 结果与基线一致符合 HNSW 负值 sentinel 先例的可能性，knowhere 消费层不在树，建议主进程人工复核该单点。",
-      "rework_order": null
-    }
-  ],
-  "summary": {
-    "total": 28,
-    "defect": 15,
-    "not_defect": 10,
-    "needs_more_evidence": 3,
-    "fp_evidence_source_distribution": {
-      "doc": 1,
-      "source": 0,
-      "both": 0,
-      "behavior": 0
-    },
-    "root_cause_distribution": {
-      "mundane_api_semantics": 1
-    },
-    "note": "R2-rerun：原 R2 六链 tainted 作废；R2b 盲注 7 链追加（5 DEFECT / 1 NOT_DEFECT / 1 NEEDS_MORE_EVIDENCE）"
+ "auditor": "chain-auditor (两批 12+9 合并)",
+ "audited_at": "2026-08-21T21:30:17Z",
+ "target": "milvus",
+ "version": "v2.6.10",
+ "total_chains": 21,
+ "verdicts": [
+  {
+   "defect_id": "boundary_quick_schema_conflict_003",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A=CONFIRMED机械定案：dimension+schema同传code:0，违反互斥断言1100；handler_v2.go无冲突校验(validation_absent)"
+  },
+  {
+   "defect_id": "boundary_name_len_255_007",
+   "verdict": "NOT_DEFECT",
+   "fp": "source",
+   "rationale": "A=REFUTED：'_'长8合规于len<=255；源码util.go:1331首字符显式允许'_'，by_design_in_source"
+  },
+  {
+   "defect_id": "boundary_shards_16_010",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A=CONFIRMED机械定案：numShards=17/1000/0/-1全code:0；注：REST顶层参数被丢弃实为1分片，描述截断取证缺失记疑义"
+  },
+  {
+   "defect_id": "boundary_insert_dimmismatch_012",
+   "verdict": "NOT_DEFECT",
+   "fp": "both",
+   "rationale": "R2 重锚：ghost 为合法名，动态字段收纳是文档化功能(by_design_in_source)；dim/pk 对照全 1804 正确拒，封死 R1 错锚（NME 消解）"
+  },
+  {
+   "defect_id": "boundary_consistency_enum_015",
+   "verdict": "NOT_DEFECT",
+   "fp": "source",
+   "rationale": "GREY区：''/None走convertConsistencyLevel默认Bounded(断言自注default)；非空非法串全1100；C=REFUTED(by_design)"
+  },
+  {
+   "defect_id": "boundary_idtype_autoaid_020",
+   "verdict": "NOT_DEFECT",
+   "fp": "source",
+   "rationale": "GREY区：'int64'与''均为handler_v2.go显式case别名分支，真非法枚举1100拒绝；B=NEUTRAL、C=REFUTED(by_design)"
+  },
+  {
+   "defect_id": "boundary_load_double_021",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A=CONFIRMED机械定案：未load search code:0空结果违state_002(应101)；双脚本互证grade A；源码TopK==0降级为抗辩记录不翻案"
+  },
+  {
+   "defect_id": "semantic_efrecall_06",
+   "verdict": "NOT_DEFECT",
+   "fp": "both",
+   "rationale": "GREY区：契约verified条目自注'REST不校验透传'，字符串ef与int结果一致；generateSearchParams %v透传by_design；C=REFUTED"
+  },
+  {
+   "defect_id": "semantic_filterdiag_04",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A=CONFIRMED机械定案：filter引用不存在字段code:0违'valid boolean expr'；dyn集合NULL匹配by_design抗辩与静态1100对照记疑义不翻案"
+  },
+  {
+   "defect_id": "semantic_limitdefault_08",
+   "verdict": "NEEDS_MORE_EVIDENCE",
+   "fp": "-",
+   "rationale": "implied=CONFLICT：violates=False(范围校验生效65535拒绝)与机械B冲突；rework EVIDENCE_GAP要求对准65535码泛化真信号"
+  },
+  {
+   "defect_id": "semantic_loadcycle_03",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A=CONFIRMED机械定案：create后未load即search code:0应101；grade A独立脚本与021同机制互证；源码降级路径不翻案"
+  },
+  {
+   "defect_id": "boundary_topk_limit_013",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "机械B=CONFIRMED(数值下界)采信不得改判；注：trigger引-1被接受与log(-1->65535拒)不符，且None默认100为契约002允许，疑义留主进程复核"
+  },
+  {
+   "defect_id": "state_load_lifecycle_01",
+   "verdict": "NOT_DEFECT",
+   "fp": "doc",
+   "rationale": "机械A=REFUTED（id存在引文一致，violates=False）：断言域为search|query且二者实测101；refresh_load 65535属契约覆盖缺口非断言违反"
+  },
+  {
+   "defect_id": "state_drop_recreate_05",
+   "verdict": "NOT_DEFECT",
+   "fp": "both",
+   "rationale": "A=NEUTRAL(quote_mismatch)灰区；B未触发非客观类；C=REFUTED（drop_collection_task.go:61 alias前置拒绝为显式设计）且契约断言域是load state与alias正交"
+  },
+  {
+   "defect_id": "vein_unknown_field_silent_accept_1",
+   "verdict": "NOT_DEFECT",
+   "fp": "source",
+   "rationale": "A灰区；B=NEUTRAL（非数值/枚举/互斥/类型类）；schema.go:468动态字段回落+parser_visitor显式调用为by_design_in_source，C=REFUTED"
+  },
+  {
+   "defect_id": "vein_insert_type_coercion_2",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A灰区机械B未触发但LLM兜底类型恒真：Int64列接受非数字字符串5静默落库读回int，同列bool串1804被拒证明校验能力存在"
+  },
+  {
+   "defect_id": "vein_searchparams_silent_default_3",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A灰区；B兜底类型恒真：数值参数ef接受true/16等六非法值全部code:0且结果与默认逐位同；utils.go:2076纯透传无键校验"
+  },
+  {
+   "defect_id": "vein_query_limit_semantic_drift_4",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A灰区；B=CONFIRMED数值下界：query limit=0/-5被当Unlimited全表、offset=-5当0（grade A），同值search侧65535拒绝；handler_v2.go:1074 '>0'过滤替代校验"
+  },
+  {
+   "defect_id": "vein_v1_internal_path_leak_5",
+   "verdict": "NEEDS_MORE_EVIDENCE",
+   "fp": "-",
+   "rationale": "A灰区；B=NEUTRAL（信息泄露非四客观类）；C=CONFIRMED四层包装零脱敏但无by_design源证，D无锚点——按保守分支走主进程复核"
+  },
+  {
+   "defect_id": "vein_outputfields_silent_drop_6",
+   "verdict": "NOT_DEFECT",
+   "fp": "source",
+   "rationale": "A灰区；B=NEUTRAL；translateOutputFields EnableDynamicField分支为显式设计C=REFUTED；control FAIL仅为filter分支对照失效，主观测outputField静默丢已覆盖且与根因一致"
+  },
+  {
+   "defect_id": "vein_hybrid_subsearch_params_7",
+   "verdict": "DEFECT",
+   "fp": "-",
+   "rationale": "A灰区；B兜底类型恒真：子搜索ef=abc/-3静默替换默认，同请求rerank非法值65535（function_score.go:194白名单）——同请求校验不对称"
   }
+ ],
+ "summary": {
+  "total": 28,
+  "defect": 10,
+  "not_defect": 9,
+  "needs_more_evidence": 2,
+  "fp_evidence_source_distribution": {
+   "doc": 1,
+   "source": 0,
+   "both": 0,
+   "behavior": 0
+  },
+  "root_cause_distribution": {
+   "mundane_api_semantics": 1
+  },
+  "note": "VOIDED 2026-08-22: 见版本根 VOIDED.md"
+ }
 }
