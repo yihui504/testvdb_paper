@@ -1,37 +1,43 @@
-# Defect 12: entities/upsert — 非法动态字段名 upsert 静默接受，同值 create-schema 通道 1701 正确拒（双通道分叉）
+# Defect 12: Dynamic field cross-type drift within a column — upsert rewrites Int to String with zero rejection signal
 
 ## Metadata
-- Defect ID: TESTVDB-MILVUS-12
-- defect_id (script): boundary_r2_dynfield_name_upsert_03
-- Type: Type1_IllegalSuccess
-- Endpoint: POST /v2/vectordb/entities/upsert（对照 collections/create schema）
-- Param: fieldName（param_name: fieldName）
-- Novelty: NOVEL（gate, no_known_hits, confidence HIGH）
-- Evidence Weight: STRONG
+- Defect ID: boundary_r2b_dyn_crosstype_02
+- Type: Type4_StateLogicViolation（跨行/跨请求状态一致性）
+- Param / Trigger: 同一动态字段 key 跨 6 种类型连续写入（Int/Float/Bool/String/Array/Object），及 upsert 将 Int 改写为 String
+- Novelty: NOVEL
 
 ## Reproduction (curl)
-```bash
+```
+# 1. write same dynamic key with 6 different types across requests — all accepted
+curl -s -X POST "http://localhost:19530/v2/vectordb/entities/insert" \
+  -H "Content-Type: application/json" \
+  -d '{"collectionName":"<r2b_col>","data":[{"id":1,"vector":[...],"meta":42}]}'      # → 200 code:0
+#   ... repeat with "meta": 3.14 / true / "s" / [1,2] / {"k":1}                    # → 200 code:0 each
+
+# 2. upsert rewrites the field to a different type — accepted
 curl -s -X POST "http://localhost:19530/v2/vectordb/entities/upsert" \
   -H "Content-Type: application/json" \
-  -d '{"collectionName":"<enableDynamicField=true>","data":[{"id":300,"123field":"v"}]}'
+  -d '{"collectionName":"<r2b_col>","data":[{"id":1,"vector":[...],"meta":"now-a-string"}]}'
+# → HTTP 200, {"code":0, ...}
 ```
 
 ## Expected vs Actual
-- Expected: 动态字段名 ^[A-Za-z_][A-Za-z0-9_]*$，非法应拒（同 create-schema 通道行为）
-- Actual: `upsert dyn field '123field' -> ok=True raw={"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[300]}}`；'@field'→[301]、'my-field'→[302] 同 code:0
-- 对照组（同值 create schema fieldName）：`'123field' -> ok=False raw={"code":1701,"message":"Invalid field name: 123field. The first character of a field name must be an underscore or letter.: field name invalid[field=123field]"}`；'@field'/'my-field' 均 1701
+- Expected: a schema-ful system either enforces per-key type stability across rows/requests, or documents and signals the reinterpretation; type-changing upsert at minimum produces a warning or a typed readback contract.
+- Actual: same key across 6 types all 200/code:0 with zero rejection signal; upsert Int→String rewrite returns code:0 silently. No cross-row type comparison exists anywhere in the write path.
 
 ## Evidence Chain
-- Ring 1 (Contract Clause 契约条款) constraint_id: milvus_type_field_name_rules_001
-  - assertion: `field names: ^[A-Za-z_][A-Za-z0-9_]*$, length<=255, enforced at insert-time (dynamic fields included)`；api_violates_assertion=true
-- Ring 2 (Document Reference 文档引用) doc_verification: DOC_VERIFIED（同 11 号链锚，limitations.md，R2 补锚已核）
-- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: debate_logs/boundary_r2_dynfield_name_upsert_03.py（grade B；与 01 号链构成跨通道复现）
-- Log: debate_logs/output_boundary_r2_dynfield_name_upsert_03.log
+- Ring 1 (Contract Clause 契约条款) constraint_id: GAP（回滚版无动态字段跨行类型断言）
+- Ring 2 (Document Reference 文档引用) doc_verification: NOT_VERIFIED（R2b 盲注轮无在线核验；by-design 抗辩存留记入疑义，供主进程人工复核）
+- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: scripts/boundary_r2b_dyn_crosstype_02.py
+- Log: debate_logs/output_boundary_r2b_dyn_crosstype_02.log
+- 源码: `fillDynamicRow` 按行独立转换、无跨行/跨请求类型比对——源码确证零校验路径。
 
-### 源码 文件:行号+摘录
-- handler_v2.go insert/upsert 共用 checkAndSetData（L1234-1252 调用；utils.go L592-621 动态字段分支 mapKey 无校验）
-- 对照 internal/proxy/util.go validateFieldName L369-381：`if firstChar != '_' && !isAlpha(firstChar) { "The first character of a field name must be an underscore or letter." }` / `if c != '_' && !isAlpha(c) && !isNumber(c) { "Field name can only contain numbers, letters, and underscores." }`——log 中 1701 消息产生点
-- 双通道分叉定位：create-schema 走 validateFieldName（1701 拒），upsert 动态路径零校验（validation_absent）
+## Verdict Aggregation
+- A (contract): NEUTRAL — GAP
+- B (physical): CONFIRMED — objective_constraint_class: HTTP语义恒真
+- C (behavioral): CONFIRMED
+- D (cognition): NO_SIGNAL
+- Final: A=NEUTRAL(GAP)→灰区；机械B=CONFIRMED→DEFECT（采信不改判）
 
 ## Impact
-同一命名规则在同一系统两通道一有一无：schema 声明通道正确拒（1701），upsert 动态字段通道静默收（code:0）。upsert 写入的非法名字段同样落入不可回读状态（同 Defect 11 后果），且 upsert 的替换语义使已有合法数据被覆盖时混入死数据的风险更高。
+同一字段键的类型可被任意后续写入（含 upsert）静默改写，类型漂移无任何信号；下游按类型消费该字段的客户端会在无告警情况下读到改型后的数据，属状态一致性/静默数据改型问题。R2b 纯盲注独立发现，2026-08-22。

@@ -1,41 +1,42 @@
-# Defect 13: entities/insert — 动态字段类型一致性失守：string→int 四格矩阵第二笔全部 code:0（期望 1100）
+# Defect 13: Upsert accepts Int64 primary key as JSON string — permissive scalar cast violates row-type assertion
 
 ## Metadata
-- Defect ID: TESTVDB-MILVUS-13
-- defect_id (script): boundary_r2_dyn_type_matrix_04
-- Type: Type1_IllegalSuccess
-- Endpoint: POST /v2/vectordb/entities/insert
-- Param: dataType（param_name: dataType）
-- Novelty: NOVEL（gate, no_known_hits, confidence HIGH）
-- Evidence Weight: MODERATE_STRONG
+- Defect ID: boundary_r2b_upsert_rowface_03
+- Type: Type1_IllegalSuccess（类型非法成功）
+- Param / Trigger: upsert 行将 Int64 主键以字符串形式传入（`"id": "1"`）
+- Novelty: NOVEL
 
 ## Reproduction (curl)
-```bash
-# 第一笔建立 dynf 为 string：{"id":1,"dynf":"hello"}
-# 第二笔同字段传 int：
-curl -s -X POST "http://localhost:19530/v2/vectordb/entities/insert" \
+```
+curl -s -X POST "http://localhost:19530/v2/vectordb/entities/upsert" \
   -H "Content-Type: application/json" \
-  -d '{"collectionName":"<enableDynamicField=true>","data":[{"id":2,"dynf":1}]}'
+  -d '{"collectionName":"<r2b_col>","data":[{"id":"1","vector":[...]}]}'   # id is Int64 in schema
+# → HTTP 200, {"code":0, "data":{"upsertIds":[1], ...}}
+
+# control: vector as string is rejected
+curl -s -X POST "http://localhost:19530/v2/vectordb/entities/upsert" \
+  -H "Content-Type: application/json" \
+  -d '{"collectionName":"<r2b_col>","data":[{"id":1,"vector":"[0.1, ...]"}]}'
+# → rejected with code 1804
 ```
 
 ## Expected vs Actual
-- Expected: 已建立的动态字段以不兼容类型再次 insert => code==1100（Entity Schema Consistency）
-- Actual（四格矩阵全 code:0）：
-  - `dynf string('hello') -> int(1): second insert ok=True raw={"code":0,"cost":0,"data":{"insertCount":1,"insertIds":[2]}}`
-  - string('hello')→int(-5)：code:0 [2]；string('')→int(1)：code:0 [2]；string('')→int(-5)：code:0 [2]（含空串边界）
+- Expected: 行类型断言要求数值标量按声明类型传入；Int64 主键以字符串传入应被类型校验拒绝。
+- Actual: upsert 接受字符串形式的 Int64 主键，返回 200/code:0 且 `upsertIds:[1]`；对照组 vector 以字符串传入被 1804 拒绝——同一请求内类型校验非对称，证明校验能力存在但对标量放行。
 
 ## Evidence Chain
-- Ring 1 (Contract Clause 契约条款) constraint_id: milvus_type_dynamic_field_consistency_001
-  - assertion: `dynamic field type consistency: second insert with incompatible type for established dynamic field -> 1100`；api_violates_assertion=true（四组合均不兼容且均 code:0）
-- Ring 2 (Document Reference 文档引用) doc_verification: DOC_VERIFIED（insert-update-delete.md Entity Schema Consistency——同一 Collection 内 Entities 具有相同属性（字段名/类型）；R2 补锚 quoted/verified）
-- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: debate_logs/boundary_r2_dyn_type_matrix_04.py（grade B；与 05 号链同模式互证）
-- Log: debate_logs/output_boundary_r2_dyn_type_matrix_04.log
+- Ring 1 (Contract Clause 契约条款) constraint_id: milvus_type_entities_insert_001（引文一致，api_violates_assertion=true）
+- Ring 2 (Document Reference 文档引用) doc_verification: VERIFIED_VIA_CHAIN_GROUNDING（check_chain_grounding: 引文一致且断言被违反）
+- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: scripts/boundary_r2b_upsert_rowface_03.py
+- Log: debate_logs/output_boundary_r2b_upsert_rowface_03.log
+- 源码: `utils.go:442` — `json.Number` 显式 permissive cast，字符串标量被宽松转换为声明类型，源码定位。
 
-### 源码 文件:行号+摘录
-- httpserver/utils.go L598-609：`switch mapValue.Type { case gjson.String: reallyData[mapKey] = mapValueStr; case gjson.Number: if strings.Contains(mapValue.Raw, ".") { cast.ToFloat64 } else { cast.ToInt64 } }`——仅按当笔请求 JSON 类型 cast，不对照已建立的动态字段类型
-- anyToColumns L947-957：动态字段 marshal 成整行 JSON（`m[name] = candi.v.Interface(); bs, _ := json.Marshal(m)`）；L1202-1217 以匿名 DataType_JSON 列（IsDynamic:true, FieldName:""）下发
-- 约束声称的 1100 拒绝点在 insert 路径不存在（validation_absent）
-- 抗辩记档：动态字段 JSON 承载模型允许异构值（by_design 疑义），但机械 A 定案不翻案
+## Verdict Aggregation
+- A (contract): CONFIRMED — 机械 implied_verdict=DEFECT
+- B (physical): CONFIRMED — objective_constraint_class: 类型恒真
+- C (behavioral): CONFIRMED
+- D (cognition): NO_SIGNAL
+- Final: verdict_A=CONFIRMED（机械 implied_verdict=DEFECT）→ final=DEFECT
 
 ## Impact
-同一动态字段可在不同行持有互不兼容类型（string/int/bool 混杂），文档承诺的 Entity Schema Consistency 在动态字段面失效。下游消费方对动态字段做类型假设（如 int 求和）时读到混合类型将产生运行时错误或静默计算错误，数据质量退化不可发现。
+主键类型约束可被字符串绕过，"1" 与 1 被视为同一行，弱类型客户端的错误数据形态被静默接纳而非在入口拒绝；vector/标量校验不对称使开发者对 REST 类型保证产生错误预期。R2b 纯盲注独立发现，2026-08-22。

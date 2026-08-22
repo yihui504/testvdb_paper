@@ -1,41 +1,41 @@
-# Defect 14: entities/upsert — upsert 与 insert 跨通道三向混型动态字段全部 code:0（约束 1100 拒绝点不存在）
+# Defect 14: searchParams unknown keys silently ignored — misspelled 'nprobes' yields zero diagnostics
 
 ## Metadata
-- Defect ID: TESTVDB-MILVUS-14
-- defect_id (script): boundary_r2_dyn_type_upsert_05
-- Type: Type1_IllegalSuccess
-- Endpoint: POST /v2/vectordb/entities/upsert（+ entities/insert 跨通道）
-- Param: dataType（param_name: dataType）
-- Novelty: NOVEL（gate, no_known_hits, confidence HIGH）
-- Evidence Weight: MODERATE_STRONG
+- Defect ID: semantic_r2b_nprobe_diag_05
+- Type: Type2_PoorDiagnostics（参数校验诊断缺失）
+- Param / Trigger: `searchParams` 未知键 `'nprobes'`（正确为 `nprobe`）及空串键
+- Novelty: NOVEL
 
 ## Reproduction (curl)
-```bash
-# upsert 建立 string 基线：{"id":1,"dynf":"s"} -> code:0 upsertIds:[1]
-# 混型 upsert：
-curl -s -X POST "http://localhost:19530/v2/vectordb/entities/upsert" \
+```
+curl -s -X POST "http://localhost:19530/v2/vectordb/entities/search" \
   -H "Content-Type: application/json" \
-  -d '{"collectionName":"<enableDynamicField=true>","data":[{"id":2,"dynf":1}]}'
+  -d '{"collectionName":"<r2b_col>","data":[[...]],
+       "searchParams":{"nprobes":16, "": 4},          # misspelled key + empty-string key
+       "limit":10}'
+# → HTTP 200, {"code":0, ...normal results...}
+
+# baseline: same endpoint, out-of-range limit gets an explicit error message
+# (milvus_range_entities_search_001) — diagnostic granularity is inconsistent
 ```
 
 ## Expected vs Actual
-- Expected: 已建立动态字段不兼容类型 upsert => 1100（约束 endpoint 域含 upsert）
-- Actual（三向混型全 code:0）：
-  - `upsert string->int -> ok=True raw={"code":0,"cost":0,"data":{"upsertCount":1,"upsertIds":[2]}}`
-  - insert 建 int → `upsert int->string -> ok=True raw={"code":0,...,"upsertIds":[3]}`（跨通道）
-  - `upsert establish bool -> ok=True`；`upsert bool->int -> ok=True code:0 upsertIds:[5]`
-  - array 互混组合 log 未逐字取证（partial，如实记）
+- Expected: 拼写错误的参数键（'nprobes' vs 'nprobe'）至少产生警告或被拒绝；同端点其他参数越界（limit）有显式文案，诊断粒度应一致。
+- Actual: `searchParams` 未知键 'nprobes' 与空串键均 200/code:0 且正常返回结果（VERDICT 0/6 触发），拼写错误零提示；searchParams 整体静默丢弃/忽略，用户以为调优生效实际参数从未生效。
 
 ## Evidence Chain
-- Ring 1 (Contract Clause 契约条款) constraint_id: milvus_type_dynamic_field_consistency_001
-  - assertion: `dynamic field type consistency: second insert with incompatible type for established dynamic field -> 1100`；api_violates_assertion=true（upsert 通道 + 跨通道均违反）
-- Ring 2 (Document Reference 文档引用) doc_verification: DOC_VERIFIED（同 13 号链锚，insert-update-delete.md Entity Schema Consistency）
-- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: debate_logs/boundary_r2_dyn_type_upsert_05.py（grade B；与 matrix_04 互证）
-- Log: debate_logs/output_boundary_r2_dyn_type_upsert_05.log
+- Ring 1 (Contract Clause 契约条款) constraint_id: GAP（回滚版无 searchParams 键校验断言）
+- Ring 2 (Document Reference 文档引用) doc_verification: NOT_VERIFIED（R2b 盲注轮无在线核验；BDP-4 表明 200 信封 by design，但本链违规在参数校验诊断缺失而非信封形态）
+- Ring 3 (Actual Behavior 实际行为, HTTP Response 见 log) Script: scripts/semantic_r2b_nprobe_diag_05.py
+- Log: debate_logs/output_semantic_r2b_nprobe_diag_05.log
+- 源码: searchParams 透传路径无未知键校验（无键白名单/黑名单检查）；对照同端点 limit 越界的显式报错文案（milvus_range_entities_search_001 基线）。
 
-### 源码 文件:行号+摘录
-- upsert 与 insert 在 HTTP 层共用 checkAndSetData + anyToColumns（handler_v2.go L1236/L1247；utils.go L598-609 类型 cast 无历史对照，L947-957+L1202-1217 JSON 列下发）
-- internal/proxy/task_upsert.go：可见显式校验仅 validatePartitionTag（L192、L929）——task 侧有校验钩子位但仅限分区名，无动态字段类型一致性校验（validation_absent）
+## Verdict Aggregation
+- A (contract): NEUTRAL — GAP
+- B (physical): CONFIRMED — objective_constraint_class: HTTP语义恒真
+- C (behavioral): CONFIRMED
+- D (cognition): SUPPORTS_NOT_DEFECT（200 信封 by design，不推翻 B）
+- Final: A=NEUTRAL(GAP)→灰区；机械B=CONFIRMED→DEFECT（采信不改判，D 不能推翻 B）
 
 ## Impact
-类型混用不仅限于单通道：insert 建立的类型可被 upsert 覆盖为不兼容类型（string↔int、bool→int 三向），且 upsert 的替换语义使同一 id 的字段类型在生命周期内漂移。约束声称的 1100 拒绝点在 upsert/跨通道路径均不存在，schema 一致性承诺全面失守。
+参数拼写错误（性能调优最常见的低级错误）被静默吞掉，用户以为 nprobe 生效而实际搜索始终用默认参数——性能问题不可诊断；同端点对 limit 有显式诊断、对 searchParams 零诊断的不一致加剧迷惑。R2b 纯盲注独立发现，2026-08-22。

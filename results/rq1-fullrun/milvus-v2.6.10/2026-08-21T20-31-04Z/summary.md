@@ -77,3 +77,23 @@ NOT_DEFECT 含跨轮翻案：rowCount 概念未涉及（2.6 正常）/COSINE 相
 5. R1→R2 GT 轨迹 2/5→5/5（契约补强+定向轮）
 
 SUMMARY-OK
+
+
+---
+
+## ⚠️ R2-rerun 更新（2026-08-22 用户拍板 B，本节覆盖上文 R2 相关记录）
+
+**原 R2 六链 tainted 作废**：两条契约断言（字段命名规则/动态字段一致性）系查完 GT issue 47763/47766 后补（GT 语义传导）+ semantic 派发词点名 nprobe——六链移 tainted-r2-guided/ 留证，契约回滚（type_constraints 11→9）重签。
+
+**R2b 纯盲注重跑结果**（派发词零点名，hint 2/5）：
+- 28 链 15 DEFECT / 10 NOT / 3 NME；verify **15/15 CONFIRMED**
+- **GT 5/5 all_reached 全干净**（injector+盲评一致）：
+  - 47752 ef ← R1 vein_searchparams（六非法值含 0）
+  - 47755 filter ← R1 semantic_filterdiag（盲评同参数面子形态差注记保留）
+  - 47763 fieldName ← **R2b boundary_r2b_rowfield_names_01**（非法行键 insert code:0 ‖ 回读 65535——盲注独立命中）
+  - 47766 dataType ← **R2b boundary_r2b_dyn_crosstype_02**（跨 6 型+upsert 改写——盲注独立命中）
+  - 47729 nprobe ← **R2b semantic_r2b_nprobe_domain_01**（4.5/-1/0/INT_MAX 无效化——盲注独立命中）
+- **方法论结论**：三个 GT 参数在无引导契约+零点名派发下由 agent 常规边界矩阵独立挖到——盲注管线有效性实证（与 #11 重跑互为印证）
+- 新发现：get(*)-vs-query 点名读写路径不一致（NME 回炉）/searchParams 拼写错误静默忽略/upsert 标量强转/请求级未知键丢弃
+
+**修订总表**：Total 28 链 | DEFECT 15 | NOT 10 | NME 3 | NOVEL 15 | verify 15/15 | GT 5/5 双口径 | 时长修订 +~1h（重跑）

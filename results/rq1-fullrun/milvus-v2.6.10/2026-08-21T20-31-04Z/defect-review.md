@@ -1,13 +1,13 @@
 # Defect Review — unknown
 
 **Session**: 2026-08-21T20-31-04Z
-**Verified**: 16 defect reports
+**Verified**: 15 defect reports
 
 ## Summary
 
 | Status | Count |
 |--------|-------|
-| CONFIRMED | 16 |
+| CONFIRMED | 15 |
 | FALSE_POSITIVE | 0 |
 | NEEDS_IMPROVEMENT | 0 |
 
@@ -23,27 +23,23 @@
 
 ### defect-11.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) - 5 illegal dynamic field names accepted at insert`
+- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess / asymmetric row-key handling)`
 
 ### defect-12.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) - illegal fieldName accepted: create=[] upsert=['123field', '@field', 'my-f`
+- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess / dynamic field cross-type)`
 
 ### defect-13.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) - dynamic field type consistency not enforced`
+- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess / upsert type confusion)`
 
 ### defect-14.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess)`
+- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type2_PoorDiagnostics) — searchParams error quality 0/6: [('nprobes', True, 0), ('nprobe empty st`
 
 ### defect-15.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) - illegal resource names accepted: [('partition', '1bad'), ('partition', 'm`
-
-### defect-16.md — CONFIRMED
-- **Reason**: Evidence complete, log verdicts consistent
-- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) � string nprobe='4' silently accepted (coerced) via searchParams passthroug`
+- **Log Verdict**: `VERDICT: DEFECT_FOUND (Type1_IllegalSuccess) — out-of-domain nprobe values silently accepted: [(4.5, [0, 1, 2, 3, 4]), (`
 
 ### defect-2.md — CONFIRMED
 - **Reason**: Evidence complete, log verdicts consistent
