@@ -33,8 +33,9 @@
 ## 单版本 SOP（每版本逐步勾选）
 
 ### A. 前置（每版本 ~10 min）
-- [ ] A1 `gt.json` 拷入：`cp .paperpilot/phase3/gt/{t}/{v}/gt.json {CACHE}/results/{t}/{v}/gt.json`
-- [ ] A2 清旧缓存（跨版本禁缓存 #8）：删 `{CACHE}/results/{t}/{v}/` 下 structured_contract.json / raw_knowledge.md / doc_coverage_report.json / 各 session 目录
+> **A0 批量预完成（2026-08-23 会话核查+处置，全 15 版统一）**：A1 gt.json 15 版已预拷并逐字校验 SYNC；A2 旧缓存已清（qdrant v1.18.2 契约/知识遗物已删，gt.json 保留）；A6 源码 15 版双位就位（vdb_src 全 15 + cache dot-src 全 15：11 junction 链到 vdb_src + qdrant v1.19.0/weaviate v1.38.1/milvus v2.6.18 独立 clone）；intel 三 vendor 三件套归位 `{CACHE}/intelligence/`（cognition=tvdb_sessions 锚点版 2/13/1，threat_model=带 defect_criteria 护栏版，bug_shapes=strategy_hints 版）且 threat_model_injector 三 vendor 原生解析通过；deepseek-devreviewer 异物目录已移出 cache（留档 results/preserved-intel-sources/）。**A1/A2/A6 逐版本执行时按此核验即可不重复做；A3/A4/A5 仍逐版本执行。**
+- [x] A1 `gt.json` 拷入：`cp .paperpilot/phase3/gt/{t}/{v}/gt.json {CACHE}/results/{t}/{v}/gt.json`（2026-08-23 批量预完成，15 版 SYNC）
+- [x] A2 清旧缓存（跨版本禁缓存 #8）：删 `{CACHE}/results/{t}/{v}/` 下 structured_contract.json / raw_knowledge.md / doc_coverage_report.json / 各 session 目录（2026-08-23 全量核清，后续新跑版本自然无残留）
 - [ ] A3 spec 预取：`py -3 scripts/fetch_openapi_spec.py {t} {v}`（milvus exit 3 = 无规则，记录后继续）
 - [ ] A4 容器起：`{T}_VERSION={v} docker compose -f docker/{t}.yml up -d --wait`（image tag 格式见 preflight 注：qdrant/milvus 带 v，weaviate 不带）
 - [ ] A5 镜像版本核验：`curl /` 或 version 端点确认运行版本 == 目标版本
