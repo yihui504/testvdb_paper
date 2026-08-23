@@ -1,0 +1,1068 @@
+
+==========================================================================================
+[#8ab] agent-a65f639eabc8128d1.jsonl (mtime 08-22 12:10)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+三族联合任务（state+semantic+vein）：milvus v2.6.18（fullrun#13 R1，纯盲注）。
+
+环境：
+- 容器 v2.6.18。REST `Authorization: Bearer root:Milvus`（19530）；healthz :9091；code:0 成功
+- Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.18\2026-08-22T03-36-20Z\
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.18\structured_contract.json
+- 源码：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2618
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/2）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+⚠️ 2.6 特性：code:0 成功；建前删；VERDICT 冒号格式。
+
+三族分工（自行判断优先级）：
+**state（3 单元）**：fields+add 向量字段后的数据/索引状态一致性；alter properties 生效时序（属性变更后实际行为改变的延迟）；upsert 幂等性深挖（autoID 语义相关状态——同参数据 upsert 的 id 语义/重复 upsert 行为，契约有 Type4 assertion 可验证）
+**semantic（4 单元）**：upsert 语义正确性（upsert 后数据可见性/与 insert 的等价性/pk 处理语义——用户 pk vs 服务端生成的行为矩阵）；fields+add 后旧数据新字段 null 语义；ttl/属性语义（设置后实际过期行为——若可短周期验证）；错误诊断质量
+**vein（3 条，vein_scripts\）**：2.6.18 新代码路径成熟度；grant_privilege_v2 修复回归（#12 的 RBAC 僵尸角色在本版是否仍现）；同参数跨端点行为差；对照组+源码定位
+
+纪律：每脚本配 meta（param 必填）；实际执行过再报。
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a49845e4c096aab81.jsonl (mtime 08-22 12:16)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+两段任务（先 builder 后 auditor，最终消息给判定行）：
+
+**Step 1（builder）**：为 milvus v2.6.18 session R1 的 7 条链建证据链。
+Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.18\2026-08-22T03-36-20Z
+契约：results\milvus\v2.6.18\structured_contract.json（48 constraints）；源码 .milvus-src-2618
+
+7 链：
+1. boundary_fieldcount_binary_11（debate_logs）— collections/create 接受 5 向量字段并持久化（契约 max 4，range_create_003）
+2. boundary_fieldsadd_caps_13 — fields+add 在已有 4 向量字段集合上加第 5 个 code:0 持久化（同上限新路径绕过，range_fields_add_001）
+3. boundary_name_shards_10 — numShards=17/0 创建接受但 readback shardsNum=1（静默钳制非拒绝；range_create_005 预期拒——注意 #12 判过同参数 DEFECT[REST 未接线]，本版行为变化为"接线但钳制"？源码核对 ddl_callbacks）
+4. boundary_props_querymode_06 — 有索引集合同值 alter query_mode code:0（契约 querymode_001 预期 702——只挡真变更不挡同值 NOP；#12 同款已判 DEFECT 跨版本重现）
+5. state_upsert_autoid_003（debate_logs）— autoID=true 同参数两次 upsert 生成两个新 id（契约 Type4 assertion 记录的语义——violates 待判：契约已载则 by-design 抗辩）
+6. vein_param_xendpoint_010（vein_scripts）— **v2 upsert autoID 集合接受用户 pk 但静默丢弃**（code:0，upsertIds=服务端 id，用户 pk 100 不可寻址）vs v1 同 payload 1100 "cannot upsert an autoID collection"——跨面语义分歧+静默 pk 改写
+7. vein_rbac_v2_regression_009（vein_scripts）— grant/revoke_privilege_v2（含 v1）全 65535；源码三链（service.go:130 auth 仅启动装配→handler wrapper 不转发→impl.go:5622 无条件要求）；etcd 运行时开关无效（无补救）；#12 僵尸角色在本版仍现
+
+每链四类证据（A 契约 / B log 逐字 / C 对照 / D 源码 文件:行号）+ evidence_weight，写入 evidence_chain\。
+
+**Step 2（auditor）**：三查+四视角终审 7 链（机械脚本：C:\Users\11428\Desktop\testvdb4exp\scripts\check_chain_grounding.py）。容器运行中可自测（19530 Bearer root:Milvus）。
+
+⚠️ 输出模式：最终消息只输出 7 行判定行 + 写入 debate_logs\chain_verdicts.json（新建，total_chains=7）：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<...> rationale="<≤60字>"
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a12c18ecb9478ef9e.jsonl (mtime 08-22 12:19)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+证据链独立重审（判定独立性修复）：milvus v2.6.17 session 的 R2 四链此前由建链 agent 自审（流程违规）——你作为独立 chain-auditor 重新终审。你只判定，不建链不改链。
+
+链目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.17\2026-08-22T01-39-12Z\evidence_chain\
+机械判定脚本：C:\Users\11428\Desktop\testvdb4exp\scripts\check_chain_grounding.py 与 check_physical_constraints.py
+契约：results\milvus\v2.6.17\structured_contract.json；源码 .milvus-src-2617；观测 debate_logs\output_boundary_r2_*.log
+
+背景：这 4 条链的原判定（password_bytes_003=DEFECT / updatepwd_creds_004=DEFECT / dropfunction_tag_009=NOT_DEFECT / insert_bodykeys_002=NME）出自 builder 自审，全部作废待你重出。
+
+4 链要点（以链文件实际内容为准）：
+1. boundary_r2_password_bytes_003 — NUL 截断认证：users/create 接受含 NUL 密码；截断 "ab" 认证 200、完整密码 400（bcrypt NUL 截断疑）
+2. boundary_r2_updatepwd_creds_004 — 改密后旧密码 ≥20s 有效（双凭证并存；wrong-old 1400 对照）
+3. boundary_r2_dropfunction_tag_009 — drop_function 删不存在 function code:0（原判 by-design 幂等：fSchema==nil return nil）
+4. boundary_r2_insert_bodykeys_002 — insert 错位键 10 个全 code:0+数据丢失（120 行 Strong query 仅 30——原判 NME：未逐键隔离）
+
+⚠️ 输出模式（两段式）：最终消息只输出 4 行判定行：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|both|behavior|-> rationale="<≤60字>"
+写回 debate_logs\chain_verdicts.json（读入现有 15 条，替换这 4 条的判定与 rationale，note 追加"R2 四链 2026-08-22 独立 auditor 重审判定"）。
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a0f9e89c879f218c1.jsonl (mtime 08-22 13:00)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+目标：milvus v2.3.22 知识提取（RQ1 全量 #8 重跑，A 段已就绪）。
+
+任务参数：
+- 版本锚定：milvus v2.3.22（容器已 healthy 运行于 http://localhost:19530）
+- 产物落盘：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\raw_knowledge.md（此目录已清空旧件，全新生成）
+- 源码参考（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+- 版本差异注意：v2.3 系列是 RESTful v1（/v1/vector/*）+ v2 部分（/v2/vectordb/*）并存期，端点集与 v2.4+ 不同——以源码 handlers 实际路由为准
+
+纪律（experiment-discipline.md 摘录，适用你的环节）：
+- 禁止查阅任何 GitHub issue/GT 内容（gt.json 也不读）——知识提取只来自源码+spec+官方文档
+- 你只产 raw_knowledge.md，不做契约形式化（formalizer 是下一个独立 agent）
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a8fdd14cc21cdac55.jsonl (mtime 08-22 13:15)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+目标：milvus v2.3.22 结构化契约形式化（RQ1 全量 #8 重跑 B 段第 2 步）。
+
+任务参数：
+- 输入：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\raw_knowledge.md（322 行，55 端点 v1 9 + v2 46）
+- 输出：同目录 structured_contract.json
+- 源码参考（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+- milvus 无 OpenAPI spec（fetch exit 3 已知）——约束主源=源码校验代码，文档为语义补充（raw_knowledge 已标注锚点）
+
+纪律（experiment-discipline.md 摘录）：
+- 禁止查阅任何 GitHub issue/GT 内容
+- 断言只从 raw_knowledge.md 与源码推导，不做任何"实验观测回填"（live 观测属 C 段 agent 职责）
+- 你只产 structured_contract.json；机械回填（enrich）与 passport 验证由主进程跑脚本完成
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a1330f00743efa416.jsonl (mtime 08-22 13:21)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+契约补正：milvus v2.3.22 structured_contract.json（你刚生成的）过机械门（_validate_contract.py）有两处 FAIL，原因是你的 path 命名习惯与门控检测词错位，需要补正：
+
+1. **count 检测失败**：门控查 `path 含 "count"`。你的 `collections+get_stats`（Get collection row count stats）就是 milvus 的 count cardinality API，但 path 名不含 count。补正：在该端点的 description 已对，但需要把 operation_id/别名补上 count 语义——最简合规做法：description 保持，增加一个 alias 字段或把 path 改为标准操作名 `collections+get_stats(count)` 不行（会破坏路径解析）——正确做法：**在 api_endpoints 的该条目加 `"cardinality_api": true` 不解决门控**。请直接把 path 字段改为 milvus REST 实际语义等价的标准名——注意：源码路由实际是 POST /v2/vectordb/collections/get_stats，GetCollectionStatistics 返回 row_count。**将此条目的 path 保持 `collections+get_stats`，但在 description 首词加 "count:"** 前缀不行。结论性做法：**给该端点条目添加 operation_id 字段值为 `count`**（字段级别名），并同步 endpoint_registry。如果门控只查 path+method 字符串，则最后手段是把 path 改成 `collections+count`（get_stats 即 count 的 milvus 命名）——请先读 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\scripts\_validate_contract.py 的 Check 6 与 CRUD 检测逻辑（约 L200-270），按它的实际检测逻辑选最小改法。
+
+2. **CRUD update 检测失败**：门控查 update 语义端点。milvus 的 update = `entities+upsert`（POST /v2/vectordb/entities/upsert，upsert 即 insert-or-update）。同上读 CRUD 检测逻辑后按最小改法补正（可能检测词是 "update|put|patch"）。
+
+文件：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+改完自查：门控通过（count=True，CRUD 4/4），其余字段不动。纪律：只做这两处命名/别名层补正，不改任何断言内容。
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8ab] agent-a5c112eece0cb695f.jsonl (mtime 08-22 13:40)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+R1 vein 族纵深挖掘：milvus v2.3.22（全量 #8 纪律重跑）。
+
+环境参数：
+- export TESTVDB_DB_URL=http://localhost:19530（容器 healthy v2.3.22）
+- Session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 脚本+meta 落该 session 目录下 vein_scripts\ 目录
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+- 源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+- REST v1/v2 并存；错误信封 HTTP 200 + code 字段
+
+GT_HINT（injector 机械输出，四族同文本）：【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+纪律要求：
+1. vein 族产 4-6 条 finding，采用 discover-then-deepen 策略 + 对照组排除 by-design 默认值
+2. 建议方向（非强制）：topK/nq/offset 联动上限、name 长度/字符集、dimension 上限、v1 vs v2 limit 语义差（100 vs 16384）、quick-create 默认值
+3. 每条 finding 的 .meta.json 中 param 字段必填
+4. 建集合前先删除同名集合
+5. 实际执行必须见真响应再报完成，不得凭推测报告
+6. 命名规范：vein_<主题>_<编号>
+
+完成后报告：每条 finding 的主题、判定（CONFIRMED/REJECTED/UNCERTAIN）、关键证据（真实响应摘录）、以及是否已排除 by-design。
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aatk-vn-2322-f251e1a7e9ba15af.jsonl (mtime 08-22 13:40)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="vein 族纵深 v2.3.22">
+R1 首轮 vein 纵深：milvus v2.3.22（全量 #8 纪律重跑）。
+
+环境参数：
+- export TESTVDB_DB_URL=http://localhost:19530（容器 healthy v2.3.22）
+- Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 脚本+meta 落 vein_scripts\
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+- 源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+- REST v1/v2 并存；错误信封 HTTP 200 + code 字段
+
+GT_HINT（injector 机械输出，四族同文本）：【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+纪律：vein 族产 4-6 条（discover-then-deepen + 对照组排除 by-design；方向如 topK/nq/offset 联动上限、name 长度/字符集、dimension 上限、v1 vs v2 limit 语义差 100 vs 16384、quick-create 默认值）；每条 .meta.json param 必填；建集合先删同名；实际执行见真响应再报完成；命名 vein_<主题>_<编号>。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aatk-bnd-2322-dc18acf09c99ecbf.jsonl (mtime 08-22 13:41)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="boundary 族攻击 v2.3.22">
+R1 首轮边界攻击：milvus v2.3.22（全量 #8 纪律重跑）。
+
+环境参数：
+- export TESTVDB_DB_URL=http://localhost:19530（容器 healthy v2.3.22）
+- Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 脚本+meta 落 debate_logs\
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json（54 端点 34 约束）
+- REST v1 /api/v1/vector/* 9 条与 v2 /v2/vectordb/* 45 条并存；错误信封 HTTP 200 + code 字段（code≠0 即失败）
+
+GT_HINT（injector 机械输出，四族同文本）：【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+纪律（experiment-discipline.md）：boundary 族产 6-10 单元；每单元 .meta.json 的 param 字段必填；建集合先删同名；脚本必须实际执行看到真实响应再报完成；命名 boundary_<主题>_<编号>。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aatk-se-2322-3693be8e4658c04b.jsonl (mtime 08-22 15:40)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="semantic 族攻击 v2.3.22">
+R1 首轮语义攻击：milvus v2.3.22（全量 #8 纪律重跑）。
+
+环境参数：
+- export TESTVDB_DB_URL=http://localhost:19530（容器 healthy v2.3.22）
+- Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 脚本+meta 落 debate_logs\
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+- REST v1/v2 并存；错误信封 HTTP 200 + code 字段；search 一致性 v2 固定 Bounded（GuaranteeTimestamp=BoundedTimestamp 是显式契约）
+
+GT_HINT（injector 机械输出，四族同文本）：【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+纪律：semantic 族产 5-8 单元（行为契约/错误诊断质量/搜索语义正确性：filter 表达式语义、诊断消息质量、metric 语义、一致性级别行为）；每单元 .meta.json param 必填；建集合先删同名；实际执行见真响应再报完成；命名 semantic_<主题>_<编号>。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aatk-st-2322-d8446517420279e7.jsonl (mtime 08-22 15:55)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="state 族攻击 v2.3.22">
+R1 首轮状态攻击：milvus v2.3.22（全量 #8 纪律重跑）。
+
+环境参数：
+- export TESTVDB_DB_URL=http://localhost:19530（容器 healthy v2.3.22）
+- Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 脚本+meta 落 debate_logs\
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+- REST v1/v2 并存；错误信封 HTTP 200 + code 字段；load/release 生命周期与 upsert-autoID 禁止是显式约束（upsert on autoID collection 必须拒绝——此为契约断言非提示）
+
+GT_HINT（injector 机械输出，四族同文本）：【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+纪律：state 族产 5-8 单元（数据一致性/并发/状态转换：load-release 生命周期、drop-recreate、并发读写、部分失败批次）；每单元 .meta.json param 必填；建集合先删同名；实际执行见真响应再报完成；命名 state_<主题>_<编号>。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-abld-2322-b4-2169321b72513d30.jsonl (mtime 08-22 17:06)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="builder 批4 vein 6 链">
+证据链构建批 4/4（vein 族 6 链）：milvus v2.3.22 R1 轮。你只建链取证，不判真伪。
+
+Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+契约：同目录上级 structured_contract.json
+源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+
+6 条链（vein_scripts\ 下 vein_*.py，以实际文件集为准）：
+vein_query_limit_zero_bypass_1 / vein_stats_rowcount_zero_2 / vein_search_multi_vec_result_loss_3 / vein_v1_limit_doc_contract_mismatch_4 / vein_quick_create_silent_defaults_5 / vein_search_offset_negative_6
+
+每条链产 evidence_chain\<defect_id>.json，四类证据：
+- A 契约验证（引 constraint id）
+- B 物理约束：output log 关键行逐字摘录
+- C 行为证据：对照组（vein 的 discover-then-deepen 设计里有对照）
+- D 开发者认知：.milvus-src-2322 源码搜证（文件:行号+摘录）
+标注 evidence_weight。完成后报链清单+完备度。纪律：不读 gt.json 不查 issue。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-abld-2322-b3-9a9c3e5d110fd0e7.jsonl (mtime 08-22 17:11)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="builder 批3 semantic 8 链">
+证据链构建批 3/4（semantic 族 8 链）：milvus v2.3.22 R1 轮。你只建链取证，不判真伪。
+
+Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+契约：同目录上级 structured_contract.json
+源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+
+8 条链（debate_logs\ 下 semantic_*.py，以实际文件集为准）：
+semantic_filter_expr_001 / semantic_metric_semantics_002 / semantic_error_envelope_003 / semantic_limit_offset_004 / semantic_consistency_level_005 / semantic_output_fields_006 / semantic_two_queries_007 / semantic_v1_absent_008
+
+每条链产 evidence_chain\<defect_id>.json，四类证据：
+- A 契约验证（引 constraint id）
+- B 物理约束：output log 关键行逐字摘录
+- C 行为证据：对照观测
+- D 开发者认知：.milvus-src-2322 源码搜证（文件:行号+摘录）
+标注 evidence_weight。完成后报链清单+完备度。纪律：不读 gt.json 不查 issue。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-abld-2322-b2-cff510fbd0271822.jsonl (mtime 08-22 17:17)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="builder 批2 state 14 链">
+证据链构建批 2/4（state 族 14 链）：milvus v2.3.22 R1 轮。你只建链取证，不判真伪。
+
+Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+契约：同目录上级 structured_contract.json
+源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+
+14 条链（debate_logs\ 下 state_*.py，以实际文件集为准）：
+state_concurrent_rw_1/2、state_consistency_param_1、state_consistency_strong_ignored、state_delete_visibility_1、state_drop_recreate_1/2、state_load_race_1、state_load_release_1/2、state_partial_batch_1/2、state_strong_consistency_gap_1、state_upsert_concurrent_2、state_upsert_concurrent_visibility、state_upsert_idempotency_1
+
+每条链产 evidence_chain\<defect_id>.json，四类证据：
+- A 契约验证（引 constraint id）
+- B 物理约束：output log 关键行逐字摘录
+- C 行为证据：对照/时序观测
+- D 开发者认知：.milvus-src-2322 源码搜证（文件:行号+摘录）
+标注 evidence_weight。完成后报链清单+完备度。纪律：不读 gt.json 不查 issue。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-abld-2322-b1-e1420b27ff956b4b.jsonl (mtime 08-22 17:21)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="builder 批1 boundary 9 链">
+证据链构建批 1/4（boundary 族 9 链）：milvus v2.3.22 R1 轮。你只建链取证，不判真伪。
+
+Session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\structured_contract.json
+源码（release v2.3.22）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322
+
+9 条链（debate_logs\ 下，脚本+meta+output log 同目录）：
+boundary_dimension_2 / boundary_datatype_insert_7 / boundary_index_params_5 / boundary_name_charset_1 / boundary_query_zero_negative_4 / boundary_quickcreate_9 / boundary_rename_upsert_8 / boundary_v1_search_6 / boundary_topk_limit_3（以 debate_logs 实际 boundary_*.py 文件名为准，若与清单有出入按实际文件集）
+
+每条链产 evidence_chain\<defect_id>.json，四类证据：
+- A 契约验证：structured_contract.json 对应约束断言（引 constraint id）
+- B 物理约束：output log 关键行逐字摘录（milvus 错误信封 HTTP200+code 形态注意）
+- C 行为证据：攻击值 vs 对照组行为差（meta/脚本里的对照设计）
+- D 开发者认知：源码搜证（.milvus-src-2322 找校验逻辑/默认值，文件:行号+3-5 行摘录）
+标注 evidence_weight: strong/medium/weak。完成后报 9 链清单+每链一行完备度。纪律：不读 gt.json 不查 issue；观测逐字不转述。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aaud-2322-b1-1cc009e004b3e9f8.jsonl (mtime 08-22 18:32)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="auditor 批1 10链终判">
+证据链终审批 1/4：milvus v2.3.22 R1（boundary 族 10 链）。完备性/一致性/自洽性三查+四视角聚合终判。
+
+链目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z\evidence_chain\
+本批链：boundary_dimension_2 / boundary_datatype_insert_7 / boundary_index_params_5 / boundary_name_charset_1 / boundary_query_zero_negative_4 / boundary_quickcreate_9 / boundary_rename_upsert_8 / boundary_v1_search_6 / boundary_topk_limit_3（debate_logs 实际 boundary 文件集对应的链，若与清单有出入按 evidence_chain 里实际 boundary_* 链集，共约 10 条）
+参考（只读）：契约 ..\structured_contract.json；源码 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322；执行观测 debate_logs\output_*.log
+
+⚠️ 输出模式（强制两段式）：完整分析在内部思考完成，最终消息只输出判定行，每链一行：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|both|behavior|-> rationale="<≤60字>"
+无任何其他文字。判定标准：DEFECT=真实契约违规/校验缺失/诊断缺陷（证据链足撑）；NOT_DEFECT=by-design/校验完备/行为合规；NEEDS_MORE_EVIDENCE=链断不可补。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aaud-2322-b3-ca19d637d87d9387.jsonl (mtime 08-22 18:37)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="auditor 批3 10链终判">
+证据链终审批 3/4：milvus v2.3.22 R1（state 后半 6 + semantic 8 = 14 链中按字母序的前 10：state 剩余 6 条 semantic 前 4 条）。完备性/一致性/自洽性三查+四视角聚合终判。
+
+链目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z\evidence_chain\
+本批链：state_partial_batch_1 / state_partial_batch_2 / state_strong_consistency_gap_1 / state_upsert_concurrent_2 / state_upsert_concurrent_stale_read / state_upsert_concurrent_visibility / state_upsert_idempotency_1 / semantic_consistency_level_005 / semantic_error_envelope_003 / semantic_filter_expr_001
+参考（只读）：契约 ..\structured_contract.json；源码 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322；观测 debate_logs\output_*.log
+
+⚠️ 输出模式（强制两段式）：完整分析在内部思考完成，最终消息只输出判定行：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|both|behavior|-> rationale="<≤60字>"
+无任何其他文字。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aaud-2322-b4-ebe46cc966bea553.jsonl (mtime 08-22 18:37)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="auditor 批4 9链终判">
+证据链终审批 4/4：milvus v2.3.22 R1（semantic 剩余 3 + vein 6 = 9 链）。完备性/一致性/自洽性三查+四视角聚合终判。
+
+链目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z\evidence_chain\
+本批链：semantic_limit_offset_004 / semantic_metric_semantics_002 / semantic_output_fields_006 / semantic_two_queries_007 / semantic_v1_absent_008 / vein_query_limit_zero_bypass_1 / vein_stats_rowcount_zero_2 / vein_search_multi_vec_result_loss_3 / vein_v1_limit_doc_contract_mismatch_4 / vein_quick_create_silent_defaults_5 / vein_search_offset_negative_6（若超 12 条按文件名字母序取前 11）
+参考（只读）：契约 ..\structured_contract.json；源码 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322；观测 debate_logs\output_*.log 与 vein_scripts\output_*.log
+
+⚠️ 输出模式（强制两段式）：完整分析在内部思考完成，最终消息只输出判定行：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|both|behavior|-> rationale="<≤60字>"
+无任何其他文字。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aaud-2322-b2-e00adea979cfa720.jsonl (mtime 08-22 18:40)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="auditor 批2 10链终判">
+证据链终审批 2/4：milvus v2.3.22 R1（state 族 10 链）。完备性/一致性/自洽性三查+四视角聚合终判。
+
+链目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z\evidence_chain\
+本批链（state_* 前半，按字母序取前 10 条 state 链）：state_concurrent_rw_1 / state_concurrent_rw_2 / state_consistency_param_1 / state_consistency_strong_ignored / state_delete_visibility_1 / state_drop_recreate_1 / state_drop_recreate_2 / state_load_race_1 / state_load_release_1 / state_load_release_2
+参考（只读）：契约 ..\structured_contract.json；源码 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-2322；观测 debate_logs\output_*.log
+
+⚠️ 输出模式（强制两段式）：完整分析在内部思考完成，最终消息只输出判定行：
+verdict <defect_id> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|both|behavior|-> rationale="<≤60字>"
+无任何其他文字。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-aexec-2322-5cd5f8945b0fb85f.jsonl (mtime 08-22 19:31)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="executor 统一执行 37 脚本">
+Docker 沙箱执行：milvus v2.3.22 攻击脚本统一执行（R1 轮 boundary 9 + state 14 + semantic 8 + vein 6，共 37 脚本）。
+
+环境三要素（每个 shell 都先设，缺一即假失败）：
+- export TESTVDB_DB_URL=http://localhost:19530
+- export TESTVDB_TARGET=milvus
+- export PYTHONPATH=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/scripts
+
+脚本清单（绝对路径）：
+- debate_logs\：boundary_*.py(9) state_*.py(14) semantic_*.py(8)——公共模块 _bnd_common.py/_state_common.py/_runner.py/_setup_semantic.py 不执行
+- vein_scripts\：vein_*.py(6)
+- 根：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z\
+
+执行规范：
+1. cd 到脚本所在目录再 python 执行（import 同目录公共模块）
+2. 每脚本产出两个文件（同目录）：output_<defect_id>.log（完整 stdout/stderr）+ exit_code_<defect_id>.txt（退出码数字）
+3. 脚本相互独立；一个失败不影响后续；遇连接拒绝等 2 秒重试一次
+4. 脚本内自建自删集合的 404 属正常前置
+5. 禁止改脚本内容
+6. milvus REST 错误信封是 HTTP 200 + code 字段——exit 码与 VERDICT 行以脚本自身输出为准
+
+完成后报告每脚本一行：defect_id | exit | 输出末行摘要；标出坏脚本。不判定真伪（auditor 职责）。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#8] agent-arpt-2322-24ed90d25c63be44.jsonl (mtime 08-22 19:34)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="reporter 生成 #8 实验报告">
+生成 milvus v2.3.22 实验缺陷报告。
+
+参数：
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.3.22\2026-08-22T05-22-41Z
+- 输入材料：debate_logs\chain_verdicts.json（39 链终判：21 DEFECT/12 NOT_DEFECT/6 NEEDS_MORE_EVIDENCE+1 幽灵链）、debate_logs\final_verdict.json（21 DEFECT 明细）、debate_logs\novelty_gate.json（20 NOVEL+1 UNVERIFIED）、evidence_chain\39 链 JSON、debate_logs\ 与 vein_scripts\ 下 meta、gt.json（GT milvus_47635，reach 0/1）
+- 输出：session 目录下 summary.md + defects\defect-N.md（按 chain_verdicts 的 21 个 DEFECT）
+- 注：本 session 曾因 /reload-plugins 丢失产物后忠实恢复（见 version 目录上级 RECOVERY.md），报告无需覆盖此事，如实报告实验结果即可
+- GT reach 说明：GT 47635（entities+search×load）未被命中（0/1），FN，报告需如实记录
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aext-2610-940a376e62af0e10.jsonl (mtime 08-22 19:55)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 A 段知识提取 milvus v2.6.10">
+对 milvus v2.6.10 做知识提取（RQ1 fullrun #9 A 段，纪律重跑）。
+
+参数：
+- target=milvus version=v2.6.10
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610（tag v2.6.10, commit 7315886；REST 路由在 internal/distributed/proxy/httpserver/：handler_v1.go / handler_v2.go / request_v2.go / constant.go）
+- 活体容器可探活：http://localhost:19530（注意 2.6.x 错误信封 code:0=成功，与 2.3.x 的 code:200 不同）
+- intel 树（bug_shapes/threat_model/developer_cognition）在 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\deepseek-devreviewer\intelligence\milvus\
+- 输出：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\raw_knowledge.md（目录需创建）
+- spec 预取已知无规则（fetch exit 3 模式），走 source-derived 路径：从路由注册机械提取端点清单 + 源码内校验逻辑
+- milvus v2.6.x 已知构建怪癖参考（2.6.10 前序版本经验，需你自行验证）：code:0 成功信封、87 v2 端点、full-schema dim 在 elementTypeParams、load 前必须建索引
+
+完成后回报：端点数、错误信封形态、raw_knowledge.md 落盘路径与行数。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-afrm-2610-a6eed6f1cba4a907.jsonl (mtime 08-22 20:18)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 B 段契约形式化 v2.6.10">
+对 milvus v2.6.10 做契约形式化（RQ1 fullrun #9 B 段）。
+
+参数：
+- 输入：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\raw_knowledge.md（87 v2 端点 + code:0 信封 + 构建怪癖）
+- 源码 clone（校验/D 类锚点）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610（handler_v2.go / request_v2.go / constant.go）
+- 活体容器：http://localhost:19530（code:0=成功）
+- 输出：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（带 _passport，schema_version 2.0，contract_hash 用 canonical core hash 即排除 _passport 后 sort_keys+compact separators 的 sha256）
+- 机械门要求（validate_contract.py 会查）：CRUD 四操作全覆盖（create/read/update/delete）、count cardinality 端点承载（get_stats/count 类）、B7 参数面覆盖抽查
+- 命名规范：端点 path 用 <resource>+<action> 简写形式（如 collections+get_stats+count、entities+upsert+update——带 count/update 后缀承载机械门检测词）
+- 验证工具：cd C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0 && python scripts/_validate_contract.py results/milvus/v2.6.10/structured_contract.json（需 verdict: PASS）+ python scripts/passport_verify.py results/milvus/v2.6.10/structured_contract.json
+
+完成后回报：端点数/约束数/断言数、validate PASS、passport hash。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aatk-se-2610-05f05658f0dfe7f4.jsonl (mtime 08-22 20:36)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 semantic 族攻击 v2.6.10">
+semantic 族攻击单元生成（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（85 端点/21 约束/12 断言；端点 path 为 <resource>+<action> 简写，实际 REST 前缀 /v2/vectordb/<resource>/<action>，v1 为 /v1/vector/<action>）
+- 活体容器：http://localhost:19530（**2.6.x 错误信封 code:0=成功**，HTTP 恒 200）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\
+- 输出：debate_logs\semantic_<方向>_NNN.py + semantic_<方向>_NNN.meta.json（param 字段必填）
+- 源码 clone（可选参考）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- v2.6.10 已知怪癖：load 前必须建索引（code 700）、code:0 成功信封
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/5）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含（**先建好共享前置集合再逐案测试，避免中途 drop/recreate 导致后续 case 全 collection not found**——前置集合在脚本开头统一建好）、结束时清理、纯 REST、结果 JSON 报告。单元数 6-10 个：filter 表达式语义、metric/距离语义、错误信封一致性、一致性级别行为、输出字段、v1/v2 行为对照等方向。完成后回报单元清单与候选缺陷。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aatk-st-2610-8c843634e659b278.jsonl (mtime 08-22 21:09)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 state 族攻击 v2.6.10">
+state 族攻击单元生成（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（85 端点；端点 path 为 <resource>+<action> 简写，实际 REST 前缀 /v2/vectordb/<resource>/<action>）
+- 活体容器：http://localhost:19530（**2.6.x 错误信封 code:0=成功**，HTTP 恒 200）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\
+- 输出：debate_logs\state_<方向>_N.py + state_<方向>_N.meta.json（param 字段必填；可写公共模块 _state_common.py）
+- 源码 clone（可选参考）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- v2.6.10 已知怪癖（raw_knowledge 实测）：load 前必须建索引（code 700）、code:0 成功信封
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/5）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含（建集合前先 drop 同名、结束时清理测试集合）、纯 REST（urllib/requests 直打 19530，pymilvus 仅可作 gRPC 对照组）、结果 JSON 报告打印。单元数 10-14 个：load/release 生命周期、drop/recreate、并发读写、批量部分失败、可见性/一致性窗口、upsert/delete 竞态等方向。完成后回报单元清单与候选缺陷。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aatk-bnd-2610-564c24cef911f562.jsonl (mtime 08-22 21:33)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 boundary 族攻击 v2.6.10">
+boundary 族攻击单元生成（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（85 端点/21 约束/12 断言；端点 path 为 <resource>+<action> 简写，实际 REST 前缀 /v2/vectordb/<resource>/<action>，v1 为 /v1/vector/<action>）
+- 活体容器：http://localhost:19530（**2.6.x 错误信封 code:0=成功**，与 2.3.x 的 code:200 不同；HTTP 恒 200）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\
+- 输出：debate_logs\boundary_<方向>_N.py + boundary_<方向>_N.meta.json（param 字段必填；可写公共模块 _bnd_common.py）
+- 源码 clone（可选参考）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- v2.6.10 已知怪癖（raw_knowledge 实测）：full-schema dim 在 elementTypeParams、load 前必须建索引（否则 code 700）、87 v2 端点
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/5）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含（建集合前先 drop 同名、结束时清理测试集合）、纯 REST（urllib/requests 直打 19530）、结果 JSON 报告打印。单元数 8-12 个，按契约端点/参数面均衡覆盖。完成后回报单元清单与候选缺陷。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aatk-vn-2610-3e343849075a0410.jsonl (mtime 08-22 21:33)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 vein 族攻击 v2.6.10">
+vein-mining 攻击（milvus v2.6.10，RQ1 fullrun #9）——discover-then-deepen 模式，自己跑脚本（curl/python 直打真 DB）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（85 端点；端点 path 为 <resource>+<action> 简写，实际 REST 前缀 /v2/vectordb/<resource>/<action>，v1 为 /v1/vector/<action>）
+- 活体容器：http://localhost:19530（**2.6.x 错误信封 code:0=成功**，HTTP 恒 200）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\
+- 输出：vein_scripts\vein_<方向>_N.py + vein_<方向>_N.meta.json（param 字段必填）+ vein_state.json + vein_summary.json
+- intel 树（bug-shape 引导）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\deepseek-devreviewer\intelligence\milvus\（bug_shapes.json / threat_model.json / developer_cognition.json）
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- v2.6.10 已知怪癖：load 前必须建索引（code 700）、code:0 成功信封
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/5）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：shape→vein 路径选端点 + 8 类通用 condition 纵深 + finding-feedback loop + 对照组验证排除 by-design 默认值；建集合前先 drop 同名；结束清理全部测试集合（collections/list 核实为空）。5-8 个 finding。完成后回报 finding 清单（CONFIRMED/REJECTED）与 verbatim 证据。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aexec-2610-802c7e0c28062aff.jsonl (mtime 08-22 21:46)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 executor 统一执行 48 脚本">
+统一执行 milvus v2.6.10 攻击脚本（RQ1 fullrun #9 C 段执行）。
+
+参数：
+- session 目录：C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/results/milvus/v2.6.10/2026-08-22T12-17-18Z
+- 脚本：debate_logs\ 下 boundary_*12 + state_*15 + semantic_*10 共 37 个 .py（_bnd_common.py / _state_common.py / sem_common.py / run_all.sh 是公共模块不单独跑）；vein_scripts\ 下 vein_*11 个 .py（vein_common.py 公共模块不跑；__pycache__ 忽略）
+- 环境：export TESTVDB_DB_URL=http://localhost:19530 TESTVDB_TARGET=milvus PYTHONPATH=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/scripts PYTHONIOENCODING=utf-8
+- 容器 milvus v2.6.10 已 healthy（错误信封 code:0=成功）
+- 输出落位：每脚本 output_<id>.log + exit_code_<id>.txt 放脚本同目录
+- 执行顺序建议：boundary → state → semantic → vein（state 族部分脚本有 load 时序依赖，逐个串行跑）
+- 注意：semantic 族共享前置集合（脚本内自建）；个别脚本可能因时序出现 collection not loaded 类非零退出——如实记录 exit code，不改脚本
+
+完成后回报逐脚本表（id | exit | 末行摘要）。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-abld-2610-b1-7274d9e16e7ce4db.jsonl (mtime 08-22 22:09)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 builder 批1 boundary 12 链">
+boundary 族证据链构建（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z
+- 材料：debate_logs\boundary_*.py 12 个 + .meta.json + output_boundary_*.log（已执行，exit 全 0）；公共模块 _bnd_common.py
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（85 端点/21 约束/12 断言）
+- 源码 clone（D 类证据，file:line 精确锚点）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610（REST 层 internal/distributed/proxy/httpserver/handler_v2.go / request_v2.go / constant.go）
+- 输出：session\evidence_chain\boundary_<id>.json（每单元一链）
+
+要求：每链 A（契约约束引用 constraint_id）/B（output verbatim 逐字摘录）/C（对照组行为）/D（源码根因锚点 file:line+摘录）四类证据齐备并标 evidence_weight；只取证不判真伪；观测逐字摘录不做解读改写；未读 gt.json 未查 issue。完成后回报链清单+完备度。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-abld-2610-b4-c032b81b5b94b0b0.jsonl (mtime 08-22 22:14)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 builder 批4 vein 11 链">
+vein 族证据链构建（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z
+- 材料：vein_scripts\vein_*.py 11 个 + .meta.json + output_vein_*.log（已执行，exit 全 0）；公共模块 vein_common.py
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json
+- 源码 clone（D 类锚点）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- intel 树（developer_cognition 对照）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\deepseek-devreviewer\intelligence\milvus\
+- 输出：session\evidence_chain\vein_<id>.json
+
+要求：每链 A/B/C/D 四类证据齐备+evidence_weight；vein 脚本自带 VERDICT 行的，链内如实记录该行但链本身不定真伪（判定权在 auditor）；对照组观测完整入链；verbatim 逐字；未读 gt.json 未查 issue。完成后回报链清单+完备度。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-abld-2610-b3-b7f8eba8bb5cdd63.jsonl (mtime 08-22 22:15)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 builder 批3 semantic 10 链">
+semantic 族证据链构建（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z
+- 材料：debate_logs\semantic_*.py 10 个（001-010）+ .meta.json + output_semantic_*.log（已执行，exit 全 0）；另有 .report.json 可参考；公共模块 sem_common.py
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json（12 断言）
+- 源码 clone（D 类锚点）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610
+- 输出：session\evidence_chain\semantic_<id>.json
+
+要求：每链 A/B/C/D 四类证据齐备+evidence_weight；若某链 B 证据 degraded（如前置失败导致无观测）如实标注 degraded 与原因；只取证不判真伪；verbatim 逐字；未读 gt.json 未查 issue。完成后回报链清单+完备度。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-abld-2610-b2-bbc21e9d520dd46d.jsonl (mtime 08-22 22:25)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 builder 批2 state 15 链">
+state 族证据链构建（milvus v2.6.10，RQ1 fullrun #9）。
+
+参数：
+- session：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z
+- 材料：debate_logs\state_*.py 15 个 + .meta.json + output_state_*.log（已执行，exit 全 0）；公共模块 _state_common.py
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json
+- 源码 clone（D 类锚点）：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2610（handler_v2.go / request_v2.go / internal/proxy/ 下 task_query.go util.go 等）
+- 输出：session\evidence_chain\state_<id>.json；若发现缺陷级现象横跨多单元，可另建缺陷级主链（defect_id 用现象命名）并让相关单元链 links_to 指向
+
+要求：每链 A/B/C/D 四类证据齐备+evidence_weight；负结果（NO_DEFECT）单元同样建全四类链（B 类为符合契约观测）；只取证不判真伪；verbatim 逐字；未读 gt.json 未查 issue。完成后回报链清单+完备度。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b1-2e0e23aa45220d06.jsonl (mtime 08-22 22:55)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批1 boundary 9 链">
+chain-auditor 终判批 1/6（milvus v2.6.10，9 链）。
+
+链清单：boundary_dim_create_1 boundary_http_envelope_11 boundary_index_partition_5 boundary_numeric_params_2 boundary_outoffields_hybrid_9 boundary_pagination_consistency_8 boundary_quota_segments_12 boundary_schema_struct_10 boundary_search_filter_6
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session debate_logs 的 output log 与 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b2-dba2aea73782a3c7.jsonl (mtime 08-22 22:56)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批2 混合 9 链">
+chain-auditor 终判批 2/6（milvus v2.6.10，9 链）。
+
+链清单：boundary_string_identifiers_3 boundary_user_role_7 boundary_vector_insert_4 defect_deletecount_phantom_simple_delete defect_rowcount_sealed_only defect_visibility_window_write_read semantic_analyzer_009 semantic_consistency_004 semantic_envelope_003
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session debate_logs 的 output log 与 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）。注：defect_* 是缺陷级主链（跨单元定性），相关单元链另有判定。
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b3-9386f2f4fbf3a352.jsonl (mtime 08-22 22:57)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批3 semantic 9 链">
+chain-auditor 终判批 3/6（milvus v2.6.10，9 链）。
+
+链清单：semantic_errclass_010 semantic_filter_001 semantic_metric_002 semantic_output_fields_005 semantic_run_analyzer_008 semantic_stats_006 semantic_upsert_007 state_alias_lifecycle_6 state_batch_atomicity_7
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session debate_logs 的 output log 与 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b4-ee25b9c04a5ee595.jsonl (mtime 08-22 22:57)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批4 state 9 链">
+chain-auditor 终判批 4/6（milvus v2.6.10，9 链）。
+
+链清单：state_concurrent_delete_all_4 state_concurrent_rw_13 state_delete_all_final_15 state_delete_one_behind_2 state_deletecount_semantics_1 state_drop_recreate_9 state_flush_limiter_11 state_load_release_lifecycle_8 state_partition_count_zero_5
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session debate_logs 的 output log 与 C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）。注：deletecount/rowcount/可见性相关单元链的缺陷定性在 defect_* 主链（批 2），本批判单元链自身真伪。
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b5-0e588594091e1351.jsonl (mtime 08-22 22:58)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批5 state+vein 9 链">
+chain-auditor 终判批 5/6（milvus v2.6.10，9 链）。
+
+链清单：state_partition_loaded_drop_12 state_rowcount_growing_3 state_upsert_delete_race_14 state_upsert_pk_semantics_10 vein_mv10_f1_phantom_deletecount vein_mv10_f2_rowcount_stale vein_mv10_f3_nonpk_delete vein_mv10_f4_query_limit_nonpositive vein_mv10_f5_rounddecimal_bypass
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session debate_logs 与 vein_scripts 的 output log、C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-aaud-2610-b6-c5735e2e1a4bd93f.jsonl (mtime 08-22 22:59)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 auditor 批6 vein 8 链">
+chain-auditor 终判批 6/6（milvus v2.6.10，8 链）。
+
+链清单：vein_mv10_f6_insert_type_coercion vein_mv10_f7_partition_dup_silent_success vein_mv10_f8_drop_ghost_property vein_mv10_observations_misc vein_mv10_r1_rename_alias_state vein_mv10_r2_db_name_validation vein_mv10_r3_ttl_property_validation vein_mv10_r4_insert_null_unknown_field
+
+材料：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z\evidence_chain\<链名>.json（只读链文件；如需对照可读同 session vein_scripts 的 output log、C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\structured_contract.json，禁读 gt.json 禁查 issue）
+
+输出：每链一行判定（纯文本，主进程机械转写）：
+verdict <链名> <DEFECT|NOT_DEFECT|NEEDS_MORE_EVIDENCE> fp=<doc|source|behavior|both|-> rationale="<一句话>"
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#9] agent-arpt-2610-0b424a883284bd4d.jsonl (mtime 08-23 09:37)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#9 reporter 生成实验报告">
+生成 milvus v2.6.10 实验缺陷报告。
+
+参数：
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.10\2026-08-22T12-17-18Z
+- 输入：debate_logs\chain_verdicts.json（53 链终判：15 DEFECT/36 NOT_DEFECT/2 NME）、final_verdict.json（15 DEFECT 明细）、novelty_gate.json（5 NOVEL/10 UNVERIFIED）、evidence_chain\53 链、vein_scripts\vein_summary.json（8 CONFIRMED/4 REJECTED）
+- 输出：session 目录下 summary.md + defects\defect-01..15.md
+- GT reach 如实记录：milvus 5 GT（47729/47752/47755/47763/47766）机械口径 1/5（47755 entities+delete filter 命中），其余 4 个 FN
+- 要点：15 DEFECT 收敛聚类（deleteCount 虚报族/rowCount sealed-only 族/quick-create functions 旁路/metricType 静默忽略/恒真 filter 崩溃式失败/roundDecimal 架空/limit 非正值返全量/insert 类型强转/幽灵 prop 假成功/1807 信息泄漏等）
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-aext-2612-aedc0a8a0a9d13e8.jsonl (mtime 08-23 09:44)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 A 段知识提取 milvus v2.6.12">
+对 milvus v2.6.12 做知识提取（RQ1 fullrun #10 A 段，纪律重跑）。
+
+参数：
+- target=milvus version=v2.6.12
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612（tag v2.6.12, commit fe3558a；REST 路由 internal/distributed/proxy/httpserver/）
+- 活体容器：http://localhost:19530（v2.6.12，错误信封 code:0=成功）
+- intel 树：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\deepseek-devreviewer\intelligence\milvus\
+- 输出：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\raw_knowledge.md
+- spec 预取已知无规则（exit 3 模式），走 source-derived 路径
+- 2.6.12 相对 2.6.10 的 diff 关注点（上一版已建立基线，机械提取路由数对比 + 变更面）：+truncate 端点、ids-data 互斥契约、warmup 族（上版 checklist 记录的 diff 模式，请以本版源码核实）
+
+完成后回报：端点数、与 v2.6.10 的差异面、raw_knowledge.md 落盘路径与行数。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-afrm-2612-72fecde8dd63ed8c.jsonl (mtime 08-23 09:54)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 B 段契约形式化 v2.6.12">
+对 milvus v2.6.12 做契约形式化（RQ1 fullrun #10 B 段）。
+
+参数：
+- 输入：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\raw_knowledge.md（88 路由/86 唯一路径，truncate 新端点）
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612（handler_v2.go / request_v2.go / constant.go）
+- 活体容器：http://localhost:19530（code:0=成功）
+- 输出：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\structured_contract.json（_passport schema_version 2.0，contract_hash=canonical core hash 裸 hex）
+- 机械门：CRUD 100% + count 承载（collections+get_stats+count 等命名）+ B7 抽查
+- 验证：cd C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0 && python scripts/_validate_contract.py results/milvus/v2.6.12/structured_contract.json（PASS）+ python scripts/passport_verify.py results/milvus/v2.6.12/structured_contract.json（PASS）
+- 参考基线：v2.6.10 契约（results/milvus/v2.6.10/structured_contract.json，85 端点）可作结构参考，但内容以 v2.6.12 源码实测为准（truncate 等 diff 面必须体现）
+
+完成后回报：端点数/约束数/断言数、双 PASS、passport hash。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-aatk-vn-2612-e1bfdb9df47ffb9c.jsonl (mtime 08-23 10:21)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 vein 族攻击 v2.6.12">
+vein-mining 攻击（milvus v2.6.12，RQ1 fullrun #10）——discover-then-deepen 模式，自己跑脚本（python 直打真 DB）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\structured_contract.json（86 端点；truncate 新端点）
+- 活体容器：http://localhost:19530（code:0=成功）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\2026-08-23T01-56-10Z\
+- 输出：vein_scripts\vein_<方向>_N.py + vein_<方向>_N.meta.json（param 必填）+ vein_state.json + vein_summary.json
+- intel 树：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\deepseek-devreviewer\intelligence\milvus\
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612
+- 本版新增面：collections+truncate（truncate 后统计/段状态/活跃查询一致性）；search ids/data 互斥顺序
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：shape→vein 选端点 + 8 类 condition 纵深 + finding-feedback loop + 对照组排除 by-design；先 drop 同名；结束清理全部测试集合。5-8 个 finding。完成后回报 finding 清单（CONFIRMED/REJECTED）与 verbatim。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-aatk-bnd-2612-0dedce295b3d6f9d.jsonl (mtime 08-23 10:22)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 boundary 族攻击 v2.6.12">
+boundary 族攻击单元生成（milvus v2.6.12，RQ1 fullrun #10）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\structured_contract.json（86 端点/26 约束/16 断言；path 为 <resource>+<action> 简写，实际 /v2/vectordb/<resource>/<action>）
+- 活体容器：http://localhost:19530（code:0=成功，HTTP 恒 200）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\2026-08-23T01-56-10Z\
+- 输出：debate_logs\boundary_<方向>_N.py + boundary_<方向>_N.meta.json（param 必填；公共模块 _bnd_common.py）
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612
+- 本版 diff 面重点：collections+truncate 新端点（truncate 与 load/alias/partition 交互、truncate 后一致性）；entities search 的 ids/data 互斥校验顺序（schema 检查先于互斥）；entities+get 单数 id required 兜底；warmup 族；已知怪癖 load 前必须建索引（code 700）
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含（先 drop 同名、结束清理）、纯 REST、JSON 报告。单元 8-12 个均衡覆盖。完成后回报单元清单与候选缺陷。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-aatk-se-2612-e59e5d5a654d81ee.jsonl (mtime 08-23 10:23)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 semantic 族攻击 v2.6.12">
+semantic 族攻击单元生成（milvus v2.6.12，RQ1 fullrun #10）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\structured_contract.json（86 端点/26 约束/16 断言）
+- 活体容器：http://localhost:19530（code:0=成功）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\2026-08-23T01-56-10Z\
+- 输出：debate_logs\semantic_<方向>_NNN.py + semantic_<方向>_NNN.meta.json（param 必填；公共模块 sem_common.py）
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612
+- 方向：filter 表达式语义、metric/距离语义、错误信封一致性、一致性级别行为、输出字段、search 的 ids/data 互斥语义、truncate 语义对照；**共享前置集合在脚本开头统一建好再逐案测试，避免中途 drop 导致后续 case 全 not found**
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含、结束清理、纯 REST、JSON 报告。单元 6-10 个。完成后回报单元清单与候选缺陷。
+</teammate-message>
+
+====================================================================================================
+
+==========================================================================================
+
+==========================================================================================
+[#10] agent-aatk-st-2612-5e2ccc484a4b5061.jsonl (mtime 08-23 10:23)
+==========================================================================================
+==========================================================================================
+====================================================================================================
+<teammate-message teammate_id="team-lead" summary="#10 state 族攻击 v2.6.12">
+state 族攻击单元生成（milvus v2.6.12，RQ1 fullrun #10）。
+
+参数：
+- 契约：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\structured_contract.json（86 端点）
+- 活体容器：http://localhost:19530（code:0=成功）
+- session 目录：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\results\milvus\v2.6.12\2026-08-23T01-56-10Z\
+- 输出：debate_logs\state_<方向>_N.py + state_<方向>_N.meta.json（param 必填；公共模块 _state_common.py）
+- 源码 clone：C:\Users\11428\.claude\plugins\cache\testvdb\testvdb\2.3.0\.milvus-src-v2612
+- 本版重点：**collections+truncate 新端点的状态语义**（truncate 与 load/release 交互、truncate 后 segcore/统计一致性、truncate 并发读写）、deleteCount/rowCount 口径（上版缺陷族回归验证）、load/release 生命周期、drop/recreate、并发读写、可见性窗口
+- 已知怪癖：load 前必须建索引（code 700）
+
+【GT-informed 续挖】当前会话尚未覆盖全部目标缺陷（已确认 0/1）。可能你的测试脚本质量不足，或尚未覆盖所有测试方向（端点/参数/边界/并发/状态）。请提升脚本质量、扩大测试方向的覆盖、深化挖掘。⛔ 本提示不含任何具体端点/参数/预期行为，请凭现有 contract 与 threat_model 自行判断方向。
+
+要求：脚本自含（先 drop 同名、结束清理）、纯 REST（pymilvus 仅 gRPC 对照）、JSON 报告。单元 10-14 个。完成后回报单元清单与候选缺陷。
+</teammate-message>
