@@ -1,0 +1,517 @@
+{
+ "_meta": {
+  "date": "2026-08-30",
+  "scope": "phase1_issue_classification.xlsx 中全部 A/B 类 TP（历史提交到上游仓库并被维护者确认/修复的真缺陷）到挖掘测试策略的溯源归属",
+  "method": "三路并行溯源（qdrant/weaviate/milvus 各一 agent）：优先 defect 报告/证据 JSON 中的 script_id 或 Source Script 字段；次选提交存稿 MRE 手法；再次缺陷形态 + lineage 脚本前缀 + intel bug_shapes 映射。口径 = 生成策略（非症状策略）。",
+  "tp_total": 45,
+  "class_A_TP_FIXED_PR": 28,
+  "class_B_TP_ACK": 17,
+  "caveat_9149": "qdrant #9149 在 phase1 口径为 TP_FIXED_PR（上游 PR 合并 shard_number 校验）；但 phase3 证伪（7 版本全拒绝，cases_index.json 2026-08-15 记录降级 FP_BY_DESIGN）。本表按 phase1 口径保留 boundary 归属。",
+  "caveat_12041": "weaviate #12041 症状为错误码语义（500 vs 422），但生成脚本是 boundary 家族（boundary_batch_delete_limit_001.py）——按生成策略口径归 boundary。",
+  "caveat_unknown": "milvus 2026-02 时代 6 条 + #49059 + #50323 原始生成运行已不存在（本地 results 最早 2026-06；.trash 中 v2.6.16 运行 defects 为空），标 unknown/low。",
+  "detail_note": "strategy_detail 按 mftui/TestVDB/agents 三 attack 规范的 21 条内置策略（B1-B7/S1-S7/ST1-ST7）定级；口径=生成/触发该 TP 的具体策略，oracle 对拍系列按最接近内置策略归位。unknown 8 条不定级。",
+  "zero_yield_strategies": [
+   "B5 错误消息质量(Type-2)",
+   "S2 错误诊断质量(Type-2)",
+   "S3 合法输入被错误拒绝(Type-1反向)",
+   "S6 Metamorphic 关系",
+   "S7 过滤参数语义",
+   "B6 资源极限/DoS（9520 降 D 后零产出）",
+   "ST2 DELETE 后一致性",
+   "ST4 并发操作",
+   "ST5 事务边界",
+   "ST6 索引构建期一致性",
+   "ST7 生命周期并发"
+  ],
+  "correction_9520": "2026-08-30：#9520 从 A 降 D（PR #9526 closed unmerged；#9594 为 bot 误交叉引用错标源头；#10334 未合并；issue open 无成员回应）。TP 口径 46->45。B6 资源极限策略变为零产出。",
+  "updated": "2026-08-31:补录 9522(boundary/B4,PR #9531 合并)与 9524(semantic/S2,整体计 1 TP 用户拍板,PR #9847 修 case 6);9520 降级条目留档备用形态不变;有效口径 45→47( boundary 25 / semantic 11 / state 3 / unknown 8 )"
+ },
+ "summary_by_strategy": {
+  "boundary": {
+   "milvus": 10,
+   "qdrant": 7,
+   "weaviate": 8,
+   "total": 25,
+   "pct": 53.2
+  },
+  "semantic": {
+   "milvus": 8,
+   "qdrant": 3,
+   "weaviate": 0,
+   "total": 11,
+   "pct": 23.4
+  },
+  "state": {
+   "milvus": 3,
+   "qdrant": 0,
+   "weaviate": 0,
+   "total": 3,
+   "pct": 6.4
+  },
+  "unknown": {
+   "milvus": 8,
+   "qdrant": 0,
+   "weaviate": 0,
+   "total": 8,
+   "pct": 17.0
+  }
+ },
+ "confidence": {
+  "high": 14,
+  "medium": 25,
+  "low_unknown": 8
+ },
+ "tps": [
+  {
+   "vendor": "qdrant",
+   "number": 9017,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issue 自述 contract-based fuzzing；vein_hnsw_config_m_boundary_1.meta.json BS-04 boundary_value_attack 映射（9017/9149/9027）；origin session 未存档",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "hnsw_ef=0 低于下界被接受；BS-04 boundary_value_attack 映射"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9039,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "boundary_points_upsert_dimension_mismatch.py（Type1_IllegalSuccess 维度不匹配）；attack_boundary_r5_10 复制；origin 未存档",
+   "strategy_detail": "B3 维度不匹配攻击",
+   "detail_basis": "64 维向量入 128 维集合；dimension_mismatch 触发脚本"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9045,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "qdrant_boundary_01_empty_vector_upsert.py（空向量零长边界）；attack_boundary_r5_03 复制 reference_issue=9045；origin 未存档",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "零长度向量 []（空集合特殊值）→ wait=false panic"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9149,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "MRE 输出格式与 boundary 脚本打印一致；boundary_create_collection_shard_number_zero.py / attack_boundary_r5_05 lineage；origin 未存档；phase3 已证伪（见 _meta.caveat_9149）",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "shard_number=0/-1 低于下界被接受（Type1_IllegalSuccess）"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9421,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "boundary_cluster_operations_004.py Test6（/cluster/recover→500）；defect-6-cluster-recover-500.md 逐字对应；2026-06-10 同日时序闭合",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "standalone 部署形态下调 cluster 端点（部署配置边界）；脚本自述 boundary_value/type_confusion"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9520,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "boundary_round2_collection_extreme.py Test1（shard_number=INT_MAX）；defects/defect-3.md Source Script 字段；issue 自述 automated boundary-value testing；2026-08-25 外部贡献者 roridemonslayer 开修复 PR #10334（上界校验+回归测试，AI-assisted 披露，未合并，issue 仍 open）；issue 正文自述 discovered during automated boundary-value testing、Type3_RuntimeFailure——双重印证 B6 归属",
+   "strategy_detail": "B6 资源极限/DoS",
+   "detail_basis": "shard_number=INT_MAX → 服务器无响应；VERDICT=Type3_RuntimeFailure，缺陷本体是实现极限非数值校验",
+   "status_note": "【2026-08-30 降 D】phase1 口径降级 PENDING_SELF_LABELED：修复 PR #9526 closed unmerged（6-27）；已合并的 #9594 为 CodeRabbit bot 在无关性能 PR 上的误交叉引用（错标源头）；#10334（8-25）未合并；issue 仍 open。策略归属 boundary/B6 保留备用（若上游合并修复复活为 A 直接可用）。B6 资源极限在 45-TP 口径下零产出。",
+   "phase1_class": "D (was A, corrected 2026-08-30)"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9522,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "r3_boundary_cross_collection_lookup.py（lookup_from 不存在集合 Type1_IllegalSuccess）；defects/issue-draft-defect-14.md 标题一致",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "lookup_from 指向不存在的集合（引用特殊值）→ 应失败却 200"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9942,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "issue 自述发现方式=文档 API 契约与实现校验对比（OpenAPI schema 漂移，doc-consistency 面）；无生成脚本，人工契约对比；issue 正文自述 Discovered while comparing the documented API contract against implemented input validation / API-conformance schema-completeness issue——印证 S1 归属；2026-08-26 timvisee 以 PR #10324 关闭 completed",
+   "strategy_detail": "S1 Behavioral Contract",
+   "detail_basis": "OpenAPI schema 声明与实现校验漂移（doc-consistency 面的行为契约）；人工契约对比非脚本"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 10120,
+   "strategy": "semantic",
+   "conf": "high",
+   "evidence": "manual-hunt-2026-08-07 issues/issue-05-count-is-empty-undercount.md 底稿；count exact=false 基数估计正确性（搜索语义面），tp2_/tp3_/verify_tp4_ 手工脚本",
+   "strategy_detail": "S5 搜索语义正确性",
+   "detail_basis": "count exact=false 基数估计系统性 -35%（统计语义正确性）"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11399,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/weaviate_1_ef_min_gt_max.md MRE=dynamicEfMin>Max 越界注入；boundary_scripts/11_schema_dynamicEfMin_gt_max.py 再发现；origin run 未存档",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "dynamicEfMin > dynamicEfMax 范围反转（跨字段 range 不变量）"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11400,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/weaviate_2_flatcutoff_negative.md MRE=flatSearchCutoff=-100；v1.38.2 boundary_schema_hnsw_flatSearchCutoff_neg1 再发现；origin run 未存档",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "flatSearchCutoff=-100 低于下界"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11401,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/weaviate_3_replication_negative.md；defect-1-schema-replication-factor.md Source Script=weaviate_range_schema_replication_001_boundary.py；origin run 未存档",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "replicationFactor=-1 越界被归一化为 1"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11729,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "weaviate_boundary_shardingconfig_desiredcount_r11_evidence.json（desiredCount=[-1,-8]→200, =0→422）；r11 证据闭合",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "desiredCount=[-1,-8]→200 而 =0→422（下界不一致）"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11730,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "defect-25-tokenization-empty-string-accepted.md；evidence_log=output_weaviate_boundary_tokenization_datatype_mismatch_r10",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "tokenization=\"\"（枚举外空串特殊值）"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11732,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "weaviate_boundary_distance_unknown_enum_r7_evidence.json（distance=null→cosine 回读，Type1_IllegalSuccess）",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "distance=null（特殊值）被静默回读为 cosine；证据 JSON 标 unknown_enum/Type1"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 11741,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "defect-24-tenant-empty-activity-status-accepted.md；output_weaviate_boundary_tenant_status_offloaded_on_create_r10（'' → 200 vs 合法值 422 对照）",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "activityStatus=\"\"（空串特殊值）vs 合法值 422 对照"
+  },
+  {
+   "vendor": "weaviate",
+   "number": 12041,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "defect-2.md Script=boundary_batch_delete_limit_001.py（boundary_value_attack）；match.where/class 缺失→500；症状似 semantic 但生成策略为 boundary",
+   "strategy_detail": "B7 Malformed Input",
+   "detail_basis": "batch delete 缺 match.where/match.class（结构畸形）→ 500；脚本 boundary_batch_delete_limit_001.py"
+  },
+  {
+   "vendor": "milvus",
+   "number": 47635,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "2026-02 时代无生成产物留存；事后 schema_fuzzer_audit.md 标 state 类（非生成证据）",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 47729,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "无生成产物；形态 nprobe=0 似 boundary；v3.0.0 boundary 脚本再发现家族",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 47752,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "无生成产物；形态 ef=0 似 boundary",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 47755,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "无生成产物；曾在 ops-prompts-8910 #9 作废重跑中被 rediscovery",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 47763,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "无生成产物",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 47766,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "无生成产物；v3.0.0 issue-04 将其作为类型校验先例引用",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 49059,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "全库 grep 无生成产物；形态 COSINE>1.0 似 semantic（搜索语义正确性）",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 49823,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/milvus_nprobe_zero_accepted.md 存稿（nprobe=0 边界值注入）；v2.6.12/16 运行未保留",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "nprobe=0 越界"
+  },
+  {
+   "vendor": "milvus",
+   "number": 49843,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/005-negative-zero-values-accepted.md 第 2 节 collection.ttl.seconds=-1 案例；v2.6.16 复审活动（146 缺陷→复审→提交）",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "collection.ttl.seconds=-1 负值被静默丢弃"
+  },
+  {
+   "vendor": "milvus",
+   "number": 49889,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/milvus_empty_string_params_accepted.md（dbName=\"\" 空串注入）",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "dbName=\"\"（空串特殊值）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 49890,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "issues/milvus_request_timeout_type_confusion.md（Request-Timeout 3.5/abc 类型混淆）",
+   "strategy_detail": "B2 类型边界攻击(type)",
+   "detail_basis": "Request-Timeout 头 3.5/\"abc\" 类型混淆"
+  },
+  {
+   "vendor": "milvus",
+   "number": 49930,
+   "strategy": "boundary",
+   "conf": "low",
+   "evidence": "无直接存稿；ef=0/-1 nprobe=0/-1 家族同 49823/005 存稿；v3.0.0 boundary 脚本再发现全家族",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "ef=0/-1、nprobe=0/-1 家族"
+  },
+  {
+   "vendor": "milvus",
+   "number": 50018,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "issues/milvus_aliases_list_empty_name.md L94 自述 discovered through automated parameter validation testing (VDBFuzz)",
+   "strategy_detail": "B4 特殊值攻击",
+   "detail_basis": "aliases/list collectionName=\"\"（空串特殊值）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 50323,
+   "strategy": "unknown",
+   "conf": "low",
+   "evidence": "2026-06 各运行无任何脚本向 entities/delete 同时发 ids+filter（逐一核查 5 个候选脚本均未覆盖）；事后审计标 state（非生成证据）",
+   "strategy_detail": "—（unknown，无生成证据）",
+   "detail_basis": ""
+  },
+  {
+   "vendor": "milvus",
+   "number": 50353,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "boundary_scripts/candidates.json boundary_003_entities_search_limit + boundary_004_dimension_mismatch；verified_defects/defect-004-search-boundary.md",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "limit=0/-1（主缺陷）+ 维度不匹配（伴生，B3 双缺陷 issue）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 50354,
+   "strategy": "boundary",
+   "conf": "high",
+   "evidence": "boundary_users_create_password_001.py L100 精确用例 abcdefgh；verified_defects/defect-005-password-validation.md",
+   "strategy_detail": "B2 类型边界攻击(type)",
+   "detail_basis": "密码 \"abcdefgh\" 违反复杂度格式约束（pattern 类校验缺失）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 50355,
+   "strategy": "state",
+   "conf": "medium",
+   "evidence": "state_milvus_upsert_idempotence_017.py Scenario E（autoID upsert，脚本头自标 State Attack）；defect-012-upsert-1804.md 复核链",
+   "strategy_detail": "ST3 Upsert 幂等性",
+   "detail_basis": "state upsert_idempotence 脚本 Scenario E：autoID 集合上显式 PK upsert → 1804"
+  },
+  {
+   "vendor": "milvus",
+   "number": 51084,
+   "strategy": "semantic",
+   "conf": "high",
+   "evidence": "defect-r2-1-consistency-enum.md（consistencyLevel 静默替换为 Bounded，curl 直探+describe 验证）；行为契约违规",
+   "strategy_detail": "S1 Behavioral Contract",
+   "detail_basis": "consistencyLevel=\"Invalid\" 静默替换为 Bounded（契约要求拒绝）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 51085,
+   "strategy": "semantic",
+   "conf": "high",
+   "evidence": "issue-r3-1-vectorfield-type.md（vectorFieldType 静默替换，silent default substitution companion）",
+   "strategy_detail": "S1 Behavioral Contract",
+   "detail_basis": "vectorFieldType 静默替换（silent default substitution 同族）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52307,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp8（REST/gRPC 一致性探针，pattern=rest-v2-data-type-handling）；upsert JSON 非法字符串",
+   "strategy_detail": "S4 隐式类型转换",
+   "detail_basis": "upsert JSON 字段接受非法 JSON 字符串 → REST/gRPC 存储不一致"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52308,
+   "strategy": "state",
+   "conf": "high",
+   "evidence": "state_pkautoid_id_type_string_num.py（脚本头自标 State Attack / Primary key type validation）DEFECT_FOUND；devrev_tp1 固化",
+   "strategy_detail": "ST1 CRUD 后一致性",
+   "detail_basis": "insert 接受字符串 PK 强转 [123]（写入形态 vs 输入不一致）；state_pkautoid 脚本，oracle=gRPC 拒绝"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52309,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "r7_searchparam_groupby_anomalies.py 构造 group_size=0/-5（未捕获）；devrev_tp2 捕获；参数范围越界形态",
+   "strategy_detail": "B1 边界值攻击(range)",
+   "detail_basis": "group_size=0/-1 越界（gRPC 拒绝 REST 接受）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52310,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp4（标量强转 '3.14'→DOUBLE；REST/gRPC 一致性）",
+   "strategy_detail": "S4 隐式类型转换",
+   "detail_basis": "insert 标量强转 string→Int64/int→VarChar 等"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52311,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "r7 构造 group by vector 用例（未捕获）；devrev_tp5 捕获；非法取值（向量字段不可分组）",
+   "strategy_detail": "B2 类型边界攻击(type)",
+   "detail_basis": "group_by_field=vector（字段类型不符取值域；向量字段不可作分组键）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52312,
+   "strategy": "state",
+   "conf": "medium",
+   "evidence": "R22 state_pkautoid 家族延伸到 upsert 端点（devrev_tp6）；无独立 upsert 脚本故降 medium",
+   "strategy_detail": "ST3 Upsert 幂等性",
+   "detail_basis": "upsert 端点字符串 PK 强转（R22 state_pkautoid 家族延伸）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52313,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp7（INSERT JSON 裸字符串；REST/gRPC 双写一致性）",
+   "strategy_detail": "S4 隐式类型转换",
+   "detail_basis": "insert JSON 字段裸字符串 → REST/gRPC 双写格式不一致（round-trip 失败）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52314,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp9（upsert 标量强转批量代表）",
+   "strategy_detail": "S4 隐式类型转换",
+   "detail_basis": "upsert 标量强转 string→DOUBLE/BOOL 等"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52315,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp10（字符串编码向量；全 run 无脚本构造过该负载，仅 REST/gRPC 对拍探针）；初判 FP 后复判确认",
+   "strategy_detail": "S4 隐式类型转换",
+   "detail_basis": "insert 向量接受字符串编码 \"[0.1,...]\"（gRPC 拒绝）"
+  },
+  {
+   "vendor": "milvus",
+   "number": 52325,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "devrev_tp3（strictGroupSize 静默忽略，oracle=gRPC 强制）；初判 FP 后 DEVREV_TP3_GT_CORRECTION 纠正",
+   "strategy_detail": "S1 Behavioral Contract",
+   "detail_basis": "strictGroupSize=true 被静默忽略（契约要求强制，oracle=gRPC）"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9522,
+   "strategy": "boundary",
+   "conf": "medium",
+   "evidence": "query API 的 lookup_from 引用不存在集合时静默 200(Type1 该拒未拒,悬空引用探针=特殊输入变体);无 lineage(phase1 早期上报);PR #9531(共享 TableOfContent 层存在性校验,覆盖 query/recommend 全家族+REST/gRPC)2026-07-15 合并,维护者贴 bug 标签——归因依据充分",
+   "strategy_detail": "B4 特殊值攻击(悬空引用变体)",
+   "detail_basis": "raw vector query 不解析 point ID → lookup 存在性校验被绕过;修复在共享层加校验",
+   "status_note": "【2026-08-31 补录】xlsx A/TP_FIXED_PR(同日刷新 closed);phase1 早期上报,形态归因 medium",
+   "phase1_class": "A"
+  },
+  {
+   "vendor": "qdrant",
+   "number": 9524,
+   "strategy": "semantic",
+   "conf": "medium",
+   "evidence": "filter 非法条件错误诊断质量差(case 6:null key 返回 serde 原始错误、不含参数名)——错误消息质量属 semantic 错误诊断质量视角(S2);无 lineage(phase1 早期上报),按缺陷形态归因;PR #9847 仅修 case 6,2026-07-15 合并",
+   "strategy_detail": "S2 错误诊断质量",
+   "detail_basis": "2026-08-31 用户拍板整体计 1 TP(6 case 中维护者 generall 仅认可 case 6,case1-5=vendor by-design 分歧留痕于 issue 评论);状态 closed/completed",
+   "status_note": "【2026-08-31 补录】xlsx D→A 整体计 TP_FIXED_PR(不拆 case);case1-5 为 vendor by-design 分歧样本,接 auditor 义务范围裁决讨论",
+   "phase1_class": "A (was D, promoted 2026-08-31)"
+  }
+ ],
+ "summary_by_detail_strategy": {
+  "B1 边界值攻击(range)": 12,
+  "B4 特殊值攻击": 8,
+  "S4 隐式类型转换": 5,
+  "S1 Behavioral Contract": 4,
+  "B2 类型边界攻击(type)": 3,
+  "ST3 Upsert 幂等性": 2,
+  "B3 维度不匹配攻击": 1,
+  "S5 搜索语义正确性": 1,
+  "B7 Malformed Input": 1,
+  "ST1 CRUD 后一致性": 1,
+  "S2 错误诊断质量": 1
+ }
+}
