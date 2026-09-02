@@ -42,7 +42,20 @@
 - 方法论留痕:①审查会话可能分不到文件工具(general-purpose 受限)——统一改用 claude 型;②作者/审查分离共抓到 5 处真实漂移/源文瑕疵(G5 反译×3 文件、state §3-4 引用、threat-modeler 注释、orchestrator 8c 缺句、mine 8c 计数),验证 R14.4"独立审查"价值。其中 mine 8c 为 **CN 源文自身笔误**("4 类"却枚举 5 项:oracle_missing/oracle_degenerate/transport_probe_wrong/oracle_shape_conflict/request_required_missing),英译按枚举实数改为"5 classes"——操作性行为两侧一致(枚举即操作内容),保留修正并在此留痕;如需严格忠实可回改,待用户裁定。
 - 优化阶段清理候选(翻译时按 R13 原样保留):contract-schema SKILL.md 的 confidence 旧表(ADR-0008 已删 confidence);orchestrator/mine 中 8d 与 8e 两处 pipeline_state advance 的 phase 参数疑不对称(EVIDENCE_BUILD 出现两次,CN 原文即如此,留待语义优化批核对)。
 
-## 行为等价冒烟
+## R16 持续优化:批 1 source_verified 合理化表(2026-09-02 完成)
+
+- **RED 基线微测**(控制臂×5 新鲜上下文,现行 EN 规范=仅散文禁令;场景三压:turn 283/300+管线阻塞+5 候选待核):**15 陷阱槽 9 违规(60%),全合规样本仅 1/5**。逐字借口捕获出主导漏洞——**correct-and-certify(改写即认证)**:把候选断言悄悄改写成文档支持措辞,再对改写后新主张标 `verified=true/explicit`,原始主张失败被静默掩盖;且改写后 assertion 能通过 `_validate_contract` 关键词 gate(机械盲区)。
+- **GREEN**(处理臂×5,唯一变量=规范含六借口合理化表+根原则+四红旗):目标失效 **9→0**;但降级路径形式滑档(inferred: 前缀 0/5)。
+- **REFACTOR**(R14"收紧形式"):降级行改字段级配方(原句 verbatim+`inferred:` 前缀+tier+verified=false);**GREENv2 ×3**:诚实核 0/3,形式全合规 2/3;残余前缀滑档交机械 gate+retry 管辖(文档管判断,机制管形式)。
+- **落地**:表入正式规范 main `86f6fa9`(语义 commit,与翻译分离);exp 同步 `6db17da`。两仓测试回归:唯一失败仍为 M4 既有环境问题。
+- 方法论留痕:①R14.4"不采信自报"两度应验(GREEN 自报带前缀 2 例,实物 0/5);②无工具会话样本诚实拒造(treat6 首派+ctrl5 走代写通道),激励相容性顺带验证;③微测夹具设计=1 逐字+1 逐字+1 缺席+1 转述+1 反驳,能同时区分认证/降级/剔除三路径与改写认证漏洞。
+- 产物:`files/_r16_sv/`(夹具+10+3 输出+评分器+处理臂规范副本,gitignored)。
+
+## R16 后续批次(待推)
+
+- 批 2:evidence-builder **by_design_in_source 明示性**条款合理化表(RED 语料:RQ2 7 TP 误筛主通道);
+- 批 3:chain-auditor **判定权/机械 A 不可翻案**条款合理化表(RED 语料:E2 实测 5 case LLM 翻案丢失);
+- 批 4(可选):contract-schema SKILL.md 旧 confidence 表清理(语义批)。
 
 ### EN contract-formalizer 全文件重放(2026-09-02)
 
