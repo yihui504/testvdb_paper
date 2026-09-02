@@ -62,8 +62,11 @@
 
 规则级(试点 75/75×10 零方差)+ 全文件级(formalizer 结构满分、attack 结构 5/5)= **翻译保真在生成链两端均成立**。
 
-## 实验仓(testvdb4exp)同步:升级为代际决策,未执行
+## 实验仓(testvdb4exp)代际对齐(2026-09-02 执行,用户拍板"先做整体代际升级对齐")
 
-逐文件 diff(--strip-trailing-cr 剥行尾)显示 exp 仓相对主仓 CN 基线的差异**不是翻译适配,而是整代际落后**:exp 缺主仓 v3.4 演化的 raw_knowledge.json 化(§A)、规则 2.7(level)/2.8(spec-first)/2.9 完整三新类、attack 三族的 Oracle 强制/X1 bootstrap/G1-G10/D3b 预验证消费等(run2r-01 的 J1 五项契约失真正与 exp 代际缺规则 2.8 同源)。合计真实差异 654 行/14 文件,其中 KE/ormalizer/attack 族各 75-176 行为结构性缺失。
-
-**因此"同步"= 把 exp 仓升级到 EN 主干代际并重新冻结**,这是实验设计决策(Phase 2 型受控实验今后锚哪个代际),不是机械翻译活——留待用户/导师拍板后另行执行。RQ1 重跑的关键路径不受影响:run2r 由插件 cache(mftui 主仓)驱动,与 exp 仓无关。
+- 旧代际冻结:tag `spec-legacy-gen-baseline-20260902`;对齐提交:`e51d7dd`。
+- 同步面:25 规范文件(EN 主干)· 新代际管线脚本全量(bind_strategies/_preverify_spec_shape/_classify/_apply retry/preflight_contract_docs/verify_chain_quotes/enrich_contract_from_spec/runtime//hooks/ 等)· attack-vein 从 plugin.json 注销并删文件(ADR-0009)· tests 主套同步 · 项目级 Stop hook 接线(.claude/settings.local.json 新写,不带 main 的一次性权限授权)· contracts/settings_schema + 顶层被引用文档。
+- 保留的 exp 专属:`scripts/gt_free_intel.py`、`scripts/gt_reach_injector.py`、`tests/test_doc_coverage_gates.py`、`deepseek-devreviewer/`、`docs/dsh-port-evaluation.md`、EXPERIMENT.md。
+- 验证:agents/commands/skills 与主仓零差异;8 个关键脚本 py_compile 全过;exp 测试套件唯一失败 = M4 CLI(既有环境性失败,主仓 stash 基线同样失败,与本战役无关)。
+- 测试锚随行:主仓 3 个规范契约测试文件的 CN 锚串更新为 EN(e8e5b0d,18 处锚全对齐);exp 专属 doc_coverage 测试从旧 md 提取签名重写到 v3.4 raw_knowledge.json 契约。
+- 安全发现(待处理,未同步):主仓 `scripts/llama_apikey.txt`、`scripts/longcat_apikey.txt` 明文 API key 文件躺在主仓工作区(untracked)——建议尽快轮换密钥并移出/加 gitignore;同步时刻意排除未带入 exp。
