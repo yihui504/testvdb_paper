@@ -51,11 +51,15 @@
 - 方法论留痕:①R14.4"不采信自报"两度应验(GREEN 自报带前缀 2 例,实物 0/5);②无工具会话样本诚实拒造(treat6 首派+ctrl5 走代写通道),激励相容性顺带验证;③微测夹具设计=1 逐字+1 逐字+1 缺席+1 转述+1 反驳,能同时区分认证/降级/剔除三路径与改写认证漏洞。
 - 产物:`files/_r16_sv/`(夹具+10+3 输出+评分器+处理臂规范副本,gitignored)。
 
-## R16 后续批次(待推)
+## R16 后续批次判定(2026-09-02 收官)
 
-- 批 2:evidence-builder **by_design_in_source 明示性**条款合理化表(RED 语料:RQ2 7 TP 误筛主通道);
-- 批 3:chain-auditor **判定权/机械 A 不可翻案**条款合理化表(RED 语料:E2 实测 5 case LLM 翻案丢失);
-- 批 4(可选):contract-schema SKILL.md 旧 confidence 表清理(语义批)。
+- **批 2 STOP**(evidence-builder by_design_in_source 明示性):RED 对照 ×5 **全合规**——四场景 outcome 全对、零"沉默当 by-design"、零挪用陷阱注释、cand-4 均带充分性自检。根因:RQ2 7 TP 误筛发生在 v3.4 收紧前旧措辞下,现行"三例示短语+7 TP 注记"已 bulletproof。**按 R14.2 不写无失败先例的指导,零成本关账。**
+- **批 3 STOP**(chain-auditor 判定权/机械 A 不可翻案):RED 对照 ×5 **全合规**——implied_verdict=DEFECT 下 5/5 判 DEFECT、零翻案、零"源码推翻"渗漏、视角 D 边界正确(3 样本显式判定灰区外不介入);RED 1 还正确处置夹具缺 .done(记录分歧按派发断言继续)。E1/E2 时代翻案失败属机械化前旧规范;现行 implied_verdict 机械层+E2-r2 禁令已 bulletproof。零成本关账。
+- **批 4 落地**(contract-schema 旧 confidence 表):与 ADR-0008 直接矛盾的滞留文档(证据:导师 2026-08-17 反馈)——替换为 evidence_tier 指引段。main `05353d6` / exp `7239bbd`。
+- **R16 总战果**:3 个候选条款,1 个真漏洞(批 1 改写即认证,表已落地并实验证明 9/15→0/15)+ 2 个"现行规范已 bulletproof"的 STOP 判定 + 1 个滞留文档清理。方法论完整性展示:既有 GREEN 也有 STOP——控制臂全清时拒绝作者指导,与控制臂失败时拒绝放过同等重要。
+- 遗留小项(不阻塞):orchestrator/mine 的 8d/8e pipeline_state advance phase 参数重复(EVIDENCE_BUILD 两次,CN 源如此)留语义批;两仓唯一测试失败 M4(既有环境)。
+
+## R16 后续批次(历史占位,已全部判定如上)
 
 ### EN contract-formalizer 全文件重放(2026-09-02)
 
