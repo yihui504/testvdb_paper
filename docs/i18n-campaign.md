@@ -27,10 +27,12 @@
 - 行为等价冒烟(批次级):contract-formalizer EN 全文件→对既有 raw_knowledge 重放,契约 diff 对 CN 版产物;attack 族 EN→结构合规抽查(Attack:/Oracle:/Constraint: 行、G 原则引用)。
 - 纪律类条款(判定权/信息边界/GT 泄露)微测+压力场景终验:放在 R16 语义优化批(与合理化表一起,RED 语料已备)。
 
-## 运行时切换(交接给用户)
+## 运行时切换(✅ 2026-09-02 完成)
 
-- 本会话验证全部用"新鲜 agent + EN 文件内容"模式(R14.7);**插件 cache 在用户执行 `/reload-plugins` 前仍是中文版**——切换时机 = run2r #2 启动前,由用户执行。
-- run2r #1(qdrant v1.18.0,中文规范产物)按方案 A 作废待重跑。
+- 实际执行路径(替代原计划的手动 /reload-plugins):主仓 58 提交 push GitHub(ed714e4..e7ceb1b)→ bump v2.4.0(f55a50d,tag 已推)→ 插件 `claude plugin update testvdb@testvdb -s local` 2.3.0→2.4.0 → cache 验证 EN(orchestrator EN 头/shape gate 接线在位/agents+commands 零中文残留)。
+- **生效条件 = 新会话**(CLI 提示 restart to apply):run2r #2 必须在新会话启动,当前会话的插件 agent 定义仍是旧中文版。
+- 事故留痕:plugins/marketplaces/testvdb 目录被并行会话的 skill-optimizer 实验覆盖(.git 删除+无关内容)→ 改名 `testvdb.corrupt-20260902` 留证 + git clone 重建(f55a50d);known_marketplaces.json 的 testvdb 源同期被改为 directory→testvdb4exp(未回改,exp 内容与主仓零差异,exp 也已 bump 2.4.0 对齐)。
+- run2r #1(qdrant v1.18.0,中文规范产物)按方案 A 作废待重跑(15 版清单 #1 从零开始)。
 - testvdb4exp 仓**不直接拷贝**:该仓含刻意适配(如"本仓未部署预绑定"),主仓全量完成后按适配点逐一重制,末批处理。
 - 纪律文档 §R12 的派发词中文引文在 mine.md 翻译后需同步更新为 EN 模板引文(纪律跟随实现)。
 
@@ -58,6 +60,46 @@
 - **批 4 落地**(contract-schema 旧 confidence 表):与 ADR-0008 直接矛盾的滞留文档(证据:导师 2026-08-17 反馈)——替换为 evidence_tier 指引段。main `05353d6` / exp `7239bbd`。
 - **R16 总战果**:3 个候选条款,1 个真漏洞(批 1 改写即认证,表已落地并实验证明 9/15→0/15)+ 2 个"现行规范已 bulletproof"的 STOP 判定 + 1 个滞留文档清理。方法论完整性展示:既有 GREEN 也有 STOP——控制臂全清时拒绝作者指导,与控制臂失败时拒绝放过同等重要。
 - 遗留小项(不阻塞):orchestrator/mine 的 8d/8e pipeline_state advance phase 参数重复(EVIDENCE_BUILD 两次,CN 源如此)留语义批;两仓唯一测试失败 M4(既有环境)。
+
+## R16 批 5:机制审计轮——inferred 前缀机械兜底补洞(2026-09-02,用户"再优化一轮")
+
+- **动机(声称-机制审计)**:批 1 REFACTOR 收尾声称"残余前缀滑档交机械 gate 管辖(文档管判断,机制管形式)"——但审计全仓 203 个脚本,**零脚本**检查 `evidence_tier` 枚举或 `inferred:` 前缀(唯一命中是 3 个旧生成脚本还在产出已废弃值 `inferred_from_behavior`)。声称的兜底不存在,而批 1 实测残余形式滑档 1/3 无门拦截。
+- **连带发现(同一审计)**:①工厂 gate `_validate_contract.py` 只遍历 type/range/state 三组——Rule 2.9 三新组(resource_bound/doc_consistency/other)的 source 核验与 DROP 检测全部跳过,新组约束即使全幻觉也不影响 DROP 比(Rule 2.9.5 声称"自动兼容"只在 bind_strategies 成立,gate 侧未同步);②`_validate_contract.py`(deterministic factory gate)竟无任何测试文件;③旧值脚本证据:`extract_milvus_round3/generate_chroma_contract/_build_chroma_canonical` 仍产 `inferred_from_behavior`,无门可拦。
+- **修复(兑现承诺,非新增散文)**:`check_tier_consistency()`——tier 缺字段 / 值域外(旧值打回)/ tier=inferred 无 `inferred:` 前缀或前缀后无内容 / tier=explicit 带反向前缀(降级后忘改 tier);纯 schema 层零网络;报告新增 tier_check 字段。组覆盖扩至 resource_bound+other(**doc_consistency 故意留白**:其断言是"spec 说 X / prose 说 Y"双源冲突,数值分属两个 source,单源数值关键词模型会误伤合法约束,需独立设计——留痕于代码注释)。formalizer output verification #5 注明"此形式是 gate 的职责,不是 self-check 的"。
+- **测试**:`tests/test__validate_contract.py` 9 测试(gate 首个测试文件)——合规基线/缺 tier/旧枚举值/缺前缀/前缀无内容/反向漂移/assertions 受检/全 ID 引用/六组名防漏同步。
+- **验证**:双仓全量绿——main EXIT=0(连此前环境性失败的 M4 文件本次也通过),exp 368 passed。提交:main `3860cdb` / exp `75ad102`(对齐保持 byte-identical)。
+- **方法论留痕**:R16 循环第五种形态——不是微测 LLM 行为,而是**审计"规范声称由机制兜底"处的承诺链**;空头承诺本身即失败先例,修复 = 兑现承诺(把形式检查下沉为代码),再次体现 R14.3"收紧形式而非加字"的极致。
+
+## R16 批 5 续:三候选全做(2026-09-02,用户"都做")
+
+- **doc_consistency 组纳入 gate(独立双源模式)**:`classify_constraint` 加 `allow_partial_numeric`——doc_consistency 断言是"spec says X / prose says Y"双源冲突,单源数值关键词模型会误伤(另一侧数值永远不在取到的那个 source 里);新语义 = **任一冲突侧在 source 中找到即支持,全部缺失才 DROP(纯编造)**,source 不可达仍 UNVERIFIED 中性。source 核验循环现在六组全覆盖(main `4351b8e`)。+5 测试(两侧各自命中/全缺/严格模式不变/中性)。
+- **orchestrator 8e advance 重复修复(main `93357ae`)**:语义核对发现 orchestrator 8e 段开头是 8d 段完成信号的**逐字节拷贝**(EVIDENCE_BUILD→EVIDENCE_BUILD 带 EXECUTION 键)——执行必触发 pipeline_state 的 InvalidTransition(transition map 无自环);8e 主体真正的完成推进(→CHAIN_AUDIT 带 EVIDENCE_BUILD 键)整个缺失。mine.md 序列一直正确(CN 源 quirk 实际只在 orchestrator)。删除重复、8e.5 后插入正确 advance。
+- **三旧值脚本 DEPRECATED 标注(工作区,main 未入库)**:extract_milvus_round3/generate_chroma_contract/_build_chroma_canonical 产废弃三级值 inferred_from_behavior——判定死脚本(零引用、8 月初、已被 extraction→formalizer 链取代),标注而非改值(改值破坏与其自身历史产物的对应)。**仓库惯例教训:main 仓实验脚本(`_run_attacks_round*`/`_build_*` 等)全部 untracked,exp 仓全量跟踪——误提交 main 后 soft-reset 回滚;exp 侧标注随惯例入库(`39a863d`,6 文件 94 插入)。**
+- 双仓全量回归绿;gate 测试 14/14。
+
+## R16 批 5 续二:全量声称-机制审计表(2026-09-02,用户"是否能再深入优化→好")
+
+将批 5 的声称审计从 formalizer 推广到全插件。方法:提取 agents/commands/skills 全部 `scripts/*.py` 引用 → 对 9 个 gate/核验类脚本逐一核对"声称 vs 实现"(claims-auditor 子代理批量核对 + 主进程复核重头)。
+
+**声称-实现核对表(9 脚本,3 ✓ 全成立 / 4 修复 / 2 维持)**:
+
+| 脚本 | 判定 | 修复 |
+|---|---|---|
+| verify_contract_sources.py | 空洞→修复 | 只遍历 3 组+assertions(与工厂 gate 同构空洞);doc_consistency 单源模型误报。六组全覆盖+双源模式+8 测试(main `cab5577`/exp `4b14eff`);**该正式脚本 main 此前从未跟踪,补跟踪** |
+| validate_shape_exploration.py | **双重失效**→修复 | ①glob `debate_logs/attack_*.py` vs 实际 boundary_scripts//state_*/semantic_* 命名——恒计 0;②主流程(mine 8c/orchestrator 8c)**从不调用**——三个 attack 规范 §5 Gate 声称的 DEBATE_S1 机械防线从未生效。glob 改递归全扫 + mine 8c 步骤 12 + orchestrator 4.7 接线(main `f3bb28c`) |
+| verify_defects.py | 声称 4 检查实现 3 | "Severity calibration from execution logs" 规范+docstring 双声称零实现,无失败先例支撑机械化 → **按 R14.2 删声称**(诚实降级,severity 归 reporter 报告时定)(main `d8e4d0f`) |
+| validate_api_format.py | 级不符→修复 | orchestrator 8c 4.5 声称 safe_request 未调用→REJECT、docstring 声称 chroma raw REST→REJECT,实现均 WARN/exit 0。三类同属静态可判定必炸/欺骗模式 → 统一 REJECT + 4 测试锁定 exit 语义(main `43dec19`) |
+| validate_doc_coverage.py | 配置声称未实现 | knowledge-extractor:383 "configurable via doc_coverage_exclude_paths" 全仓无读取 → 实现 settings.json knowledge.doc_coverage_exclude_paths(main `e7ceb1b`) |
+| 归属错写×4 | 轻→文档修正 | attack 三规范把 retry_feedback.json 生产归属 _classify(实为 _apply_script_retry.py);attack-state meta.json 消费者误列 extract_candidates(实为 novelty_gate)(main `e7ceb1b`) |
+| check_chain_grounding.py | ✓ 维持 | "A 定案唯一由本脚本决定"声称与实现一致;子串匹配是已知近似(收敛 GREY_ZONE 中性);脚本经 E1/E2/E5/v8/R6/R21 真实案例打磨,无空洞 |
+| verify_chain_quotes.py | ✓ 维持 | 与 check_chain_grounding 同子串规则;v2 链 unchecked 放行=保守方向 |
+| extract_candidates.py | ✓ 维持 | DEFECT_FOUND 入选/SCRIPT_ERROR 排除/写 candidates.jsonl 全兑现 |
+| preflight_contract_docs.py | ✓ 维持 | D3b 预检 8 路并发/去重/sidecar/退出码与声称逐条吻合 |
+| _classify/_apply retry | ✓ 维持 | REJECT/WARN 分级、retry_feedback 闭环、超限删除全实现 |
+| validate_target_neutrality.py | ✓ 维持 | target 外签名 REJECT+exit 1 |
+
+**方法论留痕**:①声称审计两方向都有产出——兑现承诺(shape gate 接线、REJECT 统一)与**诚实降级**(severity 删声称,无失败先例不建弱机制);②审计发现"规范被引用但 main 未跟踪"的正式脚本×2(verify_contract_sources/validate_shape_exploration)——补跟踪;③"声称-机制"重复实现漂移(verify_contract_sources 与 _validate_contract 各维护一份关键词提取)是空洞温床,结构性债务留痕(未合并=重构超出审计范围)。
+**结论:R16 优化轮收束——机制侧已无已知空洞;按 R14.2 暂停规范级优化,等 run2r 15 版本重跑积累新失败先例。** 双仓提交:f3bb28c/d8e4d0f/43dec19/e7ceb1b(main)+ 0c3df50(exp);双仓全量绿 + 15 文件零差异。
 
 ## R16 后续批次(历史占位,已全部判定如上)
 
