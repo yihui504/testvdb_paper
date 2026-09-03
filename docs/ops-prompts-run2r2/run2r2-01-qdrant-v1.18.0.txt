@@ -609,3 +609,16 @@ Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdr
 - 429 限额事故处置:主进程格式修复(白名单)后 verify PASS
 - 按用户指令暂停(第二次):R16(chunk_collections+optimizations)未启动
 - 恢复点:chunks[15];mutate 已记 round=16/defects=45
+
+==========================================================================================
+[#2 | 机制坑挂账 | 2026-09-03] Stop gate 无暂停语义
+==========================================================================================
+- 现象:用户指令"跑完这轮暂停"后,回合结束被插件 Stop hook
+  (pipeline_gate.py) 反复拦截(exit 2)——gate 只认 phase=DONE 或
+  round>max_rounds 两个豁免,无"用户主动暂停"分支
+- 处置:不虚假推进 phase(伪 DONE 违反状态机纪律),不篡改 max_rounds;
+  暂停状态已通过 summary_r15/mutate(round=16)/memory/存档安全保存;
+  hook 报错为预期噪音,用户恢复后(R16 起跑)自然消除
+- 改进项(挂账,非本轮 scope):pipeline_gate 增加 PAUSED 语义或
+  豁免文件(~/.testvdb-paused 或 pipeline_state.paused 字段);
+  或 mine.md 增加暂停 SOP(phase 停在 REPORTING + 明确恢复路径)
