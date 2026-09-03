@@ -1,0 +1,559 @@
+==========================================================================================
+[#2 | A 段 | 2026-09-02] 前置(EN 2.4.0 代际:run2r #2 启动,方案 A 作废 run2r #1)
+==========================================================================================
+- 作业区 CACHE = C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.4.0
+  (marketplace source = directory testvdb4exp;exp 仓与主仓 agents/commands 零差异,
+  EN 化 25 文件 + v3.4 + R16 全量;主仓 push f55a50d + tag v2.4.0)
+- run2r #1(中文规范,2.3.0 cache)作废留证:36 session 在原位不触碰
+- intel 树:GT-free 三件套自 2.3.0 拷贝归位(9 文件,milvus/qdrant/weaviate)
+- A3 spec 预取:60 paths -> CACHE/.sourcedeps/qdrant/v1.18.0/openapi.json
+- A4 容器:testvdb-qdrant-standalone up healthy
+- A5 版本核验:GET / -> version "1.18.0" ✓
+- A6 源码:核对 CACHE/.qdrant-src-1180 junction(待)
+- 口径注记(2026-08-24 起生效,继续沿用):GT_HINT 恒空串,作业区不放 gt.json;
+  reach 判定读论文仓 .paperpilot/phase3/gt/ 权威源;终止判定 = 轮数上限
+  + exploration_phase stalled(探索僵局)——C1/C9/C11 GT_HINT 相关步骤按此口径跳过
+- C 段规范(ADR-0009 + v3.4 + R16):3 attack agents + 8a.5 阶段评估 +
+  8b-expl 探索模式 + auditor candidate_class 三态 + 声称审计修复后 gate 全量
+- 契约格式:raw_knowledge.json(v3.4 §A md→json 迁移后)+ deployment_meta.json 分写
+
+==========================================================================================
+[#2 | B1 | 2026-09-02] knowledge-extractor 派发词(逐字 = mine.md Step 4 原生模板,仅替换变量)
+subagent_type = testvdb:knowledge-extractor
+==========================================================================================
+
+Per the agents/knowledge-extractor.md spec, extract API documentation knowledge for qdrant v1.18.0. Write the result to results/qdrant/v1.18.0/raw_knowledge.json (SDK/Docker info goes separately to deployment_meta.json, v3.4 §B)
+
+==========================================================================================
+
+==========================================================================================
+[#2 | B1 事故 | 2026-09-02] 失败先例 #1:logical-ID raw 与 doc_coverage URL 门断裂
+==========================================================================================
+- 现象:B1 extractor 首跑(35min,278k tok)自报 openapi_coverage 100%;
+  B2 validate_doc_coverage 机械覆写为 0.0%(79 端点零匹配)。
+- 根因:extractor 按规范 2.10 产出 api_endpoints[].path = logical ID
+  ("collections+create",复用旧契约 77 key)。validate_doc_coverage 的 URL
+  直比只对 v3.4 迁移产物(path=URL)有效——2.10 化后 extractor 直出产物
+  首次跑 B2(此前 v3.4 pilot 全用 md→json 迁移产物),必 0%。
+  R16 声称审计无失败先例故未暴露此兼容缝。
+- 修复两件套(main commit,exp/cache 已同步):
+  ① validate_doc_coverage:match_spec_op 三路——url 字段直比(新)/URL 直比
+    (旧迁移)/enrich spec_op_for 启发式复用(import 单一实现,不复制);
+    探针实测:启发式对旧 ID 键空间(vectors+named+create 树状命名)仅 67.6%,
+    不足为门 → 需 ②
+  ② knowledge-extractor Step 5:api_endpoints[] 增 url 字段(必填,
+    spec /paths 精确提取;仅文档无 spec op 的端点省略)——extractor 是
+    ID↔URL 对应的唯一持有者(run2r-02 先例注记入规范)。
+- 处置:extractor 重派(同派发词),_fetch_cache 复用;产物到论文仓后
+  主进程搬运 CACHE(agent cwd=主会话 cwd,非插件根——与 run2r #1 不同)。
+
+==========================================================================================
+[#2 | B1 事故追加 | 2026-09-02] 机制:插件 agent 定义会话级快照——中途规范修改不生效
+==========================================================================================
+- 重派 extractor 仍产旧格式(0/77 url)根因:插件 agent 的 system prompt =
+  会话启动时加载的 agent 定义快照;会话中途 cp 新版规范文件到 cache,
+  已注册 agent 不刷新(与命令菜单 catalog 同理)。
+- 处置:SendMessage 恢复 agent,指示其 Read 插件根规范文件新 Step 5 并按
+  文件内容补 url(agent 上下文仍持有 ID↔URL 对应)。这是 retry/修复轮,
+  非 R12 派发词增改。
+- 流程教训:**任何 agent 规范修改,需重启会话才对运行时 agent 生效**;
+  中途修复 = 恢复 agent + 指向规范文件的显式修复指令。
+
+==========================================================================================
+[#2 | B2 | 2026-09-02] 终态:98.7%(74/75)PASS;missing=GET/DELETE /issues(beta 无文档)
+==========================================================================================
+- extractor url 补齐后首跑仍 66.2% → 两个次级 bug 修复(同一轮):
+  ① match_spec_op 未读 url 字段(只读 path=ID)→ url 字段 first-match
+  ② 嵌套目录:cp -r 目标已存在 → .sourcedeps/.../v1.18.0/v1.18.0/(merged
+    spec 62 paths/79 ops 未生效)→ 就位
+  ③ 102.7%>100% 语义修正:pct 分子限公开 spec 面(raw 覆盖运维排除面不计)
+- 口径注:extractor 自报 77/77(issues 自定为 excluded),机械口径 98.7
+  (issues 在 spec 面内 raw 无)——B2 以机械为准,≥90 不触发 B3
+
+==========================================================================================
+[#2 | C1/C2 | 2026-09-02] R1 session 初始化 + 三 attack 派发
+==========================================================================================
+- SESSION=2026-09-02T12-42-33Z，chunks=80 块 175 单元（契约 77 端点 2.10 粒度，
+  与 run2r #1 的 32 块/95 单元不同——chunk_contract 现行版本按端点+断言粒度分块）
+- R1 块=chunk_aliases+collection+list（1 单元：
+  assertions::qdrant_behavioral_aliases_collection_list_001）
+- C1：THREAT_MODEL_ATTACK = run2r #1 同款 GT-free 注入（2.3.0/tmp_gen/tma_r1.txt
+  复用，5766 字符/125 行，零 GT 引用已核）；GT_HINT 恒空（新口径不采集）
+- session_id=qdrant-1180-r2r（pipeline_state 自动生成撞 run2r #1 的 -r1，
+  机械改唯一）；max_rounds=30 min_defects=1
+- C2：三 attack 并行派发（boundary/state/semantic；派发词 = mine.md 8b 模板
+  + TMA 全文注入 + R1 chunk；vein 无——ADR-0009）
+
+[#2 | R1 派发词 | boundary（逐字 = mine.md 8b 模板，仅替换变量）
+subagent_type = testvdb:attack-boundary
+Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdrant v1.18.0. contract=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.4.0/results/qdrant/v1.18.0/structured_contract.json, session_id=qdrant-1180-r2r, session_dir=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.4.0/results/qdrant/v1.18.0/2026-09-02T12-42-33Z, reflection_context=(none — first round), this round's chunk=chunk_aliases+collection+list (the chunk's unit_ref list is in chunks.json; only attack units within this chunk).
+
+[TMA 全文 5766 字符 = tmp_gen/tma_r1.txt，见存档同目录文件]
+
+[#2 | R1 派发词 | state（同模板，agent=attack-state）]
+[#2 | R1 派发词 | semantic（同模板，agent=attack-semantic）]
+
+==========================================================================================
+[#2 | C2-C3 | 2026-09-02] R1 三 agent 全收 + Stage1 验证 + 首个 retry 闭环
+==========================================================================================
+- C2 产出:13 脚本(boundary 5 + semantic 4 + state 4)+ meta×13 +
+  analyzed_documents×3(semantic 29/29、state 29/29、boundary 18/29≥60% 门槛)
+- state 强候选:state_aliases_collection_list_001(源码取证 alias_mapping.rs
+  reverse-lookup 无存在性检查 → 未知/dropped collection 的 aliases 列表 200 空
+  vs 契约断言 404,Type4)——R1 首个 builder 候选
+- state 注意:runtime PATHS 白名单无 GET /collections/{name}/aliases →
+  FALLBACK_TRIGGERED 标记 + requests 直发该面(runtime 白名单缺口记录)
+- C3:py_compile 13/13 + risky/api_format/neutrality 全 PASS;
+  D3b C/D preverify REJECT=0 WARN=4;
+  D3b A/B classify FAIL:semantic 001-004 oracle_missing(4 REJECT)
+- 根因:**semantic agent 把 Attack:/Oracle: 放模块级 # 注释**,规范 §输出要求 6
+  要求 docstring 内 Oracle(boundary/state 合规)——agent 执行违规非机制 bug
+- 处置:8c.9 _apply_script_retry 生成 4 feedback → SendMessage semantic 修复
+  (Oracle 移入 docstring,逻辑不变)
+
+==========================================================================================
+[#2 | C3 复检 + C4 | 2026-09-02] Stage1 全绿 + executor 派发
+==========================================================================================
+- C3 复检:classify PASS(semantic 4 修后)+ compile 13/13 + preverify REJECT=0 WARN=4
+- C4 派发词(executor):mine.md 8d 模板 + 三件套 env(SCRIPTS_DIR/TARGET/DB_URL,
+  run2r-01 实证固化;executor.md 规范仍未固化 SCRIPTS_DIR/TARGET——挂账项同 run2r #1)
+
+==========================================================================================
+[#2 | C4-C7 | 2026-09-02] R1 执行+候选+证据构建
+==========================================================================================
+- C4 executor:13/13 执行(boundary 5×exit0;semantic 002/003 exit1;state 001/003/004
+  exit1、002 exit2);.executor.env HEALTH_PATH 修正 /health→/healthz(executor 现场)
+- C5-C6:VERDICT 盘点 DEFECT_FOUND×9(含 Type1 空名 200/surrogate 200/unknown 200 等)
+  + 3 NO_DEFECT + 1 SCRIPT_ERROR;extract 9 候选(4 带 constraint_id)
+- L1:9/9 UNCERTAIN 0 REFUTED
+- 同主题独立命中互证:unknown/dropped collection aliases 200(boundary_004+
+  semantic_002+state_001 三独立);契约断言 404 vs 实测 200——R1 主候选簇
+- C7:9 builder 并行 fan-out(.srcdir 指向 vdb_src/qdrant/v1.18.0)
+
+==========================================================================================
+[#2 | C7 完成 | 2026-09-02] 9 builder 证据链 + 引文返工 5 处
+==========================================================================================
+- 9/9 builder 全完成(.srcdir=vdb_src/qdrant/v1.18.0;evidence_chain/ 9 链+done)
+- 链质量分层:
+  * chain_broken_at=null(链完整):bnd004/bnd005/sem002/sem003/st001
+    —— 全部围绕同一现象:GET /collections/{未知名}/aliases → 200 空
+    (契约断言 404;5 脚本独立复现;源码 validation_absent 三链独立取证
+    同一调用链 collections_api.rs:94→common/collections.rs:167→
+    toc/mod.rs:434→alias_mapping.rs:114 零存在性检查;gRPC 同构)
+  * chain_broken_at=log(注定 REFUTE):bnd001(parser 误判 result.aliases
+    信封)/st003+st004(残留污染:sem_gdc1 遗留集合跨 session)
+  * bnd002:路由归一化 /collections//aliases→describe 路由撞上遗留
+    "aliases" 集合(api_violates=false,链断 log)
+- **关键分裂证据(bnd005 独有)**:v-1-18-x 文档页只记录 200,"404 for
+  unknown collection" 子句在文档页不存在(系契约知识层添加;OpenAPI 仅
+  generic 4XX)→ doc 与源码互相一致,断言 404 分支是异常环节
+  → auditor 裁量核心:契约地基(interface-parity 信号 vs doc-as-ground)
+- verify_chain_quotes:9 链 5 处引文拼接 mismatch(sem003/st001/st003/
+  st004/bnd001+bnd002)全打回原 builder 修复(逐字 description 子串+cid
+  补齐);st001 修复中 API 400 中断→恢复完成;终检 PASS 9/9 mismatch=0
+- 环境缺口记录:容器跨 session 持久,35 个历史残留集合(含 sem_gdc1 族/
+  名为"aliases"的集合)→ st003/st004/bnd002 的全局面 oracle 污染源;
+  R2 前清残留(处置挂 R1 收口)
+- C8 auditor 已派(9 链单批)
+
+==========================================================================================
+[#2 | C8+R1 收口 | 2026-09-02] 判定 5 DEFECT/4 NOT_DEFECT + 残留清理
+==========================================================================================
+- C8 auditor:5 DEFECT / 4 NOT_DEFECT / 0 GREY_ZONE / 0 CONFLICT;A 判定权全轮;
+  candidate_class 5 strict/4 rejected/0 exploratory;constraint_category=other×9
+- 5 DEFECT=同一缺陷:aliases 列表面无 collection 存在性检查(unknown→200 空
+  vs 契约 404;源码三链独立取证同一调用链;写路径/describe/count 同名 404)
+- 人工复核标记(auditor 留痕未改判定):404 条款文档地基仅 batch 级
+  (OpenAPI generic 4XX;文档页 200-only,bnd005 curl 实证)——doc-as-ground
+  翻案权留人工,同 run2r #1 metadata 案形态
+- 收口:summary_r1.md 写入;pipeline_state 逐级推进→CHAIN_AUDIT
+  (首推 InvalidTransition 教训:状态机禁跳级,ROUND_START→ATTACK_GEN→…逐级)
+- 环境修复:35 残留集合全清(ok=35 fail=0)→ R2 起全局面 oracle 无污染
+- R2 = chunk_aliases+list,reflection_context 从 summary_r1 提取
+
+==========================================================================================
+[#2 | R2 | 2026-09-02] chunk_aliases+list 三 attack 派发(带 R1 反思)
+==========================================================================================
+- R2 块=chunk_aliases+list(1 单元 assertions::qdrant_behavioral_aliases_list_001,
+  GET /aliases 全局面)
+- reflection_context(R1 教训固化):sandbox 轮间已清/全局面 oracle 容忍并行
+  (唯一前缀)/信封 result.<field> 非裸列表/Attack+Oracle 行必须 docstring 内
+- boundary 5 脚本先收:list-size 闭包/type-confusion 15 值/恶意输入/读回保真/
+  delete-drop 状态闭包(bnd005 是 R1 缺陷的全局面对照)
+
+==========================================================================================
+[#2 | R2 C3 | 2026-09-02] Stage1 + classifier 词法误报坑
+==========================================================================================
+- R2 13 脚本(bnd 5/sem 4/state 4)compile/risky/api_format/neutrality 全 PASS
+- preverify REJECT=0 WARN=9
+- classify 首检 FAIL:st002 cleanup_unwrapped —— **根因非清理未包**,而是
+  classifier form-(a) 规则词法匹配 list.remove() 记账行(误中 TEARDOWN_NAMES);
+  agent 移除该行绕开(语义等价),WARN_ONLY 终态(st003 oracle_degenerate WARN
+  不耗预算)
+- 机制坑记录(待挂账):_classify_script_errors 的 .remove() 匹配需限定
+  接收者(仅 rt./runtime teardown 对象),list.remove 记账行误报
+- C4 executor 派发(仅 *aliases_list* 13 脚本,防 R1 日志覆盖)
+
+==========================================================================================
+[#2 | R2 C4-C7 | 2026-09-02] 执行+候选+链
+==========================================================================================
+- C4 R2 executor:13/13 全 exit0(R1 日志未动,精确清单派发规避 glob 重跑坑)
+- C6:R2 VERDICT = 1 DEFECT(boundary_aliases_list_002,Type2_PoorDiagnostics:
+  100k 超长 collection_name 400 但空诊断体)+ 12 NO_DEFECT;candidates 累计 10
+- L1:10 UNCERTAIN 0 REFUTED
+- C7:R2 唯一新候选 builder 已派(派发词附引文纪律 note——R12 轻微越界自省,
+  后续轮不再预加,靠 verify_chain_quotes 打回闭环)
+- 注记:Type2 无契约锚在 run2r #1 是一致拒绝先例(J2×3)+TMA by-design 明示
+  error-message 非契约——预期 REFUTE,但按纪律走完整链
+
+==========================================================================================
+[#2 | R2 收口 | 2026-09-02] NOT_DEFECT;累计 5D/5ND/0NME
+==========================================================================================
+- auditor 增量 1 链:NOT_DEFECT(A 机械 REFUTED:断言无诊断条款+参数伪影+
+  pre-router 框架 400;C WEAK_REFUTED;D NO_SIGNAL)
+- residual:OpenAPI 4XX→ErrorResponse 未提取为约束(new-class review 信号)
+- 累计 5 DEFECT / 5 NOT_DEFECT / 0 NME;R3 = chunk_aliases+update
+
+==========================================================================================
+[#2 | 状态机语义修正 | 2026-09-02] phase=session 级,轮=mutate
+==========================================================================================
+- 发现:ADR-0004 v3 状态机无轮回边(ROUND_START→…→REPORTING→DEFECT_REVIEW
+  线性终态流)。R1 的逐级 phase 推进是误用(phase 是 8a-8f session 步骤级,
+  非 8b 轮级);轮推进正确机制 = mutate --current-round(+total-defects)
+- 处置:phase 冻结于 REPORTING(不再动);轮循环由 mutate round + summary_rN.md
+  + chunks 顺序承载。机制改进项挂账:状态机可加"轮完成→下一轮"转移边
+  或轮级子状态(非本轮 scope)
+- mutate 已记:round=3,total_defects=5
+
+==========================================================================================
+[#2 | R3 C2-C4 | 2026-09-02] chunk_aliases+update(3 单元)
+==========================================================================================
+- R3 块单元:constraints::qdrant_state_aliases_update_001 + assertions::
+  qdrant_behavioral_aliases_update_001 + behavioral_contracts::
+  qdrant_bc_alias_switch_atomic_001(=run2r #1 R1 同块,当时 28 脚本 5 strict
+  含 batch 原子性×3——本轮为方法效力复测)
+- C2:22 脚本(bnd 10/state 5/sem 7);bnd007 千 action 原子性/bnd008 负序
+  拒批零变更/bnd009 atomic switch 全面/sem002 destructive-batch 最强证伪
+  (失败批内嵌活别名 delete)/sem005 request_required_paths 最小体
+- state agent 发现 runtime judge_4xx 窑与契约冲突(白名单仅 400/422,本断言
+  明示 404/404或500)→ 手写判定旁路(带 G5 typing+healthz 门)——工具挂账项
+- C3 全绿:classify WARN_ONLY(仅 R2 遗留 st003 WARN)preverify REJECT=0
+- C4 executor 派发(22 脚本;千 action/并发脚本带 docker stats 内存监控指令,
+  >1.6G restart 白名单——容器杀手先例预防)
+
+==========================================================================================
+[#2 | R3 C4-C7 | 2026-09-03] localhost 环境故障重跑 + 9 候选
+==========================================================================================
+- C4 首跑:17 exit0/5 exit1;state 5 个全 SETUP_ERROR(localhost:6333 read
+  timeout 30s——curl localhost 挂起同根因,127.0.0.1 正常;主机层 localhost
+  解析 flaky)
+- 重跑:state 5 脚本 127.0.0.1(脚本零修改,首次尝试留档 attempt1_state_
+  localhost_timeout/);终态 22/22(9 DEFECT/13 NO_DEFECT)
+- .executor.env 永久固化 TESTVDB_DB_URL=127.0.0.1(后续轮生效)
+- executor 操作事故自报:两次误重启容器(awk 单位解析 bug,170MiB 误判
+  超 1.6G)——无害,已修
+- C6:9 候选(bnd002/004/005/008 + sem002/004/006 + st001/002);累计 19
+- 原子性族多角度命中:bnd008(负序拒批零变更)/sem002(destructive batch)/
+  st001(mixed all-or-nothing)——run2r #1 同块 batch 原子性缺陷复测进行中
+- C7:9 builder 并行派发
+
+==========================================================================================
+[#2 | R3 C7 | 2026-09-03] 9 链四主题族 + 引文返工收敛
+==========================================================================================
+- 9/9 builder 完成,链分四族:
+  * 原子性族(st001/bnd008/sem002 链完整):batch 404 拒批后已应用部分残留
+    (position-dependent prefix commit + destructive delete 泄漏);源码
+    collection_meta_ops.rs:298-338 validate-then-apply 循环 ? 早退+insert 即
+    落盘无回滚;文档地基=版本 OpenAPI 原文 "Alias changes are atomic"
+    (openapi.json:11093,源自库内 docstring);函数注释自称 atomic——
+    run2r #1 defect-1 家族复现,三脚本独立触发 grade A
+  * 双键元素族(bnd002/sem006 链完整):serde #[serde(untagged)] 双
+    discriminator 先到先得,第二个键静默丢弃(200 + create 应用 delete 丢失);
+    REST-only(gRPC oneof 排他);契约地基弱(OpenAPI anyOf 技术允许)——
+    排他读法靠文档示例/registry typing/proto oneof 佐证
+  * delete-unknown 族(bnd004/sem004/st002):delete_alias 未知别名 200{true}
+    vs 同族 create-404/rename-404 不对称;doc 层断(契约 404 条款系
+    raw_knowledge synthesis,OpenAPI 只 200);"Delete alias if exists"
+    维护者措辞=by-design 抗辩在源
+  * NUL 别名(bnd005):现象真实(U+0000 别名持久化+列表可见)但链断
+    contract(无 charset 条款)——将 REFUTE;同面 collection_name+NUL→404
+    对比留档(interface-parity 信号)
+- 引文返工:5 处 mismatch(st002 首见+4 处 tail 截断漏看)全打回修;
+  终检 PASS 0 mismatch。**教训:预检输出不可 tail 截断,每次看全量**
+- builder 层表现好的信号:st002 修复时程序化提取断言 description(非手敲);
+  空 constraint_id 均由脚本头恢复并 note 留痕
+
+==========================================================================================
+[#2 | R3 收口 | 2026-09-03] 7 DEFECT/2 NOT;累计 12D/7N/0NME
+==========================================================================================
+- 判定:7 DEFECT/2 NOT/0 NME(A 机械全轮);三族=原子性×3(复现 run2r #1
+  defect-1,doc 原文+grade A 三脚本)/delete-unknown×3(人工复核优先:
+  doc 断裂×2+by-design 措辞)/双键×1(serde untagged 丢弃,REST-only)
+- auditor 留痕:双键不对称判定(bnd002 NOT vs sem006 DEFECT)忠实转录
+  builder violates 声明;new-class 信号 other=6(行为状态码断言类)
+- 人工复核清单累计:R1 404 条款地基 + R3 delete-unknown 三链 + 双键不对称
+- mutate:round=4,total_defects=12;R4 = chunk_cluster+collection+info
+
+==========================================================================================
+[#2 | R4 C2-C3 | 2026-09-03] chunk_cluster+collection+info + classifier 探针可见性坑
+==========================================================================================
+- R4 块单元:constraints::qdrant_type_cluster_collection_info_001 + assertions::
+  qdrant_behavioral_cluster_collection_info_001(2 单元)
+- C2:14 脚本(bnd 5/state 4/sem 6);bnd002=reflection 起效实证(明确探测
+  R1 200-on-unknown 家族的 cluster-info 镜像面);sem 注记 404 预期锚
+  endpoint_registry doc_quote 避免 R3 doc-break 模式
+- C3:compile/risky/api_format/neutrality 全 PASS;preverify REJECT=0 WARN=23
+- classify FAIL:transport_probe_wrong×3(sem001/003/st001)
+- **根因(机制坑挂账)**:classifier _extract_probes 只识别 safe_request/
+  requests.x 调用形态;rt.request("GET","healthz") 与 alive() 帮助函数
+  内的探针对分支 AST 不可见——脚本运行时行为正确,静态检查器看不见。
+  挂账修法:_extract_probes 增加 rt.request(path_key) 形态识别
+- 本轮 workaround:state/sem 加 safe_request 包装器(不改测试逻辑,
+  探针表达形式变化;state 修法已过检)
+
+==========================================================================================
+[#2 | R4 C4-C7 | 2026-09-03] standalone cluster-info 面 404 根源确认
+==========================================================================================
+- C4:15 脚本(sem 实为 6)全执行,10 exit0/5 exit1;并发脚本内存峰值 178MiB
+  无险(executor 单位修正版 memwatch 生效)
+- 主进程 probe 实测(裁决锚):standalone 部署下 GET /cluster/collection/
+  {existing} → 404,同时 describe → 200——**面间不对称坐实**,是 4 个
+  SCRIPT_ERROR(existing answered 404)+state 族 DEFECT 共同根源
+- 语义边界:契约断言 existing→200 有 doc 明文(比 R1 的 synthesis 地基强);
+  by-design 抗辩=standalone 部署限制(run2r #1 R8 阴性基线先例:"cluster
+  面 standalone 大多不可用由对照组兜底")——404 错误码误导性(应为
+  501/503 语义)是可争缺陷面
+- C6:6 候选(bnd003+sem002+st001-004);累计 25;L1 全 UNCERTAIN
+- C7:6 builder 并行
+
+==========================================================================================
+[#2 | R4 C7 破案 | 2026-09-03] 错路由族 + resharding by-design(预期阴性轮)
+==========================================================================================
+- 6/6 链完成,两大发现:
+  1. **错路由族(bnd003+4 个 SCRIPT_ERROR 的根)**:脚本从 chunk 标签推导
+     路径 /cluster/collection/{name}——qdrant 无此路由(正确=
+     /collections/{name}/cluster,raw_knowledge url 字段是对的,脚本忽略);
+     bnd003 的 200 来自错路由叠加 client 端 .. 段溶解(requests wire capture
+     证实)+ NormalizePath → GET /cluster → ClusterStatus::Disabled。
+     主进程 probe 的 404 同款错路由(与 sem 族同坑)——"部署限制"判断撤回
+  2. **resharding_operations 缺字段族(5 链)**:by_design 压倒性证据——
+     源码 TODO 注释(types.rs:340)+ serde skip_serializing_if + OpenAPI
+     nullable 非 required(仅 v1.11.x 曾 required)+ 上游测试断言 idle 缺席;
+     契约断言"response contains ... resharding_operations"系提取层过度
+     主张(doc 示例含字段但非 normative)——**提取质量坑:example 字段
+     ≠ required 字段,formalizer 应消费 OpenAPI required 数组**
+- R4 预期 0 DEFECT(首个阴性轮,方法抗误报能力数据点)
+- 引文返工 1 处(bnd003);预检 PASS
+- 机制坑挂账追加:chunk 标签→路径推导不可靠,attack 规范应强制消费
+  raw_knowledge 的 url 字段(R2 boundary agent 曾正确消费过——派发词
+  reflection 可加此教训)
+
+==========================================================================================
+[#2 | R4 收口 | 2026-09-03] 5 DEFECT(条件性)/1 NOT;累计 17D/8N
+==========================================================================================
+- 机械层 CONFIRMED×5 + E2 反翻案规则 → DEFECT 保留,by_design doubt 五链
+  留痕(doubt 密度 100%——人工复核负担信号)
+- 人工复核清单更新:+ R4 resharding 五链(containment vs nullable)
+- formalizer 系统性改进项:required 数组消费(J1 新成员)
+- mutate:round=5,defects=17;R5 = chunk_cluster+collection+update
+
+==========================================================================================
+[#2 | R5 | 2026-09-03] chunk_cluster+collection+update(部署边界轮)
+==========================================================================================
+- C2:21 脚本(bnd 8/state 6/sem 7);R4 教训全面吸收(URL 消费 raw_knowledge
+  url 字段/inline safe_request 探针)
+- C3:preverify REJECT=5(bnd007/008 缺 create_sharding_key.shard_key 必填
+  字段——D3b 判定树拦截,打回补字段后 REJECT=0)
+- C4:21/21(13 exit0/8 非零);内存 167MiB 无险
+- C6:4 DEFECT + 6 NOT + **11 SCRIPT_ERROR(部署边界爆发)**:standalone
+  拒 create_sharding_key carrier(两种 form 均 4xx)/无 peers 可发现
+  (peer_id/shard_id runtime discovery 失败)——agent 诚实收工拒硬编码(G10)
+- 亮点缺陷(bnd001):unknown collection → 400(JSON 解析错先于存在性检查)
+  vs 文档 404——与 R1 家族相反方向(格式校验抢跑)
+- L1 首次 REFUTED×2;4 候选进链(bnd001/sem001/sem005/st002)
+- 累计:29 候选
+
+==========================================================================================
+[#2 | R5 C7 | 2026-09-03] oneOf 压平 artifact 破案(J1 新成员)
+==========================================================================================
+- 4/4 链全断(预期 0 DEFECT 轮):
+  * bnd001/sem001/sem005 链断 script+doc:flat body {"operation":"move_shard",...}
+    不匹配 untagged enum(需单键包裹 {"move_shard":{...}})——**根因=
+    raw_knowledge 提取 artifact:oneOf 变体被压平成不存在的 operation 字段**,
+    sem 族脚本消费契约参数表全灭于此(J1 契约失真家族新成员:oneOf 压平)
+  * 决定性对照:bnd001 日志内同 body 打 existing collection 同 400
+    (400 系 body 驱动与集合无关);bnd007 schema-valid body 400
+    "Distributed mode disabled"(standalone gate,404 面不可达)
+  * st_ccu_002 链断 contract(实为 R4 resharding 同款;另记录其脚本
+    discover_ids 编造 fallback peer_id 987655/987654 但被 gate 先拦)
+- 提取质量改进项挂账(J1 累计):①required 数组消费 ②oneOf 变体保形
+  (勿压平)③404 条款 synthesis 三项——formalizer/extractor 系统性改进
+- 引文返工 2 处(bnd001/sem001);预检终 PASS
+
+==========================================================================================
+[#2 | R5 收口 | 2026-09-03] 1D/3N;累计 18D/11N/0NME
+==========================================================================================
+- 3 NOT 全 oneOf 压平/部署 gate 破案;1 D=resharding 第 6 确认(同 R4)
+- auditor 留痕:sem005 mundane_explanation 桶标注倒置(辅助标注瑕疵,
+  判定不受影响)——链质量观察项
+- mutate:round=6,defects=18;R6 = chunk_cluster+peer+delete
+
+==========================================================================================
+[#2 | R6 收口 | 2026-09-03] 0D/1N;累计 18D/12N/0NME
+==========================================================================================
+- 干净阴性轮:peer 删除面 standalone 全 4xx 正确拒绝;Type2 rubric 无契约锚
+- 执行事故 2 起:sem wrapper timeout 签名崩溃×5(修复重跑);st001/002
+  oracle+探针可见性返工(classify 探针坑再现——第 3 次,挂账升级)
+- mutate:round=7;R7 = chunk_cluster+recover
+
+==========================================================================================
+[#2 | R7 | 2026-09-03] chunk_cluster+recover(500 错误分类轮)
+==========================================================================================
+- C2:12 脚本(bnd 4/state 4/sem 4);classify st001 探针可见性返工(第 4 次
+  同坑——classifier 识别面实证)
+- C4:12/12(5 exit0/7 非零);recover 合法重启宽限未触发;内存 169MiB
+- **核心现象(7 候选同信号)**:POST /cluster/recover 在 standalone 一律
+  500 "Service internal error: Qdrant is running in standalone mode"
+  (所有 body 形态含 documented no-body control 一致)——**= pilot GT 9039
+  记录的现象("/cluster/recover standalone 500→4xx 可触发")**;
+  错误分类问题:可预期模式拒绝标 500(内部错误)而非 4xx/501,与 run2r #1
+  defect-16(churn 500 非 503)同族
+- sem 4 脚本 SCRIPT_ERROR(distributed deployment detected 诚实收工)
+- C7:7 builder 并行(bnd001-004+st001-003)
+
+==========================================================================================
+[#2 | R7 收口 | 2026-09-03] 6D/1N;累计 24D/13N/0NME
+==========================================================================================
+- recover 500 错误分类缺陷×6 确认(机械 A 全轮;家族 400-vs-500 不一致
+  佐证;bnd001 诚实域外 NOT);by_design doubt×7 留人工
+- **GT 关联:此面 = pilot GT 9039("/cluster/recover standalone 500→4xx
+  可触发")现象再现——reach 对账时 R7 链是 9039 关联证据**
+- 人工复核清单 +:recover 500 处置类(by-design doubt)
+- mutate:round=8,defects=24;R8 = chunk_cluster+status
+
+==========================================================================================
+[#2 | R8 | 2026-09-03] chunk_cluster+status(disabled 信封形状轮)
+==========================================================================================
+- C2:10 脚本(bnd 3/state 3/sem 4);C3 一次全绿零返工(reflection 传递到位)
+- C4:10/10(7 exit0/3 exit1);内存 169MiB
+- C6:5 候选;核心现象:GET /cluster 200 只有未文档 status:"disabled" 字段
+  vs 文档 ClusterStatus 四字段(peer_id/raft_state/commit_index/peers)——
+  **断言明示 "HTTP 200 with ClusterStatus even on a single-node deployment"
+  (地基比 R4 resharding 强:文档把单节点场景写进了承诺)**;另 2 个 Type2
+  (未文档动词 POST→404 空体)
+- C7:5 builder 并行(bnd001/003+sem002/004+st001)
+
+==========================================================================================
+[#2 | R8 收口 | 2026-09-03] 1D/4N;累计 25D/17N/0NME
+==========================================================================================
+- J1④(stale schema/编造平坦网格)实锤;bnd001 机械 DEFECT 留存与 sem002
+  分裂=最强人工复核候选(与 R4 resharding 同归并)
+- OpenAPI 4XX:ErrorResponse 残留信号第二次出现(R2+R8)——new-class
+  review 通道素材积累
+- mutate:round=9,defects=25;R9 = chunk_cluster+telemetry
+
+==========================================================================================
+[#2 | R9 | 2026-09-03] chunk_cluster+telemetry(+ 越块预演注记)
+==========================================================================================
+- C2:21 脚本(bnd 8/state 4/sem 9);C3 一次全绿
+- **越块注记**:bnd/sem 顺带打了 chunk_telemetry 面(8 脚本:bound_telemetry
+  3+sem_telemetry 5)——chunks[8] 仅含 cluster+telemetry 2 单元,chunks[75]
+  才是 telemetry。处置:R9 仅执行 13 个 cluster_telemetry;telemetry 8 个
+  挂起(已过 Stage1),chunk 75 轮直接复用执行(块纪律:执行层守块,
+  产物不浪费)
+- R8 教训生效实证:boundary agent 写 oracle 前对版本 OpenAPI 交叉核验,
+  避开两个坑(①契约的 payload 清单实为 service TelemetryData 而非
+  DistributedTelemetryData{collections*,cluster optional};②details_level
+  契约 "0..10" 与 spec "maximal is infinity" 冲突——冲突区只测不判)
+- C4 executor 派发(仅 13 个 cluster_telemetry)
+
+==========================================================================================
+[#2 | R9 收口 | 2026-09-03] 5D/1N/0NME(补证轮闭环);累计 30D/18N
+==========================================================================================
+- NME 补证轮首例实证:2 条 EVIDENCE_GAP one-field 修复→机械重裁
+  CONFIRMED→DEFECT(裁定一致性);auditor 轮次记 rework round 2
+- 200-promise vs standalone 500 家族第 2 例(telemetry;R7 recover 第 1)
+- mutate:round=10,defects=30;R10 = chunk_collections+create-1of2
+  (collections 大块序开始——run2r #1 的 uint8/wrong-dim/indexing_threshold
+  缺陷家族所在块)
+
+==========================================================================================
+[#2 | R10 | 2026-09-03] chunk_collections+create-1of2(12 单元大块)
+==========================================================================================
+- C2:41 脚本(bnd 12/state 14/sem 15)——最密块;12/12 单元三族覆盖
+- 复测点全景:uint8/float16 datatype 回读、shard_number、quantile 闭区间、
+  HNSW 全 minima、wal minima、memory percent、strict_mode mrmp、
+  memory enum(cold/cached/pinned)、sparse non-Dot、turbo4-on-sparse
+- boundary 发现并 measured-only 处理 5 处 spec 内冲突(create Diff 网格 vs
+  describe resolved 网格不一致:vacuum 0vs100/max_segment 0vs1/
+  deleted_threshold 无界vs[0,1]/wal_retain_closed 0vs1/fst readback 10vs0)
+  ——**spec 自冲突第 2 例(resharding doccons 后又一素材)**
+- state 8+1 脚本探针可见性返工(第 5 次批量同坑);agent 自查披露 001/003/
+  004/005 有组合条件分支形态避开了检测器(未 flag 未修——分类器盲区证据)
+- C3 终全绿;C4 executor 派发(41 脚本)
+
+==========================================================================================
+[#2 | R10 收口 | 2026-09-03] 5D/2N;累计 35D/20N/0NME
+==========================================================================================
+- wal panic 500 = 新缺陷(run2r #1 同块未发现);memory enum = docs-ahead-
+  of-code 版本钉扎人工复核项;vectors 空 = by_design 双证
+- mutate:round=11,defects=35;R11 = chunk_collections+create-2of2
+
+==========================================================================================
+[#2 | R11 | 2026-09-03] chunk_collections+create-2of2(7 单元)
+==========================================================================================
+- C2:23 脚本(bnd 7=013-019/state 7=015-021/sem 9=016-024,三前缀独立);
+  各族自跑 classifier/preverify 零 REJECT(纪律完全内化——agent 主动用
+  工具自检的首次三族齐绿)
+- 单元覆盖:resource shard_number/behavioral 001-005(200 信封/dup 拒绝/
+  残留/Euclid 保真/timeout)/bc_create_visibility;sem 019 含 R10 sparse[]
+  家族泛化(vectors:[] 新变体);sem 024 shard 极值 resource 腿
+- C3 一次全绿零返工;C4 executor 派发(23 脚本;024 长 resource 腿 300s+)
+
+==========================================================================================
+[#2 | R11 C4 | 2026-09-03] shard OOM 重磅 + R3 残留循环事故
+==========================================================================================
+- 执行:23/23(19 exit0/4 exit1);**shard_number=4294967295 三脚本独立
+  打死容器**(spec-legal uint32-max → qdrant "Cannot allocate memory"
+  panic → exit 134 OOM;bnd013 474s 双复现/st015 16s/sem024 6s)
+- sem023:visibility 延迟 Type4(create 200 但即时 list 缺席)
+- 环境事故(executor 披露+处置):①R3 残留 executor 循环活至 R11 在
+  打 aliases_update(kill PID;**污染范围核实:R3 log 文件时间戳未动
+  09-02 23:29,R4-R10 各轮 healthz 全程正常——实际影响=仅 R11 第一批
+  运行环境,批次已弃重跑**)②死 DB 批次重跑(dbdown_pass 留档)
+- C7:4 builder 派发(bnd013/sem023/sem024/st015)
+
+==========================================================================================
+[#2 | R11 收口 | 2026-09-03] 3D/1N;累计 38D/21N/0NME
+==========================================================================================
+- shard OOM 三链 DEFECT 确认(resource_bound 首秀;replication_factor
+  clamp 对照=家族最强证);sem023 script bug NOT
+- mutate:round=12,defects=38;R12 = chunk_collections+delete
+
+==========================================================================================
+[#2 | 用户指令 | 2026-09-03] "跑完这轮先暂停"
+==========================================================================================
+- R12 走完整轮(C3→C4→链→审计→收口)后暂停,R13 不启动
+- 暂停时交付:阶段战报+恢复点
+
+==========================================================================================
+[#2 | R12 C4-C7 | 2026-09-03] DELETE 200-on-missing 重磅 + alias 半删除
+==========================================================================================
+- 执行:16/16(9 exit0/7 非零);残留循环预检零发现;内存 174MiB
+- 6 候选两大主题:
+  * **DELETE never-created → 200 {result:false}**(bnd002/003/004 三独立
+    +st001):断言明示 404 not 200——v1.18.0 collections+delete 对不存在
+    名字返回 200 幻影成功(与 R1 列表面 200-on-unknown 同哲学的姊妹面)
+  * **via-alias 半删除**(sem005+st005):DELETE by alias 200 但原
+    collection 仍可 get(半删除状态)——run2r #1 defect-17(via-alias
+    DELETE 200 零变更)的变体复现
+- C7:6 builder 派发
+
+==========================================================================================
+[#2 | R12 收口+暂停 | 2026-09-03] 6D/0N;累计 44D/21N/0NME(12/80)
+==========================================================================================
+- DELETE 200-on-missing×4+by-alias no-op×2(defect-17 精确复现)全确认
+- 按用户指令暂停:R13(chunk_collections+exists)未启动
+- 恢复点:chunks[12]=chunk_collections+exists;reflection 取 summary_r12;
+  容器运行中(若隔久建议 docker stop 保留)
+- mutate:round=13,defects=44
