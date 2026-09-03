@@ -622,3 +622,28 @@ Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdr
 - 改进项(挂账,非本轮 scope):pipeline_gate 增加 PAUSED 语义或
   豁免文件(~/.testvdb-paused 或 pipeline_state.paused 字段);
   或 mine.md 增加暂停 SOP(phase 停在 REPORTING + 明确恢复路径)
+
+==========================================================================================
+[#2 | 状态机修正 | 2026-09-03] phase 轮循环边恢复使用
+==========================================================================================
+- R2 时误判"无轮回边"将 phase 冻结 REPORTING;实际完整循环边为
+  REPORTING→DEFECT_REVIEW→STATE_SAVE→ROUND_START→ATTACK_GEN
+  (STATE_SAVE 持有 ROUND_START 边,当时只查了 REPORTING 的直接后继)
+- R16 起恢复轮循环推进:每轮收口 = 走完 DEFECT_REVIEW/STATE_SAVE/
+  ROUND_START 到 ATTACK_GEN(表达"本轮 attack 生成中"真实状态)
+- Stop gate 噪音仍在(只认 DONE/rounds>max),挂账项不变
+
+==========================================================================================
+[#2 | R16 收口 | 2026-09-03] 零候选轮 2;累计 45D/22N(16/80)
+==========================================================================================
+- optimizations 面 15/15 全 NO_DEFECT(executor glob 扩展处理正确)
+- mutate:round=17;R17 = chunk_collections+update
+
+==========================================================================================
+[#2 | R17 C4 坑 | 2026-09-03] extract_candidates 顶层扫描盲区
+==========================================================================================
+- executor 本轮把 R17 日志写进 debate_logs/ 子目录(非既往 session 根);
+  extract_candidates 只扫 session_dir/output_*.log → 3 DEFECT 漏提取
+- 处置:主进程 cp 日志至顶层(不重复执行脚本)后重提取 3 候选到位
+- 机制坑挂账:extract_candidates 应递归扫 output_*.log(session 根 +
+  debate_logs/ 双位置);executor 日志落位需规范化(既往 R1-R16 全在根)
