@@ -1022,3 +1022,39 @@ Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdr
   累计)——后续轮反思上下文加 by-id 自排除先例
 - mutate:round=41,total_defects=63;R41 = chunks[40]
   chunk_points+query+groups
+
+==========================================================================================
+[#2 | R41 全轮 | 2026-09-04] chunk_points+query+groups;OOM 事故+8d.5 闭环;2D/3N;累计 65D/60N(41/80)
+==========================================================================================
+- C2:25 脚本(bnd 8/state 8/sem 9);反思上下文新增 by-id 伪前提+
+  order_by 前置先例(全部生效零误触)
+- C3 Stage1 全绿
+- **C4 事故**:resource_001(limit×group_size=1e6 极值)OOM 击杀容器
+  (137/OOMKilled,2GiB),23/25 作废;executor 自行重启容器+报告
+  (处置正确);22 条重跑 5D/17N;resource_001 隔离复跑 OOM 复现
+- **8d.5 死亡 oracle 闭环(本 run 首例资源类工单)**:脚本原设
+  "/healthz down=SCRIPT_ERROR"→按 R11 先例(uint32-max OOM=
+  resource_bound DEFECT 首秀)打回 boundary agent 修订(仅死亡分支
+  改 DEFECT_FOUND Type3+起跑 healthz 噪声护栏);修订版隔离重跑
+  3/3 确定性 OOM,DEFECT 入册
+- C5-C6:6 候选;L1 REFUTE payload_003(+2 条 R5 旧候选复扫 REFUTEd;
+  L1 未重写 candidates.jsonl——按派发清单层执行,机制挂账)
+- C7:5 builder 并行;verify 一次 PASS(连续两轮零返工)
+- C8 auditor 单批:2 DEFECT/3 NOT/0 NME
+- 2 DEFECT:group_by 无值字段 200[] vs 钉死 400(两独立脚本同族;
+  源码 must_not IsEmpty 静默合并无校验器;B HTTP-semantics+D 锚
+  silent-failure-missing-ref 双确证)
+- **resource_001 NOT_DEFECT=机械层铁律案例**:3/3 OOM 真实
+  (aggregator.rs:40 with_capacity(groups*group_size)=1e12 预留)
+  但 range 单元 minima-only→A REFUTED→NOT 绑定;B=CONFIRMED
+  resource boundary 疑点人工复核;**J1④:契约 6 条 resource_bound
+  覆盖 shard/offsets/pairs/facet 独漏 query-groups——R11 有条目
+  故 DEFECT,本轮无条目故 NOT,formalizer 提取覆盖缺口新成员**
+- 2 NOT(behavior):filter/semantics=脚本 oracle 工件(fixture id
+  公式与 oracle 表两套公式;响应按重建 fixture 逐字节正确;源码
+  数学确认)——**同 seed 双脚本共享同一 oracle 错误=独立互证失效
+  实证案例**
+- 环境留痕:executor Step 0 两度再生 .executor.env(localhost 覆盖
+  固化 127.0.0.1,已手工恢复);bqgsR* 残留 3 集合已清
+- mutate:round=42,total_defects=65;R42 = chunks[41]
+  chunk_points+recommend
