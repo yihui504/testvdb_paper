@@ -83,6 +83,7 @@
 - **C6** candidates.jsonl 落盘
 - **D4** verify_defects.py 双门（机械门与 auditor 分歧如实记录）
 - **D3 完整** reporter + reporter-mre 两者缺一不可
+- **Step 6.5** 策略预绑定（2026-09-04 增补，插件 2.5.0 起 gate 症状④强制：契约有约束但无 `_strategy_binding` → Stop 拦停；先例：run2r2 全程跳过致 75 约束空绑定 19+ 轮无人察觉，整体作废——VOIDED-step65.md）
 （V2-V5 先例：#1-#10 全部漏 B7/C3，多数漏 D4/MRE——已随终裁作废，重跑起此条款强制。）
 
 ### R12. 派发词零增改（信息一致红线，R6/R8/R9 的操作化）

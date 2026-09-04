@@ -16,9 +16,10 @@
 - [x] **C 分级**：契约 schema 三组 constraints 加 `level`（endpoint/system）required + 规则 2.7 判据（观测方式为准）
 - [x] **H2 spec-first**：规则 2.8（openapi 第一锚 / parameters 升级断言层 / tag 版本核对）
 - [x] **D2 预绑定**：`scripts/bind_strategies.py`（确定性，零 LLM）+ 9 单测 + self-check；mine.md/orchestrator.md Step 6.5 编排接线；三 attack agent 消费段。真实 15 版旧契约验证：lint 正确拦截 58 条缺 level 约束
+  - [x] **D2 v3.5 修正（2026-09-04，插件 2.5.0，main 47c2221/83c7764）**：发现 run2r2 全程跳过 Step 6.5（75 约束空绑定 19+ 轮无人察觉，run 作废→VOIDED-step65.md）。修复：① 消费语义改 A+B 叠加（绑定直生 + 全量 G1–G10 双向普适，交叉验证，`path: A|B` 分账）；② gate 症状④强制 `_strategy_binding` 在位（三段拦停实验验证）；③ strategy_registry 解除 gitignore 随插件分发（曾被 4b12905 误归 dev-only，致 registry 从未进部署链）；④ 86 测试全绿。run2r2 qdrant v1.18.0 待 2.5.0 重跑
 - [x] **A 实现层**：raw_knowledge.md→json 全链 12 文件同步（历史实证行保留）；contract-formalizer 标注表述名 Behavioral Specification Extractor（id 不变，拍板 4）
 - [x] **B knowledge 边界**：SDK Info/Docker Images 移出 → `deployment_meta.json` 侧车
-- [ ] **重跑前置**：①15 版契约按新 schema 重新生成（formalizer 重跑 → Step 6.5 绑定）②cache 2.3.0 副本同步（junction 自动/独立 clone 手动）③qdrant v1.18.0 从头重跑（旧 9 块对照保留）
+- [x] **重跑前置**：③qdrant v1.18.0 从头重跑 ✅ **R1-R33 全量完成（2026-08-28，101/101 单元，DEFECT 35，F 统计落盘）**；②cache 同步 ✅（v1.18.0 全程在 cache 2.3.0 跑通）；**①15 版契约批量重生成未做（仅 v1.18.0 pilot 完成）——挂 15 版批量脚本化**
 
 ## pilot 验收（qdrant v1.18.0，2026-08-25，commits 47d2074/8477d31/008ea91）
 
@@ -37,7 +38,10 @@
   - **S1 教训固化（2026-08-26，01c6a20）**：runtime `req()`/`qdrant.request()` 加 query 参数通道（params=/query_params=）+ boundary 策略 1 前置参数放置核对（openapi `in` 字段；禁 query 塞 body——silent-drop 假信号）；28 单测过，cache 已同步
   - **R2 收官（2026-08-26，session=2026-08-25T16-12-23Z，chunk_collections+create-1of2）**：48 脚本/19 候选/**DEFECT 5 / NOT_DEFECT 14 / NME 0**，机械定案 19/19（NME 补证轮+turbo 跨链重裁全程机械闭环）。DEFECT=uint8 静默钳位族 3 + oneOf 双键 1 + 并发 churn GET 500 单点 1。三标志性事件：①shard_number=10000 DoS（012 案，schema 合法打崩服务两次复现，机械因契约无上限断言判 NOT_DEFECT——DoS 类超出 strict 断言框架实证，limitations 候选+人工通道保留）；②turbo×Manhattan 族契约失真（blog first-class 列举被过度诠释为闭集，跨链工单重标+机械重裁收敛，qdrant_type_collections_create_006 待修正）；③E 收紧规则首次触发正确工作（明示 by-design=官方测试+PR 原话）。详见 summary_r2.md
   - **R3 收官（2026-08-26，session=2026-08-26T05-18-32Z，chunk_collections+create-2of2 混合型）**：41 脚本/10 候选/**DEFECT 7 / NOT_DEFECT 3 / NME 0——零补证轮**（引文预检 abc7b1e 首战拦截 4 条，秒级修复对比 R2 整轮 NME 补证）。DEFECT=inline_storage warn-and-ignore 族 4（上游测试钉死 by-design 但 violates=true 机械定案）+ 默认值分歧族 2（readback 10000 vs 文档 20000，vendor openapi 自相矛盾）+ churn 500 跨轮复现 1。**三轮累计 24/101 单元：118 脚本/41 候选/DEFECT 14**，待人工复核 10 项。Oracle 三连漏定性（打回-补课唯一可靠机制）；新挂账：bc 契约无 assertion 字段（formalizer）/raw_knowledge exists 形状失真（extractor）。详见 summary_r3.md
+  - **R4 收官（2026-08-26，session=2026-08-26T11-49-28Z，chunk_collections+delete，gate v4 首战）**：19 脚本/10 候选/**DEFECT 5 / NOT_DEFECT 5 / NME 0——零返工轮**。gate v4 首战实绩：oracle_missing 12 拦截（四连漏机械根治，retry 工单秒级补齐）+ 现场修 2 检测误报（teardown 攻击请求放行/Assign 纯取值收窄，R3 靶标 8 REJECT 存活零损失）+ boundary 生成侧自检自修（预防生效）。DEFECT 5 全为 absent-delete-200 族——**auditor 警示：契约 not-found 子句两层文档无支撑仅存 raw_knowledge digest，断言加码候选，复核裁定失真则全翻**。分层防御实证：C 类漏网 2 例（is not False 盲区）由 builder/auditor 兜住。四轮累计 26/101 单元：137 脚本/51 候选/DEFECT 19。详见 summary_r4.md
 
+  - **R5-R33 全量收官（2026-08-26~28，qdrant v1.18.0 33 chunk 机制轮完整跑完）**：101/101 单元/701 正式脚本/156 候选/135 链终判/**DEFECT 35**（gate v4 全程生效 R4+）。逐轮 summary_r5..r33 落 session 目录；契约失真家族 7 例三支（FIX-6/7 落盘修正）；判例规则 9 条沉淀；R15 部分写锚 R27 复核+R18/R26 历史更正。**F 节统计最终版底稿（2026-08-29，FINAL_STATS_RQ1_v34.md @ cache results/qdrant/v1.18.0/）：总量账+逐轮审计增量全表+35 缺陷 12 根因族+TP 可确认性分层（Tier A 直接可确认 ~13：五强 vendor 自证型 R20/R21/R22/R23/R30 + churn 族 ×5 等）+机械核验对账**
+  - **已报告 bug 重复核对（2026-08-29，novelty gate 前置预检）**：对 phase1-raw qdrant issue 语料 33 条——35 计数内重复/近重复 ≈4-6 条（R14↔#9419 近重复；R1×2↔#9364/#9371 族；XOR↔#9524 族；R22↔#9372 主题前例）；Tier A 五强中 R20/R23/R30 净新；未计数域外发现 3 处已被上游报告（部分写/timeout=0 #9869/shard DoS #9520——反向验证域外判定）；R27 不可溯源 maintainer quote 定位=#9371 标题原文。语料时间窗 2026-05~07 疑系本项目早期上报——严格 novelty 主张前须确认归属
 ## 拍板记录（2026-08-25，用户确认按推荐方案）
 
 | # | 决策 | 结果 |
@@ -57,12 +61,12 @@
 
 ## B. knowledge 内容边界〔slide 17〕
 
-- [ ] SDK Information、Docker Images 两块移出 knowledge 文件内容（信息有用，迁到配置/情报层，不留在 knowledge）
+- [x] SDK Information、Docker Images 两块移出 knowledge 文件内容——**pilot 落地：→ deployment_meta.json 侧车（migrate_raw_knowledge.py + cache 正式转换，50/50 端点验证）**
 
 ## C. constraint 分级〔slide 19〕——影响契约 schema
 
 - [x] 契约 schema 增加层级字段：**API 端点级**（类型、范围等，仅与当前端点相关） vs **系统级**（行为、状态类，涉及多个端点）——落地（pilot：64 约束+22 断言全带 level，43 endpoint / 21+2 system；lint_levels 强制校验 15 版旧契约实测拦截 58 条缺 level；D2 绑定按 level 区分消费）
-- [ ] 开放探索：文档约束可能不止 类型/范围/行为/状态 四型，尝试提取**新约束类别**并归入上述两级——**规范层 2026-08-26 落地（规则 2.9：resource_bound + doc_consistency 两类，三轮实证驱动；15 版批量起生效，当前 v1.18.0 重跑不回溯保三一致）**
+- [x] 开放探索：文档约束可能不止 类型/范围/行为/状态 四型，尝试提取**新约束类别**并归入上述两级——**规范层 2026-08-26 落地（规则 2.9：resource_bound + doc_consistency 两类，三轮实证驱动；15 版批量起生效，当前 v1.18.0 重跑不回溯保三一致）**；**✅ 2026-08-29 扩展为三类 + 全类实战闭环：(a) other 兜底类入规则 2.9（强制 no_fit_reason + 开类评审触发——回应"约束仅有这几类"完备性质疑：分类可不完备、处理机制闭包，任意约束必有测试路径：命中绑定走绑定，未命中走通用正反覆盖）；(b) 三类完整 agent 管线实战（newcat-pipeline 专项，10 脚本：other 3/3 DEFECT=D4 已知答案独立重现、resource_bound 1/4 DEFECT+3/4 正确阴性、doc_consistency 冲突检出+侧别归因；报告 NEWCAT_PIPELINE_REPORT.md）**
 - 依赖：与 D（策略预绑定）联动设计，分级口径先定稿 ✅
 - 〔run2 实证〕J1 契约提炼失真 5 项全部系 prose 优先所致 → 分级落地时一并做 spec-first ✅（H2 已落地，版本核对 gate 首战拦截 latest 污染 + 复跑清 5 处）
 - 〔run2 实证〕系统级/新约束类别现成实例（J3 timeout 跨面不对称＝跨端点系统级；R5 exists 响应形状/doc-gap 族＝文档语义一致性类）——**v3.4 轮新增实证入规则 2.9：R2 012 案（shard_number=10000 合法值打崩服务，契约无上限断言→DoS 无法 strict 定罪）＝资源边界类；R3 默认值分歧族（readback 10000 vs 文档 20000，vendor openapi 自相矛盾）＝文档语义一致性类**
@@ -72,13 +76,18 @@
 - [x] 覆盖策略随级别变动：端点级约束 → 给定具体测试场景；系统级约束 → 通用场景正反两面测试 + 基本原则覆盖——**落地形态为简化版**：endpoint 级 BUILTIN_BASELINE 预绑定（30/43）；system 级不绑定、agent 走"覆盖目标驱动"（通用场景正反两面+基本原则构造）。R1（state 级块）/R3（IF-THEN 约束）实证有效。论文按实际形态描述，不声称两级策略库结构
 - [x] **取消"策略匹配"环节**：可直接匹配的策略与约束**预绑定**——`scripts/bind_strategies.py`（确定性 0 LLM）+ mine.md Step 6.5 接线 + 三 attack agent 消费段；13 unbound 全是 state endpoint 级（"清晰才绑"设计内）
 - [x] **D3a oracle 配套生成（本轮，拍板 3）**：规范层落地（`Oracle:` docstring 强制行 + 禁裸 status 判读，088dbfe）；**执行层三连漏（R1 29/R2 48/R3 41 生成时全缺）由 C3 打回闭环兜底（打回后 100% 补齐）**——诚实结论：LLM 生成时不自觉、门禁是实际保障；`Oracle:` 行下游统计消费 → F 节（oracle_stats.py 已备）
-- [ ] **D3b 运行前预验证（后置 future work）**：拍板 3 明确后置，未做
+- [x] **D3b 运行前预验证**：✅ 2026-08-26 全量落地（gate v4，preverify_version=D3b-R4.0，R4+ 生效；commit 链 4b29092→cc19370 五提交）——**设计结论：不加 agent，机械层覆盖全部实证失败形态**
+  - spec_index.py（OpenAPI/Swagger 双形态确定性索引：request 递归必填树 + 200 响应 lattice；6 真实 spec smoke 零失败）
+  - 4 检查类：oracle_missing（D3a 手动打回机械化）/ transport_probe_wrong（012 靶标：业务端点假存活）/ oracle_shape_conflict（断言×lattice 相容矩阵，state_02 靶标 + VACUOUS 永真 WARN）/ request_required_missing（anyOf 判别键消歧，semantic_004 靶标）
+  - severity 阶梯（REJECT 进 retry 工单 / WARN 边车不耗预算）+ legacy 回放护栏（TESTVDB_PREVERIFY=NONE，R1-R3 逐字节一致）+ WARN_ONLY 校准保险
+  - 契约物化：enrich 三字段（response_shape/request_required_paths/description_conflict——exists 转述失真当场标记）；meta.oracle 单写者派生（R2 挂账项一并落）
+  - 验收：R3 41 脚本全链回放 8 REJECT 全有据（**新发现 state_08/09/11 同款 exists 形状盲——系统性惯用法 5/12 state 脚本**）；R1/R2 零 REJECT；118 tests 绿
 - [x] 脚本投跑前基础检验：v3.1 §1.2 run check scripts（py_compile/risky/api_format/neutrality）+ retry 子循环承接；v3.4 轮追加 executor 存活复核协议（R2 教训）与引文预检（abc7b1e，auditor 前置）
 - [x] 策略清单审视：清晰的（Boundary Value、Type Boundary）保留于 BUILTIN_BASELINE；笼统策略的"基于原则构造场景"由覆盖目标驱动流程承接；策略 1-7 清单本身未重构（消费方式改变替代清单重构）
 
 ## E. 测试后检验模块〔slide 36 + 46 重申〕
 
-- [ ] 拍板二选一：**调整或弃用测试后检验**（7 个 TP 被误筛说明过严，而总 FP 率不算高）
+- [x] 拍板二选一：**已拍板方案 1（重构放宽，2026-08-25 拍板 2）并落地**——auditor C 视角收紧（明示 by-design 才 REFUTED/沉默 → WEAK_REFUTED 走人工）+ builder by_design_in_source 口径收紧；RQ2 侧新链路 v9 四轮 0.909/0.889 实证 TP 完整性恢复
   - 方向 1：用 FP 率换 TP 完整性（放宽/重构该模块）
   - 方向 2：直接弃用该模块 + 诚实报告 FP 率
 - ⚠️ 冲突提示：与二轮拍板"strict 零改动"及 RQ1 全量重跑排程直接冲突——**先定改动范围，再排重跑**，避免重跑完又改机制
@@ -86,7 +95,7 @@
 
 ## F. 实验设计〔slide 39/48〕
 
-- [x] RQ1 补充分析：**统计框架 + 初步产出落地（2026-08-26：oracle_stats.py 机械解析三轮 118 脚本 → docs/rq1-constraint-strategy-stats.json——DEFECT×约束/策略/类型/视角 pivot）**；最终统计待 33 块跑完（当前 3/33，24/101 单元）
+- [x] RQ1 补充分析：**统计框架 + 初步产出落地（2026-08-26：oracle_stats.py 机械解析三轮 118 脚本 → docs/rq1-constraint-strategy-stats.json——DEFECT×约束/策略/类型/视角 pivot）**；**最终统计 ✅ 2026-08-29 落盘 FINAL_STATS_RQ1_v34.md（总量账/逐轮全表/12 根因族/TP 分层/重复核对/机械对账）——论文 F 节成文直接引用**
 - [ ] RQ3 对比实验（= v3.1 §2.3 被 v3.4 slide 48 重申，方案不变）：最新版上直接跑 TestVDB vs VDBFuzz，版本一致、耗时一致，对比挖掘成果；PPT 需"讲清楚"该实验设置
 - [ ] （理想项）获取 VDBFuzz 的 bug list → TestVDB 挖掘复现尝试或直接分析
 
@@ -109,20 +118,20 @@
 
 ### H2 契约层改进（J1 五项失真的系统解，并入 §C 实施）
 
-- [ ] spec-first 提取：枚举值域/响应形状/参数面以 openapi.json 为第一锚，prose 仅次级
-- [ ] 参数表描述升级断言层：metadata merge 语义类补 constraint_id（R7 零锚根因）
-- [ ] 提取时 openapi tag 版本核对（.sourcedeps 漂移，R9 发现 memory/prefix）
+- [x] spec-first 提取：枚举值域/响应形状/参数面以 openapi.json 为第一锚——规则 2.8 落地 + gate 首战拦截 latest 污染 + fetch 按版本抓取修复（89c717d）+ formalizer 复跑清 5 处污染
+- [x] 参数表描述升级断言层：metadata merge 语义物化为 system 级约束（pilot formalizer 重跑已落）
+- [x] 提取时 openapi tag 版本核对——规则 2.8 版本核对 gate（首战即拦截 v1.19 污染）
 
 ### H3 run2 收口挂账（D 段，与 §F RQ1 数据直接联动）
 
 - [ ] **D 段人工复核 4 项**：by-design 抗辩 4 簇（影响 12 项 defect 提交口径）/ interface-parity 单案重派（J3 建议走正规挖掘路径）/ doc-as-ground 翻案权（metadata "{} 清除"案，翻后 strict 18→19）/ verify_defects 3 个静态 FP 标记复核（预期维持 CONFIRMED）
-- [ ] novelty gate 收口（32 块全完后统一跑）→ RQ1"发现已被报告 bug"列依赖此步
+- [ ] novelty gate 收口（33 块已跑完）——**前置预检已做（2026-08-29：35 中 4-6 条重叠/Tier A 五强 3 净新/域外 3 已报告，见 FINAL_STATS §六）；正式 novelty_gate.py 全量跑 + 语料归属确认（疑自报）待做**
 - [ ] MRE 挂账补齐：defect-17/18
-- [ ] GT 对账：本轮 18 strict 与 GT（9039/9045 reach）+ 44 bug 全局视角对账
+- [ ] GT 对账：本轮 35 DEFECT 与 GT（9039/9045 reach）+ 44 bug 全局视角对账——**标题级预对账已做（2026-08-29）；正文级正式对账待做**
 
 ### H4 工程优化（非阻塞）
 
-- [ ] dos 类脚本隔离执行：专用容器或限流（容器杀手模式，探索模式批量探针同样受益）
+- [ ] dos 类脚本隔离执行：专用容器或限流——**实践级缓解已用（R20/R25 杀手脚最后跑+死后重启+梯度上限纪律）；正式机制未建**
 - [ ] 探索模式实战验证：9 轮全 enum 未触发切换，待后期大块（points+upsert 拆块）验证 8a.5/8b-expl
 
 ## v3.4 关键路径（拍板已定，执行版）
@@ -255,4 +264,4 @@
                               └──→ 3.1 讲述页（raw knowledge / 策略清单可先行，不依赖实现）
 ```
 
-注：1.1–1.3 与 2.2/2.4 已落地；2.1 端到端重跑未启动，**须与 v3.4 §C/D/E 的改动范围对齐后再排**（避免重跑完又改机制）。
+注：1.1–1.3 与 2.2/2.4 已落地；**2.1 端到端重跑已由 v3.4 机制轮完成（qdrant v1.18.0 33 chunk，2026-08-28）**；"发现已被报告 bug"列待 novelty gate 正式跑（预检已做）。

@@ -443,8 +443,8 @@ Footnote: `extract → builder chain → auditor verdict`
   [C:/Users/11428/Desktop/mftui/TestVDB/scripts/bind\_strategies.py#L64-L79](../files/10369-walkthrough/pipeline/bind_strategies.py#L64-L79)
 - `chunk_points+recommend`(单单元块)
   [C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/results/qdrant/v1.18.0/chunks.json#L572](../files/10369-walkthrough/contract/chunks.json#L572)
-- 预绑定消费:非空直按清单 / 空 → 场景构造
-  [C:/Users/11428/Desktop/mftui/TestVDB/agents/attack-state.md#L99-L101](../files/10369-walkthrough/pipeline/attack-state.md#L99-L101)
+- 预绑定消费(D2 v3.5,2026-09-04 起 A+B 叠加):非空直按清单(路径 A) **+ 全部约束普适 G1-G10 双向(路径 B,含已绑定)**,A/B 独立构造=交叉验证;gate 症状④强制 `_strategy_binding` 在位
+  [C:/Users/11428/Desktop/mftui/TestVDB/agents/attack-state.md#L99-L107](../files/10369-walkthrough/pipeline/attack-state.md#L99-L107)
 
 ## ④ 攻击生成 + gate
 

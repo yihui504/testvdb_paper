@@ -13,7 +13,7 @@
 | Knowledge 采集 | knowledge acquisition | `[paper-TBD]`(论文将此环节并入 claim extraction) |
 | Specification 提取 / 契约形式化 | specification extraction / contract formalization | 论文 L52 "extract behavioral specifications from documentation" |
 | 分块 | chunking | |
-| 策略预绑定 | strategy pre-binding | `[paper-TBD]` |
+| 策略预绑定 | strategy pre-binding | 插件 2.5.0 已实装并 gate 强制（症状④）；消费语义 D2 v3.5 = A+B 叠加（绑定直生 + 全量 G 双向）`[paper-TBD]` |
 | 三视角攻击 | three attack perspectives(boundary / semantic / state) | 论文 L359 "perspective" |
 | 预执行门 / 机械门 | pre-execution gate / mechanical gate | 论文 L243 "a mechanical gate" |
 | 证据链 | evidence chain | |
