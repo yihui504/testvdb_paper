@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "对不存在集合 create_index 返回 collection not found 是正确的错误报告；SDK 65535 是 quick-create 自动建默认索引后的同字段单索引约束，且契约行缺失，无文档承诺被违背。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "日志显示两个集合的 HNSW/IVF_FLAT 索引创建均失败（at most one distinct index），搜索实为无索引暴力扫描，ef/nprobe 参数本就不生效，观察无法证明索引搜索的参数校验缺失，且契约中无 ef/nprobe 取值范围约束。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "文档明确 collectionName 为可选且未指定时返回全部别名，空串视为未指定，返回空别名列表（本就未建成功任何别名）语义正确，与必填 collectionName 的 describe 对照不构成缺陷。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "rename 与 create(dst) 并发时 rename 因目标名已被并发 create 占用而失败、create 成功属正常竞态结果，维护者已表态该场景 by design，契约仅有非空字符串约束未被触碰。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "维护者明确表态 get_stats rowCount 只统计已 flush 数据（issue 50193 by design），insert+load 后未 flush 时 rowCount=0 而 query 可见与该设计一致，无 get_stats 契约行被违背。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "delete 后立即 search 仍见已删 id 符合默认 Bounded 一致性允许的短暂陈旧读取（delete 经 time-tick 异步可见），且该案 entities+search 无任何契约行承诺删除立即可见。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "源码 createCollection 末尾自动执行 LoadCollection，REST quick-create 的集合创建即已加载，从未手动 load 的集合搜索成功是预期行为，无契约约束被违背。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "同名同参数重复 create 返回成功是维护者明确表态的幂等 by design 语义（issue 50192），契约行仅约束类型与 200 成功响应，未被违背。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "对不存在集合 drop 返回成功是幂等删除的常见且 Milvus 一贯行为，文档与契约行均未承诺对缺失集合必须报错。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "同时传 filter 与 ids 被接受且 deleteCount=1 与集合内唯一匹配实体一致，结果语义正确，文档与契约均无二者互斥的约束。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "REST insert 单批 101 条成功，文档与契约均无 100 条批量上限的承诺，不存在被违背的文档约束。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "Milvus 命名规则允许以字母或下划线开头，下划线开头的集合名创建成功符合契约（仅类型约束），非缺陷。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "源码确认 create 仅从 params.shardsNum 读取分片数，顶层 shardsNum 字段被静默忽略（与维护者 50351 by design 表态一致），0/-1/65535 从未被消费，非参数校验缺陷。"}
+{"defect_id": "milvus_028", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "源码确认空 metricType 回落 DefaultMetricType、顶层 consistencyLevel 不被 create 消费（默认 Bounded），二者均为可选参数的良性处理；dimension=32769 被正确拒绝，无文档承诺被违背。"}

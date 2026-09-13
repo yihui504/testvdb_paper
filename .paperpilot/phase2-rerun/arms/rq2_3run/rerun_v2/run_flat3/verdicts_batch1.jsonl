@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "观察记录为空（未捕获任何HTTP交互）且契约依据无法核查，无任何证据可支撑缺陷成立。"}
+{"defect_id": "milvus_002", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "显式IVF索引创建已失败（multiple indexes错误），搜索实际跑在quick-create的AUTOINDEX上，nprobe=0只是被无关参数忽略，并非IVF索引非法接受越界nprobe。"}
+{"defect_id": "milvus_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "HNSW索引同样创建失败，实际搜索走AUTOINDEX，ef=0作为不被消费的参数被忽略，观察摘要与日志自相矛盾且无契约行支撑。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "IN为集合语义与顺序无关，'age in [10, 5]'删除age=10、空IN返回0行均为正确过滤行为，无任何契约被违反。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "insert无任何动态键名校验地接受'123field'/'@field'并返回成功，而查询侧outputFields经ANTLR标识符解析拒绝同一名字（源码证实该不对称），数据可写入却无法按名读回，构成真实的校验缺口缺陷。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "text_field并非声明的VARCHAR列而是动态字段键，JSON动态字段按值存取混合类型属设计内行为，未违反任何可核查契约。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "日志显示空查询向量已被正确拒绝（code=1801 invalid parameter，明确报维度不符），摘要声称的类型不匹配错误与捕获记录不符，服务端行为无缺陷。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "COSINE契约明确承诺距离值硬性范围[-1,1]，100次同向量查询中11次实测返回1.0000002（恰为float32在1.0之上2个ULP、未做截断），可复现地越出文档承诺边界，构成真实的文档-实现失配。"}
+{"defect_id": "milvus_009", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "nprobe=0是在quick-create的AUTOINDEX集合上被接受，该参数本就不被消费而静默忽略，材料中亦无约束nprobe取值的契约行，不构成越界参数被非法接受的证据。"}
+{"defect_id": "milvus_010", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "源码证实REST v2 create请求结构体根本没有properties字段，负TTL被静默忽略且describe确认未生效，这正对应该vendor对未消费字段静默忽略的公开by-design表态，而alter路径已正确做范围校验。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "filter缺省时按match-all处理，源码QueryReqV2对filter无required校验且空表达式是count(*)等场景有意支持的模式，材料中亦无要求filter必填的契约行。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "dbName=''回落到default库属良性回退，文档仅描述为'The name of an existing database'而无任何非空或拒绝语义声明，无契约被违反。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "已核查的官方API文档从未给Request-Timeout头声明任何类型或取值约束（header参数仅列Authorization），接受'3.5'/'abc'并回落默认超时未违反任何文档契约。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "dim=32768被接受而32769被拒绝，与实施强制且错误信息明示的范围'2 ~ 32768'完全一致，边界行为正确无文档-实现矛盾。"}

@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "CONFIRMED", "confidence": 0.72, "rationale": "请求以groupParams携带groupByField/groupSize=2/strictGroupSize=true,服务端对该JSON结构完全不识别(handler_v2.go仅在顶层groupingField非空时透传groupSize),静默降级为普通top-15搜索并返回200,每组3条违反strictGroupSize=2的文档承诺,属参数被静默忽略的文档-实现缺陷。"}
+{"defect_id": "qdrant_001", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一空向量非法请求wait=true返回400维度校验错误,wait=false却返回200 acknowledged且该点始终未落库(points_count=0),违反'校验错误返回4XX'契约,异步路径静默吞掉校验失败。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约仅规定hnsw_ef在exact=false时适用而无最小值断言,单点小集合走暴力扫描路径返回正确结果(200+score=1.0),未观察到可归因于ef=0的任何违约行为。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "score_threshold=2.0滤掉score=1.0的点、threshold=-0.5保留该点,两次均符合阈值过滤语义且返回正确,无契约违反。"}
+{"defect_id": "qdrant_004", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "3维向量wait=true被400拒绝而wait=false被200 acknowledged接受且点从未入库,同一校验错误在异步路径下无任何错误上报,客户端误以为写入成功,属静默丢数据的契约违反。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "shard_number=0返回422'必须≥1'、-1返回400'expected u32',两个越界值均被正确拒绝,完全满足shard_number>=1契约,观察为通过性测试而非缺陷。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "filter color=red精确返回4条红色点(2/4/8/10),无color字段的点3和6被正确排除(missing_payload_ids=[]),过滤语义完全正确。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "批量内含坏维向量时整批400拒绝且count保持3不变,与契约'批操作原子性不保证、可全不应用'相容,行为正常。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "集合仅25条cat_a,scroll limit=100返回全部25条且next_page_offset=null,无缺页无截断,分页行为正确。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "空vectors配置创建成功后向量写入报错,恰与契约qdrant_state_create_collection_001'创建字面接受配置、向量错误在首次向量操作时浮现'的明文规定一致。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "无vectors配置仅shard_number创建后向量写入在使用时报错,同样符合'创建字面接受、向量错误延迟到使用时'的文档化行为,非缺陷。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "should=null被宽容解析为空过滤并返回全部点,结果语义无害,契约中无任何条款要求对null过滤结构返回4XX。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "must_not以单对象而非数组传入被接受且排除语义正确(tag=x的点被正确滤除),返回结果无误,仅是模式校验宽松而非行为缺陷。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "query=null等价于无查询的match-all,返回全部点且score=1.0,属query API对空查询的宽容文档化行为,契约未规定须拒绝。"}

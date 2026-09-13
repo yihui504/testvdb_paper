@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "limit=0 与 64 维向量对 dim=4 集合均被服务端按契约拒绝(65535/1801),观察到的正是契约要求的拒绝行为,无文档-实现偏差。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码 ValidatePassword 仅按配置做长度 [6,72] 校验且实测边界被拒,与文档唯一承诺一致;无文档承诺密码复杂度,接受小写密码不构成缺陷。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.72, "rationale": "handler_v2.go 自定义 schema 分支直接取请求的 Schema.EnableDynamicField(未指定即 false),拒绝额外字段 color 与文档一致;PK 缺失问题被额外字段报错混淆,未见真实缺陷。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "consistencyLevel=\"Invalid\" 属闭集 {Strong,Session,Bounded,Eventually} 外取值,服务端 code=0 静默接受并回落 Bounded,枚举闭集违反。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.78, "rationale": "vectorFieldType=\"InvalidVectorType\" 为文档枚举外取值,create 返回 code=0 并静默落为 FloatVector,枚举参数接受集合外值。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "REST upsert 把裸字符串 \"invalid_json\" 写入 JSON 字段返回 code=0,同服务器 gRPC 路径显式拒绝 Invalid JSON string,违反 data must match collection schema(explicit)。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST 将字符串 \"123\" 静默强转为 Int64 主键插入成功而 gRPC 同值拒绝(id field should be int64),类型约束无文档依据。"}
+{"defect_id": "milvus_036", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "groupSize=0 与 -1 均被 REST 接受且返回 5 条未分组结果,分组语义被静默忽略,数值下界类参数接受 0/负值。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "string->INT64、int->VarChar、\"true\"->BOOL 三类与 schema 声明不符的取值均被 REST insert 接受(code=0),类型套套逻辑违反,文档未承诺此类强转。"}
+{"defect_id": "milvus_038", "verdict": "HUMAN_REVIEW", "confidence": 0.45, "rationale": "groupByField 指向向量字段被接受但 5 条结果完全未分组(全同向量+groupSize=1 理论上应出 1 条),参数被静默忽略;文档仅描述标量字段分组且无拒绝性规范语句,gRPC 对照又被 metric 不匹配混淆,无法确证。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST upsert 字符串 PK \"100\" 被强转并与 id=100 合并(查询证实向量已更新),gRPC 拒绝同值;违反显式契约行 entity 键值应匹配集合 schema(Int64)。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "REST 接受裸字符串写入 JSON 字段(gRPC 拒绝 Invalid JSON string),且 REST 写入的值 gRPC get 报 unexpected character 不可读,违反 insert 数据应可检索的契约。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "upsert 侧 string->DOUBLE、\"true\"->BOOL、int->BOOL、string->INT16 四种类型不符全被接受(code=0),对照 explicit 契约行数据应匹配集合 schema。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "REST insert 接受字符串编码向量 \"[0.1,..]\"(gRPC 拒绝 vector field should be float_vector),向量必须为数值数组的文档类型约束被静默强转绕过。"}

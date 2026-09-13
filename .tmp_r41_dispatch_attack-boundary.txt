@@ -1,0 +1,32 @@
+R41 attack-gen dispatch (chunk 41/66, chunk_points+recommend+groups, 3 units) — session qdrant-1180-r1, qdrant v1.18.0, plugin 2.5.0 (D2 v3.5: path A binding-direct + path B unconditional; A/B independently constructed).
+
+ENVIRONMENT
+- Target: docker testvdb-qdrant-standalone at http://127.0.0.1:6333 (healthy). TESTVDB_DB_URL=http://127.0.0.1:6333. Liveness = GET /healthz.
+- SESSION_DIR = C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z
+- Contract: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/structured_contract.json
+- OpenAPI: C:/Users/11428/Desktop/testvdb_paper/.sourcedeps/qdrant/v1.18.0/openapi.json
+- Threat model: C:/Users/11428/Desktop/testvdb_paper/docs/ops-prompts-run3/tma-run3.txt
+- Source: C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 (git db3fca3)
+- Scripts → SESSION_DIR/debate_logs/<name>.py + <name>.meta.json. STD LIB ONLY (urllib). py -3.12.
+
+FACE = POST /collections/{c}/points/recommend/groups (sibling of R38's query/groups — shared grouping core aggregator.rs, but a DIFFERENT request type; R38 lessons carry).
+Main-process live-probe (9-pt grp∈{a,b,c} string-array payload, dim4 Euclid [i%3,0,0,0], NOT re-run):
+- G1 {group_by,group_size,limit,positive:[[3,0,0,0]]} → 200 {"result":{"groups":[{hits:[{id,score}...],id:"c"},...]}} — **group_size is REQUIRED here (missing → 400 "missing field `group_size`"), UNLIKE query groups (optional default 3)** — the contract's "requires group_by, group_size, limit" matches.
+- G2 no positive → 400 "Positive vectors should not be empty with `average` strategy"
+- G3 offset=1 → 200, same groups (flatten-ignore suspected — intra-group hit ORDER differed between runs but scores were tied 1.0/1.0/1.0 → intra-tie order noise, R33/R36 tie lessons)
+- G4 ghost → 404 named. G5 strategy=best_score → 200.
+
+YOUR UNITS:
+1. qdrant_type_recommend_groups_001 [type, endpoint, explicit, bound=['builtin:type_boundary'] → PATH A DIRECT]
+   assert: body requires group_by, group_size, limit; positive/negative optional
+   Path A: required-slot closure (group_by/group_size/limit each missing → 400 naming the missing field — the "missing field `group_size`" message shape is the R38-observed family); positive/negative optional (omitted positive + strategy interplay per R39 message-drift); type forms (group_size float/string/bool → 4xx; limit 0/-1 → 422 validator; group_by ""/null/non-string).
+2. qdrant_state_recommend_groups_001 [state, endpoint, explicit, bound=[] → path B]
+   assert: recommend groups API does not allow offset pagination
+   Path B: offset legs — offsets 0/1/100 on full-legal bodies; parsed time-stripped compare vs plain (expected per R38 query-groups disposition: silently ignored, 200 identical groups → characterization cross-ref + doccons note; only a batch-specific divergence from the query-groups behavior would be interesting).
+3. qdrant_behavioral_recommend_groups_001 [behavioral, endpoint, explicit; Type2 class → path B]
+   expect: 200 {groups:[{id,hits}]}; 404 collection; 400 invalid group_by; offset not available
+   Path B: envelope conformance (GroupsResult; per-group hits ScoredPoint); positive/negative geometry sanity (avg-vector math R39-pinned: recommend groups score = plain distance from 2·avg_pos−avg_neg under average strategy — recompute from read-back vectors, byte-exact); diagnostics quality (invalid group_by 400 naming? missing-slot messages name fields?); strategy=best_score/sum_scores slot math (R39 -d² family); with_lookup spot-check.
+
+OPERATIONS TICKETS (R40 version — 18 items): 1 stdlib urllib; 2 Oracle single line; 3 teardown try-wrapped; 4 naming boundary_rg_<short>_NN.py + full meta; 5 score-grouped multiset; 6 monotonic/tie-tolerant (intra-group ties observed in probe!); 7 expected-set completeness; 8 strict-schema rejection COMPLIANT; 9 verdict all anomalies; 10 server defaulting COMPLIANT; 11 silent-ignore characterization; 12 empty/absent equivalence; 13 str/int normalize; 14 u64 canary; 15 py3.12+compile+single VERDICT; 16 MaybeOneOrMany; 17 parsed time-stripped compare; 18 scorer=-d² family pinned (avg=plain distances / best=sfs(-d²) strict> / sum=d²-sums).
+
+OUTPUT: 4-6 scripts + metas. Brief report.

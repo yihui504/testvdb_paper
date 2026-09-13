@@ -1,0 +1,83 @@
+{
+  "defect_id": "milvus_024",
+  "endpoint": "entities+delete",
+  "defect_type": "Type1",
+  "built_by": "evidence-builder",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_PARTIAL",
+      "link_reachability": "PARTIAL",
+      "version_match": "PASS",
+      "content_consistency": "PARTIAL",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Documentation accessible at GitHub (source_status=reachable). Contract constraint milvus_type_entities_delete_001 states 'filter is a valid boolean expression' but does not specify that filter and ids parameters should be mutually exclusive. Endpoint registry confirms entities+delete exists with filter parameter as required.",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "A",
+      "log_pattern": "[c1] delete with both filter='id > 0' AND ids=[1,2,3] -> HTTP 200, code:0, deleteCount=1 (REST API accepted mutually exclusive deletion parameters without error)",
+      "secondary_observations": [
+        "[c1] REQ 1: drop test_del -> HTTP 200, code:0",
+        "[c1] REQ 2: create test_del (dimension=4) -> HTTP 200, code:0",
+        "[c1] REQ 3: insert 1 entity (id=1) -> HTTP 200, code:0, insertCount=1"
+      ],
+      "claim_alignment": "aligned",
+      "http_semantics": {
+        "client_error_returned_as": "HTTP 2xx + 业务错误码",
+        "note": "Delete request with both filter and ids parameters returned HTTP 200 + code 0 (success). No client error (4xx) was returned despite filter and ids being mutually exclusive deletion methods that should not coexist in a single request."
+      },
+      "reproducibility": "单脚本",
+      "script_error": false,
+      "triggering_scripts": ["output_milvus_024.log"],
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "milvus_type_entities_delete_001",
+      "assertion_text_quoted": "filter is a valid boolean expression",
+      "api_violates_assertion": false,
+      "note": "Constraint only validates that filter is syntactically valid boolean expression. It does not address whether filter and ids parameters are mutually exclusive. The API correctly accepts a valid filter but fails to validate that filter and ids (different deletion modes) should not both be present.",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract: milvus_type_entities_delete_001 states filter must be valid boolean expression (doesn't address filter/ids mutual exclusivity)",
+        "doc: https://github.com/milvus-io/milvus/blob/v2.6.17/internal/distributed/proxy/httpserver/constant.go (reachable, GitHub source)",
+        "script: REST API POST /v2/vectordb/entities/delete with payload {filter:'id > 0', ids:[1,2,3]}",
+        "log: HTTP 200, code:0, deleteCount=1 - API accepted both deletion methods without validation"
+      ],
+      "chain_broken_at": "log",
+      "break_detail": "Chain breaks at log layer because the API accepts both filter (expression-based deletion) and ids (primary-key-based deletion) parameters without validation that they are mutually exclusive. The constraint only validates filter syntax, not the semantic conflict between filter and ids parameters representing two different deletion modes that should not compose.",
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": [
+        "CollectionFilterReq.*struct",
+        "checkGetPrimaryKey.*func",
+        "validateCollectionName.*func",
+        "task_delete.*Init"
+      ],
+      "files_examined": [
+        "internal/distributed/proxy/httpserver/request_v2.go (lines 317-323)",
+        "internal/distributed/proxy/httpserver/handler_v2.go (lines 1202-1239)",
+        "internal/distributed/proxy/httpserver/utils.go (lines 165-176)",
+        "internal/proxy/task_delete.go (lines 266-366)"
+      ],
+      "source_excerpt": "File: internal/distributed/proxy/httpserver/request_v2.go\ntype CollectionFilterReq struct {\n    DbName         string                 `json:\"dbName\"`\n    CollectionName string                 `json:\"collectionName\" binding:\"required\"`\n    PartitionName  string                 `json:\"partitionName\"`\n    Filter         string                 `json:\"filter\" binding:\"required\"`\n    ExprParams     map[string]interface{} `json:\"exprParams\"`\n}\n\nNote: Struct only defines 'filter' field, no 'ids' field. However, JSON unmarshaling allows additional fields by default.\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go (delete handler)\nfunc (h *HandlersV2) delete(ctx context.Context, c *gin.Context, anyReq any, dbName string) (interface{}, error) {\n    httpReq := anyReq.(*CollectionFilterReq)\n    // ... collection validation ...\n    req := &milvuspb.DeleteRequest{\n        DbName:         dbName,\n        CollectionName: httpReq.CollectionName,\n        PartitionName:  httpReq.PartitionName,\n        Expr:           httpReq.Filter,  // Only assigns filter, ignores 'ids'\n    }\n    // No check for mutual exclusivity between filter and potential ids parameter\n}\n\nFile: internal/proxy/task_delete.go (Init validation)\nfunc (dr *deleteRunner) Init(ctx context.Context) error {\n    collName := dr.req.GetCollectionName()\n    if err := validateCollectionName(collName); err != nil {\n        return ErrWithLog(log, \"Invalid collection name\", err)\n    }\n    // ... schema, partition, and channel setup ...\n    dr.plan, err = planparserv2.CreateRetrievePlanArgs(dr.schema.schemaHelper, dr.req.GetExpr(), ...)\n    // Only validates filter expression syntax, not parameter exclusivity\n}\n\nKey Finding: No validation exists that checks for mutual exclusivity between 'filter' and 'ids' parameters. The handler only processes filter field, while 'ids' is silently ignored if present in JSON payload.",
+      "call_chain_traced": "REST POST /v2/vectordb/entities/delete -> gin router binds JSON to CollectionFilterReq struct (ids field ignored, only filter captured) -> handler_v2.delete() constructs DeleteRequest with Expr=filter -> proxy.Delete() -> task_delete.Run() validates collection name and filter syntax -> No validation for filter/ids mutual exclusivity -> Request proceeds with both parameters present -> deleteCount returned (deletes based on filter, ids ignored)",
+      "verification_outcome": "validation_absent",
+      "note": "Source code reveals that while CollectionFilterReq struct only defines 'filter' field, Go's JSON unmarshaling allows unknown fields by default. The delete handler never checks for presence of 'ids' parameter or validates that filter and ids are mutually exclusive. The code only validates collection name and filter expression syntax. This is a genuine validation gap: filter (expression-based deletion) and ids (primary-key-based deletion) represent two different deletion modes that should be mutually exclusive, but the API accepts both without error, creating ambiguous behavior where it's unclear which parameter takes precedence (logs show filter is used, ids ignored).",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": [
+        "env",
+        "concurrency",
+        "cache",
+        "request_param_error",
+        "network_error"
+      ],
+      "surviving": "Source code analysis confirms this is a genuine validation gap. The API handler and validation logic only check collection name and filter expression syntax. There is no code path that validates mutual exclusivity between 'filter' and 'ids' parameters. The 'ids' parameter in the request payload is silently ignored during JSON unmarshaling (not defined in CollectionFilterReq struct), but its presence alongside 'filter' should trigger a validation error since they represent different deletion modes (expression-based vs primary-key-based). The API correctly processes the filter and returns deleteCount=1, but the ambiguous parameter composition should be rejected at input validation time. This is a Type1 defect: missing validation that should reject mutually exclusive parameters."
+    }
+  }
+}

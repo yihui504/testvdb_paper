@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "日志显示 groupSize=2+strictGroupSize=true 却每组返回 3 条(15 条结果)，但包内契约依据无任何 group search/strictGroupSize 相关断言，证据不足以支持契约违反判断。"}
+{"defect_id": "qdrant_001", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一非法空向量 wait=true 时返回 400 'expected dim: 4, got 0'，无 wait 时却返回 200 acknowledged 且 points_count=0(点被静默丢弃)，违反 behavioral_005 '4XX on validation error'(静默接受被拒值)。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "hnsw_ef=0 被接受返回 200，但包内契约仅有 'hnsw_ef applicable only when exact=false' 而无 hnsw_ef>=1 的范围断言，证据不足以判定违反契约。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "score_threshold=2.0 时 score=1.0 的点被过滤返回空、-0.5 时返回该点，符合 score_threshold 阈值过滤语义，未观察到契约违反。"}
+{"defect_id": "qdrant_004", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一 3 维向量无 wait 时 upsert 返回 200 acknowledged(且 points_count=0 静默丢弃)，wait=true 时返回 400 'expected dim: 4, got 3'，违反 behavioral_005 '4XX on validation error'。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "shard_number=0 被拒(422 'must be 1 or larger')、-1 被拒(400 invalid u32)，行为完全符合契约断言 shard_number >= 1。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "filter color=red 精确返回 4 条红色点(ids 2/4/8/10)且 missing_payload_ids 为空，过滤行为符合契约语义。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "batch 含非法 3 维向量时返回 400 且 count 保持 3(全部未应用)，符合 behavioral_005 '4XX on validation error'；契约亦明示 batch 不保证原子、出错可 none/partial/full 应用。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "cat_a 恰有 25 个点(id 1-25)，scroll limit=100 返回全部 25 条且 next_page_offset=null，符合 behavioral_009 '200 with points list and next_page_offset'。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "空 vectors 配置建集合 200 后向量化 upsert 报 400 'Not existing vector name error'，与契约 qdrant_state_create_collection_001 明文一致('vector errors surface on first vector operation')。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "仅设 shard_number 建集合(无 vectors 配置)后 upsert 报 400 'Not existing vector name error'，属契约明文允许的'vector insert returns an error at use time'场景。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "filter {\"should\": null} 被当作无过滤返回全部点，包内契约无 filter 字段 null 处理的断言，无法据包内证据判定违反。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "must_not 传对象而非数组，但语义正确执行(排除 tag=x 后仅返回 id 2)，包内无 filter 结构类型断言，未见契约违反。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "query=null 返回 200 及全部点(score 均为 1.0)，符合 behavioral_011 '200 with result points'，包内无 query 不得为 null 的断言。"}

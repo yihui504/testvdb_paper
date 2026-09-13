@@ -1,0 +1,2202 @@
+# run3-01: qdrant v1.18.0 (插件 2.5.0 代际重跑, 2026-09-04 启动)
+# 背景: run2r2 因 Step 6.5 全程跳过作废 (VOIDED-step65.md); 本 run = D2 v3.5 A+B 消费 + gate 症状④强制下的全新 mine run
+# 命令行等价: /testvdb:mine qdrant v1.18.0 --max-rounds 0 --min-defects 0
+# PROJECT_ROOT = ~/.claude/plugins/cache/testvdb/testvdb/2.5.0
+# intel: 复用 2.4.0/intelligence/qdrant 3件套 (GT-free 化版, 2026-08-24 mtime, TTL 内)
+# ============================================================
+[#1 | B1 | 2026-09-04] knowledge-extractor 派发词(逐字 = mine.md Step 4 原生模板,仅替换变量; 同 run2r2 #2 先例)
+subagent_type = testvdb:knowledge-extractor
+==========================================================================================
+
+Per the agents/knowledge-extractor.md spec, extract API documentation knowledge for qdrant v1.18.0. Write the result to results/qdrant/v1.18.0/raw_knowledge.json (SDK/Docker info goes separately to deployment_meta.json, v3.4 §B)
+
+==========================================================================================
+[#1 结果注记 | 2026-09-04] extractor 产物落论文仓(cwd 漂移), 主进程归位至 2.5.0 树; doc_coverage 机械核验 98.6% (70/71, 缺=内部beta /issues ×2; raw 侧 4 端点 locks/quotas 为 doc有spec无)
+------------------------------------------------------------------------------------------
+
+[#2 | B2 | 2026-09-04] contract-formalizer 派发词(mine.md Step 5 模板, 变量实例化为 ${PROJECT_ROOT} 绝对路径 — 同 8b 模板 ${PROJECT_ROOT} 先例)
+subagent_type = testvdb:contract-formalizer
+==========================================================================================
+
+Per the agents/contract-formalizer.md spec, convert C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/raw_knowledge.json into structured_contract.json (every constraint graded with level, Rule 2.7; v3.4). Write the result to C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/structured_contract.json
+
+==========================================================================================
+==========================================================================================
+[#3 | C1/C2 | 2026-09-04] R1 session 初始化 + 三 attack 派发
+==========================================================================================
+- SESSION=2026-09-04T12-14-11Z, session_id=qdrant-1180-r1 (pipeline_state 自动生成;
+  与 2.3.0 树 run2r #1 的 -r1 同名但不同树, entry dispatch 只扫 2.5.0 树, 无冲突)
+- chunks=66 块 179 单元 (90 约束新契约; run2r2 为 80 块/175 单元)
+- R1 块=chunk_aliases+collection+list (1 单元: assertions::qdrant_behavioral_collection_aliases_001)
+- THREAT_MODEL_ATTACK = threat_model_injector --mode attack 今日产出 5796 字符 (GT-free 3件套派生),
+  全文存档同目录 tma-run3.txt; GT_HINT 恒空
+- max_rounds=0 min_defects=0 (80+ 轮全块口径; 区别于 run2r2 的 30/1)
+
+[#3 | R1 派发词 | boundary（逐字 = mine.md 8b 模板，仅替换变量）
+subagent_type = testvdb:attack-boundary
+Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdrant v1.18.0. contract=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/structured_contract.json, session_id=qdrant-1180-r1, session_dir=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z, reflection_context=(none — first round), this round's chunk=chunk_aliases+collection+list (the chunk's unit_ref list is in chunks.json; only attack units within this chunk).
+
+[TMA 全文 5796 字符 = docs/ops-prompts-run3/tma-run3.txt]
+
+[#3 | R1 派发词 | state（同模板，agent=attack-state）]
+[#3 | R1 派发词 | semantic（同模板，agent=attack-semantic）]
+==========================================================================================
+[#4 | R1 8b 收口 | 2026-09-04] 三 attack 返回 + path 标注首轮偏差与打回
+==========================================================================================
+- 产出: boundary 9 (boundary_aliases_col_list_01-09, meta 全带 path=B ✓)
+  + semantic 4 (semantic_aliases_collection_list_001-004) + state 7
+  (state_aliases_collection_list_01-07) = 20 脚本; analyzed_documents ×3 (29/29)
+- 本块=assertion 单元(qdrant_behavioral_collection_aliases_001), 端点无绑定约束
+  → 按 spec :100 严格语义 path A=none, 全部应为 B
+- **偏差①**: semantic/state 的 meta.json 顶层缺 path 字段(spec :102 要求
+  Attack: 行与 meta 双标注); boundary 合规
+- **偏差②**: state 报告把 S1-S4/S7/Pattern A 自选策略脚本标为 path A——误标
+  (path A 严格=bound_strategies 非空直生; 内建目录自选=B 决策过程)
+- 处置: SendMessage 打回两 agent 仅补 meta `"path":"B"`(不动 .py);
+  spec 措辞是否加剧歧义(策略目录归属) → 挂账观察后续轮次是否复发
+- state 注意(runtime PATHS 白名单无 GET /collections/{name}/aliases →
+  safe_request 直发; 同 run2r2 R1 先例)
+------------------------------------------------------------------------------------------
+[#4 续] R1 8c 全绿: 20 脚本六道门零拦截(risky/api_format/neutrality/D3b-AB/D3b-CD REJECT=0
+  WARN=0/无 regen); path 对账 20/20 meta==doc==B; stage1.json 落盘; advance→EXECUTION
+[#5 | R1 8d | 2026-09-04] docker-executor 派发词(mine.md 8d 模板,仅替换变量)
+subagent_type = testvdb:docker-executor
+==========================================================================================
+
+Per the agents/docker-executor.md spec, execute attack scripts in the Docker sandbox. target=qdrant, version=v1.18.0, SESSION_DIR=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z, session_id=qdrant-1180-r1. ⛔ Run the Step 1 command immediately... 
+
+You are a sub-agent dispatched by the main process in the TestVDB pipeline. Using the Agent tool to dispatch grandchild agents is forbidden.
+
+==========================================================================================
+------------------------------------------------------------------------------------------
+[#5 结果注记 | 2026-09-04] executor 首派 0 脚本: Step 2 扫描模式不含 debate_logs/(扫
+  boundary_scripts|state_scripts|scripts|script_*.py 旧布局), 而脚本按 mine.md 8b 在
+  debate_logs/*.py — 机制坑挂账(docker-executor.md Step 2 命令模式与 8b 产出位置不一致,
+  run2r2 未触发可能是当时 agent 自行扫到); 基建侧 OK: 容器 testvdb-qdrant-standalone
+  healthy / .executor.env(localhost:6333) / qdrant 1.18.0 实证; /health 404 用 /healthz;
+  SendMessage resume 指到 debate_logs/ 批量重跑
+------------------------------------------------------------------------------------------
+[#6 | R1 8d 结果 | 2026-09-04] 执行 20/20: DEFECT=2(semantic_002 诊断质量/state_02
+  delete 一致性) NO_DEFECT=8 SCRIPT_ERROR=10
+- boundary ×9 全 bootstrap 失败(169B 同错): rt.request 需 TESTVDB_SCRIPTS_DIR 而批量
+  环境只传 TESTVDB_DB_URL —— 环境问题非脚本 bug; 处置=executor 补 env 重跑 9 个
+- state_06 解包 bug(too many values to unpack, 无 traceback): 处置=打回 state agent
+  复现→修→保持 g4 三面语义与 path 标注
+- 机制挂账: scan_script_errors 产物未被 _apply_script_retry 消费(regen 空/total 0,
+  8d.5 运行时通道断链)——本轮按 R41 先例主进程手工双线 send-back
+[#6 续] boundary 补 env 重跑 9/9 真实判定: 6 DEFECT(02/03/04/05/07/09)+3 NO_DEFECT,
+  TESTVDB_SCRIPTS_DIR 已追加持久化到 .executor.env; 会话累计 8D/11N/1E(state_06 修中)
+[#6 续2] state_06 修复: safe_request 3 元组解包为 2(boundary 首跑日志同款环境无关,
+  仅 06 有此模式); 修 5 行保三面语义与标注; agent 侧验证 DEFECT_FOUND(unknown
+  collection 别名面 200 vs 契约 404 = run2r2 R1 同款缺陷面); agent 复跑不写 executor
+  产物 → resume executor 单跑 06 补正式 log/exit/done
+------------------------------------------------------------------------------------------
+[#7 | R1 8e | 2026-09-04] extract_candidates 9 条(8 带 constraint_id) + L1 全
+  UNCERTAIN 无 REFUTED → 9 evidence-builder 并发 fan-out(派发词=mine.md 8e 模板
+  仅替换变量; defect_id=各脚本 id)
+[#7 续] verify_chain_quotes: 9 链 7 MISMATCH —— 根因=builder 把 assertion 对象转写
+  (JSON dump/pipe 排版)当引文, 机械检查要求契约文件原样子串; 02/05 PASS(引 expected_behavior
+  原句); 打回 7 builder 仅改 assertion_text_quoted 为逐字原句; 注: 契约断言 doc_quote=null
+  (formalizer 未填, expected_behavior 为合成句) —— J1① 家族在本轮的具体表现, D 段记录
+[#7 续2] 7/7 引文修复(builder surgical 单字段替换全验证); verify 复跑 PASS; 派 chain-auditor
+[#8 | R1 8e.7 | 2026-09-04] chain-auditor 派发词(mine.md 8e.7 模板,仅替换变量)
+subagent_type = testvdb:chain-auditor
+==========================================================================================
+
+Per the agents/chain-auditor.md spec, audit all evidence chains under evidence_chain/ and produce final verdicts (four perspectives A/B/C/D; perspective D consumes intelligence/qdrant/developer_cognition.json). target=qdrant, version=v1.18.0, SESSION_DIR=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z.
+
+==========================================================================================
+------------------------------------------------------------------------------------------
+[#8 续] auditor 终判 9D/0N/0NME(A 机械 CONFIRMED×9 + B 族不一致 + C by-design 范围外 + D
+  盲点类支持); E2 旗标(不改判): ①五链 broken_at=doc+两链 content FAIL(404 条款无 doc 锚,
+  0/62 paths 无 4xx, evidence_tier=explicit 过度主张=J1①) ②跨 builder 源码访问不对称
+  (5 链 Rust 溯源/3 链网络阻断行为级)
+[#9 | R1 8f | 2026-09-04] reporter 派发词(mine.md 8f 模板,仅替换变量)
+subagent_type = testvdb:reporter
+==========================================================================================
+
+Per the agents/reporter.md spec, generate reports for the following Debate-Confirmed defects: boundary_aliases_col_list_02, boundary_aliases_col_list_03, boundary_aliases_col_list_04, boundary_aliases_col_list_05, boundary_aliases_col_list_07, boundary_aliases_col_list_09, semantic_aliases_collection_list_002, state_aliases_collection_list_02, state_aliases_collection_list_06. session_id=qdrant-1180-r1, target=qdrant, version=v1.18.0, session_dir=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z
+
+==========================================================================================
+------------------------------------------------------------------------------------------
+[#9 续] reporter 首派 429 限额中断(2026-09-04 21:28, 读 verdicts 后零产出);
+  2026-09-05 会话恢复: docker compose up 容器 healthy ✓; reporter 重派(同派发词)
+------------------------------------------------------------------------------------------
+[#10 | R1 收官 | 2026-09-05] reporter 重试: 9 defect-N.md 落盘 ✓; summary.md 被 harness
+  守卫拦("return findings as text")→主进程代写 verbatim(SOP 8f 降级路径, 顶部注记);
+  实测门 SUMMARY-OK; verify_defects 9 CONFIRMED/0FP/0NI; STATE_SAVE 全落; 容器重启;
+  state=ROUND_START round=2 (turn_type=loop); 累计 9D/66 块 1 块完成
+------------------------------------------------------------------------------------------
+[#11 | R2 | 2026-09-05] R2 = chunks[1] chunk_aliases+list (1 单元: assertions::qdrant_behavioral_list_aliases_001)
+三 attack 派发词 = mine.md 8b 模板 + R1 reflection_context + TMA(同款 tma-run3.txt)
+==========================================================================================
+
+Per the agents/attack-boundary.md spec, generate boundary attack scripts for qdrant v1.18.0. contract=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/structured_contract.json, session_id=qdrant-1180-r1, session_dir=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z, reflection_context=R1: aliases+collection+list face omits existence check (200+empty for unknown/deleted names; describe face 404s the same names) — global /aliases registry cleans correctly on delete; validators exist on path params (NUL→422, overlong→422/400) but neither cover the value space nor gate existence; cross-face existence-consistency probes are high-value; routing-changing legs (empty string, slash injection) stay clean. exhausted: aliases+collection+list positive/boundary/concurrency faces., this round's chunk=chunk_aliases+list (the chunk's unit_ref list is in chunks.json; only attack units within this chunk).
+
+[TMA 全文 = docs/ops-prompts-run3/tma-run3.txt]
+[state/semantic 同模板]
+==========================================================================================
+------------------------------------------------------------------------------------------
+[#12 | R2 8c | 2026-09-05] 三 attack 18 脚本(boundary 7/state 6/semantic 5, 全 B); 门检:
+  risky/format/neutrality/D3b-CD 全过(REJECT=0 WARN=0); 两处打回 state: ①6 meta 缺
+  path 字段(doc 有 meta 无) ②state_06 cleanup_unwrapped(169/174/179/238 未包 try) —
+  一次 SendMessage 修齐; boundary 生成期自修 NUL 字节泄漏(attack-boundary NUL 教训复现)
+[#12 续] state_06 cleanup_unwrapped 三次打回过程: ①7 处 cleanup() 调用点包裹(不对症)
+  ②:200 直接 delete_collection 调用包裹(仍 FAIL) ③真命中= :135 def delete_collection
+  helper 体内 safe_request("DELETE",...) 不在 try body —— 分类器判据不含"def 体内 helper"
+  豁免(只看 enclosing Try), R1 全过因当时 helper 内部自包; 修法=helper 体包 try 返回哨兵
+  (语义不变, 调用点已有 -1 失败路径); **机制注记: 分类器对 def 体内 teardown 调用无豁免,
+  规范级挂账(不改中途基线)**
+[#12 续2] helper 体包 try 后 classifier PASS(38 脚本 0 错误); 8c 收口; 派 executor 跑 R2 18 脚本
+------------------------------------------------------------------------------------------
+[#13 | R2 收官 | 2026-09-05] 18 脚本→1D/17N→builder 1 链(verbatim 引文一次过=派发词前置教训
+  生效)→auditor 增量裁 NOT_DEFECT(A 机械 REFUTED: 断言语域=GET shape; wrong-verb 404-empty
+  =actix 路由默认; root_cause=contract_misread); 累计 9D/1N/0NME; consec_no_defect=1;
+  2/66 块; STATE_SAVE+容器重启; →R3=chunk_aliases+update(写路径原子性=run2r2 R3 先例面)
+------------------------------------------------------------------------------------------
+[#14 | R3 | 2026-09-05] R3 = chunks[2] chunk_aliases+update (4 单元: type约束[bound=builtin:
+  type_boundary=PATH A 首秀]+state约束[system 原子性,空绑 B 序列=run2r2 R3 同款面]+assertion
+  +bc_alias_switch_001); reflection=R2 教训; 派发词同模板
+------------------------------------------------------------------------------------------
+[#15 | R3 8c | 2026-09-05] 30 脚本(b 11/s 9/sem 10) A=6(type_boundary 直生,三 agent 各
+  ≥1) B=24; 六道门一次全绿零打回(R2 教训前置派发词持续生效); stage1_r3 落盘; 派 executor
+------------------------------------------------------------------------------------------
+[#16 | R3 8e | 2026-09-05] 执行终态 11D/19N/0E(state_04 TypeError 修复闭环, oracle 常量
+  两处 FP 自纠=registry dump 证明 DB 折叠正确); 11 builder 全返回, 引文 21/21 PASS(零打回);
+  链族: 双键×4(untagged 零 deny_unknown_fields, tarball 全树)/原子性×3(含 gRPC 跨面
+  活体: NOT_FOUND 也泄漏前缀→缺陷在共享后端)/delete-unknown×4(含 broken_at=doc 诚实)/
+  s-002 builder 证伪脚本(顺序伪差, broken_at=log)
+------------------------------------------------------------------------------------------
+[#17 | R3 8e.7 终判 | 2026-09-05] 10D/1N(s-002 顺序伪差=builder 证伪链被正确 NOT,
+  fp=behavior); 累计 19D/2N/0NME; 灰区1条(008 constraint_id 带括注污染→机械 NEUTRAL
+  →LLM B 侧 CONFIRMED 裁 D; builder 字段卫生挂账); E2 人工复核两项: ①atomicity 条款
+  "meaning that"辖域(隔离 vs all-or-nothing) ②delete 族 404/500=inferred 无 doc 锚
+[#18 | R3 8f | 2026-09-05] reporter 派发(R3 新增 10 条 DEFECT; 模板同前)
+------------------------------------------------------------------------------------------
+[#19 | R3 收官 | 2026-09-05] defect-10..19 落盘(19 份); summary.md 二次守卫拦截→主进程
+  代写(含对 reporter 草稿 R2 计数错误的机械纠错注记: 32→68/13→2); verify_defects
+  19 CONFIRMED/0FP/0NI; STATE_SAVE+容器重启; 累计 19D/2N/0NME, 3/66 块, consec=0
+[#20 | R4 | 2026-09-05] R4 = chunks[3] chunk_cluster+collection+update; 派发同模板
+------------------------------------------------------------------------------------------
+[#21 | R4 8c | 2026-09-05] 18 脚本(b 7/s 6/sem 5 全 B); 门检打回两组: ①boundary×7
+  cleanup_unwrapped(rt.request 路由下 helper/直接 teardown 未包 try — R2 同款 def 体坑再现,
+  分类器无 def 豁免的规范级问题第二轮触发) ②state×6 Attack 行缺 path: B(meta 有)+3 个
+  oracle_degenerate(03/04/05); 双 SendMessage 打回; semantic 5 个全绿
+[#21 续] 双组修复闭环: state 6 path 物理行+3 oracle 具体化; boundary 14 处
+  rt.drop_collection 包裹+02 攻击腿诚实改名 ghost_key_probe(名字含 drop 触发关键词规则
+  但非 teardown——语义正确的修法); 复检 18/18 全绿 classifier PASS; 派 executor
+[#22 | R4 8d 结果 | 2026-09-05] 执行 18: 3D(b01/b03/sem002)/3N/12 SCRIPT_ERROR —— 根因=
+  单节点 GET /cluster 返回 status:"disabled" 无 peers, "活体派生 peer id"设计(R3 反思
+  指引促成的良好实践)在派生源枯竭时无 fallback; 叠加 b05 快照字段读错(local_shards vs
+  shard_ids)/b02 leg 全过却误落 SCRIPT_ERROR 分支; 处置=三组打回加 disabled fallback
+  (静态拓扑外哨兵 peer_id=1, 环境适配非 oracle 改动)+字段修正; 教训入反思: 活体派生
+  必须带静态 fallback
+[#23 | R4 wire-form 漂移 | 2026-09-05] semantic 修复轮发现第二 premise 断裂: 文档 body
+  形式 {"operation":...} 服务器 untagged 解析器不接受, 真实 wire=外部标签 {"<variant>":
+  {fields}}+变体专属必填(from_peer_id/method/shard_key) —— **doc-vs-实现漂移本身是
+  doc_consistency 类发现素材(D 段记录)**; 三个未修 DEFECT(b01/b03/sem002)全部被此混淆
+  (400=untagged format error 非语义拒绝; b01 P2 判定前提 P1 未成功) → 打回修正后全量重跑;
+  R3 双键家族活体再现: sem005 recorded-only 腿双 variant body parse 接受+b07 422 错误名
+  第一 variant 字段(两 agent 独立观察互证)
+------------------------------------------------------------------------------------------
+[#24 | R4 8e | 2026-09-05] 权威重跑终态 13N/2D(sem003/004 Type2)/3E(precondition 诚实);
+  L1 首次实战 REFUTED×2 —— 但理由错位误杀: sem003 挂 pgvector GUC timing 模板(qdrant
+  脚本!)/sem004 挂 http_layer_confusion(未打错端点) —— **L1 FP 模式库跨目标误匹配,
+  机制挂账(规范级, 不热修)**; 主进程裁定恢复两候选(带 l1_override 注记)进 builder,
+  auditor 终判; verify_live_l1.json 原样保留
+------------------------------------------------------------------------------------------
+[#25 | R4 终判+收官 | 2026-09-05] auditor 2D(A 机械 CONFIRMED: 003 辖序 mode 门先于
+  存在性(源码钉死)+004 rubric 0/3; E2 禁翻案, 环境混淆+inferred 级双旗标记 rationale/
+  batch_note → 人工复核清单+2); 累计 21D/2N/0NME; R4 教训沉淀: 活体派生须带静态 fallback/
+  wire-form 先验探测/单节点 disabled 是 qdrant 支持默认(部署模式混淆进 D 段)
+------------------------------------------------------------------------------------------
+[#26 | R4 收官→R5 | 2026-09-05] defect-20/21 落盘(caveat 前置); summary 补丁(21 计数+2 行
+  +指标 86/22D/61N/3E); verify 21 CONFIRMED/0FP; STATE_SAVE; state=R5/ATTACK_GEN;
+  localhost IPv6 解析间歇坑复现(127.0.0.1 稳定, run2r2 已知形态, .executor.env 不动观察)
+R5 = chunks[4] chunk_cluster+status
+------------------------------------------------------------------------------------------
+[#27 | R5 8c | 2026-09-05] 15 脚本(b6/s5/sem4, A=4/B=11); 打回两组: ①state 复发 R4 同款
+  三联(Attack 物理行缺 path ×5/cleanup_unwrapped ×4/oracle_degenerate ×2 —— 同一 agent
+  连续两轮同错=模板习惯固化, D 段记录) ②semantic 002-004 docstring 误标 A(实为 B 构造);
+  三 agent 在"explicit spec 承诺 standalone 四字段 vs disabled 实测无字段"上独立汇聚
+  (=D2 交叉验证信号), G9 面不对称(姊妹面可序列化 peer_id)已入构造
+[#27 续] 双组修复闭环: state 三联(path 物理行/created.remove 簿记名命中规则/oracle 双侧
+  具体化) + semantic 标签 hoist(根因=Attack 行内嵌覆盖列表致首标签歧义); 复检 15/15
+  (A4/B11) classifier PASS; 派 executor(带 localhost/127.0.0.1 预警)
+------------------------------------------------------------------------------------------
+[#28 | R5 8d | 2026-09-05] executor 429 限额中断(4/15 完成: boundary 01-04); 限额重置
+  11:29; 新派 dx-r5b 续跑剩 11; 运维注: 429 复发时段(约 10:39)与 R1 21:28 相似=高峰期
+[#28 续] localhost IPv6 read-timeout 实锤(b06/sem001/sem002): .executor.env 固化为
+  127.0.0.1(run2r2 挂账长效修=改 executor 规范 Step 0 模板, 本轮第三次触发后必须执行,
+  D 段升级) → executor 重跑受影响脚本
+[#29 | R5 8d 终态 | 2026-09-05] 9D/6N/0E 全净(127.0.0.1); state05 截断 log 重跑真判定
+  (telemetry 500 vs /cluster 200 = Type3 面不一致); 8e extract 9 候选(8 已抽+state05 补)
+------------------------------------------------------------------------------------------
+[#30 | R5 8e | 2026-09-05] 9 builder 全返回: 8 链 broken_at=doc(契约断言把 ClusterStatus
+  oneOf 的 disabled 臂丢掉+字段名 raft_state/commit_index 从不上 wire=formalizer 误引
+  家族第三次全族事件)+1 链 t05 broken_at=script(telemetry 500 真现象但约束域外, v1.19
+  存留缺 standalone guard → D 段"约束外真实缺陷候选"); 方法学事件=执行级 9D 预计
+  auditor 全 NOT(断言无 doc 锚); 引文 32/32 PASS
+------------------------------------------------------------------------------------------
+[#31 | R5 收官→R6 | 2026-09-05] defect-22(caveat 披露)落盘; summary patch 22; verify
+  22 CONFIRMED/0FP; STATE_SAVE; state=R6/ATTACK_GEN; 累计 22D/10N/0NME(32 链), 5/66 块;
+  R6 = chunks[5] chunk_cluster+telemetry (R5 t05 telemetry-500 面 = run2r2 R9 同款面)
+[#31 修正] R6 实为 chunks[5] chunk_collections+create-1of3 (12 约束全绑: 7 type_boundary
+  +5 boundary_value=path A 最大占比轮; run2r2 R10/R11 同面挖到 wal_retain panic/OOM)
+------------------------------------------------------------------------------------------
+[#32 | R6 进程中断恢复 | 2026-09-05] 会话进程退出杀三 attack agent(早期,零产物);
+  SendMessage 全部 resume 成功(boundary 首试遭分类器临时超时, 30s 后重试过);
+  容器 healthy; 状态机=R6/ATTACK_GEN 未动
+------------------------------------------------------------------------------------------
+[#33 | R6 8c | 2026-09-05] 72 脚本(各 24: A12+B12; 本 run 最大轮); 六道门一次全绿零打回
+  ——首个零打回大轮(三 agent 均主动跑真实 classifier 预检+预防性教训全生效);
+  path 对账 72/72 (A=36/B=36); grep 计数 CRLF 假 0 教训(find 权威); 派 executor
+------------------------------------------------------------------------------------------
+[#34 | R6 8d/8e | 2026-09-05] 执行 72/72(4 子批): 17D/53N/2E(定案: sem_a09+state_21=
+  SCRIPT_ERROR; 我方首扫 a09 误报=多 VERDICT 行首匹配教训); extract 16 候选全过 L1
+  (UNCERTAIN); 16 builder 两批全派(12+4; 16>12 链上限=auditor 将按 R39 分批)
+[#35 | R6 8e 收官 | 2026-09-05] 16 builder 全 .done; 引文 48/48 PASS(零打回二连);
+  链族: vectors oneOf 混合体×4(untagged+无 deny_unknown_fields, A/B 双路独立同发现)/
+  null-enum×3(Option<enum> null≡absent, spec anyOf nullable 竞争证据)/fst 双面×3(
+  broken_at=doc: 契约把响应侧 HnswConfig(min0) 误配给创建请求(实为 HnswConfigDiff min10,
+  源码钉死)=raw_knowledge 误归因再现)/uint8 饱和×1(as u8 静默饱和, 文档明文 range)/
+  sparse null×1(by_design)/维度异步×1(by_design wait=false);
+  auditor 分两批 8+8 派发(_r6a/_r6b 分文件, 主进程合并)
+------------------------------------------------------------------------------------------
+[#36 | R6 8e.7 终判 | 2026-09-05] 两批 auditor: r6a 7D/1N(a02 CONFLICT→rework 票→builder
+  重锚混合体主锚(b 优于 a: required_pins 有同款空洞逃逸)→复裁 DEFECT 四侧收敛)/
+  r6b 5D/3N; R6 计 12D/4N/0NME; **账目漏洞修复: R5 9 条 verdicts 此前未转写进主判定
+  文件(auditor 只报行主进程漏转写)——补录后 48 链=34D/14N/0NME 与各轮累计完全对账**;
+  人工复核旗标: a09/b09 同观察异判(fst 契约把响应侧 HnswConfig 误配创建请求)/
+  null-enum 家族 Option<enum> 源疑/state_09 灰区 C 裁(family 与 a09/b09 并审)
+------------------------------------------------------------------------------------------
+[#37 | R6 收官→R7 | 2026-09-05] defect-23..34 落盘; summary patch 34(家族行+计数);
+  verify 34 CONFIRMED/0FP; STATE_SAVE; state=R7/ATTACK_GEN; 累计 34D/14N/0NME(48 链),
+  6/66 块, consec=0
+[#37 续] reporter 正式返回核对一致(12 份, 排除 state_09=NOT 正确); summary 补 Rejected R6
+  4 行; transcription artifact 注记(sem_cluster_status_001 verdict 字段=DEFECT 与嵌入
+  文本 NOT 不一致, 以字段+summary 块为准)
+------------------------------------------------------------------------------------------
+[#38 | R7 8c | 2026-09-05] 45 脚本(b15/s15/sem15, A9/B36); 门检 6 错两组打回:
+  ①transport_probe_wrong ×2(b12/sem_b07 死亡 oracle 脚本——D3b 探针三分法形态, 对照
+  过关的 state_34 探针模式修) ②state 复发三联(cleanup×2/oracle×2); **注:死亡 oracle
+  设计本身与分类器探针规则有张力=新机制挂账候选(D 段)**
+[#38 续] 三组修复闭环(根因=helper 内探针对分类器 AST 不可见→inline 化; state_34 通关
+  实为 UnaryOp -1 比较形不被 If 探测器识别的巧合=b07 agent 诚实破除; oracle 锚词要求
+  显式 3 位状态码); 复检 classifier PASS + 45/45(A9/B36); stage1_r7 前缀歧义修正
+  (create_2 误含 R6 的 20-24/漏 30-39→精确名单); 派 executor(死亡 oracle 三脚本
+  b12/state_34/b07 末位串行+容器重启隔离)
+[#39 | R7 8d 终态 | 2026-09-05] 45/45: 12D/33N/0E; **双死亡 oracle 实锤: shard_number=
+  4294967295 确定性杀服务(Exited 137 OOM; b12 阶梯 3→ND/1000→HANG_SUSPECT/max→DEATH;
+  state_34 9 连探针全死 trace)=run2r2 R11 缺陷复现**; b07(阶梯 0/32/256)NO_DEFECT 存活;
+  executor 两运维注记(SCRIPTS_DIR 路径误试 41 假 triplet 已清/CRLF 漏行 39 补跑);
+  state_26 VERDICT 缺 _FOUND 后缀被 extract 漏→打回修后重跑
+[#40 | R7 8e | 2026-09-05] 12 builder 三组(4×3)取证后遇 API 网络故障(ENOTFOUND)全灭
+  ——均死于收尾写盘阶段(batch2 全取证完/batch3 源码取证完/batch1 b12 取证中);
+  网络恢复后全部 resume 续写(transcript 完整)
+[#41 | R7 8e 收官 | 2026-09-05] 12 链齐(网络事故三组 resume 闭环); 引文 60/60 PASS;
+  链族: wal_retain_closed=0 panic ×5 真链(spec-legal min0→500 NonZeroUsize::unwrap,
+  =run2r2 R10 defect 精确复现; REST 无验证 vs gRPC min=1 面 seam; 厂商 spec 自身
+  create-min0/readback-min1 不一致)/shard_number OOM ×2 真链(uint32-max→137 SIGKILL,
+  0..N boxed HashSet 分配; 全阶梯 in-session)/builder 证伪 ×5(b07 反转谓词+幽灵路由
+  points/get×4 —— **pre-1.10 路由形态污染, 两 agent 同犯, 机制挂账**);
+  auditor 单批 12 派发(恰在上限)
+------------------------------------------------------------------------------------------
+[#42 | R7 收官→R8 | 2026-09-05] defect-35..41 落盘; summary patch 41; verify 41 CONFIRMED/
+  0FP; STATE_SAVE; state=R8/ATTACK_GEN; 累计 41D/19N/0NME(60 链), 7/66 块, consec=0;
+  R7 双历史缺陷复现(wal panic=R10/shard OOM=R11) + 幽灵路由机制挂账(pre-1.10 形态污染)
+------------------------------------------------------------------------------------------
+[#43 | R8 8c | 2026-09-05] 13 脚本(b4/s3/sem6 全 B); 打回两组: ①state 复发(path 物理行
+  ×3)+boundary_lifecycle cleanup ②sem_timeout_01 cleanup; 幽灵路由前置生效(三 agent
+  均声明逐面验证 OpenAPI); state_42 六相 lifecycle/state_41 G6 删批/sem_visibility_03
+  metamorphic 双面集合等价=高价值构造
+------------------------------------------------------------------------------------------
+[#44 | R8 8d/8e | 2026-09-05] 执行终态 1D/12N/0E(state_40=timeout 跨面不对称: create 面
+  400 vs upsert 面 200 同一文档最低值 1=Type1+G9; 12 清阴性含六相 lifecycle/可见性
+  metamorphic); sem_lifecycle_01 classify_status 作者 bug 崩溃→修→重跑 NO_DEFECT;
+  executor 首批目录错(非 scripts 标准目录)重启批; 8e 单候选 builder 派发
+------------------------------------------------------------------------------------------
+[#45 | R8 收官→R9 | 2026-09-05] defect-42 落盘; summary patch 42; verify 42 CONFIRMED;
+  STATE_SAVE; 累计 42D/19N/0NME(61 链), 8/66 块, consec=0; R9 = chunks[8]
+------------------------------------------------------------------------------------------
+[#46 | R9 8c | 2026-09-05] 15 脚本(b4/s7/sem4 全 B); state 第三轮同款复发(path 物理行×7+
+  classifier 7 错=R4/R5/R9 三连, 模板固化实锤→D 段记录); **方法论观察: 同一 200-on-missing
+  现象两 grounding 判定分歧(boundary 查 OpenAPI=不主张/S+sem 查 knowledge=主张)——
+  反思提醒生效(各自查源)但判定不统一, auditor 将裁决哪种 grounding 正确**
+------------------------------------------------------------------------------------------
+[#47 | R9 8d/8e | 2026-09-05] 执行终态 8D/7N/0E(8 执行 D 中 7 成候选); 修复闭环: env 重跑
+  boundary×4(01-03 NO/04 DEFECT)+state_01 unpack 修复重跑 NO; boundary_04 log 有
+  PHASE-B/C NO_DEFECT 中间行+终判 DEFECT(全 log 归因留给 builder); 7 builder 两组派发
+  (404 条款 OpenAPI-vs-knowledge grounding 争端前置到两组)
+------------------------------------------------------------------------------------------
+[#48 | R9 8e 收官 | 2026-09-05] 7 链齐; 引文 68/68 PASS; **grounding 争端解决: 404 条款=
+  raw_knowledge 推断(OpenAPI 只 200)**; 源码两说分歧(batch1 validation_absent+404 helper
+  未接线 vs batch2 by_design_in_source+qdrant 树内测试无限 DELETE 断言 200=最强 by-design
+  证据)/state_06 churn reader 500(25/2083, 空副本集守卫缺失=validator 未接线再现,
+  约束域外灰区); auditor 单批 7 派发(E2 裁量点: by-design 证据 vs inferred 条款)
+[#49 | R9 收官 | 2026-09-05] defect-43..48 落盘(双 caveat 全披露); summary patch 48;
+  verify 误杀 defect-43(扫描器首匹配 PHASE-B 中间行非行首锚定=verify_defects.py 机制
+  挂账)→主进程 override 保留(末行 DEFECT_FOUND exit=1 实证); 实际 48 CONFIRMED
+------------------------------------------------------------------------------------------
+[#50 | R10 派发 | 2026-09-05] R10 = chunks[9] chunk_collections+exists (3 单元全 B:
+  state_exists_001+doccons_exists_001(双 wire 形态争端单元: result.exists 对象 vs 裸
+  bool, R5 formalizer 曾捕获)+assertion); 新教训前置: 中间行禁用 verdict 词样
+  (verify 扫描器首匹配误杀 defect-43 教训→disposition/phase-result 用词)
+[#51 | R10 8c | 2026-09-05] 14 脚本(b3/s5/sem6 全 B)六道门一次全绿零打回(第二个零打回
+  大轮); doccons 双 wire 形态 3 脚本独立锚定(争议隔离); 派 executor
+------------------------------------------------------------------------------------------
+[#52 | R10 收官→R11 | 2026-09-05] R10 零候选轮(14/14 NO_DEFECT——exists 面干净, doccons
+  双形态实测裁定 spec_side 胜); 修复闭环: b02 f-string NameError(py_compile 不查 f-string
+  内名字=静态盲区注记)+executor 三元组误写 debate_logs 主进程机械归位 28 文件;
+  consec=1; **10/66 块=15.15% 覆盖里程碑**; R11 = chunks[10] chunk_collections+get
+[#53 | R11 派发 | 2026-09-05] R11 = chunks[10] chunk_collections+get (4 单元: type_get_
+  collection_001[bound=type_boundary=path A]+3 assertion); reader-500 家族面(get/describe
+  =R9 state_06 现象所在)高价值目标前置; 派发遇分类器超时一次重试过
+[#54 | R11 中断 | 2026-09-05] state/semantic 两 agent 429 速率限制杀于分析阶段(零产物);
+  等 3 分钟窗口后 resume; boundary 未中断继续; 运维注: 429 本日第二波(前次为 R5 执行
+  期 executor)——三 agent 并行+builder/auditor 高频期速率压力显著
+------------------------------------------------------------------------------------------
+[#55 | R11 8c | 2026-09-05] 18 脚本(b7/s6/sem5) A3/B15; 三组打回(boundary path hoist×7/
+  sem oracle×2/state oracle×1——oracle 退化根因=多行 wrapping 首行无锚词, classifier 只读
+  首物理行); 复检 18/18 classifier PASS; 派 executor(产物位置+env 双守卫前置)
+------------------------------------------------------------------------------------------
+[#56 | R11 收官→R12 | 2026-09-05] R11 第二个零候选轮(18/18 NO_DEFECT——describe 面干净:
+  enum 全 green/shape 全符合/404 矩阵正确/churn 探针未触发 reader-500 阈值); sem_02
+  POST→PUT 修复闭环(OpenAPI 证实 index 创建=PUT, 非幽灵路由是方法错); consec=2;
+  11/66 块=16.67%; R12 = chunks[11] chunk_collections+list
+------------------------------------------------------------------------------------------
+[#57 | R12 派发 | 2026-09-05] R12 = chunks[11] chunk_collections+list (1 单元 assertion
+  behavioral_list_collections_001); run2r2 R15 同块先例(wrong-verb 404 家族被 NOT)前置
+------------------------------------------------------------------------------------------
+[#58 | R12 收官→R13 | 2026-09-05] R12 第三个零候选轮(14/14 NO_DEFECT——list 面干净);
+  executor API 超时中断一次重启闭环(cwd 相对路径被重置教训); consec=3(距停机阈值5
+  还差2); 12/66 块=18.18%; R13 = chunks[12] chunk_collections+optimizations
+------------------------------------------------------------------------------------------
+[#59 | R13 派发 | 2026-09-05] R13 = chunks[12] chunk_collections+optimizations (1 单元
+  assertion); 派发两波(boundary 先过, state/sem 遇分类器限流重试); consec=3 背景下
+  R13/R14 若再零候选将触发 5 连停机条件(SOP 自然终止)
+------------------------------------------------------------------------------------------
+[#60 | R13 8c | 2026-09-06] 19 脚本(b7/s7/sem5 全 B); 三波运维事故(state server-error
+  中断 resume/sem 限流+连接中断); cleanup×2 修复闭环(classifier 复跑 PASS); face 预验证
+  生效=GET /collections/{name}/optimizations 实路由(spec-derived); 派 executor
+------------------------------------------------------------------------------------------
+[#61 | R13 收官+暂停 | 2026-09-06] R13 第四个零候选轮(19/19 NO_DEFECT——optimizations 面
+  干净含沉降守恒/churn 1069 polls 零异常); opt_05 409 残留 idempotent ensure-exists
+  修复闭环(409 路径真实验证); consec=4(距 5 轮停机阈值差 1!); 13/66 块=19.7%;
+  **用户拍板: R13 收官后暂停; 恢复点=R14=chunks[13] chunk_collections+update;
+  mine_state 已记 paused 标记**; 累计 48D/20N/0NME(68 链)
+------------------------------------------------------------------------------------------
+[#62 | R14 派发(恢复) | 2026-09-06] 用户"继续"恢复 run3; 容器 auto-restart healthy
+  (healthz 200, R13 残留 collections 由 volume 持久——R14 脚本独立命名); mine_state
+  paused 已清. R14 = chunks[13] chunk_collections+update (2 单元): state constraint
+  qdrant_state_update_collection_001 (system 级/空绑定→纯 path B 跨请求序列; 内容=
+  index/quantization/disk 可 PATCH vs size/distance 不可变的 mutability split) +
+  assertion qdrant_behavioral_update_collection_001 (endpoint 级 inferred; 404 missing/
+  400 invalid diff/200 success——R9 inferred-404 doc-antecedent 教训适用). 三 attack 并行
+  (boundary/state/sem), 脚本前缀 boundary_upd_/state_upd_/semantic_upd_; consec=4 背景
+  下 R14 零候选=SOP 5 连自然停机
+------------------------------------------------------------------------------------------
+[#63 | R14 8c | 2026-09-06] 25 脚本(b10/s7/sem8 全 B); 六道门机械复检全绿: classifier
+  PASS(336 脚本零错)/py_compile 25/25/path: B 25/25/命名零冲突/face 抽验实路由(PATCH
+  /collections/{collection_name}=update-collection; VectorParamsDiff 无 size/distance=
+  不变性攻击依据成立); 轮询乌龙一次(前 12min 盯错 scripts_dir, 实际落盘在 debate_logs/
+  ——8a 全程实际正常); semantic 报 1.18 新增 optional usage 响应对象(D3b 规范字段优先,
+  envelope 容忍), state 报 inferred 404/400 条款 doc-antecedent 核到 raw_knowledge 版本
+  化 expected_responses; state_07 重载(2400 点+blocking PATCH+90s 静默+180s 超时)executor
+  预留; 派 executor(三元组 root+env 双守卫前置)
+------------------------------------------------------------------------------------------
+[#64 | R14 executor→L1 | 2026-09-06] 25/25 执行零事故(无超时/transport 死/健康转换;
+  state_07 重载远低于 600s 帽); 4 DEFECT 信号: semantic_upd_03(wrongtype 诊断
+  Type2)/semantic_upd_07(immutable smuggle Type1)/boundary_upd_invalid_shapes/
+  state_upd_immutable_vecspace_03——后二+boundary_immutable_size(NO)三路打同一
+  size/distance 不可变面, 分歧留 builder 对齐。运维事故一次: executor 三元组命名漂移
+  (.out/.err vs 惯例 output_*.log——我重写派发词漏点名惯例名), 主进程机械归位 25 个
+  (.err 并入 log 尾零信息丢失)后 extract 68→72, L1 四候选全 UNCERTAIN 保留(R4 跨目标
+  FP 误匹配未复发)。E2 分类器对 R14 候选=全 UNCERTAIN 待链证据。8f builder fan-out(4)
+------------------------------------------------------------------------------------------
+[#65 | R14 builder×4+auditor 派发 | 2026-09-06] 4/4 链落盘(.done 齐)+verify_chain_quotes
+  PASS(72 链零 mismatch)。四链收敛同一机制: serde 全程无 deny_unknown_fields→未知键/
+  smuggle 字段静默丢弃→200(drop 不持久化/空间完好/64-dim 拒收/counts 精确); flat 错型
+  →400(serde Display 透传, line/column 无字段名); 未知名→差异化 400。链自评: sem_07/
+  state_03 api_violates_assertion=false(immutable promise 实守), DEFECT 主张地基=
+  inferred generic 400 条款; sem_03 400 条款本身被遵守, Type2 靠 rubric。三路分歧根因=
+  oracle 严格度(lenient reject-or-drop vs strict-4xx), 服务器行为同一。auditor 派发:
+  终判+R9 inferred caveat 纪律+一机制一缺陷合并裁定+Postel vs 未注解验证缺口 crux 显式
+  裁决; 产物 chain_verdicts_r14.json
+------------------------------------------------------------------------------------------
+[#66 | R14 收官 | 2026-09-06] R14 终态: 1D/3N/0NME——**四连零候选轮终结, consec 归零**
+  (5 连停机不触发)。defect-49: PATCH collections+update 未知键静默接受(200 on no-op,
+  同面 4 个 invalid-diff 家族却 400 的分裂处置+serde-Postel 反方在案)Type1, R9 式
+  inferred-caveat 必挂; 一机制三面合并(unknown-key + vectors "" smuggle + named smuggle
+  全 200+drop, immutable promise 实守零突变——两链 merged_into 收敛)。账号修复三件:
+  (a) defect-43 跳号缺口(R9 override 时未物化)重建——排除法定位链=boundary_coll_delete_04,
+  Type4/Low 自洽; (b) verify_defects 对 defect-43 误杀复发(扫描器首匹配 DISPOSITION 行
+  NO_DEFECT, 终判行 22=DEFECT_FOUND)主进程 override 留痕, D 段挂账条目"+1 实例";
+  (c) coverage.json 主进程 mutate 用错键写坏一次(covered_chunks vs chunks_done),
+  立即修复。STATE_SAVE: round 15/chunks 14/66=21.2%/D=49(N=23/NME=0, 72 链)/
+  verify 49 CONFIRMED(1 override); 容器重启 healthy。R15 = chunks[14] 待查
+------------------------------------------------------------------------------------------
+[#67 | R15 派发 | 2026-09-06] R15 = chunks[14] chunk_facet (4 单元, 全 explicit tier——本
+  run 地基最强轮); **type_facet(builtin:type_boundary)+range_facet(builtin:boundary_value)
+  双绑定→A 路直生首战**+B 叠加(A/B 独立构造); state/behavioral 空→纯 B。face 预验证:
+  POST /collections/{name}/facet 实路由(FacetRequest required=[key], limit int|null min1
+  default10, filter/exact/shard_key 可选——R14 defect-49 serde 宽容家族的直接延伸面:
+  exact/filter 被静默忽略?)。state 主攻 index 前置/删除回归/跨字段混淆; semantic 主攻
+  response shape+count 基数+400 诊断质量。容器 healthy。三 attack 并行
+------------------------------------------------------------------------------------------
+[#68 | R15 8c | 2026-09-06] 25 脚本(b9=A4+B5/s6 全B/sem10 全B)——**A 路直生首战落地**
+  (01-04 按 builtin:type_boundary/boundary_value 清单直生; A/B 独立构造=不同 fixtures/
+  构造/closure 腿, 分账 A=4/B=21); 六道门全绿: classifier PASS 361 零错(state_02+_04
+  cleanup_unwrapped 打回修复闭环——同款 helper return-safe_request 未 wrap, 判定腿零动)/
+  py 25/25/path 25/25(格式变体 path:A 记备注)/命名零冲突/face 全验(**agent 自抓
+  GET /collections/{n}/index 幽灵路由**——v1.18 只有 PUT/DELETE, 我派发词 face 清单的
+  错, 改用 describe payload_schema 轮询, 护栏生效第二次); semantic 亮点: exact=true
+  硬 oracle 闭近似逃逸 + optional 字段静默忽略探针(R14 defect-49 家族延伸)+
+  filter oneOf Any-type 逃逸不锚判决的诚实切分; 派 executor(派发词点名 output_*.log
+  惯例)
+------------------------------------------------------------------------------------------
+[#69 | R15 executor→L1→builder 派发 | 2026-09-06] 25/25 执行零异常(61s 总墙钟, 重载
+  9s; output_*.log 惯例 25/25 正确+done 齐全)。2 DEFECT 信号: semantic_facet_09
+  (optional/unknown 字段静默——R14 defect-49 家族延伸) + state_facet_404_06。L1:
+  sem_09 UNCERTAIN 保留; state_06 REFUTED(no_index)——**误杀实锤**(log L15 index 创建
+  200 在案, no_index 模式漏看 helper 包装; R4 先例 override 恢复)。真信号浮现:
+  state_06 L2 空 collection 无 index→200 {hits:[]} vs boundary_07/semantic_02 有
+  payload 时 unindexed→4xx——空 collection 分支疑似绕过 index gate, 灰区
+  (无 payload_schema 时 400 断言是否适用)留 auditor。builder×2 派发
+------------------------------------------------------------------------------------------
+[#70 | R15 builder×2+auditor 派发 | 2026-09-06] 两 builder 429 限额中断一次(12:38 窗口
+  重置)SendMessage resume 续跑零损失。链成果: (1) optsem——**同请求路径三级分裂**
+  实锤(FacetRequest 顶层无 deny→200 静默 / Filter 层有 deny→400 带字段名 /
+  FieldCondition 层无 deny→忽略+filter 照常), 全树 deny_unknown_fields 仅 1 文件,
+  uniform-posture 反方被端点内 Filter 400 直接反驳(R14 缺的锚); 但 unknown-field 期望
+  在 facet 单元无直接 antecedent(400 条款 scoped 到 no-index)——链记 chain_broken_at:
+  contract(coverage break)。(2) emptygate——**源码级破案**: facet.rs:32-36 空段捷径
+  (available_point_count()==0→Ok(empty))在 index gate(:38-43)之前, 仅 approx 路径;
+  exact 路径 gate-first; **决定性 re-probe: 同一空 collection 同一 unindexed key,
+  approx 200 vs exact=true 400**——同请求双路径不同答复; 与 R14 defect-49 不同机制
+  (gate bypass vs unknown-field drop)。verify_chain_quotes FAIL 一次(emptygate 引文
+  拼接非逐字)R2 工单打回重引闭环(74 链 mismatch=0)。auditor×2 派发(两 crux 显式)
+------------------------------------------------------------------------------------------
+[#71 | R15 收官 | 2026-09-06] R15 终态: 1D/1N/0NME——**defect-50: 空 collection facet
+  index-gate bypass**(facet.rs:32-36 空段捷径在 gate 前, 仅 approx 路径; 同请求 exact
+  孪生 400, populated 孪生 400; caveat 保留=strict-vs-lenient 读法)。semantic_facet_09
+  (R14 defect-49 家族延伸)=NOT_DEFECT(A=REFUTED: facet 单元无 unknown-field 条款,
+  期望= schema 推断非契约义务)——**家族 verdict 分歧本身挂账: 契约提取缺口(generic 400
+  行未吸收进 update/facet 单元, schema-closedness 新类 R14→R15 复发无正式类别)**。
+  总账: 74 链=50D/24N/0NME, 50 报告 50 CONFIRMED(defect-43 override **第二次重放**
+  ——verify_defects 重跑重写 defect_review.json 冲掉 override, 根因升级挂账: (a)扫描器
+  非锚定首匹配 (b)重跑冲 override 需重放机制/行首锚定修复)。15/66=22.7%, round 16,
+  容器 healthy。L1 no_index 误杀+override 第二实例。R16 = chunks[15] 待查
+------------------------------------------------------------------------------------------
+[#72 | R16 派发 | 2026-09-06] R16 = chunks[15] chunk_global (3 单元 state_invariants,
+  system 级全 B): inv_create_visible(create 200→exists+get 读写一致)/inv_delete_gone
+  (delete 200→三面全消失)/inv_lock_blocks_writes(POST /locks write=true→**所有**变更面
+  统一 configured error_message 阻断)。face: /locks GET+POST 实路由在。派发三 attack
+  (state_inv_/boundary_inv_/semantic_inv_ 前缀); **锁释放 finally 守卫+GET /locks 复核
+  前置给全部三 agent(run 级安全: 挂死 write 锁会阻断后续所有轮)**; semantic 主攻
+  error_message 逐字回显+处置类 uniformity(R8 四面分裂同款狩猎)+锁下读写语义;
+  state 主攻锁期变更面枚举(超契约四面的 aliases/cluster 等)+部分可见窗口; boundary
+  主攻即时性时序/名字规范化/锁状态机边界
+------------------------------------------------------------------------------------------
+[#74 | R16 executor→builder×7 | 2026-09-06] 执行 24/24 零超时零事故, 但 9 SCRIPT_ERROR
+  分解: (a) **/locks 端点 standalone build 404**(GET+POST 都 404——openapi 声明≠运行时
+  存在, face 预验证盲区新变体"J1-openapi-vs-build 分歧"; 6 脚本前提死亡: 4 semantic
+  lock+2 state lock, 其中 churn 按 CRITICAL_LOCK_STILL_ON 设计报 SE=诚实); (b) 3 个
+  state 脚本 seed upsert 用 POST(retrieve)非 PUT(upsert)——**R11 方法教训同族**,
+  打回修复(state agent 自查 openapi 找到根因)主进程重跑: 001_seq 翻出 DEFECT_FOUND
+  (re-upsert 后 point1 向量非 last-write-wins!)另两 NO_DEFECT。锁安全: executor 功能
+  验证终态无锁(DELETE 200 非 423)+全轮 GET /locks 记录(全 404)。终信号面=7: locks404
+  ×2/recycle/case-del/cvis02/storm/LWW。L1 全 UNCERTAIN 零误杀。builder×7 并行
+  (locks402 链的 crux=源码 feature-gate 取证; LWW 链的 crux=wait=true 语义+scope 适配)
+------------------------------------------------------------------------------------------
+[#72 | R16 收官(跨会话+双中断恢复) | 2026-09-06] R16 终态: 2D/5N/0NME。**defect-51:
+  reader-storm create-visibility 500 窗口**(register-before-activate——create-200 后
+  即刻 GET-500 "0 of 0 read operations failed"; create_collection.rs:240-283 map 插入
+  先于副本激活+fire-and-forget 提案; dispatcher.rs:222-231 warn-only 等待; Type4,
+  grade A n=10+n=25; caveat=partial-family: 仅 500 家族承载, miss/resurrect 家族
+  caveated 无服务端机制)。**name_recycle 并入 R9 delete-on-missing 家族**(DELETE-missing
+  →200{result:false} vs registry 404; 记 defects/family-addendum-r9-r16.md 不占编号;
+  _02 链 builder 声明分歧=家族内字面读 vs registry 条款读, 不计 FP)。**locks-404
+  幻影路由家族 NOT_DEFECT 且挂重大运维账**: /locks v1.16.0 #7449 已移除, v1.18.0 源码
+  commit-match 无此路由, 产品 404 正确——**过期 v-1-18-x 网站文档 shard 仍宣称 /locks+/
+  quotas = 厂商文档债, 契约提取从不存在端点产 9 次幻影点火**(doc-fidelity 威胁, D 段
+  新增: 外部文档 shard 与 commit-matched openapi 交叉校验缺失)。LWW Cosine readback
+  NOT_DEFECT=oracle bug(比较未归一化向量; simple.rs:168 归一化 by-design)。运维:
+  reporter 429(17:38 窗口)+进程退出双中断, 重派干净落盘; **defect-43 override 第 3 次
+  重放**(重跑冲 override 已成每轮仪式, 插件仓修复前持续)。总账: 81 链=52D/29N/0NME
+  (52=51 编号+1 家族实例); 16/66=24.2%; round 17; 容器 healthy。R17 = chunks[16] 待查
+------------------------------------------------------------------------------------------
+[#73 | R17 派发 | 2026-09-06] R17 = chunks[16] chunk_healthz (1 单元 assertion
+  behavioral_healthz_001, inferred tier, "200 healthy/503 unhealthy")。主进程 face
+  预验证先行: /healthz /livez /readyz 三 face 全在 commit-matched openapi(62 路径)
+  且 live 全 200, 无幻影(R16 /locks 教训直接应用)。派发词新增: (a) RESOURCE RULE——
+  禁人为强造 unhealthy 态(无 pause/耗尽/kill), 503 分支不作为正向 oracle 除非找到
+  in-repo antecedent; (b) R16 文档 shard 降级——外部 v-1-18-x 页为二级源, 路由存在性
+  以 commit-matched openapi 为准, 页面仍可定义响应语义(记 tier); (c) livez/readyz 仅
+  作 contrast face。三 attack 并行, 前缀 boundary_hz_/state_hz_/semantic_hz_
+------------------------------------------------------------------------------------------
+[#74 | R17 8c | 2026-09-06] 15 脚本(b7/s3/sem5 全 B)六道门主进程独立复核全绿
+  (py_compile 15/15+分类器 dry-run 全 null+path B 15/15+Oracle 单行+f-string 复核);
+  503 反先例审计= openapi 全文 0 次 503, 三 agent 一致不将其作正向 oracle;
+  semantic_hz_05 预埋火点: /livez 200 body 自称 "healthz check passed"(命名错位);
+  派 executor(产物位置+env 双守卫前置)
+------------------------------------------------------------------------------------------
+[#75 | R17 执行+L1+builder 派发 | 2026-09-06] executor 15/15 三元组落 session root:
+  8 NO/4 DEFECT_FOUND(全 semantic 家族)/3 SCRIPT_ERROR。四火线: hz02 healthy 200 违反
+  declared face(openapi 声 application/json+object, 实际 text 'healthz check passed');
+  hz03 wrong-verb 拒绝 0/3 rubric(裸框架页); hz04 **catch-all 层吞 near-miss 路径→
+  Type1**(typo 探针永报 healthy); hz05 跨探针 body 归因错位(livez 答 'healthz check
+  passed')。L1: 四候选全 UNCERTAIN 存活。3 个 state_hz 同签名解包 bug(probe_healthz
+  返 3 元组解 2 个; read_iso 死在 setup)——**静态盲区+1: 解包元数 py_compile 不查**,
+  state agent 打回修复(残留 4 collection 一并处理)。4 builder 并行派发(双读法显式)
+------------------------------------------------------------------------------------------
+[#76 | R17 state 重跑闭环 | 2026-09-06] state agent 修复(5 调用点+潜在同型 2 处+
+  AST 元数审计自建)+主进程机械重跑: 3/3 NO_DEFECT(churn/lifecycle/read-iso 下
+  healthz 保持 truthy 200, R16 defect-51 类窗口未在 health 面复现)。R17 执行终态:
+  11 NO/4 DEFECT/0 SE。4 builder 建链中
+------------------------------------------------------------------------------------------
+[#77 | R17 收官 | 2026-09-06] R17 终态: 1D/3N/0NME。**defect-52: GET /healthz
+  healthy-200 text/plain vs openapi application/json+object 占位符**——E2 机械
+  A=CONFIRMED 强制 DEFECT(auditor 无翻案权), caveat=更可能是 CONTRACT 缺陷(openapi
+  生成器占位符仅 4/62 端点共用且全服文本; 唯一真 schema 端点 / 合规; 源码显式
+  plaintext+厂商自家测试固化该文本)——**doc-fidelity 家族第 2 实例**(R16 /locks 后),
+  reclassification 留主进程+人工复核; 家族范围=同形态适用未攻 livez/readyz/metrics。
+  hz_04 NOT=NormalizePath::trim() 全局 opt-in(src/actix/mod.rs:121) 仅弱形态
+  trailing-slash 2xx 无 catch-all; hz_05 NOT=渲染版文档三探针 example 同串(livez
+  body 实为 doc-conformant)+无任何 tier 的 body-content 约束; hz_03 NOT=R12 裸 404
+  先例+零 antecedent+rubric 脚本自撰。auditor 卫生发现: constraint_id 带括注装饰
+  →check_chain_grounding 假阳性(归一化后 REFUTED)——builder 卫生规则: constraint_id
+  必须裸 id(D 段挂账)。运维: state 三脚本**元组解包元数盲区**(py_compile 不查,
+  静态盲区清单+1)修复闭环重跑 3/3 NO; defect-43 override 第 4 次重放; hz_02 链
+  .done marker 主进程补落(builder 报落实未在)。总账: 85 链=53D/32N/0NME
+  (53=52 编号+1 家族实例); 17/66=25.8%; round 18; 容器 healthy。R18 = chunks[17]
+------------------------------------------------------------------------------------------
+[#78 | R18 派发 | 2026-09-06] R18 = chunks[17] chunk_index+create (4 单元)。
+  **A 路第二次**: type_create_index_001(PayloadSchemaType 8 值枚举)+002(text tokenizer
+  4 值枚举)均 explicit+bound=[builtin:type_boundary]→A 直生+B 叠加(独立构造); state
+  _create_index_001(integer range=false 降级, system 级空绑定纯 B 跨请求序列, 主攻=
+  区分 wrong-results 硬违规 vs 文档化 slowness); behavioral(200/400/404, inferred
+  纯 B, diagnostics 主攻+R15 deny_unknown_fields 家族探针)。semantic 派发撞分类器
+  超时一次重试成功。守卫清单+元组解包元数(R17 新盲区)。前缀 boundary_idxc_/
+  state_idxc_/semantic_idxc_
+
+=== #79 R18 六道门通过 + stage1（2026-09-06）===
+Chunk: chunks[17] chunk_index+create（4 单元：type_create_index_001/002、state_create_index_001、behavioral_create_index_001）
+三 attack 收官：boundary 6（typeA_01 策略矩阵/typeB_01 枚举闭包/tknzA_01/tknzB_01/capB_01 能力布尔/errB_01 404-400）+ state 7（01 基线/02 range=false 降级/03 delete 一致性/04 失败创建/05 类型转换/06 tokenizer 转换/07 并发）+ semantic 7（001 taxonomy/002 diag/003 404/004 envelope/005 unknown-keys=R15 家族探针/006 integer contrast/007 coercion）= 20 脚本，A2/B18
+Face 自纠：派发词 /index/{field_name} PUT 形态被三 agent 按 commit-matched openapi 一致纠正为 PUT /collections/{collection_name}/index + body field_name（守卫 2 正面生效，零主进程干预）
+六道门：py_compile 20/20；boundary 6 文件 path:A] 无空格格式机械规范化为 path: A] 后 path 标记全过；分类器 dry-run 全 CLEAN/null → ALL 20 PASS
+stage1_r18.json 落盘。下一步：executor。
+
+=== #80 R18 执行完成 + boundary env 修复重跑（2026-09-06）===
+20/20 三元组落 SESSION_DIR root。executor 后台顺序执行正常（semantic 7 + state 7 一次过）。
+【环境事故+修复】boundary 6 脚本首跑全 SCRIPT_ERROR（No module named 'runtime'）——R18 boundary agent 采用了 runtime 包依赖形态（历史轮无），脚本自带 _find_runtime_root walk-up 找不到插件 scripts/runtime/；且我在 executor 派发词中把 TESTVDB_SCRIPTS_DIR 指向 debate_logs（方向写反，主进程失误）。机械修复：TESTVDB_SCRIPTS_DIR=<plugin>/scripts 重跑 6 脚本（零脚本改动），三元组原位覆盖。
+【教训】① executor 派发词守卫更正：TESTVDB_SCRIPTS_DIR 恒指插件 scripts/（runtime 包所在），非脚本目录；② 新静态盲区第 3 项：模块依赖（import 非标准库模块）py_compile/分类器均不查，运行时才暴露——六道门可考虑加 stdlib-only import 白名单检查。
+【重跑后 R18 全量 verdict】boundary: typeA_01 DEFECT_FOUND / typeB_01 NO / tknzA_01 SCRIPT_ERROR（NaN leg 传输失败升级，9/10 leg clean）/ tknzB_01 NO / capB_01 DEFECT_FOUND / errB_01 NO；state: 01/03/04/05/06/07 NO（rc0），02 SCRIPT_ERROR（spec-valid integer lookup=false+range=false 被 422 'can\'t be both disabled' 拒——真实候选信号，判定留管线）；semantic: 002 DEFECT_FOUND（Type2_PoorDiagnostics 400 rubric 1/3）/ 007 DEFECT_FOUND（Type1_IllegalSuccess field_schema=['keyword'] 数组 200 被接受）/ 其余 5 NO。
+
+=== #81 R18 收官 + 暂停（2026-09-07）===
+链路：extract（89 全量，R18 新 4 候选）→ L1（4 refuted 均历史轮；R18 四候选 UNCERTAIN 全过）→ 4 builder 并行建链（引文验证 89 链 0 mismatch）→ auditor 终判 2D/2N/0NME → reporter defect-53.md → verify_defects 52C+1FP→defect-43 override 第 5 次重放→53/53 CONFIRMED → STATE_SAVE。
+【defect-53】Type1_IllegalSuccess：PUT /collections/{name}/index field_schema=["keyword"]（合法成员数组形）200+落库 keyword 索引；openapi oneOf 无数组分支，explicit 枚举闭包违反，E2 锁定。根因=serde untagged struct-from-seq 位置反序列化（params struct 必填 r#type 首字段+其余全 default → ["keyword"] 绑成 KeywordIndexParams）；r#type-first 模式遍布全部 8 params struct，家族可泛化；Validate 不复查容器形状。家族实例 semantic_idxc_007 merged（无新编号）。Caveat：发布 shard 包装 schema Any-type 分支（B 路独立亦 DEFECT）；gRPC/SDK 面未探。
+【capB NOT】422 双禁角在断言字面子句外（E5 api_violates_assertion=false）；false|false 概念页表格行未版本化（含 v1.19.0 段落+自身"只设一个 filter"反句）；openapi 只文档化 200 属省略非保证；验证 v1.17.0 起双面有意存在→doc-fidelity 门槛不够，人工复核 caveat 留痕。
+【s002 NOT】诊断级 rubric 为脚本合成无 doc antecedent（chain_broken_at=doc）；字面"400 invalid schema"四 leg 全满足→R15 规则无违反子句；零区分度观察（4 异因同 untagged-enum 模板）留 exploratory caveat。
+主账：89 链=55D/34N/0NME（53 编号+2 家族实例）。STATE_SAVE：round=19、coverage 18/66=27.3%、状态三文件快照 .r18、容器重启 healthz:200。
+⚠️ 暂停（用户指令"跑完这轮暂停"）：mine_state paused=true，resume point = R19 = chunks[18]。不派发 R19。恢复时新会话读 mine_state.json + 本存档即可续跑。
+
+=== #82 R19 派发（2026-09-07）===
+用户"继续"恢复（暂停 2026-09-07T00:00Z，间隔 <1 天）; 容器 healthy healthz:200; mine_state
+resumed_at 已更新。R19 = chunks[18] chunk_index+delete (2 单元, 本 run 最小 chunk 之一):
+- qdrant_state_delete_index_001: system 级 state_constraint, inferred, 空绑定→纯 B 路跨请求
+  序列; 内容=删除幂等(create 后 delete 成功/不存在也成功)+数据保留(points+count/payload 读存活)
+- qdrant_behavioral_delete_index_001: endpoint 级 behavioral, inferred; 200/不存在也 200/数据
+  存活; Type4_StateLogicViolation; doc v-1-18-x 版本化
+face: DELETE /collections/{collection_name}/index/{field_name} (路径参数, 无 body)——R18
+state_idxc_03 已运行时验证路由存在。两单元均 inferred→派发词明示 R9/R15 doc-antecedent 规则
++ R15 s002 rubric 先例。semantic 派发词带 R18 defect-53 家族探针方向(独立构造)。
+三 attack 并行(boundary/state/sem); 前缀 boundary_idxd_/state_idxd_/semantic_idxd_; 工单
+12 条(R1-R18 精选: /healthz 路径/幽灵路由守卫/单物理行 Oracle/log 行协议/inferred doc-antecedent/
+裸 id+path 格式/元组元数/仅 stdlib(R18)/teardown try/前缀/残留 collection 独立命名/meta sidecar)。
+
+=== #83 R19 六道门+执行+fpathB retry 循环（2026-09-07）===
+三 attack 收官: boundary 5(cpathB/dataB/fpathB/idemB/qpB) + state 5(01-05) + semantic 4(001-004)
+= 14 脚本全 B。六道门: py_compile 14/14; path 标记 meta 全 'path: B'; teardown try-wrapped;
+分类器 3 flag 全人工核验为误报(state_idxd_03/04 cleanup_unwrapped=被测 delete_index attack-leg
+本体误判; semantic_002 oracle_degenerate=长 Oracle 被启发式截断, 实际具体可证伪)→ALL 14 PASS。
+boundary 5 脚本 runtime import 形态(R18 先例 env 引导跑通; 工单#8 连续两轮被 boundary agent
+无视——下轮派发词措辞升级为 must run under plain python with no env injection)。
+执行(executor py -3.12, 顺序, 600s cap, max 7s): 首跑 11N/2D/1SE。
+【fpathB SCRIPT_ERROR→retry 循环(SOP 分类器设计)】log 时间线: F0/F4 200 证明 collection 在,
+F7 起变 JSON-body 404 collection 不存在(区别于 F1/F3/F5 空 body 路由层 404)——collection
+server 端中途消失, 腿循环无删除动作。打回 boundary agent 修后重审: 真凶=F4 dotdot-traversal
+field_name='..'——DELETE /collections/{C}/index/.. 被服务器点段规范化到 /collections/{C},
+200 {"result":true}(=collections+delete 响应封套, index+delete 应为 object)整个 collection
+连点删除; iso+seq 双相确定性复现; %2e%2e→400 对比反证(解码但不规范化)。Typed
+Type4_StateLogicViolation(数据丢失级)。31 clean guards 归因隔离。
+【retry 后机械事故】agent 重跑用了默认 python 3.8(pyc 证据, cpython-38)→SCRIPT_ERROR 假象
+覆盖三元组; 主进程 py -3.12+双 env 守卫机械重跑: rc=1 VERDICT: DEFECT_FOUND(F4 iso+seq 复现)
+——**Qdrant ..-traversal 数据丢失缺陷, 本 run 目前最重量级候选**。
+R19 执行终态: 3D/11N/0SE(qpB timeout=0 违反 openapi minimum:1 Type1; fpathB ..-traversal
+Type4; semantic_004 ['keyword',true] 尾元素注入=defect-53 家族新推论 Type1)。
+extract: 92 全量; L1: 4 refuted 全历史轮, R19 三候选 UNCERTAIN 全过。
+
+=== #84 R19 builder×3 + 引文验证 + fpathB 反转（2026-09-07）===
+3 builder 并行建链:
+【fpathB 反转】builder 取证推翻 server 归因: 点段规范化发生在客户端——python-requests
+2.32.4 prepare 时 RFC 3986 规范化(runtime/_common.py:42), on-wire 实际=合法 DELETE
+/collections/{C}?wait=true(prepare().url 离线证明; curl --path-as-is 字面 .. → 400
+"Invalid json path" collection 存活; qdrant field_name=JsonPath nom 语法拒点段)。
+chain_broken_at=script, api_violates_assertion=false, mundane=client-side URL
+normalization。服务器行为正确。【harness 教训入库】requests 库静默改写路径注入——
+所有 path-based 注入测试脚本盲区(需 --path-as-is 等价物); D 段挂账。
+【qpB】链完整: openapi 正面声明 timeout{integer,minimum:1} 41 操作统一(ytt.yaml:225-231
+tag v1.18.0); 源码 UpdateParams Option<Duration> DurationSeconds 无验证(update_api.rs:
+410-415) vs 对照面 WaitTimeout #[validate(range(min=1))] 422(collections_api.rs:25-29);
+live probe: create 面 ?timeout=0 → 422, index 面 → 200 且 wait_timeout 语义活跃; 唯一
+in-tree timeout=0 单测断言拒绝; 无 by-design 注解。R18 capB 省略推理明确不适用(正向声明)。
+【semantic_004】链完整 Grade B: 源码机制全链(serde untagged→struct-from-seq 位置绑定
+r#type 首字段+is_tenant 首个 #[serde(default)]→Validate 空转→do_create_index 转发);
+注入值被 tenant_optimization 实际消费(types.rs:2220-2231); 泛化再证(["keyword",true,true]
+→on_disk:true; ["text","prefix"]→tokenizer:"prefix"); family_relation 留 auditor 裁
+merge vs 新编号。
+引文验证: 首跑 1 mismatch(qpB assertion_text_quoted 拼接两字段非逐字子串)→R2 工单打回
+builder 重引(改 verbatim 双子串)→builder 交 array 形式→verify 脚本只支持 string(TypeError
+:55)→主进程机械补丁: 取 expected_behavior 逐字值+description 存 note(verify 92 链
+mismatch=0 PASS)。【插件债挂账】verify_chain_quotes 不支持 list quote。
+auditor 已派(三 crux 显式: fpathB 判 NOT 方向+harness caveat; qpB dual reading;
+semantic_004 merge vs 新编号)。
+
+=== #85 R19 auditor+reporter+STATE_SAVE 收官（2026-09-07）===
+auditor 终判 2D/1N/0NME:
+【qpB=DEFECT】binding-schema 读法胜: 正向声明(41 操作统一 minimum:1)+同 commit 跨面
+不一致(对照面 422)+零语义活跃(wait_timeout)+唯一 in-tree timeout=0 单测断言拒绝+无
+by-design 注解→lenient-param 框架不满足 2026-08-23 显式性标准。A=CONFIRMED E2 锁定。
+Caveat: 违反条款经 doc surface(openapi schema)而非 expected_behavior 文本到达
+(R9/R15 path-B grounding flag, 人工复核留痕, 非判决变更)。
+【semantic_004=DEFECT 新编号】编号准则应用: R18 merge idxc_007 因同载体同 silent-
+normalization 结果(无新 observable); 本轮载体不同+observable 升级为值级语义替换
+(trailing true→is_tenant 持久化+tenant_optimization 实际消费+泛化 on_disk/tokenizer)
+→新编号 cross-ref defect-53。S1 回归腿 observation-only 无重复计数。B/C/D 三视角独立
+CONFIRMED。
+【fpathB=NOT】A=REFUTED E2 锁定(观察真实/归因服务器被传输层取证推翻); root=
+script_error; fp=both(doc 单独不会翻——scope 条款表面支持违反读法, 翻案需源码/wire
+取证)。harness 教训 caveat: runtime 传输无 path-as-is 控制→所有 traversal 族腿被
+客户端静默改写(含本脚本 F3 '.' 腿)。D 段挂账。
+reporter: defect-54.md(qpB, Type1, Medium)+defect-55.md(semantic_004, Type1, Medium,
+cross-ref 53+披露 auditor 原文写 54 而主进程账本 54=qpB/55=本链的簿记事实)。
+verify_defects: 54C+1FP→defect-43 override 第 6 次重放→55/55 CONFIRMED。
+主账: 92 链=57D/35N/0NME(55 编号+2 家族实例)。STATE_SAVE: round 20、19/66=28.8%、
+三文件快照 .r19、容器重启 healthz=200。R20 = chunks[19] chunk_livez(1 单元)。
+
+[#86 | R20 派发 | 2026-09-07] 用户"继续跑"未附暂停指令→R19 收官后续跑。R20 = chunks[19]
+  chunk_livez (1 单元): behavioral_livez_001 (endpoint 级, **explicit tier +
+  source_verified=true**——本 run 首个强证据单元): "liveness probe answers while
+  process alive (no dependency check)"; Type2_PoorDiagnostics; doc v-1-18-x
+  api-reference/service/livez。三 attack 并行; 前缀 boundary_lvz_/state_lvz_/
+  semantic_lvz_; 工单 13 条新增: ⑫R19 fpathB 教训成文(requests RFC3986 点段静默改写→
+  traversal 腿须 %编码或标 exploratory); 巧8 措辞升级(必须 plain python 可跑零 env
+  注入——此前两轮被无视); semantic 派发词指 R17 healthz 块 hz_02 先例作家族谱系。
+
+=== #87 R20 收官（2026-09-07）===
+六道门 ALL 10 PASS(semantic 2 脚本 path:B 无空格 coverage-list 标签机械规范化×2/文件,
+R18 先例; 分类器零 flag)。执行 10/10 NO_DEFECT: livez 全程恰 200——collection 生命周期
+churn/370 样本并发 error storm/committed load/依赖异步 divergence 窗口(bulk upsert/
+optimizer/索引构建)/verb/path/decoration 矩阵。0 候选 0 链。台账不变 92=57D/35N/0NME。
+**工单 8/12 硬化措辞首次全遵守**(三 agent 全 stdlib+requests 零 env 依赖+%编码 traversal)。
+STATE_SAVE: round 21、20/66=30.3%、快照 .r20、容器重启 healthz=200。
+consecutive_no_defect_rounds=1(注意: R14 曾 consec=4 背景下 SOP 5 连零候选自然停机条款
+——run2r2 教训是 5 连零候选触发停机评估, 主进程留意)。R21 = chunks[20] chunk_locks+get
+(1 单元)。
+
+[#88 | R21 派发 | 2026-09-07] R21 = chunks[20] chunk_locks+get (1 单元):
+  behavioral_get_locks_001 (endpoint 级, explicit tier + source_verified=true): 200
+  LocksOption {write, error_message} 当前写保护状态; Type2_PoorDiagnostics。GET /locks
+  face (POST 为状态暂存工具, 判定面=GET)。R16 教训直连: ① /locks 实路由已运行时验证;
+  ② teardown 必须 POST write:false 释放写锁(持有锁毒化会话+强制容器重启)。三 attack
+  并行; 前缀 boundary_lkg_/state_lkg_/semantic_lkg_; 工单 13 条(R20 版+锁释放条款)。
+  semantic 派发词指向 R16 locks 链谱系避免重复诉讼。
+
+=== #89 R21 路由现实纠正循环 + 六道门（2026-09-07）===
+【关键事实】/locks 本 build 不服务(GET 404 现场验证, healthz 200)。state/semantic 两
+agent 独立发现并自带双轨 preflight(R16 locks-404 phantom-route 家族: v1.16.0 移除
+#7449, 契约 face 来自 stale 外部 shard api-reference-12.json)。boundary 初版误信
+"openapi declares get+post"→envtype_01 :181 会对 404 判 Type2=幻影 DEFECT(家族第 10
+次 firing)→**执行前打回修复**(SOP retry 循环): 四脚本全改 served/unserved 双轨+
+R16 家族 disposition+G9 面不对称保留。
+【根因新发现】.sourcedeps/qdrant/v1.18.0/openapi.json 是 stale 外部镜像合并版(62
+paths 含 /locks)非纯 commit-matched 产物(60 paths)——R16 caveat 点名的坑二次踩中。
+Face 预验证/doc 锚定应优先 git-tag ytt 源+源码树, 镜像仅辅助。defect-54/55 不受影响
+(锚=git-tag ytt+源码 clone)。D 段挂账: ①契约构建期剔除/标记死路由(R16 /locks+/
+quotas 同形); ②sourcedeps 镜像纯度。
+【我的失误】派发词"实路由在"是误读 R16 ops 摘要——被三 agent 守卫 2 正确拦截, 零幻影
+进管线(守卫设计的正面验证)。
+六道门 ALL 10 PASS(compile/imports clean/无空格 path/分类器零 flag); stage1_r21 落盘
+(含上述三注记)。executor 已派(预期全 NO_DEFECT+DOC_FIDELITY_FLAG, 若报 DEFECT 为真
+信号)。
+
+=== #90 R21 收官（2026-09-07）===
+执行 10/10 NO_DEFECT(7 unserved-track DOC_FIDELITY_FLAG + 3 纯 NO; ~14s 墙钟; 锁卫生
+POST-batch /locks 404 同 pre-batch+healthz 200)。0 候选 0 链, 台账不变 92=57D/35N/0NME。
+STATE_SAVE: round 22、21/66=31.8%、快照 .r21、容器重启 healthz=200。
+consecutive_no_defect_rounds=2(R20+R21)。SOP 5 连零候选自然停机条款激活线=若 R22-R24
+再连三轮零候选→停机评估(主进程留意)。
+R22 = chunks[21]。
+
+[#91 | R22 派发 | 2026-09-07] R22 = chunks[21] chunk_locks+set (3 单元):
+  type_set_locks_001(endpoint type_constraint, explicit, **bound=[builtin:type_boundary]→
+  A 路第三签**)+state_set_locks_001(system, 空绑定纯 B)+behavioral_set_locks_001(system,
+  Type4)。**派发词直给路由现实**(吸取 R21 教训): /locks POST+GET 本 build 404 现场
+  已验+R16 家族不可再诉讼+双轨强制(A 路脚本同样带)+stale 镜像坑点名。三 attack 并行;
+  前缀 boundary_lks_/state_lks_/semantic_lks_。
+
+=== #92 R22 收官（2026-09-07）===
+执行 9N/1SE→retry 循环 1(state_lks_type_reject_01 差分循环解包元数: CORNERS 3 元组
+投到 2 名循环——R17 元数教训的数据侧变体, 静态盲区)→修复后 10/10 NO_DEFECT(全 unserved
+track: /locks 404+R16 家族+DOC_FIDELITY_FLAG; A 路第三签同途)。0 候选 0 链, 台账不变
+92=57D/35N/0NME。分类器 transport_probe_wrong×4 人工核验误报(healthz 门经外部变量
+提前求值, 分支内联启发式识别不到——插件债挂账)。
+STATE_SAVE: round 23、22/66=33.3%、快照 .r22、容器重启 healthz=200。
+**零候选连计=3(R20 livez 干净/R21+R22 locks 路由族)**。SOP 5 连停机评估线还差 2 轮
+(R23/R24 若再零候选→第 5 轮触发)。观察: R21/R22 零候选根因=死路由 doc 债非目标面干净,
+chunks 序列 locks 两块已消化; 下轮 chunk_metrics(1 单元)为真实服务面。
+
+[#93 | R23 派发 | 2026-09-07] R23 = chunks[22] chunk_metrics (1 单元):
+  behavioral_metrics_001 (endpoint 级, explicit + source_verified): 200 Prometheus text
+  (content-type text/plain) 覆盖 collections/searches/points/optimizations/cluster state;
+  Type2。**主进程派发前现场探路由**(R21 教训制度化): GET /metrics=200 真 Prometheus
+  文本(app_info/collections_total 家族在)——SERVED, 无需双轨。派发词直给探活证据。
+  三 attack 并行; 前缀 boundary_mts_/state_mts_/semantic_mts_; 工单新增第 7 条扩展:
+  数据列表解包元数也须核(R22 retry 教训)。
+
+=== #94 R23 执行+extract+L1+builder×5 派发（2026-09-07）===
+执行 5D/6N/0SE——**零候选连计重置**(R20-R22 的 3 连清零)。
+【state 三脚本=同族信号】dropped collection 的 per_collection 指标 series 残留 NONZERO
+(state_01/02 各 2 条; state_03 per_collection=true 面 55 条)——collections_total 降了
+而 labeled series 留着=同 exposition 内部自相矛盾论点; breadth 提示系统性非清理。
+【boundary_mts_04 疑云】prom=None 但 log 里 body 明明是 Prometheus 文本——同判据的
+boundary_mts_01 判 NO+executor post-batch probe 28153 bytes 可解析+semantic_01 严格
+parser 过→脚本 parser 路径(response hook?)嫌疑大, builder 核 harness artifact vs
+真实间歇行为。
+【semantic_mts_04】timeout=-5 400 诊断 1/3 rubric(脚本合成, R15 无 doc antecedent 风险)
+vs timeout=0 422 2/3; 源码层=serde Deserialize(generic) vs validate(min=1)(specific)
+分流——R19 defect-54 的 WaitTimeout/UpdateParams 分流家族在不同端点的再现。
+extract: 97 全量; L1: 4 refuted 历史轮, R23 五候选 UNCERTAIN 全过。builder×5 并行。
+
+=== #95 R23 builder×5+引文验证（2026-09-07）===
+5 链齐(引文验证 97 链 0 mismatch; state02/03 拼接式 quote 打回重引, 逐字单字段后 PASS)。
+【state 家族源码定案】三 builder 独立钉同一机制: collection_hw_metrics DashMap insert-only
+(toc/mod.rs:106, request_hw_counter.rs:9-14 entry().or_default())+per_collection_methods
+telemetry 永久累积(requests_telemetry.rs:164-191)+metrics.rs 全量渲染+delete_collection
+(collection_meta_ops.rs:211-296)清 aliases/container/files/issues 从不清 telemetry 库,
+全树零 .remove(), 无 by-design 标记, 上游 per_collection_metrics_test.sh 无删除腿。
+观测: plain 面 2 条/脚本(cpu gauge 陈旧值), per_collection 面 55 条, 3 天持久,
+同 exposition collections_total 已降——内部自相矛盾论点。
+【bmts04 定性】脚本解包错位 bug(ct_of 第3槽 body=None 喂 prom_ok, prom_report 死代码;
+log 自带反证; 源码无 200-非 exposition 路径)——harness artifact, chain_broken_at=log。
+【smts04】rubric 无 doc antecedent(only-200 openapi 无 4xx schema), chain_broken_at=doc;
+源码机制 validate/Deserialize 分流=defect-54 家族跨端点再现(记录)。
+auditor 已派(五链三 crux: 家族 doc-clause 缺位 vs 内部矛盾+系统性非清理; fpathB 先例
+确认; R15 rubric 规则应用+exploratory 权衡)。
+
+=== #96 R23 auditor+rework+reporter+STATE_SAVE 收官（2026-09-07）===
+auditor 终判+rework: mts_01=DEFECT(新编号 lead, constraint_category=other 新类触发)+
+mts_03=DEFECT(family 实例, per_collection 面 55 series)+mts_02=NME→EVIDENCE_GAP rework
+工单(装饰 constraint_id 污染机械查找, R3 同类)→builder 修链(bare id+violates=true
+与 lead 一致)→主进程重跑机械层(check_chain_grounding 单链模式: verdict_A=CONFIRMED
+→implied DEFECT)→转 DEFECT 第 3 家族实例。bmts04=NOT(ct_of slot-3 解包 bug, R19
+fpathB 先例确认)。smts04=NOT(R15 rubric 规则; validate/Deserialize 分流=defect-54
+家族新端点, 按 ADR-0009 §5 ③ 路由 end-to-end re-mining 而非 exploratory)。
+reporter defect-56.md(Type4 声称/Low+triage note; 对我派发词"gauge"说法的 fidelity
+纠正: 源码 MetricType::COUNTER, convention 反驳改走同 exposition 矛盾论点; 家族含
+rework 溯源)。verify_defects 55C+1FP→defect-43 override 第 7 次重放→56/56 CONFIRMED。
+主账: 97 链=60D/37N/0NME(56 编号+4 家族实例)。STATE_SAVE: round 24、23/66=34.8%、
+快照 .r23、容器重启 healthz=200。R24 = chunks[23]。
+零候选连计清零。D 段挂账新增: ct_of slot-3 lint、E1 builder violates 声明方差
+(true/true/false split)、新类 constraint_category=other 的分类学跟进。
+
+[#97 | R24 派发 | 2026-09-07] R24 = chunks[23] chunk_payload+clear (2 单元, 均
+  inferred tier source_verified=false, 纯 B 路): state_clear_payload_001(system:
+  clear 移除全部 payload key 保留 points/vectors)+behavioral_clear_payload_001
+  (endpoint, Type4)。face=clear-payload(commit-matched 源预验证+live-probe, 守卫含
+  stale-mirror 坑)。三 attack 并行; 前缀 boundary_pcl_/state_pcl_/semantic_pcl_;
+  工单 13 条(R23 版+ct_of slot-position lint 第 7 条扩展)。
+
+=== #98 R24 执行+L1+builder×7 派发（2026-09-07）===
+六道门 ALL 13 PASS(首次零 flag 零规范化——工单措辞迭代起效)。执行 7D/6N/0SE:
+【state×4 同模式】"vector changed after clear"全点命中(targeted+untargeted)——主进程
+数值核验: seed[-0.3,-0.2,-0.1,-0.25]模长0.45, 读回=seed/0.45 精确归一化=**Cosine 度量
+自动归一化 by-design**, oracle 用 seed 原值比存储归一化值=harness artifact 嫌疑大;
+builder 核时间线细节(baseline 读是否已归一化)。
+【bpcl02 真信号】filter.must={}(Condition ARRAY 换 object, schema-invalid)被 200 接受
+且清了 untargeted [3,4] payload=destructive match-all——R15 filter oneOf Any-type 逃逸
+谱系关联核验。
+【bpcl04 双信号】?timeout=0 被接受=defect-54 家族第 3 端点(payload+clear 面)+wait=banana
+400 诊断不点名(R15 rubric 风险)。
+【bpcl01】空 selector 400 诊断"Empty update request"不点名槽位——R15 rubric 风险。
+extract: 104 全量; L1: 4 refuted 历史轮, R24 七候选 UNCERTAIN 全过。builder×7 并行
+(每链 assertion_text_quoted 单字段子串 STRING 事前约束——requote 债务前置规避)。
+
+=== #99 R24 builder×7+引文验证（2026-09-07）===
+7 链齐, 引文验证 104 链 0 mismatch **一次过**(派发词前置 assertion_text_quoted 单字段
+STRING 约束——requote 债务规避生效)。
+【state×4 定案】四 builder 独立数值核验(读回=seed/||seed|| 精确, dev≤1.5e-7)+live
+复测 pre-clear 读回已归一化(clear 零改变 byte-identical)+Euclid 对照读回原值(度量
+域限定)+源码 by_design_in_source(cosine_preprocess simple.rs:228-235 显式意图注释,
+entry.rs:662 入库前应用; clear 只碰 payload_index)+契约自身 raw_knowledge 已记录
+"Cosine normalizes on upload (by-design)"+sibling 契约单元预声明 Rule 2.6.3 by-design。
+race_04 同读回不 fire(oracle 无 raw-seed 比较)=控制组证据。chain_broken_at=log。
+【bpcl02 反转】脚本"schema-invalid"前提被版本化 openapi 反驳: must 声明
+anyOf[Condition,Condition[],null] 含 raw-Filter 分支→must:{} spec-valid(契约
+array[Condition]=有损简化); MaybeOneOrMany 注释意图+维护者测试用 must:object;
+毁灭=空合取语义(空嵌套 filter 匹配全部, check_must None=>true)schema-legally 可达。
+chain_broken_at=doc。
+【bpcl04】timeout=0 链完整=defect-54 家族第 3 端点(UpdateParams 同结构无验证+yt
+minimum:1+live 200 复现+对照面 422); wait=banana rubric 无 antecedent。
+auditor 已派(七链三 crux)。
+
+=== #100 R24 auditor+reporter+STATE_SAVE 收官（2026-09-07）===
+auditor 七链终判: bpcl04=DEFECT(defect-54 家族实例无新编号: 同载体同 observable 第 3
+端点面, 单一修复点 update.rs:35-44, R18 merge 准则; R19 defect-55 升级分裂不适用)+
+state×4=NOT(Cosine 归一化 by-design 四路证明: 数值身份/live pre==post/源码意图注释/
+契约预声明; race_04 控制组不 fire=oracle 归因非状态变化)+bpcl02=NOT(前提被版本化
+openapi 反驳 must:{} spec-valid; MaybeOneOrMany 注释意图; 空合取 wipe=schema-legal;
+**vacuous-filter 毁灭性 footgun 记 observation+人工复核 flag**——空 must 在 destructive
+selector 里静默清全部 payload, upstream-hardening 建议)+bpcl01=NOT(R15 链)。
+reporter: defect-54.md 家族段 addendum(3 confirmed faces roster+R24 adjudication
+history+references; 既有内容逐字保留)。verify_defects 55C+1FP→defect-43 override
+第 8 次重放→56/56 CONFIRMED。主账: 104 链=61D/43N/0NME(56 编号+5 家族实例)。
+STATE_SAVE: round 25、24/66=36.4%、快照 .r24、容器重启 healthz=200。
+**harness 教训入库**: Cosine-collection 向量 oracle 必须 baseline 存储向量或用
+pre==post 比较(4 假 DEFECT 的根因); R25 = chunks[24]。
+人工复核清单新增: vacuous-filter wipe footgun(upstream-hardening)。
+
+[#101 | R25 派发 | 2026-09-07] R25 = chunks[24] chunk_payload+delete (2 单元, 均
+  inferred): state_delete_payload_001(选择性移除: 只删列出 keys 其他存活)+
+  behavioral_delete_payload_001(**unknown keys→400 validation error family** 具体承诺,
+  Type2)。派发词提示 unknown-keys 条款锚定核查(该承诺是否 doc_quote 锚; live 若
+  silent-200-no-op 则与断言冲突但断言自身 inferred source_verified=false——锚定纪律)。
+  三 attack 并行; 前缀 boundary_pdl_/state_pdl_/semantic_pdl_; 工单 14 条(R24 版+
+  第13条 Cosine 向量 oracle baseline 教训)。timeout=0 家族面已判不重诉讼(可选佐证腿)。
+
+=== #102 R25 执行+L1+builder×4 派发（2026-09-07）===
+执行 4D/10N/0SE(boundary×3+semantic_03):
+【keys_dim L4】5001-key 长列表 200 但真实 key 'keep' 未删(长列表部分应用? 截断/上限?)
+【unknown404 D1】404 拒绝但状态漂移 partial-apply(p401 漂移细节+前后腿序重建留给
+builder; 404-无效果含义是否 doc 锚=推断级)
+【typed_slots T7/T8/T9】T7 合法 unicode key '中文🎯' 被 400 拒(JsonPath 语法 vs 存储
+路径不对称=storeable-but-undeletable 卡死 key 的实质问题); T8 NUL-key 400 后 readback
+与脚本期望不符+T9 overlong 200 后同——**主进程疑似基线漂移**(前腿合法删除造成,
+oracle 期望陈旧), builder 先测此假设
+【semantic_03】dotted key 嵌套路径解释胜出(face-specific 未文档化语义; keys[] 声明
+plain array[string] 实际按 JsonPath 嵌套解释; 跨面不一致=set 文档化嵌套/delete 未
+文档化)。
+extract: 108 全量; L1: 4 refuted 历史轮, R25 四候选 UNCERTAIN 全过。builder×4 并行。
+
+=== #103 R25 收官（2026-09-07）===
+auditor 四链终判: semantic_03=DEFECT(anchor)+typed_slots=DEFECT(T7)=**新编号
+defect-57**(JsonPath-keys-slot 家族首号: set/upsert 任意串存储 vs delete JsonPath 语法
+寻址不对称; 每层 doc 都声明 plain string 但 JsonPath::json_schema 故意返回 String=
+doc 与实现被写成不一致; quoted-form 变通可用但零文档化; E2 锁定+by-design 疑点
+(维护者单测 pin 类型规范非 face 级)留人工复核; 跨 4 面 5 脚本)+keys_dim=NOT
+(oracle 反极性 lint 教训: not-removed 异常必须测 presence)+unknown404=NOT(现象真实
+源码定案 apply-then-check 无回滚, 但拒绝原子性无处锚定; observation+人工复核+
+新类通道)。
+reporter defect-57.md(源直证后写, 含 Type2→doc-fidelity 调和注记)。verify_defects
+56C+1FP→defect-43 override 第 9 次重放→57/57 CONFIRMED。主账: 108 链=63D/45N/0NME
+(57 编号+6 家族实例)。STATE_SAVE: round 26、25/66=37.9%、快照 .r25、容器重启
+healthz=200。R26 = chunks[25]。
+人工复核清单新增: 404-partial-apply(apply-then-check 无回滚)、defect-57 by-design
+疑点。
+
+[#104 | R26 派发 | 2026-09-07] R26 = chunks[25] chunk_payload+overwrite (2 单元, 均
+  **explicit+source_verified=true** 强证据对): state_overwrite_payload_001(全量替换非
+  合并, 概念文档锚)+behavioral(Type4: payload 恰等于新对象, 未重发 keys 消失)。
+  三 attack 并行; 前缀 boundary_pov_/state_pov_/semantic_pov_; 工单 15 条(R25 版+
+  第 7 条 oracle-polarity 检查: not-removed 异常必须测 presence)。defect-54/57 家族
+  面不重诉讼(佐证腿可选)。
+
+=== #105 R26 收官（2026-09-07）===
+六道门 ALL 14 PASS(连续第三轮全绿)。执行 13N/1D/0SE——唯一 DEFECT
+(state_pov_chain_lastwrite_03)被 **L1 直接 REFUTED**: 全部"vector changed"比较把裸
+list 与 (payload, vector) 元组配对(类型错配 oracle; log 内向量两侧 byte-identical)。
+overwrite 面全合规: 精确替换闭包/嵌套合并检测/{}全清/last-write-wins 链/竞态无 hybrid/
+类型保真 round-trip(2^53+1 bigint/bool-int/null/unicode 网格)/filter 可见性蜕变。
+0 链, 台账不变 108=63D/45N/0NME。STATE_SAVE: round 27、26/66=39.4%、快照 .r26、
+容器重启 healthz=200。
+【L1 refute 首秀】L1 机械门在 R26 首次否决本轮 DEFECT(此前 refuted 全为历史轮)——
+list-vs-tuple 比较错配类, 比较类型 lint 入 D 段挂账(静态盲区第 4 项候选)。
+零候选连计=1。R27 = chunks[26]。
+
+[#106 | R27 派发 | 2026-09-07] R27 = chunks[26] chunk_payload+set (3 单元):
+  state_set_payload_001(endpoint, inferred: 双 selector 缺省必须拒绝非静默)+
+  behavioral_set_payload_001(inferred, Type2: 200/400/404)+
+  bc_update_atomic_001(behavioral_contract: completed write 全量读回不撕裂; merge
+  semantics for set)。set 面=POST payload(MERGE 语义=R26 PUT replace 的对偶)。
+  三 attack 并行; 前缀 boundary_pst_/state_pst_/semantic_pst_; 工单 16 条(R26 版+
+  第 7 条 comparison-type 检查: 禁裸值 vs 元组错配比较——L1-refute 教训)。
+
+=== #107 R27 收官（2026-09-07，跨限额中断轮）===
+本轮横跨 5 小时限额窗口: 三 attack 生成中途 429 全灭→恢复后 SendMessage resume 三
+agent 续完(state 5 脚本 pre-interruption 已齐只差 analyzed-docs gate; boundary 3 脚本
+已在盘补 meta+4/5; semantic 从已确认 anchors 重写 3 脚本)。六道门 ALL 13 PASS(连续
+第四轮全绿)。执行首跑 8N/2D/3SE→retry 循环×2 agent:
+- mergeB_04: requests json= 客户端拒 NaN("Out of range float values are not JSON
+  compliant")请求未上线→改 data= 手工 body 硬传 NaN/Infinity 字面量→服务器 400 both
+  正确拒绝→NO_DEFECT(oracle 保留: 200 会是 Type1)
+- semantic 01/02 setup 比较器拿 raw seed 比归一化读回(R24 教训二次现身)+02 控制点
+  读取范围 bug; 03 潜在同类比主动修→三个 rerun 全 NO_DEFECT; 03 executor 原 DEFECT
+  ("vector drifted")归因 oracle bug(R24 Cosine 家族同类, 与 R24 判例一致)
+- state_pst_ids_merge_closure_01 被 L1 REFUTED——**refute 理由是 PostgreSQL GUC
+  timing 规则误匹配**(qdrant 无 GUC)——L1 规则库 cross-target 泄漏, D 段挂账; 机械
+  REFUTED 出局仍按流程生效
+Post-retry 13/13 NO_DEFECT。set 面全合规: merge 代数(shallow top-level insert+null
+erase)/原子性契约(240 mid-write 采样 merge-prefix lattice 从未撕裂)/20 线程 merge
+竞态 full-union 收敛/set→overwrite→set 跨面链。0 链, 台账不变 108=63D/45N/0NME。
+STATE_SAVE: round 28、27/66=40.9%、快照 .r27、容器重启 healthz=200。零候选连计=2。
+D 段挂账新增: L1 规则库 cross-target 泄漏(guc_timing 对 qdrant 误匹配)、requests
+json= NaN 客户端拒绝(leg 设计须 data= 硬传)。R28 = chunks[27]。
+
+[#108 | R28 派发 | 2026-09-07] R28 = chunks[27] chunk_per_collection (4 单元
+  state_invariants 跨面不变量): inv_count_consistency(N distinct→count N)+
+  inv_point_delete_gone(删点全读面消失)+inv_payload_overwrite_totality(overwrite
+  全等)+inv_named_vector_config(named vector config/data 同步)。R16 global 块谱系
+  不重诉讼; WAL 点复活盲点(R23 auditor note)=对抗方向。三 attack 并行; 前缀
+  boundary_pcl2_/state_pcl2_/semantic_pcl2_; 工单 16 条(R27 版)。
+
+=== #109 R28 收官（2026-09-07）===
+三 attack 16 脚本(b6/s6/sem4)。六道门: **分类器本轮抓到真违规**——12 脚本 Oracle 折行
+成多物理行(单行纪律违反; R22/R23 的 oracle_degenerate 误报先例让这轮先入为主, 人工
+核验后才确认是真问题)→主进程机械折行(纯空白 join 内容逐字保留)+recompile 全过; 残留
+cleanup_unwrapped×1 人工核验误报。执行 15N/1D/0SE。唯一 DEFECT(semantic_pcl2_dgone_01)
+builder 反转: 脚本 PERSIST 段 batch-get 请求固定原始 8 ids(:157 ALL_IDS)而期望已更新
+含 30,31(:292)——服务器按 found-only 检索返回请求子集(segments_searcher.rs:384); live
+全幸存者请求探针返回全部 8 个; 被删 3,5 全程全 face 不出现——delete-gone 不变量本身
+成立。auditor NOT_DEFECT(stale-expected-set oracle artifact; **教训: unrelated
+mutation 后 request 集与期望集必须同步刷新**)。0 新缺陷。主账: 109 链=63D/46N/0NME
+(57 编号+6 家族实例)。verify_defects 56C+1FP→defect-43 override 第 10 次重放→57/57
+CONFIRMED。STATE_SAVE: round 29、28/66=42.4%、快照 .r28、容器重启 healthz=200。
+零候选连计=3(R26 overwrite/R27 set/R28 invariants 三连写面全合规)。SOP 5 连停机
+评估线还差 2 轮。R29 = chunks[28]。
+
+=== #110 R29 派发 + point+get artifact 冤案平反（2026-09-07）===
+R29 = chunks[28] chunk_point+get (1 单元 inferred, Type2): 200 Record/404 point-or-
+collection。**主进程派发前现场探路由揭穿 R21 冤案**: GET /collections/{c}/points/{id}
+完全服务正常(create 200/upsert 200/get-existing 200 含 {id,payload,vector}/get-missing
+404/ghost-coll 404/cleanup 200)——R21/R24 "stale-mirror artifact runtime 404" 判断是
+测量错误且被 R24/R26/R28 盲目继承("用 scroll 代替")。派发词直给真相。教训: artifact
+结论也须现场复核, 不能跨轮盲目继承(R21 冤案 5 轮)。三 attack 并行; 前缀 boundary_
+pgt_/state_pgt_/semantic_pgt_; 工单 17 条(R28 版+stale-expected-set refresh)。
+
+=== #111 R29 收官（2026-09-07）===
+三 attack 9 脚本(b3/s3/sem3)。六道门: Oracle 折行×3+route_03 裸 token print×2 机械修
+(折行=纯空白 join; "NO_DEFECT for this leg"改"clean refusal for this leg")→分类器零
+flag。boundary 连接中断一次 resume 补完。执行 **9/9 NO_DEFECT**: point+get 面全合规
+(Record 身份 uint64+UUID 双形态/payload 网格/向量字节一致 Dot/404 双分支正确/lifecycle
+蜕变/竞态无撕裂/跨面一致)。0 链, 台账不变 108=63D/45N/0NME。
+**R21 artifact 冤案正式平反**: 主进程派发前 live-probe 证 route 全服务正常(200/404/404
+语义全对)——R21/R24 "stale-mirror artifact runtime 404" 是测量错误, 被 R24/R26/R28
+盲目继承 5 轮("用 scroll 代替")。教训入档: artifact 结论必须现场复核才能跨轮继承。
+STATE_SAVE: round 30、29/66=43.9%、快照 .r29、容器重启 healthz=200。
+零候选连计=4(R26/27/28/29)。**下一轮 R30 若再零候选=5 连→SOP 停机评估触发**。
+R30 = chunks[29]。
+
+[#112 | R30 派发 | 2026-09-07] R30 = chunks[29] chunk_points+batch (2 单元均
+  explicit+source_verified=true 强证据): state_batch_update_001(batch UpdateOperation
+  顺序执行 8 op 类型)+behavioral_batch_update_001(200+每操作一 result entry 按请求序,
+  Type2)。face=POST /collections/{c}/points/batch。三 attack 并行; 前缀 boundary_
+  pbt_/state_pbt_/semantic_pbt_; 工单 17 条(R29 版+NaN via data=)。注意: 零候选
+  连计=4, 本轮若再零候选=5 连→SOP 停机评估(主进程预期 batch 面是真实语义面, 非死
+  路由, 出候选概率高于 R21/R22)。
+
+=== #113 R30 六道门+执行+builder×4（2026-09-07）===
+六道门 ALL 13 PASS(连续第六轮零 flag 零机械修)。执行 8N/4D/1SE:
+- listdim: leg-B 单 op batch 404 "No point with id 1 found"(脚本称 legal single-op——
+  疑似 op 指向未创建点=apply-then-check 正确行为, builder 核)
+- semantic_resultshape: composed 11-op batch 后 count=3 期望 2(p7103 已删)——多出 1 点
+  =某非创建型 op 静默建点, 真信号嫌疑大
+- order_chain: reversed batch 404 vs forward accepted(G9 顺序依赖 disposition 翻转;
+  R25/R27 apply-then-check 谱系)
+- overlap_conflict: T2/T3/T4 count 偏高(delete op 未生效嫌疑; 脚本已用 spec 正确
+  {"delete":...} 键)
+- result_shape_03: SCRIPT_ERROR NoneType len()→retry 打回 state agent
+extract: 115 全量; L1: 6 refuted(含 R26 首例), R30 四候选 UNCERTAIN 全过。builder×4。
+
+=== #114 R30 收官 + 暂停（2026-09-07）===
+auditor 四链终判全 NOT(artifact 向): listdim(set_payload-on-missing 404=apply-then-check
+正确行为, 脚本前提错误: 自家注释声称 upsert 实为 set_payload)/resultshape(多出点=脚本
+自家 setup anchor p7104; 无非创建型 op 能建点)/order_chain(reversed 404 vs fwd 200=
+顺序执行 fail-fast 蕴含非违反; fwd 终态与顺序合成精确一致)/overlap_conflict(T2/T3/T4
+计数=共享 collection 累计集精确正确; oracle 违反自身不变量 empty-collection 前提)。
+result_shape_03 double retry(cycle1 NoneType len+死代码+未定义函数; cycle2 揭露
+update_vectors NamedVector object 形被 committed openapi VectorStruct oneOf 拒
+400→改 spec-legal map 形)→NO_DEFECT, 8-kind batch 200 8 entries operation_id 递增。
+**发现**: operation_id=per-collection 跨请求递增计数器(非 per-request 0-based)。
+exploratory 路由: batch 级 fail-fast 404+无回滚 disposition 未文档化(openapi 只声明
+200)——behavioral_anomaly candidate。
+verify_defects 56C+1FP→defect-43 override 第 11 次重放→57/57 CONFIRMED。
+主账: 109 链=63D/46N/0NME(batch_note R30 记录; NOT 轮惯例不入数组)。
+STATE_SAVE: round 31、30/66=45.5%、快照 .r30、容器重启 healthz=200。
+⚠️ 暂停(用户指令"跑完这轮暂停"): mine_state paused=true+paused_at 落盘,
+resume point = R31 = chunks[30]。恢复时新会话读 mine_state.json + 本存档即可续跑。
+
+[#115 | R31 派发 | 2026-09-07 恢复] R31 = chunks[30] chunk_points+count (2 单元均
+  explicit+source_verified=true): qdrant_range_count_001(range_constraint, bound
+  builtin:boundary_value → path A 直生 + B 普适): "exact defaults to true: exact
+  count unless explicitly disabled" + qdrant_behavioral_count_001(behavioral,
+  Type4): "200 {count}; exact=true(默认) 给出匹配 filter 的精确点数; 省略 filter=
+  所有点"。face=POST /collections/{c}/points/count。主进程 live-probe 基础行为全
+  合规(no-filter=6/filter=3/exact=false=3/ghost 404)→派发词注明勿重复基础三连,
+  聚焦更深腿: boundary=exactness-default 承诺(省略 vs true 一致/false 单偏离通道/
+  非布尔类型 BS-01)+filter 边界形态+timeout=0 query 面 corroborating(optional,
+  不重诉讼 defect-54); state=写后 count 精确算术(增量 upsert/delete ±1:1、payload
+  零扰、clear 归零)+exact=true/false 事后一致(R28 stale-expected-set 教训入工单);
+  semantic=count==scroll 同 filter 蜕变对照+filter 语义网格(must/should/min_should/
+  null 条件)+大集合 >scroll 默认页上限截断嫌疑+exact=false 近似通道 disposition
+  (查 doc 措辞再判)。前缀 boundary_cnt_/state_cnt_/semantic_cnt_; 工单 14 条
+  (R30 版+cleanup 后唯一集合名+unexpected-count 先验 request/expected 复查)。
+  零候选连计=4(视本轮 outcome)。
+
+=== #116 R31 收官（2026-09-07，恢复后首轮）===
+三 attack 10 脚本(b3[1A+2B]/s3[1A+2B]/sem4[1A+3B])。六道门 ALL 10 PASS(连续第七轮
+零机械修)。主进程 live-probe 基础行为合规先行(no-filter=6/filter=3/exact=false=3/
+ghost 404)。执行 10/10 NO_DEFECT, 0 候选 0 链: exactness-default 承诺成立(省略==显式
+true, 判别集上未索引字段估计下限 N/2=4 vs 真值 3——默认接错线会回 4); serde bool-
+gate 拒非布尔 exact 邻位(0/1/"true"/{} 全 4xx 带槽名诊断); filter 形式网格 12 腿
+== 同 filter scroll == python set-model 三裁判零分歧; 写谱系算术 9 检查点精确
+(clear-to-0 闭合); 交错删除波镜像重算+穷尽分拆(must-grpA+must-grpB==无 filter)成立;
+null/畸形条件族跨 face disposition 对等(count 与 scroll 每腿一致, 无 count-only
+静默强转); 尺度探针 210 点无截断(10/100/128/200 上限全无); exact=false=doc 引用
+近似通道(合规非缺陷)。台账不变 109=63D/46N/0NME。verify_defects 本轮无候选跳过。
+STATE_SAVE: round 32、31/66=47.0%、快照 .r31、零候选连计=1(R31; R30 4 候选已重置)。
+R32 = chunks[31]。
+
+[#117 | R32 派发 | 2026-09-07] R32 = chunks[31] chunk_points+delete (5 单元全
+  inferred tier→doc-fidelity 门槛生效): state_delete_points_001(system, "by-filter
+  delete 删尽匹配; 全匹配=wipe")+002("delete 不存在 id 幂等成功")+behavioral_001
+  ("200 ok; 400 invalid filter; 404 missing collection" Type2)+002("by-ids 幂等")
+  +bc_delete_gone_001(delete-then-read 不可见——**R28 inv_point_delete_gone 本体已验,
+  不重诉讼; 聚焦 delete 面自身语义**)。face=POST /collections/{c}/points/delete,
+  body PointsSelector **oneOf[PointIdsList{points}|FilterSelector{filter}]**(committed
+  openapi)。主进程 live-probe: del-ids 200/del-filter 200/missing 999 200/ghost 404/
+  **空 points 列表 400 "Empty update request"**/**points+filter 同给 200 accepted
+  (operation_id 5——oneOf 歧义, 候选主信号: untagged serde 可能静默丢 filter 臂)**。
+  派发分工: boundary=selector 维边界(空 filter {} wipe-or-none BS-04/幂等闭包/超长/
+  双形态 id/operation_id per-collection 计数器 R30 发现); state=by-filter 正确性
+  vs 枚举/两 selector 等价/删后重 upsert 复活(旧 payload 不得幽灵)/并发交错(BS-03
+  delete+upsert)/分段 wipe 并集; semantic=oneOf 歧义表征(哪臂执行? filter 被静默
+  丢弃=defect-53 untagged 宽容家族先例上下文——判 DEFECT 需 doc 钉死互斥承诺)+
+  诊断划分(400/404 区分的误导性 Type2)+空 selector 语义族+by-filter==枚举后删
+  蜕变。前缀 boundary_dlt_/state_dlt_/semantic_dlt_。R31 零候选已收官(round 32,
+  31/66=47.0%)。
+
+=== #118 R32 收官（2026-09-07）===
+14 脚本(全 B; 5 单元全 inferred)。六道门 ALL 14 PASS(2 分类器 flag 均核验误报:
+cleanup_unwrapped=final_cleanup 逐调用 try 包裹 R28 同型; oracle_degenerate=Oracle
+具体到 E1/E2 检查点 R22/R23 同型)。executor 首跑 6N/3D/5SE→SOP retry cycle×1:
+- 5 SE 脚本 bug: idemB/spanB vec4 UUID 分支缺失(`str % int` TypeError; 诊断 traceback
+  定位); wipe_recover/race_sameid safe_request 3 元组解 2 值; equiv_resurrect count
+  helper 无 filter_body 参数(self-guard 从未发 filter)+route 修正(points+get=POST
+  /points 非 /points/get)
+- 3 DEFECT 复查: envB "completed vs acknowledged"=oracle 枚举错(openapi UpdateStatus
+  {acknowledged,completed,wait_timeout}; completed="changes are actual"); goneB batch-
+  get 400=digit-string id 非合法 body 形态(body serde 只收 JSON number/UUID 字符串,
+  path 解析宽松——**path/body 不对称观察**); wipeB 隐藏 verdict-escape-hatch(终判只查
+  STATE[viol] 而 expect_count 追加 local anomalies)
+- retry 8/8 NO_DEFECT。唯一候选 semantic_dlt_01 → L1 UNCERTAIN → builder
+  (机制钉死: untagged point_ops.rs:19-26 PointIdsSelector 先行 + PointIdsList 无
+  deny_unknown_fields→filter 臂 parse 期静默丢弃; 12 shards 同构; v1.12.1-v1.19.0
+  跨版本稳定; payload+clear sibling 同现象 update_api.rs:297; gRPC oneof 不可表达;
+  6 log 同族 400 对比 stark)→verify_chain_quotes R2 ticket×1(constraint_id 括注+
+  assertion_text_quoted 半角拼接非逐字→修后 114/0/0 PASS)→auditor **DEFECT**
+  (E2 A=CONFIRMED 不可逆; manual_review_caveat=true: schema-pin 唯一 antecedent,
+  api-reference prose domain_blocked DOC_PARTIAL; schemars spec 镜像 untagged enum
+  自指风险; crux=exactly-one vs prose 缺失)。
+**defect-58 新编号** (Type1_IllegalSuccess): 两臂 PointsSelector 200 + filter 臂
+静默丢弃; NEW NUMBER 裁决=defect-55 值级语义惊喜先例(机制亲缘 R18 defect-53 但
+  subtype 不同: 多臂重叠/未知字段丢弃 vs struct-from-seq; 端点面不同)。
+reporter summary.md 权限拦截→SOP 8f 主进程物化(append R32 段, 不覆盖逐轮账本);
+verify_defects 58 文件: 57C+1FP(defect-58 首个 output_ 引用是 sibling NO_DEFECT
+  log→插入主执行 log 引用修复) + defect-43 override 第 12 次重放→58/58 CONFIRMED。
+台账: **110 链=64D/46N/0NME** (58 编号+6 家族实例)。STATE_SAVE: round 33、
+32/66=48.5%、快照 .r32。R33 = chunks[32]。
+
+[#119 | R33 派发 | 2026-09-07] R33 = chunks[32] chunk_points+discover (1 单元
+  inferred, Type2): "200 [ScoredPoint]; 400 invalid context/pairs; 404 collection"。
+  Docker Desktop 全路径重启(20s daemon up)+容器 healthy。主进程 live-probe 8 腿
+  (4pt grp a=[1,2] b=[3,4] dim4 Cosine): D1 {target:1,limit:3}→200 [2:0.749,
+  4:0.549, 3:0.5](target-only=相似度排序); D2 {context:[{pos:1,neg:3}]}→200
+  [2:0.0, 4:-0.469](**negative 侧点自身以负分返回**——信号); D3/D5 positive-only
+  pair→400 "missing field \`negative\`"(**实现要求 negative 必填**——committed
+  openapi ContextPair 是否 required 待 semantic 对质=主 antecedent 检查); D4/D6
+  无 target+无 context(含空 context[])→400 "target and/or context_pairs must be
+  specified"; D7 ghost 404; D8 no-limit→400 "missing field \`limit\`"。攻击面:
+  boundary=target 自身是否入结果(limit≥pool)/limit-offset 边界/target 形态(向量/
+  UUID/不存在/畸形)/pair 形态(negative-only/正=负/多对)/using 面/timeout=0
+  corroborating; state=写谱系排序稳定性(读回向量重算 cosine)/discover-vs-search
+  蜕变对齐/context 半区删 exemplar 清洁失败/lookup_from 跨 collection; semantic=
+  negative requiredness 对质(schema+源码 ContextPair)/loss 单调序+score 0 语义/
+  多对组合/target+context 合并模式/Type2 错误诊断质量(多对第 2 个坏是否指索引)/
+  using+lookup_from 错误质量。tma 无 discover 条目(按通用 blindspot 构造并注记)。
+  前缀 boundary_dsc_/state_dsc_/semantic_dsc_; 工单 15 条(R32 版+vec4 UUID 分支/
+  UpdateStatus 枚举/digit-string body id)。
+=== #120 R33 六道门+执行+打回（2026-09-07）===
+12 脚本(b4/s4/sem4 全 B)。六道门 12/12 PASS(sem 4 teardown flag=R32 同款等效形态误报;
+分类器 dsc 零 flag)。executor 首跑 6N/4D/2SE→主进程源码取证 4 DEFECT 全 artifact:
+- rank_writes_01 M2: old-rank 基准取 C0 而非 M1-after(rank3→M1 rank4→M2 rank3, 几何
+  移动已发生; 重算 cosine 严格递减自证服务器排序精确)
+- ctxint_del_03: loss 模型缺 min(sim_pos-sim_neg-eps,0) clamp——服务器把满足约束点
+  全 clamp 0.0(C0/M1r/M2r 三点全 0.0 平局, [5,6,4]=平局序, 实现未承诺平局内排序)
+- semantic_02 leg2: 期望未按 sum 聚合(log 自证 id6=2x(-0.41421360) sum 精确匹配)
+- semantic_04 leg3: 脚本前提错——LookupLocation.vector 未传时按文档(schema.rs:1105
+  -1106 "If not provided, the default vector field will be used")回退 DEFAULT_
+  VECTOR_NAME=""(retrieve_request_trait.rs:87-97 lookup_from 存在不回退请求级
+  using), named-only B 无空名→400 正确
+2 SE: targetB_01 str/int 混合 id 比较 crash(T0 返回 int+UUID 同列); usingB_01 named
+collection upsert 裸数组 vector(应 {"vector":{"smart":[...]}})。
+三 agent 全打回修 oracle(基准刷新/clamp 公式+平局序/sum 聚合/lookup_from.vector 补
+传+default 回退 disposition 腿/id 规范化/named upsert body)。
+
+=== #121 R33 收官（2026-09-07）===
+三 agent 修复回报: state rank_writes(rank mirror 每 checkpoint 刷新; M1-after→M2
+rank 4→3 几何移动自证)+ctxint_del_03((a)+(b) 双修: clamp-aware oracle 接受平局集
+任意序+几何重建严格 violator margin -0.728; 修复后 C0/M1r/M2r=[4,5,6] 分数
+[0,0,-0.4212] violator 严格分离)+semantic dsc_02(sum 聚合期望; id4=-0.469/id6=
+-0.828 全精确)+dsc_04(leg3 补 lookup_from.vector="dsc_vec"+B 增补 exemplar 1/3
+(cross-collection 解析所有被引 id discovery.rs:50-77 无同集合排除 96-110)+leg3b
+default 回退 400 disposition; 修复后 floor/frac 分解 5 点全精确)+boundary
+targetB_01(str() 规范化+5 点池期望; 发现 score=cosine 单调变换 (0.5+s)/(1+s)
+8 测量点成立, id-form target 自排除)+usingB_01(named upsert body 挂名)。
+executor 重跑 6/6 NO_DEFECT。12/12 全绿, discover 面全合规: pair requiredness
+schema 钉死(openapi required [positive,negative]+schema.rs:855 非 Option)/loss
+排序(sum 聚合 max 0.0 fast_sigmoid 族)/组合模式分数分解(floor=context rank,
+frac=scaled_fast_sigmoid)/using+lookup_from 锚解析/悬空 context 清洁 404/信封
+开关。0 候选 0 链, 台账不变 110=64D/46N/0NME。
+STATE_SAVE: round 34、33/66=50.0%、快照 .r33、零候选连计=1。
+R34 = chunks[33]。
+
+[#122 | R34 派发 | 2026-09-07] R34 = chunks[33] chunk_points+discover+batch (1 单元
+  inferred, Type2): "200 per-search results; 400 invalid context/pairs; 404 collection"。
+  face=POST /collections/{c}/points/discover/batch, body {searches: [DiscoverRequest]
+  (required), consistency?, timeout?}; response result[][] 嵌套按请求序。主进程
+  live-probe 7 腿(4pt): B1 单 search 200 嵌套/B2 双 search 200 保序且与单 face 值
+  一致(R33 合规基线)/**B3 空 searches []→200 {result: []}**(单 face 空 context 400
+  的不对称)/B4 批内一 invalid 整批 400 column 54/B5 缺 searches 400/B6 ghost 404/
+  **B7 batch 级 timeout=0→200 接受**(defect-54 家族第 4 face 嫌疑——boundary 查
+  committed openapi DiscoverBatchRequest timeout 是否 minimum:1: 有=family instance
+  按 defect-54 addendum 模式不立新号; 无=doc 合规 disposition)。派发分工:
+  boundary=timeout face 主攻+空批不对称表征+批基数边界+result-grid 精确性+批内
+  malformed 定位质量; state=批 vs 单逐腿等价蜕变+写谱系×批刷新+批内悬空引用不弱化
+  单 face 守卫+跨 collection 混批; semantic=分数语义 parity(sum 聚合+clamp+floor/
+  frac 分解 1e-3)/Type2 错误定位质量(第 2 个坏 search 是否指索引/column 随位置
+  缩放)/consistency 参数矩阵/混合 search 型语义无串扰。前缀 boundary_dsb_/
+  state_dsb_/semantic_dsb_; 工单 15 条(R33 版)。
+=== #123 R34 六道门+执行+打回（2026-09-07）===
+11 脚本(b3/s4/sem4 全 B)。六道门 11/11 PASS(sem 4 teardown flag=R32/R33 同款等效
+形态误报; 分类器 dsb 零 flag)。executor 首跑 8N/3D/0SE→3 DEFECT 全 cluster 且均
+期望模型 artifact(主进程分数取证):
+- faceparity_01 legA/legC: P1 exemplars=2/3/4/5 正确排除, 但期望集 {6,7,8,9} 漏算
+  id 1——id 1 非 exemplar(P1 无 target), 9 点 free={1,6,7,8,9}; parity/order/
+  determinism 全自证成立, 违规只在集合断言
+- mixedcomp_04 S4: 期望没按 R33 钉死语义(lookup_from 存在→exclusion 全禁
+  discovery.rs:96-110), M 的同 id 2/3 留在结果正确
+- cross_collection_04 arrayA: 期望只按 target-cos 定 rank-1, 忽略 combined-mode
+  context-rank 整数部分——全池分数 id1=1.749/id3=1.7/id2=1.51/id0=0.75(=rank 0
+  Equal+frac 0.75)/id4=-0.5, floor+frac 分解(R33 semantic_03 钉死)精确成立,
+  id 0 未被排除只是 rank 0 压不过 +1
+timeout face(boundary_dsb_timeout_01)=defect-54 家族 clean/schema 已裁决(细节待
+boundary 报告); batch==single 蜕变/写谱系/悬空引用/空批不对称/errdiag 全合规。
+两 agent 打回修 oracle(free 集修正/exclusion 语义消化/floor+frac 完整模型)。
+
+=== #124 R34 收官（2026-09-07）===
+两 agent 修复回报: state cross_collection_04(floor+frac 完整期望模型; 自跑 A:[1,3,
+2,0,4,5]/B:[4,5,2,3,1,0]/C:[1,3,2,4,5] 与模型逐位吻合<1e-6; arrayC 顺带加固为
+target-only 真实语义)+semantic faceparity(P1 期望 {1,6,7,8,9}; id1 loss≈-1.2e-7
+容差内)+mixedcomp(S4 期望 {1,2,3,6,7,8} 引 discovery.rs:94-98 "do not exclude
+vector ids from different lookup collection" 空排除表; id7 携带 L-pair rank 证明
+共享 referenced-vector map 按 (collection,id) 键控无跨集合污染)。executor 重跑
+3/3 NO_DEFECT。11/11 全绿。
+timeout face 裁决(boundary_dsb_timeout_01): **查询串 lane 强制 minimum:1
+(?timeout=0/-1→400)——非 defect-54 家族**; B7 探针 200 实为 body 级 timeout
+(undeclared property)被 untagged 宽容机制静默丢弃(per-search timeout 同)——
+**双 lane 不对称(查询强制/body 丢弃)记录为观察**; i64-max wait bound clean。
+空批 200[]=schema 合规(无 minItems; discovery.rs:171-174 vacuous shortcut);
+consistency 走 query face(body 只有 searches); "linear"/"none" v1.18 不存在
+(consistency_params.rs:151-158)。批 face 全合规(batch==single discovery.rs:143
+-155/保序/批内确定性/悬空整批清洁拒/errdiag 指名失败成员)。
+0 候选 0 链, 台账不变 110=64D/46N/0NME。STATE_SAVE: round 35、34/66=51.5%、
+快照 .r34、零候选连计=2(R33/R34)。SOP 5 连停机评估线还差 3 轮。
+R35 = chunks[34]。
+
+[#125 | R35 派发 | 2026-09-07] R35 = chunks[34] chunk_points+get (3 单元 explicit
+  source_verified=true 强证据): doccons_with_payload_001(doc_consistency: spec
+  "Default is true." vs concept-doc opt-in 的 doc 内冲突——实现默认须两方之一且稳定)
+  +behavioral_get_points_001("batch get 只回 found records; missing 缺席非错误")
+  +002("payload/vector 按 with_payload/with_vector 选择")。face=POST /collections/
+  {c}/points(batch get; 非单点 point+get——R29 已做过)。主进程 live-probe 8 腿:
+  **P1 with_payload 省略→payload/vector 均不在(实现默认=false, concept-doc 侧,
+  与 spec "Default is true." 句矛盾——doccons 主攻点)**/P2 false 无 payload/P3
+  true 有/P4 [1,999]回[1]/P5 vector 默认不在/P6 ids[]→200[]/P7 无 ids 400/P8
+  ghost 404。派发分工: boundary=doccons 冲突裁决记录(引 openapi with_payload 描述
+  原文; 实测 false+稳定=单元两侧承诺满足→单元合规, 但 spec 句与实现不符=defect-52
+  家族 doc-internal conflict observation+manual-review flag)+with_payload 选择器
+  对象形态(include/exclude)+with_vector 命名形态+ids 边界+offset+filter 交集;
+  state=默认跨写谱系+并发读稳定/read-after-write 一致性/大混合 id 集 churn/命名
+  向量 with_vector/ filter+ids 交集随状态刷新; semantic=doc-internal 冲突双引文
+  裁决记录+Record schema 字段在场契约+跨读面一致性蜕变(get vs point+get vs
+  scroll)+order_value 表征。前缀 boundary_gtp_/state_gtp_/semantic_gtp_; 工单
+  15 条(R34 版)。
+=== #126 R35 六道门+执行+打回（2026-09-07）===
+11 脚本(b4/s4/sem3 全 B)。六道门 11/11 PASS(分类器零 flag)。executor 首跑
+7N/3D/1crash→主进程取证 3 DEFECT 全 artifact:
+- filter_ids_01: 5 条违规中 4 条=顺序敏感列表比较 artifact(R3 同名类; ['10','2',
+  '4','6','8'] vs ['2','4','6','8','10'] 同集合不同序); 第 5 条 face-disagreement
+  设计错(scroll filter A vs get 无 filter 语义本就不同); M4 注入 filter 200 {2,4}
+  =静默忽略(R34 body-timeout 同款; PointRequest 无 deny_unknown_fields+flatten
+  types.rs:560-569; 若 grp==A 生效应只剩 {2}——executor 转述 "applied" 误读)
+- namedvec_flag_01: with_vector 裸 string→400 合规(WithVector oneOf[bool,array]
+  无裸 string 臂), "400=Type1" 期望反了(boundary/semantic recon 一致)
+- gtp_02: "fabricated payload {}"=Oracle 过严+脚本自相矛盾(Attack 行 characterization
+  -only vs Oracle 行硬断言); {} 与缺席等价表征无 Type2 信号
+- gtp_03 crash KeyError '1'(PAYLOADS 键缺防御)
+两 agent 打回(集合比较/face-agreement 删改/M4 静默忽略裁决/WithVector 期望反转/
+payload {} 等价/KeyError 防御)。
+
+=== #127 R35 收官（2026-09-07）===
+两 agent 修复回报: state filter_ids_01(set 比较修 4 条+同语义 face 对照替换+
+M4 静默忽略 disposition 引 types.rs:560-569)+namedvec_flag_01(WithVector 严格
+oneOf 胜过 contract "boolean|selector" 描述, 400=合规期望反转; ['text'] 200 精确
+选择保持)+semantic gtp_02(payload {} 等价表征规则; 附带记录 with_payload=5/"true"/{}
+被硬拒 400 与 "Any type" oneOf 分支相悖的 over-strict 信号未申报)+gtp_03(int 键
+PAYLOADS vs str norm_id KeyError→双形态防御查找+面缺 id 由 id-set identity 判)
++gtp_01 回归确认(5 轴 omitted 稳定+双侧引文 disposition 完整)。**附带重要观察:
+single GET face 默认返回 payload+vector(keys 含 payload/vector)vs batch face
+默认全缺——face-default 不对称, single 侧方向与 spec "Default is true." 一致,
+doccons manual-review 范围延伸**。executor 重跑 4/4 NO_DEFECT。11/11 全绿。
+doccons 单元由 implemented-false+stable 满足(5 轴稳定+并发读); spec 句与实现
+不符=defect-52 家族 doc-internal conflict disposition+MANUAL-REVIEW flag(修复
+目标=spec 文本; 双侧引文逐字)。
+0 候选 0 链, 台账不变 110=64D/46N/0NME。STATE_SAVE: round 36、35/66=53.0%、
+快照 .r35、零候选连计=3(R33/R34/R35)。**SOP 5 连停机评估线还差 1 轮——R36 若
+再零候选触发停机评估**。R36 = chunks[35]。
+
+[#128 | R36 派发 | 2026-09-07] R36 = chunks[35] chunk_points+query (11 单元——全
+  run3 最大块; 3 个 path A 绑定): type_query_points_001(explicit, **bound
+  builtin:type_boundary→A**; query oneOf 9 变体+neartext/nearimage documented-
+  unimplemented)+range_query_points_001(explicit, **bound boundary_value→A**;
+  limit>=1/offset>=0)+range_query_points_002(explicit, **bound boundary_value→A**;
+  hnsw_ef>=1/exact default false/indexed_only default false)+state_query_001(
+  explicit: by-id 锚取 stored vector 须匹配 using 特征否则报错)+002(explicit
+  system: HNSW offset 分页跨页重复 by-design 非 defect; exact=true 稳定序)+
+  resource_limit_001(inferred system: limit 上无界须资源界内处理不崩)+
+  resource_hnsw_ef_001(inferred system: hnsw_ef 同)+behavioral_001(explicit:
+  200 {status,time,result.points+next_page_offset}——spec 与 knowledge 包法冲突
+  记录)+002(explicit: query 省略无 prefetch→200 按 id 序)+003(inferred: 400
+  invalid/404 missing)+004(inferred Type3: 大 offset 不崩)。主进程 live-probe
+  10 腿(Euclid 10pt): nearest-vec 200 result.points 距离分/nearest-id 排除自身/
+  omitted→id 序 [1..5]/recommend 200/**order_by→400 "No range index for key"
+  (需 range payload index)**/fusion rrf 200/empty query {}→400 诊断好/limit 0→
+  **422 validator "internal.limit: must be 1 or larger"**/limit -1→400/ghost 404。
+  派发分工: boundary=三 path A 直生(query 变体矩阵+neartext/nearimage 未实现腿/
+  limit-offset 边界+422 validator/hnsw_ef-exact-indexed_only 边界)+B 独立;
+  state=by-id 锚 using 特征错误/HNSW 分页 by-design vs exact 稳定/写谱系一致性/
+  **resource 腿主攻(u32/u64-max limit+offset 2^62+hnsw_ef max, healthz-gated,
+  R7 shard_number OOM 家族类比——本块首要 defect 候选)**; semantic=跨面分数/
+  排序 parity(query vs search vs recommend/query-by-id vs query-by-vector 蜕变
+  同一性)/变体语义正确性(recommend 正负几何分歧构造/rrf vs dbsf/sample 随机
+  by-design/context query vs discover context 一致性)/filter 交互/next_page_
+  offset 语义/包法裁决+诊断质量。前缀 boundary_qry_/state_qry_/semantic_qry_;
+  工单 15 条(R35 版)。
+
+[#129 | R36 重派发 | 2026-09-07 深夜] 会话多轮重启(compact+resume)后核验: #128 派发的
+  三 attack(ad811c7328140c525/a449246476caae689/a95af31b7f23756a5)输出文件 0 字节、
+  零脚本落盘——死于会话重启, R36 从未产出。恢复点核验: mine_state/pipeline_state/
+  coverage 一致(R36 ROUND_START, 35/66), Docker 容器 healthy 4h, 契约/威胁模型/
+  openapi 齐位。重新并行派发三 attack(边界/状态/语义同 #128 分工与工单 15 条 R35
+  版; 状态侧 resource 腿主攻持 healthz-gated 渐进升级纪律; 语义侧全契约四断言)。
+  脚本前缀不变 boundary_qry_/state_qry_/semantic_qry_ 落 debate_logs/。
+  零候选连计=3 仍生效: R36 收官若零候选=4, R37 再零候选=5 连触发 SOP 停机评估。
+=== #130 R36 六道门+执行+打回（2026-09-08）===
+17 脚本(b6[3A+3B]/s5/sem6 全 B)。六道门 17/17 ALL PASS(gate 脚本两处自省修复:
+docstring 提取需跳过 shebang/coding 行; DELETE 检查只标调用行不标 REST 常量表条目;
+CleanupNaked 需识别 try 包裹的 cleanup 函数体等效形态)。executor 首跑 12N/2D/3SE
+→主进程取证 2 DEFECT 一真一假、3 SE 全脚本路由错:
+- prmA h2 **真候选**: hnsw_ef=0 → 200 + 全 5 点。committed openapi SearchParams
+  .hnsw_ef = {"type":["integer","null"],"minimum":1} 正向声明; h1(=1)/h6(=65536)
+  200 对照、h3(-1)/h4(1.5)/h5("16") 400 全对——唯独 0 被接受。defect-54 同族模式
+  (openapi minimum 声明 vs validator 未接线); L1 UNCERTAIN → 证据链(builder 已派)
+- tvarB b13 **假缺陷(期望反转)**: must_not 单条件对象 200 判 Type1。源码钉死
+  types.rs:3794-3802 must_not `#[serde(with="MaybeOneOrMany")]`+schemars 同; 
+  committed openapi FilterMustNot = oneOf[Condition, array, Any]——单对象形态是
+  spec 显式合法 shorthand。200=合规。教训: **Filter must/should/must_not 三字段
+  全是 MaybeOneOrMany, 单对象永远合法**(入工单)
+- 3 SE 全脚本路由错: tvarA V9 index-create 用 PUT .../index/{field_name}(该路径
+  只注册 DELETE; committed spec 创建索引=PUT .../index body 带 field_name)——
+  **手动复现 404 空 body 确认**; anchor_match+parity_05 = /points/get 幽灵路由
+  (R32 #118 教训复发, batch get=POST /points)。新静态盲区候选: 脚本自带 REST 表
+  从 contract api_endpoints 路径模板转录时无路由存在性校验
+三 agent 打回(boundary 2 处/state+sem 各 1 处); state/sem 已修回绿
+(anchor_match M1 oracle 收紧: by-id==by-vec 减 self-row, by-vec 含锚点 0.0 分
+=read-back 等于 stored 证明; parity_05 L1-L5 全过含 rrf 1/(pos+k) 精确匹配)。
+candidates.jsonl 全历史重扫 118 条(全轮累计); R36 增量=prmA(真)+tvarB(修复后消)。
+=== #131 R36 收官（2026-09-08）===
+retry 4/4 绿(tvarA 21 腿含 V10 [10..1]+order_value/tvarB b13b 形态对照/anchor_match
+M1 恒等+W1-W3 写谱系/parity_05 平分容忍后 NO_DEFECT)。**executor 竞态事故**: 第二次
+"重跑"虚报(时长与首批完全相同; log mtime 00:34 < 脚本 mtime 00:40)——按教训⑤主进程
+py -3.12 机械重跑出真三元组(NO_DEFECT; L5 top-1 平分 [1,6]/[6,1] 翻转被容忍比较器
+正确消化)。教训: executor 复用会话恢复 agent 有虚报风险, 重跑后必须 mtime+内容指纹
+核验。defect-59 链: builder 25KB 十步全(DOC_VERIFIED/execution B/contract_grounding
+逐字/source validation_absent+two-hop reach/defect-54 三轴对照/mundane 排除/crux
+SPEC SPLIT)→verify_chain_quotes 115/0 PASS→auditor **DEFECT=defect-59 NEW NUMBER**
+(E2 机械锁定; defect-58 先例 subtype 不同; R24 三轴全不合; defect-55 指纹升级;
+**v1.19.0 补 #[validate(range(min=1))]=修复性确认**; SPEC SPLIT caveat 保留)。
+reporter defect-59.md(hnsw_ef 单句 scope; 主执行 log 首引用 defect-58 教训落实)。
+verify_defects: 59 检查 58C+1FP(defect-43 已知)→override #13 施加→59/59 CONFIRMED。
+台账 **111 链=65D/46N/0NME**(59 编号+6 家族实例)。STATE_SAVE: round 37、36/66=
+54.5%、快照 .r36、**零候选连计清零**(R36 产 defect-59)。R37 = chunks[36]
+chunk_points+query+batch (1 单元)。defect-59 附注: 需人工复核清单新增(SPEC SPLIT/
+gRPC 未探/observable-harm 范围诚实注记)。
+
+[#132 | R37 派发 | 2026-09-08] R37 = chunks[36] chunk_points+query+batch (1 单元
+  explicit source_verified): behavioral_query_batch_001("batch query 每查询一结果
+  集按序" 200 array one-per-query in order; Type2)。face=POST /collections/{c}/
+  points/query/batch body {"searches":[QueryRequest...]}。主进程 live-probe 4 腿:
+  B1 两 search→200 {"result":[{"points":[1,2]},{"points":[5,4]}]} 按序一查一集/
+  B2 裸数组→400 "invalid type: map, expected a sequence"/B3 空 searches→200 []/
+  B4 ghost→404。派发分工: boundary=序-对应核心(mixed limit/单元素/20 search 大批/
+  per-slot limit-offset-params-filter-using)+包法逐元素+负型边(malformed slot 混入
+  all-or-nothing vs partial 表征); state=写谱系交错(per-slot filter 定位+中间变异
+  +slot 结果跟踪现态)/批内同 search 恒等+跨批稳定/并发批/by-id 锚 slot 语义/冷批/
+  50 search resource 腿; semantic=**batch==single 蜕变恒等(核心)**(byte-exact
+  exact=true)+包法 committed spec 胜 knowledge 平读(R36 shape_01 沿袭)+slot 内
+  变体矩阵(recommend/rrf/dbsf/sample/threshold/prefetch)逐一对照 standalone+
+  诊断质量(malformed slot 报错指位?)。前缀 boundary_qb_/state_qb_/semantic_qb_;
+  工单 16 条(R36 版: +MaybeOneOrMany 单对象合法/+平分容忍或单调 fixture/+跨 face
+  顺序断言禁严列表)。
+=== #133 R37 收官（2026-09-08）===
+15 脚本(b5/s5/sem5 全 B)。六道门 15/15 PASS(semantic 5 个 meta 缺 path/
+constraint_ids 字段→主进程机械补齐; docstring 标记本在)。executor 首跑 **15/15
+NO_DEFECT** 零重试(12 秒顺序执行 mtime 连续, 无 R36 竞态形态; execution_r37.json
+由主进程物化——executor agent 后台化循环后提前收工未写 JSON)。batch==single 蜕变
+恒等 byte-exact(exact=true)/per-slot limit-offset-params-filter-threshold 独立性/
+20-slot 大批+permutation mutation 序对应/写谱系交错(slot-filter 定位+中间变异无
+bleed)/批内重复 slot 恒等+跨批稳定/by-id 锚 per-slot 语义(自排除+显式向量含锚
+0.0)/空 searches 200[](无 minItems 合规)/malformed slot 干净 all-or-nothing 4xx
+指名参数/ghost 404/冷批全结果/50-slot 有界/consistency-timeout 表征/包法
+result[i].points 合 committed spec。0 候选 0 链, 台账不变 111=65D/46N/0NME。
+STATE_SAVE: round 38、37/66=56.1%、快照 .r37、零候选连计=1(R37; R36 defect-59
+清零后重启计数)。R38 = chunks[37] chunk_points+query+groups (4 单元: type_001/
+range_001/state_001/behavioral_001——groups 面)。
+
+[#134 | R38 派发 | 2026-09-08] R38 = chunks[37] chunk_points+query+groups (4 单元:
+type_001/range_001 **bound→2×path A** + state_001/behavioral_001 全 B)。**主进程
+live-probe 事故**: 首探用错路径 /points/groups 全 404 空(openapi 实际= /points/
+query/groups; 契约 endpoint 名 points+query+groups 有歧义); 纠正后 G6 group_size=
+10^7 **服务器被 OOM 杀死**(docker logs "7 Killed ./qdrant"; 容器重启恢复)——
+R7 shard_number 家族 groups 面实例, Type3 候选, **阈值 1e5/1e6 活 1e7 杀**。
+G3 offset=1/100 → 200 与 plain 全同 = **offset 被静默忽略**(flatten 已裁定类+
+doccons 处置: concept doc 说 "offset not allowed / rejected" 但实现静默接受且无
+分页效果; 非 Type1)。**教训: 跨响应比较必须解析后比且剥 time 字段**(raw 串比
+time 噪声出假差异, 本次 probe 亲历)。G4/G5 group_size=0/limit=0 → 422 validator
+带 search_group_request.group_request.* 路径前缀。派发分工: boundary=2 path A
+直生(group_by required+minLength/type 形态; group_size/limit 边界+defaults 实测
+vs 断言默认 limit 10 组/group_size 3)+B; state=offset 表征腿(多 offset+result
+恒等)+**OOM 复现主攻(严格纪律: 安全腿先行 1e5/1e6, 终腿 5e6 一次, kill 后直接
+finish, 禁 >5e6, 放执行序末, 主进程负责重启)**+写谱系组移动/组窗口语义; semantic=
+包法 GroupsResult{groups:[{id,hits}]}/group_by 值语义(缺 grp 点/multivalued/
+nonexistent field)/with_lookup/跨 face 组 parity(search/groups vs query/groups)/
+诊断质量/threshold。前缀 boundary_grp_/state_grp_/semantic_grp_; 工单 16 条
+(R36 版+解析后比较剥 time)。
+=== #135 R38 执行+打回（2026-09-08）===
+首跑(ordered rngB 未修版第 4 位): rngB K3 limit=INT_MAX **再次 OOM 杀服**(第二
+杀向量, group_size=1e7 之外 limit=2147483647 同族)→后续 9 个 state/semantic 全
+连接拒绝 SCRIPT_ERROR(服务器死, 非脚本 bug); executor 重启容器。rngB 打回:
+K1 oracle bug(gs=1 每组 1 hit 是正确行为, oracle 误期望 [10,11])+K3 kill 腿重构
+(终腿化, kill 后禁业务请求)。**主进程排程失误两次**: retry1 把 rngB v2 放第 1 位
+(终腿又杀服, 2-11 再死); retry2 改对(9 干净脚本先→oom_05 压轴)。pass3: 9 绿+
+**3 候选**(payload_02/diag_05 DEFECT + oom_05 DEFECT 106s 设计复现成功)+lookup_03
+crash。取证: payload_02=oracle bug(multivalued 30 双归属正确, union [1..9,30,30]
+本就是期望, "grp-less surfaced" 与数据矛盾)打回修 oracle; lookup_03=setup
+KeyError: 0 键形态 bug 打回; 两修后 self-run 绿+pass4 正式三元组双绿。
+**R38 终局候选 4 条**: ①state_grp_gs_oom_05 T3(group_size 5e6 kill; 阈值
+1e5/1e6 活 1e7 杀; 主进程 probe+设计复现=多次独立重现) ②boundary_grp_rngB_01 T3
+(limit=INT_MAX kill; 三次独立重现) ③boundary_grp_typeA_01 T2(group_by="" 4xx
+诊断 "Invalid json path: ''" 不点名槽位, 同面 G4/G5 对照点名全路径) ④semantic_
+grp_diag_05 T2(with_lookup untagged enum 400 点名枚举不点名请求参数, 弱候选)。
+4 builder 已并行派发。教训: **kill 型脚本必须排程末位且彼此之间隔容器重启**
+(retry1 排程失误教训入工单)。
+=== #136 R38 收官（2026-09-08）===
+四链 builder 完成(oom_05: group_by.rs:155 request.limit=groups*group_size +
+aggregator.rs:40 with_capacity 先于首搜, min=1 校验存在(schema.rs:1211)无 max,
+strict-mode opt-in 关; rngB: aggregator.rs:34/38-40 with_capacity(INT_MAX*3),
+四次独立重现; typeA: group_by minLength 仅 schemars(schema.rs:1207)无运行时
+validate→字段命名层结构性不可达, "Invalid json path: ''" 源自 json_path/mod.rs:521
+JsonPath 自身 Deserialize; diag_05: serde_derive 1.0.228 enum_untagged.rs:39+
+actix/mod.rs:249-253 直传, #[serde(expecting)] 一注可修, 9 枚举家族 roster)。
+verify_chain_quotes 119/1 mismatch(diag_05 引文是重序列化 dict 非逐字子串)→主进程
+R2 工单模式修(替换 expected_behavior 逐字子串)→119/0 PASS。**auditor 四链终判**:
+oom_05 **DEFECT E2 锁定**; rngB **DEFECT gray-zone**(chain 无 contract_grounding
+步骤致机械 A 中性→LLM B=CONFIRMED; builder schema 注记挂账)→**defect-60 JOINT
+新编号**(R24 三轴: 同载体 QueryGroupsRequest/同 subtype/单修复点 aggregator.rs:34-40);
+typeA **NOT_DEFECT E2 锁定驳回**(契约 minLength 条款被遵守, 诊断缺口=观察路由);
+diag_05 **DEFECT E2 锁定**=**defect-61 新编号**。台账 **115 链=68D/47N/0NME**
+(61 编号+6 家族实例)。reporter defect-60.md+61.md(both E2 DEFECT_CONFIRMED;
+Ring2 DEGRADED domain_blocked 注记; defect-60 MRE 带毁服警告)。verify_defects
+61/61 CONFIRMED(defect-43 override #14)。STATE_SAVE: round 39、38/66=57.6%、
+快照 .r38、**零候选连计清零**(defect-60/61)。R39 = chunks[38]
+chunk_points+recommend (2 单元 behavioral)。挂账: chain-2 builder 锚位 schema 注
+记; typeA T12 co-anomaly 未裁; diag_05 新类复核触发(other=20)。
+
+[#137 | R39 派发 | 2026-09-08] R39 = chunks[38] chunk_points+recommend (2 单元
+behavioral 全 explicit 全 B): behavioral_recommend_points_001(Type1 类: 200
+ScoredPoint/400 positive 引缺 using 向量点或缺点/404 collection)+002(Type2 类:
+strategy 枚举 [average_vector,best_score,sum_scores] 默认 average_vector)。
+face=POST /collections/{c}/points/recommend (legacy 面; query 变体 R36 已覆盖)。
+主进程 live-probe 7 腿: R1 pos-vec→200 [5@0.0,4@1.0,3@2.0]/R2 +neg→avg 偏移/
+R3 pos-ids→自排除/R4 空 pos→400 "At least one positive vector ID required with
+this strategy"/R5 neg-only→同 400/R6 ghost 404/R7 limit0→422
+recommend_request.limit。派发分工: boundary=unit001 核心负型(缺点/缺 using 向量
+named fixture/混合形态)+unit002 枚举闭合(缺省==avg 恒等/三成员离散序 fixture/
+非法值命名); state=写谱系 id 正例跟踪(upsert 翻转/删除→400 复活→跟踪/缺向量点
+生命周期 200→400→200)/strategy×state 公式重算; semantic=**strategy 公式验证
+(avg/best_score/sum 三离散序+byte-exact)**/负例几何方向性/自排除语义/诊断质量
+(空 pos 消息 drift per strategy)/+4.0 偏移公式核对/legacy 平读 vs query 变体包法
+(已裁定表征)。前缀 boundary_rec_/state_rec_/semantic_rec_; 工单 17 条(R38 版+
+解析剥 time)。
+=== #138 R39 六道门+执行+打回（2026-09-08）===
+16 脚本(b6/s5/sem5 全 B)。六道门 16/16 PASS。(gate 前插曲: 主进程 heredoc 前
+误置无输入 sed 等 stdin 挂起 120s 超时——TaskStop 后重写直跑; 教训: 复合命令
+勿混带 stdin 等待的管道段)。executor 首跑 **9D/6N/2SE**——主进程 triage:
+- **outcome_04 Type1 = 本轮真候选**: strategy=best_score 下 positive[10] 缺
+  using 向量 'b' → 200 空列表静默丢弃(fetch_vectors.rs filter_map 丢弃→
+  best/sum 分支无 empty-positives 检查); unit 001 "400" 承诺 strategy-无条件;
+  state+semantic 两 agent 独立预测同点(fetch_vectors.rs:297-322)。走证据链
+- parity_06=构造错(legacy 平 body 打 query 面, R36 tvarA 已证包装形态)→打回
+- pos_03=oracle 忘自排除(P6 期望含被引 id 1); strat_04/strtneg_05=公式错
+  (best_score=scaled_fast_sigmoid 严格>(reco_query.rs)/sum_scores=负平方距离和
+  ——state 绿脚本+semantic 独立实现三方可证)→打回
+- ghost_02=期望过严(Format error 类型+列号提示=R36 b3-b5 合规先例)→打回
+- negative_05=oracle 语义错(negative 引用点可出现于结果, R33 discover 先例)
+  →打回
+- diag_03=待查(四 400 message 空串 vs R4 probe 有文案——腿构造或解析 bug,
+  若服务器真空体 400 则真 Type2)
+- lifecycle_39/namedvec_39=B0 后崩(agent 自跑修)
+三 agent 全打回(修复工单含公式/先例引证)。
+=== #139 R39 收官（2026-09-08）===
+三 agent 修复闭环: boundary 5/5(ghost A5 放宽按 R36 先例/pos_03 自排除修正
+P3 期望 [11,1,10]/strat_04+strtneg_05 公式改 -d²(186.0/146.76/103.75 实测锚定)/
+parity_06 构造修正 bare-id VectorInput 后三策略 byte-exact 无真分歧)/state 2 脚本
+truthy-tuple 返回约定 bug 修复(4 处×2 文件)后 lifecycle 绿(W2 delete→404 兑现
+unit 001)+namedvec 绿(W1 缺向量 avg 分支 400; oracle 授权笔误修正); semantic 
+negative_05 源码证据修正排除语义(**recommend 排除链=positive+negative 两种 
+id-form 引用**——修正主进程给的"negative 可返回"裁决提示, recommend_into_core_
+search 正负链 chain + must_not HasId, 与 R33 discover 不同路径)+diag_03 解析 bug
+(status.error 嵌套)修后全绿。executor 重跑 9/9 NO_DEFECT。
+**outcome_04 链**: builder Grade A(DOC_PARTIAL; fetch_vectors.rs:308-322/
+recommendations.rs:264-283/reco_query.rs:76-88 NEG_INFINITY/**collection_query.rs:
+366-391 universal-query 面同 drop**; anchors 在 contract_grounding 步内=R38 教训
+落实)→verify_chain_quotes 120/0 PASS→auditor **DEFECT E2 锁定=defect-62 新编号**
+(defect-58 class cross-ref 但 carrier/face/mechanism/fix-locus 全异; defect-55/
+idxd_004 先例; D blindspot 命中"Silent failure in recommend API with missing 
+point IDs")。reporter defect-62.md。verify_defects 62/62 CONFIRMED(override #15)。
+台账 **116 链=69D/47N/0NME**(62 编号+6 家族)。STATE_SAVE: round 40、39/66=
+59.1%、快照 .r39、零候选连计清零。R40 = chunks[39] chunk_points+recommend+batch
+(1 单元 behavioral_recommend_batch_001)。
+
+[#140 | R40 派发 | 2026-09-08] R40 = chunks[39] chunk_points+recommend+batch (1
+单元 explicit behavioral_recommend_batch_001 Type2 类: "batch recommend 每 search
+一结果; 同向量错配错误语义 per entry")。face=POST /collections/{c}/points/
+recommend/batch body {"searches":[...]}。主进程 live-probe 4 腿: B1 两 search→
+200 {"result":[[...],[...]]} **平坦 per-search 数组(非 query batch 的 {points}
+包装——R37 包法处置不沿袭, 开为脚本须自验 committed openapi)**/B2 空→200 []/
+B3 裸数组→400 "invalid type: map, expected a sequence"/B4 ghost 404。派发分工:
+boundary=**defect-62 家族 batch 槽延伸探测(最高价值)**(best_score 槽缺向量
+positive→预期 200-[[]] 静默丢弃=cross-ref; avg 槽全缺→400/部分缺→200-drop
+W1c 类; 混合槽隔离语义)+per-search 独立性/序对应/负型; state=defect-62 槽语义
+(batch 特有分歧=候选; 一致延伸=表征)+写谱系 slot 跟踪/批内重复槽恒等/并发;
+semantic=**batch==single 蜕变恒等(核心, R39 公式钉死分数)**+strategy×slot 矩阵
++包法自验(不导入 R37 包法)+诊断质量。前缀 boundary_rb_/state_rb_/semantic_rb_;
+工单 18 条(R39 版+scorer -d² 族钉死)。
+=== #141 R40 六道门+执行+打回（2026-09-08）===
+15 脚本(b5/s5/sem5 全 B)。六道门 15/15 PASS(semantic meta 缺字段×5 同 R37/R38
+机械补齐; gate 正则放宽 path:\s*[AB] 任意位置——Attack 行尾形态; 主进程 gate 文件
+修 regex 时两次转义失败改整行替换)。executor 后台化(R37 惯例)主进程轮询产物:
+**7D/5N/1SE**+容器 healthy+16 秒顺序执行无竞态。triage:
+- **slot_40 SE + 潜在真发现**: L2-slotA-best batch1 响应逐元素 **score:null**——
+  单面 best_score 有分(R39 钉死)批槽全 null? 脚本崩在 None 浮点比较。twin 确认
+  后若批面系统性 null → batch 特有包法腐蚀真 Type4 候选
+- wspec_40 P2 写屏障后序断裂(重推是否用 post-flip 读回向量)
+- conc_40 quiesce count=5 vs 6(竞态账本 or 真数据丢失)
+- param_40 参数放置(400 报文是 body 形状错, consistency 应在查询串)
+- indep_02/scores_05 monotonicity 方向 oracle bug(avg=距离升序正确)
+- drop62_01 BX/BatchS 期望重推(公式符号对齐实测)
+- parity_05 T3 槽/期望交叉
+三 agent 全打回。execution_r40.json 缺(主进程轮询时补)。
+=== #142 R40 收官（2026-09-08）===
+三 agent 修复闭环(9 artifact: monotonicity 方向 avg=距离升序/候选集漏 id3-id1/
+BASE=5-vs-6 账本/quantum 枚举漂移(commit-matched=[majority,quorum,all])/threshold
+=距离上限方向反转/truthy+tuple 崩溃)→executor 重跑 8/8 绿。**defect-62 批面延伸
+CHARACTERIZED**(twin byte-equal: BX.slot1==SF-best f32 全同; **null-score 退化
+形态面对称**——单面 best_score 缺向量 positive 同样逐元素 score:null; sum=0.0;
+混合批健康槽不受扰=per-slot 隔离; 零幸存者 avg 槽 400 整批=all-or-nothing 源码
+?-传播)。参数面: consistency 枚举 [majority,quorum,all] 强制/timeout=86400 干净/
+searches=[] 200[]。包法: **平坦 per-search 数组**(recommend_api.rs:124
+Vec<Vec<ScoredPoint>>, 非 query batch 的 {points} 包装)。0 候选 0 链, 台账不变
+116=69D/47N/0NME。STATE_SAVE: round 41、40/66=60.6%、快照 .r40、零候选连计=1
+(R40; R39 defect-62 清零后重启)。R41 = chunks[40] chunk_points+recommend+groups
+(3 单元: type_001/state_001/behavioral_001——recommend groups 面, 与 R38 query
+groups 面共享根因面)。
+
+[#143 | R41 派发 | 2026-09-08] R41 = chunks[40] chunk_points+recommend+groups (3
+单元: type_001 **bound→path A** + state_001/behavioral_001 全 B)。face=POST
+/collections/{c}/points/recommend/groups。主进程 live-probe 5 腿: G1 全身体→200
+groups 信封/**group_size 在此面为 REQUIRED**(缺→400 "missing field `group_size`",
+异于 query groups 的 default 3——契约 required 匹配)/G2 无 positive→400 avg-strategy
+消息/G3 offset→200 同组(flatten-ignore 疑+组内平分序噪声实测)/G4 ghost 404/
+G5 best_score 200。派发分工: boundary=path A required 槽闭合(group_by/group_size/
+limit 各缺→400 点名)+正负可选+类型形态+B; state=offset 表征(tie-tolerant)+
+写谱系 id 正例跟踪/缺向量生命周期 defect-62 家族/groups 成员资格写迁移; semantic=
+**recommend-groups==query-groups 面 parity(核心)**/strategy 数学组面 byte-exact/
+group_by 值语义(R38 carry)/with_lookup/诊断质量。前缀 boundary_rg_/state_rg_/
+semantic_rg_; 工单 18 条(R40 版)。
+
+[#144 | R41 收官 | 2026-09-08] R41 = chunk_points+recommend+groups 零候选轮#2。会话
+compact+用户中断致三 attack 全停：boundary 已落 4/6、state 5/5、semantic 0 → 主进程从
+transcript 提取原派发词(#143)重派 boundary 续作(补 unit3 pathB×2)+semantic 全量。16 脚本
+gate 16/16。executor 首跑(diag_03 kill 腿压轴)：7N+8 候选+2 SE——2^62 腿被 400 u32 拒绝
+(无 OOM，与 R38 1e7 杀服对照)。主进程取证 8 候选全 artifact：(a)committed openapi
+group_size/limit uint 无 minimum→0→200 spec-legal(合成 rubric, R15 先例)；(b)serde
+value-type 错误不点名=defect-61 家族 cross-ref(M1-M3 missing 腿点名=分层正面证据)；
+(c)offset flatten-ignore=R38 裁定；(d)id-form 正例 groups 面自排除=defect-62 exclusion 链
+延伸(geoB_06 拆 AVG1a/AVG1b)；(e)stratmath_02 对称 fixture [1,9] 平分 sfs(-9)→非对称
+重锚[1,7]；(f)vecless_41 strategy=average 脚本 bug(groups 枚举无别名)——state agent 被
+停不可复活→新派修复 agent(顺手清孤儿 collection)；(g)offsetB_04 helper 硬编码 gs=3 致
+L5 假 diverge；(h)payload_04 元组解包元数(R17 盲区)无 VERDICT 崩溃不入候选(extract 盲点：
+SE 类靠 log 尾核验)。修复自跑绿后 16/16 NO_DEFECT，mtime 复核通过，extract rg=0。
+台账不变 116 链=69D/47N/0NME。coverage 41/66=62.1%。零候选连计=2。教训：①extract 只认
+DEFECT_FOUND 行——SE 崩溃(无 VERDICT)需主进程 log 尾扫描兜底；②SendMessage 复活对"用户
+停止"的 agent 无效(仅对超时死亡有效)→重派新 agent+完整工单。
+
+[#145 | R42 派发 | 2026-09-08] R42 = chunks[41] chunk_points+scroll (5 单元:
+range_scroll_001 **bound=[builtin:boundary_value]→path A** + state_scroll_001/
+state_scroll_002/behavioral_scroll_001/behavioral_scroll_002 全 B)。face=POST
+/collections/{c}/points/scroll。committed spec ScrollRequest: limit{int|null,
+minimum:1,default 10}/offset="Start ID to read points from"/order_by/无 required。
+主进程 live-probe 9 腿: P1 {}→200 全 5 点/P2 **limit=0→422 点名 scroll_request.limit
+(validator 在场——与 defect-59 hnsw_ef 无 validator 对照, spec minimum:1 兑现)**/
+P3 -1→400 usize 不点名(defect-61 家族形态)/P4 翻页链 [1,2]→npo3→[3,4]→npo5,
+**P4c offset=last-id→[4,5] inclusive 重复语义**(spec "Start ID to read points
+from"=含该 id; assertion"next page via last id as offset"措辞与之冲突→doccons 记,
+非缺陷)/P4d ghost offset→200 空 exhausted/P5a order_by 无索引→400 点名 key/
+P5b integer index→200/P5c order_by→200 升序/P6 类型形态 1.5/'3'/true→400 不点名/
+P7 ghost 404 点名。分工: boundary=range pathA(limit 下界闭合+null 合法 default 10+
+大 limit kill-risk 腿压轴)+pathB 类型形态; state=翻页契约全走(npo 链 partition/
+inclusive 表征/游标写生命周期)+order_by index 门(index 类型 capability 矩阵 integer/
+float/datetime=range-capable vs keyword/bool/geo + 删索引回退+filter 组合);
+semantic=envelope(Record/id 默认序/**with_payload 默认 TRUE 与 search 面反差**)+
+order_by Type1 武装(200 无索引扫描=候选)+diagnostics 分层+cross-face
+metamorphic。前缀 boundary_sc_/state_sc_/semantic_sc_; 工单 21 条(R40 18+R41 增
+defect-61 家族规则/inclusive 表征/kill-risk 压轴/无 score 比较器)。
+
+[#146 | R42 收官 | 2026-09-08] R42 = chunk_points+scroll 零候选轮#3。三 attack 全落
+(boundary 6 含 pathA limit 闭合/state 5/semantic 5；semantic 曾死于 429 读契约阶段
+→SendMessage 复活续作成功)。gate v5(DELETE 检查只扫 docstring 后代码区——v4 对
+Attack 行含 delete+request 字样的描述行误报)。主进程机械补齐 5 个 state_sc docstring
+path 标记(meta 有 B/docstring 缺——R37/38/40 反向复发)。executor 首跑 7N+5 候选+
+4 SE；kill-risk 三脚本(INT_MAX/u32max/u64max)零杀服。取证全 artifact：**(a)幽灵路由
+index create=PUT /collections/{c}/index/{field}(只注册 DELETE,R35 路由事实)→正确
+body 形式 PUT /collections/{c}/index{field_name,field_schema}——3 个 SE+orderby_03
+假 Type1 同根因(索引从未建成,no-range-index 400 本来就正确)**；(b)string-id fixture
+用'a'..'h'非法(point id 只收 u64/UUID)→uuid5；(c)fullwalk 比较器类型 bug(R26/39 族)
+；(d)pagB_03 ghost 腿被自造 u64 canary 点自污染(id-order >= 语义下 canary 正确返回
+——ghost 腿与 canary 点同 fixture 互斥)；(e)pagconB_04 D1 漏算自插 wait=true id=0
+(read-your-write 正确)；(f)with_payload={}→400 spec-legal(WithPayloadInterface
+oneOf[bool,array,PayloadSelector{include|exclude}]，{} 全不匹配；与 R41 Filter
+MaybeOneOrMany 单条件对象合法区分)。agent 自修加项：strid ghost-offset >= 语义双向
+重锚(above_all 空/below_all 后继)/orderby_03 desc 单调断言 bug/幂等 pre-drop 防
+SE 残留 409。正面证据库：limit=0→422 点名 scroll_request.limit(validator 在场,
+defect-59 对照)；npo 链精确 partition；offset INCLUSIVE(int/uuid/u64 三面)；
+order_by capability 矩阵 integer/float/datetime=200 升序 vs keyword/text/bool/geo
+=400 点名(Range 线兑现)/删索引吊销/写跟踪；with_payload 默认 TRUE 回显。
+修复后 16/16 NO_DEFECT，extract sc=0。台账不变 116 链=69D/47N/0NME。coverage
+42/66=63.6%。零候选连计=3。教训：⑭index create 双形式路由(body-form 才对)应入
+派发工单常态；⑮ghost-offset 类腿设计时先查 fixture 内 id 全序（u64 canary 点会
+吞掉一切"高于正常 id"的 ghost 断言）；⑯SE 残留 collection 409→脚本应带幂等
+pre-drop（state agent 已自发落实，扩散为工单条目）。
+
+[#147 | R43 派发 | 2026-09-08] R43 = chunks[42] chunk_points+search (3 单元全
+assertion 全 B, 无 bound)。face=POST /collections/{c}/points/search (LEGACY,
+SearchRequest 单向量)。主进程 live-probe 10 腿: P1 基线 200 [(1,0.0),(2,1.0),
+(3,2.0)]/P2 dim3→400 点名维度/**P3 using='ghost_vec'→200 静默服务(单未命名向量
+集合上回退——003 inferred 锚深挖点)**/P4 ghost 404 点名/P5 score_threshold=2.5
+→[1,2,3](Euclid max-distance cap, R24 钉)/P6 offset=2→[3,4,5](生效, 与 groups
+flatten-ignore 对照)/P7 query nearest byte-equal/P8 默认无 payload/vector 键/
+P9 limit=0→422 点名 search_request.limit(validator 在场, defect-59 对照)/P10
+空 vector→400 got 0。分工: boundary=001 排序/limit 闭合(0→422 named)/类型形态
++003 using 矩阵深挖(单未命名回退 vs 命名集合缺名——inferred 条款 doc-antecedent
+纪律: 无 primary doc 承诺 400 → 表征非缺陷)/002 using 等价; state=写谱系
+(upsert-track/delete-vanish/resurrect/payload 非干扰+params.exact 钉)+offset
+游标完整性(新小 id 插入 mid-walk)+uuid 集合翻页+删集合后 404; semantic=001
+envelope(裸数组 ScoredPoint/默认键缺席/byte-exact 重算)+002 cross-face 等价
+metamorphic 核心(plain/filter/threshold/offset/翻页矩阵)+003 错误路径+using
+类型形态。前缀 boundary_se_/state_se_/semantic_se_; 工单 24 条(R42 21+inferred
+doc-antecedent/单向量限制/Euclid plain-distance 钉)。
+
+[#148 | R43 收官 | 2026-09-08] R43 = chunk_points+search 零候选轮#4。三 attack 全落
+(boundary 选前缀 boundary_sp_ 5/state_se_ 5/semantic_se_ 5=15 脚本全 B)。gate 15/15。
+executor 11N+4 候选+0 SE+零杀服。取证全 artifact：(a)wtrack_01 query-sibling 解析器
+bug(query 面 result={points:[...]} wrapped，解析器当 list)；(b)pflip_02 B_fil 期望
+前移一腿(B 腿时 id3 n=3 仍在集合，实测 [2,3,4] 才是对的；[(2,2),(4,4)] 是 C 腿态)
+——payload 翻转腿链期望须逐腿重算；(c)env_01 '77' 非法 string id(ExtendedPointId=
+u64|UUID 格式，R42 strid 判例复发——agent 未查 UUID 格式)；(d)using_04 U6 named
+集合 null/缺省 using→400 合理(无 default vector，R39 defect-62 家族；空名消息=诊断
+表征非 Type1)。形态分辨：probe P3 的 using ghost→200 = **legacy SearchRequest 无
+using 字段→serde 静默丢弃未知字段**(open-schema 表征)；声明字段 name-miss
+(NamedVector.name/query using)→双面 400——两种形态不矛盾。修复中 agent 自加项：
+wtrack 解析器双面化+pflip 逐腿正向 log+env_01 拆 L9a/L9b(uuid5 round-trip)+
+using_04 U6d unnamed 集合 null/缺省→200 与 default 恒等+cp1252 ≡ 字符加固。
+修复后 15/15 NO_DEFECT，extract=0。台账不变 116 链=69D/47N/0NME。coverage
+43/66=65.2%。零候选连计=4。教训：⑰ExtendedPointId 域=u64|UUID-格式(string-id
+fixture 一律 uuid5，工单已扩散)；⑱payload 翻转腿链期望逐腿重算防前移；⑲cross-face
+对照解析器须按 spec envelope 形态分别解包(legacy 裸数组 vs query result.points)。
+
+[#149 | R44 派发 | 2026-09-08] R44 = chunks[43] chunk_points+search+batch (1 单元
+全 B)。face=POST /collections/{c}/points/search/batch (SearchBatchRequest
+{searches:[SearchRequest]})。主进程 live-probe 8 腿: P1 双臂→200 per-search 数组
+按臂序 [[1,2],[9,8]]/P2 臂序反转 result 跟随/P3 空 searches→200 []/**P4 坏臂
+(dim3)→整批 400 点名维度但不点名臂号(all-or-nothing, defect-62 avg 槽同风格)**/
+P5 臂缺 vector→400 missing field `vector` 点名(分层正面证据)/P6 single==batch[0]
+byte-equal/P7 ghost 404/P8 缺 searches 键→400 点名。分工: boundary=包法闭合+臂格
+独立性+类型形态+64 臂 INT_MAX kill-risk 压轴+臂号归因缺席表征; state=batch==顺序
+单发等价核心+写间插 batch 反映执行时状态+stale-cache 漂移定位+空集合批
+[[]]; semantic=envelope 臂序 byte-exact+batch-vs-single 全形状矩阵(plain/filter/
+threshold/offset/echo)+Euclid byte-exact 重算+诊断分层矩阵(missing named vs
+value-type unnamed=defect-61 家族)+unknown-field using 静默丢弃 cross-ref(R43)。
+前缀 boundary_sb_/state_sb_/semantic_sb_; 工单 26 条(+25 臂序 positional 期望逐
+臂跟踪/26 all-or-nothing=表征风格)。
+
+[#150 | R44 收官 | 2026-09-08] R44 = chunk_points+search+batch 零候选轮#5。三 attack
+全落(boundary_sb_ 4/state_sb_ 3/semantic_sb_ 4=11 脚本全 B)。4 个 semantic meta 缺
+path/constraint_ids(R37/38/40 正形态复发)→主进程机械补齐。gate 11/11。executor
+6N+5 候选+0 SE；**64 臂 INT_MAX kill 腿未杀服(batch 面无 groups 面 OOM 放大)**。
+取证全 artifact：(a)env_01 E2 期望嵌套 vs 平铺臂 id；(b)equiv_02 M4 offset+limit
+配额误解——limit 是返回条数不与 offset 共享，全序 [1,4,5,2] offset=1 limit=3 →
+[4,5,2] 才对；(c)score_03 S1 f32 比较姿势——wire 最短十进制 5.656854 cast 回 f32
+与重算值严格相等(R39 struct roundtrip 判例)；(d)det_01 归一不对称(期望 int vs
+got str)+arm2 filter n lte 5 期望漏写前两点；(e)wtrack_01 arm2 期望分数表基于
+错误查询向量(got=|i-4.3| 严格)。agent 自修加项：env_01 arm3 重导(查询 2.5 使
+canary d=0.5 唯一最近——u64 保真真正可测)+陈旧期望副本清理；equiv_02 M4 第三槽
+平分容忍 {2,3}；score_03 S2 threshold 严格< 边界表征(spec 模糊仅 cosine 例)。
+修复后 11/11 NO_DEFECT，extract=0。台账不变 116 链=69D/47N/0NME。coverage
+44/66=66.7%(破 2/3)。零候选连计=5。教训：⑳offset 与 limit 语义独立(返回条数
+不共享配额)——M4 类期望必须按全序切片 [offset:offset+limit]；㉑wire score 比较
+一律 f32 struct roundtrip(教训入工单扩散)；㉒batch 面 kill-risk 大幅弱于 groups
+面(64×INT_MAX 活)——OOM 放大是 with_capacity(groups*group_size) 特有。
+
+[#151 | R45 派发 | 2026-09-08] R45 = chunks[44] chunk_points+search+groups (3 单元:
+type_search_groups_001 **bound=[builtin:type_boundary]→path A** + state_search_groups_001/
+behavioral_search_groups_001 全 B)。face=POST /collections/{c}/points/search/groups
+(LEGACY groups, R38 query-groups/R41 recommend-groups 姊妹面)。spec required=[vector,
+group_by, group_size, limit]; vector=NamedVectorStruct; using 字段存在。主进程
+live-probe 9 腿: P1 full→200 groups 信封/P2 四选择器缺失全部 400 点名(struct 级分层
+正面证据)/**P3 offset=1→200 同组(flatten-ignore, R38/R41 裁定表征)*/**P4 gs=0→422
+点名 search_group_request.group_request.group_size(validator 在场——三面对照: search/
+query groups validator 在 vs recommend groups 无 validator 0→200, 均 spec-legal)**/
+P5/P6 lookup obj+str 双形态 200/P7 lookup ghost 404 点名/**P8 using=ghost 未名集合
+→200 静默(声明字段回退/忽略深挖——R43 形态分辨透镜)**。分工: boundary=pathA 四槽
+闭合+类型形态+NamedVectorStruct 双臂+pathB 级联/默认值; state=grp payload 翻转成员
+资格/末员删除组消失/窗口回填/复活/多值 grp 写迁移/offset 逐态恒等+lookup 活读;
+semantic=**跨面 groups parity 核心(legacy vs query, R41 透镜——此两面均 plain
+distance 无 scale 分歧)**+using 形态分辨矩阵(未名回退 vs 命名缺名 400 锚)/group_by
+值语义(R38 carry)/threshold per-hit cap。前缀 boundary_sg_/state_sg_/semantic_sg_;
+工单 27 条(R44 26+R38 groups 教训全带: OOM 阈值/lookup 双形态/9 枚举族/幂等
+pre-drop)。
+
+[#152 | R45 收官 | 2026-09-08] R45 = chunk_points+search+groups 零候选轮#6。原三
+attack 死于进程退出(零落盘)，SendMessage 复活被判"user-stopped"拒绝(教训⑫情形
+扩大——进程退出也落入不可复活类)→重派三新 agent 带全量取证工单(16 脚本: boundary
+7 含 pathA×2/state 4/semantic 5)。semantic 5 个 docstring path 标记机械补齐(R42
+反向形态第 N 次复发)；**executor 落 .done 命名偏差(output_<stem>.log.done)→主进程
+批量改名为惯例 <stem>.log.done(教训㉓派发给 executor 的指令词要写死命名样例)**。
+executor 10N+4 候选+2 SE 零杀服。取证全 artifact：(a)offsetB_04 平分前导组序严格
+tuple 比较误报(frozenset 全等=flatten-ignore 成立→score-grouped 等价类比较器)；
+(b)threshB_06 两向判别器漏 strict-< 第三分支(与 R44 batch 面 strict-< 同形态=跨面
+family, judge 可合并, doccons 表征)；(c)lookupB_07 L1 比较器找 group-level lookup
+的嵌套 point 包装而实测无包装——**join 完美服务=positive closes**；(d)typeA_02+
+using_02 named 集合 fixture 形态(裸数组 upsert 400/VectorsConfig=名键对象)；(e)
+memb_01 O 腿跨写腿陈旧基线(三腿互相恒等→就地 fresh 基线)。新锚点：PointGroup.
+lookup group 级无包装；threshold strict-< 跨面家族；named 缺名 400 点名+available
+列表("Vector with name X is not configured"新消息形,与 R43 U3 措辞异但点名锚
+保)；using+plain-array on named→400 requires-name(无静默路由)。修复后 16/16
+NO_DEFECT，extract=0。台账不变 116 链=69D/47N/0NME。coverage 45/66=68.2%。零候选
+连计=6。
+
+[#153 | R46 派发 | 2026-09-08] R46 = chunks[45] chunk_points+search+matrix+offsets
+(3 单元: range_matrix_offsets_001 **bound=[builtin:boundary_value]→path A** +
+resource_sample_001 [system, **inferred**] + behavioral_matrix_offsets_001 全 B)。
+faces=POST /collections/{c}/points/search/matrix/{offsets,pairs}（共享
+SearchMatrixRequest: sample{min2,def10}/limit{min1,def3}/using/filter，required=
+None 全可选）。主进程 live-probe 11 腿: P1 offsets{}→200 CSR {ids,offsets_row,
+offsets_col,scores}(30 cells=10x3)/P2 pairs{}→200 {pairs}/**P3 sample=1→422 点名
+search_request.sample(validator 在场, 前缀 search_request  Despite matrix 面)**/
+P4 limit=0→422 点名 search_request.limit/P5 sample2limit2 rows2 cols2/P6
+**sample=100>20 集合→200 CLAMPED 到 20(超界方向不 400 而是钳制——unit003 文本
+"400 out-of-range"与实测方向矛盾→clamp=server defaulting 表征)**/P7 null,null→
+默认 10x3/P8 sample='10'→400 usize 不点名(defect-61 家族形)/P9 sample500limit100
+→钳 20 不崩/P10 ghost 404/P11 filter n<=5+sample3→ids 全在集合内(池被滤)。分工:
+boundary=range pathA 双向闭合(下界 422 named/上界 clamp 表征+null≡default 验证)
++类型形态+resource 交叉(validator parity)+behavioral CSR 不变式; state=采样
+确定性(随机 sample→ids 跨 run 稳定?测+穷举模式 sample=count 全定)+写谱系
+(改向量距离跟踪/删除消失/clamp 随 count)+跨面 cell 集一致; semantic=CSR 语义
+推导+offsets/pairs cell-set 恒等 metamorphic+全定请求 f32 重算对称性/自排除+
+inferred 面 growth 公式拟合(无 kill 腿, cells<=2500)。前缀 boundary_mx_/
+state_mx_/semantic_mx_; 工单 27 条(R45 版+clamp=COMPLIANT+矩阵 cells 天花板
+纪律——sample 被 count 钳, cells=clamp(sample)xmin(limit,clamp-1) 温和即可测)。
+
+[#154 | R46 收官 | 2026-09-08] R46 = chunk_points+search+matrix+offsets 零候选轮#7
+(17 脚本 boundary6/state5/semantic6, pathA×1)。修复周期跨两次进程退出：boundary
+先修完(2)、state agent 停止通知但磁盘实证 5/5 已完成、semantic 6 个未落地→新派
+修复 agent(教训⑫扩大定案：**进程退出类 agent 全部落入不可复活类，先核磁盘再定重派
+范围**)。首跑 4N+13 非零=**单一根因：offsets_row 是 COO(每 cell 一行号 len==cells)
+非 CSR rowptr**——全部数据在 COO 读法下正确。+2 期望算术错(diagB_05 X1 cells
+12→15；parityB_06 P8 volume 推导漏 filter 池钳制 rows=min(sample,|pool|))。COO
+契约钉死：rows×min(limit,rows-1)=cells、self-exclusion col≠row、行块有序。**矩阵
+只张于采样集(has_id 过滤邻搜)→sample 超界被钳后无法与 limit 相乘→此面无 kill-risk
+(资源杠杆=count²)——派发词里"cells 天花板"纪律由 boundary 源码取证升级为结构性
+结论**。validator 前缀 search_request.* 系结构(schema.rs:1288 flatten 包 internal
+schema)但点名→无 Type2。unit 文本"400 out-of-range"仅下界方向兑现(422 named)，
+上界=静默 clamp(defaulting COMPLIANT+doccons)。意外收获：pairs_001 契约文本
+{pairs_a,pairs_b,scores,ids} 与 commit-matched {pairs:[{a,b,score}]} 矛盾——
+spec-derived wins，已预记给将来 pairs chunk 的 auditor。修复后 17/17 NO_DEFECT,
+extract=0。台账不变 116 链=69D/47N/0NME。coverage 47/66=71.2%。零候选连计=7。
+教训：㉔响应数组形态(COO/CSR/rowptr)必须先从实测 raw 推导再写不变式——派发词含
+"derive convention from measurement"仍被 agent 的 CSR 先验覆盖，后续面类脚本派发词
+加"convention-neutral decode first"条款。executor .done 命名本轮按写死样例执行
+正确(㉓生效)。
+
+[#155 | R47 派发 | 2026-09-08] R47 = chunks[46] chunk_points+search+matrix+pairs
+(2 单元: range_matrix_pairs_001 **bound→path A** + behavioral_matrix_pairs_001 全
+B)。face=POST /collections/{c}/points/search/matrix/pairs(R46 offsets 姊妹面共享
+SearchMatrixRequest)。主进程 probe 8 腿: Q1 default 24=8x3/Q2 穷举 56 ordered cells
+无自对(28 unordered x2 方向)/Q3 score=plain distance/Q4 sample=1→422 点名/Q5
+limit=0→422/Q6 has_id 滤池/Q7 ghost 404/**Q8 两面随机采样彼此独立——parity 腿必须
+穷举模式(sample>=count)**。**核心任务=R46 预记的契约矛盾正面裁决:
+behavioral_matrix_pairs_001 文本 {pairs_a,pairs_b,scores,ids} vs commit-matched
+SearchMatrixPairsResponse {pairs:[{a,b,score}]}——R16 先例外部版本化文档降二级、
+commit-matched 权威;裁决协议=测服务器信封→比对两候选文档源→服务器符合权威源=
+NOT_DEFECT+NOTE[char] 契约修复发现逐字入 log 供 phase-3**。分工: boundary=range
+pathA 下界闭合+null≡default+clamp+类型形态 B/behavioral 信封 per-pair 键精确+
+sparse-id 真点 id 检查(0-based 索引泄漏=Type4)+4xx 家族; state=写谱系穷举(漂移
+精确定位+跨态两面 parity)+clamp 随 count+确定性(穷举 byte-equal/随机模式 volume
+恒 24 表征); semantic=S 信封三角验证+X 跨面穷举 unordered-set 恒等+limit 截断
+对称存活+D 采样模型拟合+using 腿。前缀 boundary_mp_/state_mp_/semantic_mp_; 工单
+28 条(R46 27+28 契约矛盾 NOTE[char] 三角验证)。㉔convention-neutral decode 已入
+派发词。
+
+[#156 | R47 收官 | 2026-09-08] **12/12 NO_DEFECT, extract=0, 零候选连计=8**。
+coverage 48/66=72.7%。台账不变 116 链=69D/47N/0NME。**孤儿恢复三件**: wspec_01
+系前用户停止 agent 的 draft 遗留(函数库完整但无 main/entrypoint→exit0+0字节
+log)→修复 agent 按 docstring 补 main(14 腿 W0/L1/L2/L3 写谱系);xface_02.meta.json
+缺失(修复 agent ECONNRESET 死于写 meta 前一文件)→主进程按 docstring 机械补;
+usingB_05 缺 G3 "path: B" 标记→单 sed 补。**artifact 修复循环 3 波 6 处机械修
+复,全部取证锤死脚本侧**: (a) det_03 把穷举专属 per-pair 方向 multiplicity==2
+判据用在 default 随机腿(反向行未采样时单次出现本属正常)→门控 row_of None;
+(b) using_04 sig() 解包 bug `a, b = <单值 if/else 单值>`→`a =`(ValueError
+exit2);(c) boundsA_01 N1 null≡absent 严格 multiset 断言在 tie-rich 线性
+fixture [i,0,0,0] 上必然 flaky(|5-3|==|5-7|==2,平局邻居发射 by-design 随机;
+重放三腿 head 一致差异全为 tie 置换)→(id,score) 键 tie-tolerant 比较;
+(d) **samp_03 norm() float round-trip 自损 u64 canary: float(2**64-1) 上舍入
+→2**64 幻影"sampling leak"+canary"absent";服务器侧重放(fresh+23 请求全状态序
+列) corruption_seen=0 且 id/分数全精确→整数直通修复**("str/int normalize both
+sides"工单被实现成损坏源,检测器自身即假阳性源);(e) wspec_01 delete 用 DELETE
+/collections/{c}/points=不存在路由(404)→POST /points/delete+body wait(xface_02
+形);(f) wspec_01 再断言 result.status=='completed' 但 wait=true DELETE 返回
+'acknowledged'(UpdateStatus 合法枚举 acknowledged/completed/wait_timeout;取证
+GET 被删 id→404=生效;upsert wait=true 返回 completed=稳定不对称)→接受两枚举
+值。**正面证据入账**: u64-max canary 在 pairs 面 round-trip 全精确(存储 GET 精确
++穷举 cells 双向精确+全状态序列重放零损坏——f64 损坏假说服务器侧证伪);null/
+absent/显式默认等价成立;sample=1/sample=0/limit=0→422 点名 search_request.*;
+下界闭合 sample=2/limit=1 接受;超count clamp COMPLIANT;穷举确定性两跑一致;
+跨面 pairs-vs-offsets parity 4 写态(基线/wait=true move/wait=true delete/clamp)
+全绿含 stale-cache 探针;wait=true delete 生效性 404-on-GET 验证。R46 预记的契
+约矛盾正面裁决落地: 实测信封 {pairs:[{a,b,score}]} 符合 commit-matched 权威,
+{pairs_a,...}=doc artifact(ticket 28) NOTE[char] 零 claim。**教训⑱外新一轮**:
+⑱-1 检测器自身的归一化/比较层可成为假阳性源(norm float round-trip/tie 断言/
+穷举判据外溢),修复前先重放服务器侧分离"数据坏 vs 判据坏";⑱-2 孤儿 draft 不
+能凭"函数库在"当完成件核盘,须 grep main/entrypoint;⑱-3 qdrant 无 DELETE
+/collections/{c}/points 路由(写删=POST /points/delete)。next=R48=chunks[47]。
+
+[#157 | R48 收官 | 2026-09-08] R48 = chunks[47] chunk_points+upsert-1of2(12 unit:
+type×5/range×1/state×2/resource×2/behavioral×2)。13 脚本(boundary_up_ 6 含
+pathA×2/state_up_ 3/semantic_up_ 4 含 bkill kill-risk 末位)。**11/13 NO_DEFECT
++ 2 真 DEFECT——本轮破零候选连计(#8→断)**: (1) **spB_03 = defect-61
+untagged-enum 家族新实例**: sparse literal 域 5 腿(S1/S2 缺键/S5 负 index/S6
+float index/S7 2**64)全 400 "data did not match any variant of untagged enum
+VectorStruct"不点名字段——同脚本 S9 dup/S10 len-mismatch 走 validation 层 422
+**点名** points[0].vector.?.indices/values(+? 占位 NOTE)——serde 层 vs
+validation 层分层对照铁证;家族实例记账不加编号。(2) **batch_02 = 新缺陷候选
+(defect-63 候选,Type4)**: identical mixed batch(9 valid+尾部 dim-mismatch 毒点,
+wait=true)→400 但**幸存集非确定**——脚本 2 run [9点]/[102,107] + 主进程 6 run
+replay **6 个不同幸存集**(4/4/6/5/8/6 个),客户端无法从 400 响应重构服务器状态;
+机制归因挂 Step 9 evidence-builder P0(疑似 per-segment 并行+失败短路竞态)。
+**artifact 循环 5 波 7 处机械修复**: ident_01 point+get path_params KeyError+
+**get 腿发 live-map 的 str 键**(服务器正确 400 strid——R42/43 pin 脚本侧复发,
+get_vecs 规范化 int);ordB_05 裸 quote() NameError;waitf_03 W3 off-by-one
+(BASE_N+2→+3,W2 wait=true 已 bump——正确值 5 被标 double-apply);idsA_01
+Ibrace 花括号 uuid 200 接受判 Type1→**取证证伪:uuid crate 把 braced 形式解析
+为同一 uuid 的别名**(bare-form GET 解析到同点,id 规范化裸形式返回)→移出非法
+集=alias COMPLIANT NOTE;**bkill_04 Type3 主进程 override**:容器全程未死
+(healthz 200 恒常),S2 59.4MB 裸断连=客户端流式假象——服务器侧 direct+streamed
+双方式重放 6/6 得 **HTTP 400 documented "Payload error: ... larger than allowed
+(limit: 33554432 bytes)"=32MB payload cap 有文档错误=resource_bound 合法处置**
+(合规,契约三合法处置之一)。**正面证据**: id 域闭合(0/1/2**63/2**64-1 精确
+round-trip,2**64/-1/数字串/非 uuid 400 点名值);update_mode/ordering 未知值
+400 **枚举全部合法值**(defect-61 正对照);sparse literal dup/len 422 点名字段;
+identity 语义精确(re-upsert 替换/insert_only 拒更新/update_only 拒插入含
+404-on-get);update_filter 三向门控(匹配更新/非匹配保持含 payload 走私尝试/新点
+无条件插入);wait=false acknowledged+有界落地+立即可见均合法;空 batch 400
+"Empty update request";batch 资源正包络:20k/0.1s、100k dim-8/0.41s、1e6 dim-8
+32MB cap 400 documented、容器零 crash。coverage 49/66=74.2%。台账 129 链
+=71D/58N/0NME(spB_03 记 defect-61 实例,batch_02 记 defect-63 候选)。
+**新教训㉕系**: ㉕-1 检测脚本复用 live-map 键时必须先规范化(str 键是另一
+PointIdType 形态——strid 家族脚本侧三发);㉕-2 wait 混合腿链的 count 期望每腿
+前 fresh 重读(教训⑲扩至期望侧);㉕-3 花括号 uuid=crate 别名永不做非法 fixture;
+㉕-4 大 body 断连先分客户端流式假象 vs 服务器行为(direct/streamed 双路重放),
+有 documented 400 即合规;㉕-5 urllib 侧 healthz -1 须 curl 复验(本机代理假象
+可伪造"容器不可达")。next=R49=chunks[48] chunk_points+upsert-2of2(bc_upsert_
+identity 1 单元,轻块)。
+
+[#158 | R49 收官 | 2026-09-09] R49 = chunks[48] chunk_points+upsert-2of2(轻
+块,单 behavioral 单元 qdrant_bc_upsert_identity_001)。单 state agent 2 脚本
+(state_up2_ident_01/02,全 B)。**2/2 NO_DEFECT,零候选连计重置 #1**。coverage
+50/66=75.8%。台账 131 链=71D/60N/0NME(+2N)。一轮 artifact:leg5 named 集合
+search 用了**写入侧 VectorStruct2 map 形态 {alpha:[...]}**,而 legacy search 面
+NamedVectorStruct 要求 **{name:"alpha",vector:[...]}**(commit-matched openapi
+description 逐字;两面的 named 形态有意不同构)→400 spec-legal,脚本修正重跑绿。
+**教训㉕-6:查询面 named={name,vector} 双键 vs 写入面 map——跨面形态不对称是
+常驻陷阱**。正面证据:identity 跨 id 种类(u64+uuid 串)、search 面替换可见性
+(search-by-v1 命中 v2,被替换向量无处可读)、payload 零重叠键全替换(get+search
+双面旧键消失)、named 逐名 identity(alpha 替换 beta 位精确)、partial named
+upsert count identity defect-grade+beta 命运表征、幂等双写、wait=false 中段
+批链终态 v3 无迟到复活、跨 id 无泄漏、u64max 链精确 int。next=R50=chunks[49]。
+
+[#159 | R50 收官 | 2026-09-09] R50 = chunks[49] chunk_quotas+get(轻块,单
+behavioral 单元 qdrant_behavioral_get_quotas_001,explicit tier 期望 200
+QuotaConfig)。单 semantic agent 2 脚本(semantic_qt_route_01/02,全 B)。
+**2/2 NO_DEFECT(主进程 override 两脚本机械 DEFECT_FOUND),零候选连计#2**。
+coverage 51/66=77.3%。**裁决=契约工件非服务器缺陷,证据四柱**: (1) /quotas
+10/10 腿(GET×5 含 api-key 头+progress 变体/PUT×3/POST/HEAD)→404 **空 body**
+content-type 缺失; (2) 对照腿三根(ghost collection/缺 point/ghost search)→
+404 **JSON envelope**("Not found: Collection ... doesn't exist!")——/quotas
+匹配**未注册路由形态**而非已注册缺资源形态(404 形态学可观测二分); (3) 源树
+db3fca3 全 src grep "quotas" **零命中**,actix api 目录无 quotas 模块; (4) 而
+commit-matched openapi 声明 GET "Get global quotas"+PUT "Set global quotas"
+(200 Quotas_get_quotas_Response_200)。**结论:发布的 commit-matched spec 声明
+了本树从未实现的端点(doc-overreach),服务器忠实于自身源码=NOT_DEFECT**;
+Type2 诊断质量判定不适用(无可评级的已注册路由)。**ticket 29 入账:契约修复
+项——formalized contract 剔除 /quotas GET+PUT**(与 ticket 28 pairs 信封工件
+并列)。首跑 executor artifact:两脚本 bootstrap 死(TESTVDB_DB_URL 未达子
+进程,.executor.env localhost 形态未传)→显式 inline env 重跑绿——**executor
+环境守则:每条命令显式携带 TESTVDB_DB_URL/TESTVDB_TARGET**。台账不变 131 链
+=71D/60N/0NME。next=R51=chunks[50] chunk_quotas+set(3 单元:type/range/
+behavioral 各 1)。
+
+[#160 | R51 收官 | 2026-09-09] R51 = chunks[50] chunk_quotas+set(轻块,3 单元
+type/range/behavioral 全 quotas+set)。单 boundary agent 2 脚本
+(boundary_qts_bodyA_01/rangeA_02,全 pathA——type_boundary/boundary_value 绑定
+直生)。**2/2 NO_DEFECT,零候选连计#3**。coverage 52/66=78.8%。**41/41 腿全部
+落在 R50 钉死的未注册路由形态(404+空 body+CT 缺失)**: type 矩阵 18 腿
+(enabled bool/串/int/null、percent int/串/float/array/object/null/缺、extra
+key、array/串 body、?wait=true 查询面)+range 矩阵 23 腿(两 percent 字段各
+0/1/50/100/101/-1/2**31/2**64-1/2**64/null+合法全配置对照)。**[1,100]/[0,100]
+值域与 behavioral 持久化语义记录为 SPEC-TEXT+SKIPPED**(死路由上不可观测——
+全部值退化为同一路由级 404;边界矩阵留作差分探针,若未来版本出现该路由即可
+复用)。executor 首试死在脚本路径(找 session root,实际 debate_logs/)→重试
+绿。台账不变 131 链=71D/60N/0NME。next=R52=chunks[51] chunk_readyz(1 单元
+behavioral_readyz_001)。
+
+[#161 | R52 收官 | 2026-09-09] R52 = chunks[51] chunk_readyz(轻块,1 单元
+behavioral_readyz_001,inferred tier)。单 semantic agent 2 脚本
+(semantic_rz_pos_01/neg_02,全 B——behavioral 无绑定)。**2/2 NO_DEFECT 首跑
+零 artifact,零候选连计#4**。coverage 53/66=80.3%(破 80%)。**正面证据**:
+/readyz 200 body **byte-exact "all shards are ready"** 5 次间隔腿零抖动;
+liveness 三胞胎语义分离钉死——/healthz 与 /livez 答**进程**问题
+("healthz check passed"),/readyz 答**shard** 问题(三胞胎 byte 相同会是
+Type2——未观测);查询垃圾参数仍 200;方法面 POST/PUT/DELETE /readyz→404-EMPTY
+(R50 路由形态学适用);尾斜杠/大小写变体记录;20 连发突发全 200 无限速无退化
+(latency 记录);每腿后 /healthz 复验(readiness 面永不退化 liveness 面)。
+503 分支 SPEC-TEXT+SKIPPED(inferred 纪律——诱导 shard-not-ready 需停节点=
+破坏性,never claimed)。台账不变 131 链=71D/60N/0NME。next=R53=chunks[52]。
+
+[#162 | R53 收官 | 2026-09-09] R53 = chunks[52] chunk_root(轻块,1 单元
+behavioral_root_001,explicit tier 但 UNBOUND——path B 全量 G 收口 per D2
+v3.5)。单 semantic agent 2 脚本(semantic_rt_pos_01/neg_02)。**2/2 NO_DEFECT
+首跑零脚本 artifact,零候选连计#5**。coverage 54/66=81.8%。**正面证据=本轮
+最强 identity 钉**: GET / 200 key-set 精确 {title,version,commit},version
+1.18.0==session 目标,commit db3fca3...==commit-matched 源树常量——**root 面
+响应即被测工件的指纹交叉验证**;三腿 byte 稳定;查询垃圾/双斜杠变体表征;方法
+面 POST/PUT/DELETE→404-EMPTY(R50 形态学);深路径不被 root 吞(拒绝保真);
+openapi 声明 api-key required vs 部署无鉴权=SKIPPED(部署配置非代码缺陷)。
+executor 首试漏 inline env(bootstrap 拦停 exit2 零执行)→修正重跑。台账不变
+131 链=71D/60N/0NME。next=R54=chunks[53]。
+
+[#163 | R54 收官 | 2026-09-09] R54 = chunks[53] chunk_shards+create(轻块,2
+单元 state+behavioral 均 inferred/空绑定)。单 state agent 2 脚本
+(state_skc_create_01/meth_02,全 B)。**2/2 NO_DEFECT,零候选连计#6**。
+coverage 55/66=83.3%。**路由事实钉死**: openapi /collections/{c}/shards=
+[get,put](create-shard-key=PUT;POST 未声明→404-EMPTY,R50 形态学);
+/cluster status=disabled(standalone)——全部 shard-mutation 腿(PUT 九种 body+
+重复 key+ghost+sharding_method=custom 集合+wait 面)退化为 documented 400
+"Bad request: Distributed mode disabled"或 ghost 404 族,形态一致无静默成功;
+GET /shards 读回 {"shard_keys": []} 与全 4xx 一致。**契约 divergence
+NOTE[char]: 契约 endpoint registry 把 shards+delete 记为裸 /shards 的 POST,
+commit-matched openapi 把 delete 放 /shards/delete 子路径——R55 chunk 验证**。
+一轮 artifact: R_list 空判定比较裸信封({}/[])而列表端点返回
+**{"shard_keys": []}(含空数组的 dict)**→误判非空残留——穿透包装的判定修复
+重跑绿。**教训㉕-7: emptiness 检查必须穿透响应包装,信封从不裸出现**。 Success
+path/custom 前提/retro-sharding/重复键语义=集群禁用下 UNOBSERVABLE(SKIPPED
+inferred 纪律;spec 文本留作集群部署差分探针)。台账不变 131 链=71D/60N/
+0NME。next=R55=chunks[54] chunk_shards+delete。
+
+[#164 | R55 收官 | 2026-09-09] R55 = chunks[54] chunk_shards+delete(轻块,2
+单元 state+behavioral 均 inferred/空绑定)。单 state agent 2 脚本
+(state_skd_delete_01/meth_02,全 B)。**2/2 NO_DEFECT 首跑零 artifact,零候选
+连计#7**。coverage 56/66=84.8%。**路由裁决落地(R54 预记 divergence→ticket
+30)**: 注册的 delete-shard-key 路由=**POST /collections/{c}/shards/delete**
+(实测 400 documented 门控——已注册形态);裸 /shards 的 POST=404-EMPTY(未注册
+形态;openapi 裸路径仅 [get,put])。**同方法兄弟路径对照
+(POST 裸 vs POST 子路径)可观测二分两路由类**。**ticket 30 入账:契约
+registry 把 shards+delete 错记在裸路径——修复为 /shards/delete**(与 ticket
+28/29 并列契约修复三件)。body 矩阵(串/数/null/缺/array/全量+timeout/重复
+双发/ghost/custom 集合)全部退化 gate/404 形态一致;读回 {"shard_keys": []}
+穿透包装(㉕-7)。Success/holds-points/wrong-method/404-key 语义集群禁用下
+UNOBSERVABLE(SKIPPED inferred;集群部署差分探针留存)。台账不变 131 链
+=71D/60N/0NME。next=R56=chunks[55] chunk_shards+list。
+
+[#165 | R56 收官 | 2026-09-09] R56 = chunks[55] chunk_shards+list(轻块,1
+单元 behavioral_list_shard_keys_001,inferred)。单 semantic agent 2 脚本
+(semantic_sl_pos_01/neg_02,全 B)。**2/2 NO_DEFECT 首跑零 artifact,零候选连
+计#8**。coverage 57/66=86.4%。**形态之谜破解**: shards+list 包装**随集合
+变体不同**——auto 集合 result={}(shard_keys 字段省略),custom 集合
+result={"shard_keys":[]};均 spec 合法(ShardKeysResponse.shard_keys
+optional,"only available when sharding method is custom")——R54 的
+{"shard_keys":[]} 见证(custom fixture)与 R56 probe 的 {}(auto fixture)是
+同一端点在不同变体上的观测,**㉕-7 包装规则补文档化双形态案例**。404 臂兑现
+(ghost→JSON envelope 逐字);方法面与 R50/54/55 形态学一致。**NOTE[d] 契约
+冲突**: inferred 期望"with shard counts"但 ShardKeyDescription required 仅
+[key] 无 counts 字段——spec-derived wins(非空语义双重不可测:无 spec 字段
++集群禁用)。**PUT gate 在 ghost 集合上先于存在检查触发
+(gate-precedes-existence,G9 不对称 NOTE 不claim)**。**shard 族三连块
+(create R54/delete R55/list R56)全部闭环**。台账不变 131 链=71D/60N/0NME。
+next=R57=chunks[56]。
+
+[#166 | R57 收官 | 2026-09-09] R57 = chunks[56] chunk_snapshots+create(轻块,
+1 单元 behavioral_snapshot_create_001,EXPLICIT tier)。单 semantic agent 2
+脚本(semantic_snap_c_01/neg_02,全 B)。**defect-64 候选现身上账(本轮第 3 个
+真候选)**: **快照命名秒级时间戳+同秒创建碰撞**——同一集合同一秒内两次创建
+(并发或顺序快速)双双 200 返回**完全相同的 name**且 listing 条数少于 200 承诺
+数(第二份快照静默丢失;响应 name 与存储条目脱钩)。证据四柱: neg_02 leg E 并
+发(5/5 same_name replay)/c_01 leg C 顺序快速同秒(首轮跨秒运气性 PASS,重跑
+触发)/主进程 MODE A 顺序×3(3 响应 1 distinct 名 listed 2-3 条)/MODE B 并发
+×5(5/5)。filename=<coll>-<coll-uuid>-<ts到秒>.snapshot 命名方案无法表示一
+秒内两份快照。**Step 9 evidence-builder P0**(与 defect-63 并列)。**2 处脚本
+artifact 修复**: c_01 validator 硬编码 populated 集合前缀(空集合腿的正确
+name 被判格式错——前缀参数化);neg_02 wait=false 接受 **HTTP 202
+{"status":"accepted"}**(标准异步 ack 语义,openapi 只声明 200 未文档化
+202=SHAPE_LOG 表征非缺陷)。**executor 观察异常挂账: exit_code 文件写 0 而脚
+本 finish()=DEFECT_FOUND(exit map/pipe 失配)——日志 VERDICT 权威,executor
+检查清单加 exit 复核**。正面证据: SnapshotDescription {name,creation_time,
+size,checksum} 精确键集/byte-exact list-back/ISO 时间/sha256 宽 checksum/
+size 方向/ghost 404 JSON envelope/集合作用域/并发无 5xx。coverage 58/66
+=87.9%。台账 132 链=72D/60N/0NME(defect-64 候选入账待 9a novelty)。next=
+R58=chunks[57] chunk_snapshots+delete。
+
+[#167 | R58 收官 | 2026-09-09] R58 = chunks[57] chunk_snapshots+delete(轻
+块,1 单元 behavioral_snapshot_delete_001,inferred)。单 state agent 2 脚本
+(state_snd_del_01/coll_02,全 B)。**2/2 NO_DEFECT 首跑零 artifact,零候选连计
+#9**。coverage 59/66=89.4%。**正面证据**: delete 生命周期精确(create→DELETE
+200 result:true→listing []→再删 404 点名 snapshot;ghost name/ghost
+collection 404 逐字 JSON envelope);>1.1s 间隔创建名不同+独立可删性(幸存者
+完好);**defect-64 delete 侧交互干净**: tight-loop 碰撞 2/3 次触发,删除共享
+名一次即清零 listing(无残留无复活)——**损失发生在 create 时而非 delete 时
+**(defect-64 证据补充:碰撞窗口触发率 ~2/3)。台账不变 132 链=72D/60N/0NME。
+next=R59=chunks[58] chunk_snapshots+list(type_list_snapshots_001)。
+
+[#168 | R59 收官 | 2026-09-09] R59 = chunks[58] chunk_snapshots+list(轻块,1
+单元 type_list_snapshots_001,EXPLICIT+绑定 type_boundary)。单 boundary
+agent 2 脚本(boundary_snl_typeA_01 pathA 直生/sibl_02 pathB 兄弟面对照)。
+**2/2 NO_DEFECT 首跑零 artifact,零候选连计#10**。coverage 60/66=90.9%(破
+90%)。**正面证据**: schema-required 对(name 非空 .snapshot 串+size int>0
+bool 排除)在空/1/2 快照列表全 entry 成立;>1.1s 间隔名两两不同(R57 碰撞
+caveat 遵守);listing name 集合==创建集合;ghost 404 点名集合;可选字段
+(creation_time/checksum)实测在场——缺席亦 schema 合法仅记录。**兄弟面对照
+面**: shards list(对象包装,R56 双形态)vs snapshots list(数组)并排——跨面
+差异=文档化双形态非缺陷(G9);storage 面 GET /snapshots 单腿记录性;
+NOTE[e]: raw_knowledge 散文"map" vs openapi 数组冲突(spec-derived wins
+D3b)。台账不变 132 链=72D/60N/0NME。next=R60=chunks[59]
+chunk_snapshots+recover(snapshots 族末块)。
+
+[#170 | R60 收官 | 2026-09-09] R60 = chunks[59] chunk_snapshots+recover(轻
+块,1 单元 behavioral_snapshot_recover_001,inferred)。单 semantic agent 2 脚
+本(semantic_src_pos_01/err_02,全 B)。**2/2 NO_DEFECT 首跑零 artifact,零候
+选连计#11**。coverage 61/66=92.4%。**snapshots 族四连块(create R57/delete
+R58/list R59/recover R60)全部闭环**。**正面证据**: recover 替换发散状态精
+确(快照 3 点→快照后 upsert 2 点被回滚,count==3 byte-exact);幂等重恢复;
+priority 缺省 body 接受;缺文件 400 documented "Snapshot file ... does not
+exist";空 body 400;垃圾 location 记录;**CREATE-IF-ABSENT 语义钉死
+(ticket 31 证据)**: recover 从未创建的 ghost 集合→200 true 且集合从快照物
+化(点状态精确)——inferred "404 collection" 臂被 upsert 语义推翻(recover
+的用途就是恢复已删集合);契约修复项;probe 泄漏的 ghost 集合已清理+agent
+finally 强制 hygiene。**NOTE[d]: commit-matched openapi 本路由只声明 200,
+400/404 臂来自 api-reference crawl**。远程 http/s3 恢复 SKIPPED(无外部存储)。
+台账不变 132 链=72D/60N/0NME。next=R61=chunks[60]。
+
+[#171 | R61 收官 | 2026-09-09] R61 = chunks[60] chunk_snapshots+upload(轻
+块,2 单元均 EXPLICIT)。单 state agent 2 脚本(state_snu_loop_01/err_02,全 B,
+multipart 手搓)。**1N + 1 DEFECT——defect-65 候选上账(本轮第 4 真候选)**:
+**bad-archive multipart 上传→确定性 HTTP 500 "Service internal error"**
+(garbage tar 3/3 "Malformed tar archive, reached unknown entry";空 archive
+3/3 "failed to open file /qdrant/./storage/tmp/col-...-recovery-*/
+config.json"——**内部路径泄漏**)vs explicit tier 契约明确 "400 bad archive"
+臂从未触发;状态中性(种子点存活)+healthz 200 全程(错误分类缺陷非稳定性);
+取证 6/6 确定性。Step 9 evidence-builder P0(与 defect-63/64 并列)。**LOOP
+正面(explicit overwrite 主张端到端验证)**: 快照→二进制下载→C1 发散到 5 点→
+multipart 上传回 C1→count 精确回到 3 快照点 byte-exact(覆盖验证);
+ghost 上传→200 create-if-absent(ticket-31 一致)。错误面正面: 错字段名 400
+"Required field is missing: snapshot"(钉死 multipart 字段);无 CT 400 逐字。
+coverage 62/66=93.9%。台账 133 链=73D/60N/0NME。next=R62=chunks[61]
+chunk_telemetry。
+
+[#172 | R62 收官 | 2026-09-09] R62 = chunks[61] chunk_telemetry(轻块,2 单元
+range explicit 绑定+behavioral explicit)。单 boundary agent 2 脚本
+(boundary_tl_rngA_01 pathA/shpB_02 pathB)。**2/2 NO_DEFECT 首跑零 artifact,
+零候选连计#12**。coverage 63/66=95.5%?——63/66=95.5 错,=95.5 为 63/66 实为
+95.5%不对,63/66=95.45→95.5%。**正面证据**: details_level 阶梯(absent 默认
+200/0/1/3 200/**-1→4xx 拒绝=显式最小值在场验证,defect-59 家族正对照**/
+2**63→200 断言一致单边界"maximal is infinity"记录给 judge/2**64→4xx 超
+u64 wire/abc→4xx 错误文本不点名参数 Type2 质量记录);envelope 全部可解析;
+TelemetryData required 对(id 稳定 str 跨调用跨 verbosity byte-equal+
+collections dict)成立;create/drop 元变形反射记录(聚合默认视图合理省略名
+字,per_collection 默认 false)。只读面零 kill。台账不变 133 链=73D/60N/
+0NME。next=R63=chunks[62] chunk_vectors+delete。
+
+[#173 | R63 收官 | 2026-09-09] R63 = chunks[62] chunk_vectors+delete(轻块,2
+单元 inferred/空绑定)。单 semantic agent 2 脚本(semantic_vd_named_01/
+err_02,全 B)。**2/2 NO_DEFECT,零候选连计#13**。coverage 64/66=97.0%。首轮
+1 DEFECT(12 phantom anomalies)+1 SE→**3 波 4 处脚本修复全 artifact**: (a)
+anchor 用裸 int 键查 norm_id str 键的 recs→12 个"点消失"幻影(服务器侧取证:
+3 点全返回、删名消失/幸存名 bit-exact/payload 保留/count 稳定/re-add 合法
+——**服务器行为完全正确**;25-1 复发#2:normalize helper 存在但 lookup 处没
+用);(b) named fixture upsert 裸数组→400 "Not existing vector name error"
+(R45 pin 复发);(c) named 读取把 per-name dict 与裸数组 fixture 比较→
+baseline/M7 恒 False(包装感知 alpha 提取)。**教训㉕-7 扩展: 25-8 named 集
+合读取=per-name dict,与裸数组 fixture 的任何直接比较恒 False——读取层与
+fixture 层形态必须显式对齐**。路由事实: POST points/vectors/delete body
+{points:[ids]|filter, vector:[names]};契约 registry points required vs
+openapi 仅 vector required(filter 替代)——NOTE[C]。默认向量删除三形态
+spec-silent 表征。台账不变 132 链=72D/60N/0NME。next=R64=chunks[63]
+chunk_vectors+named+create。
+
+[#174 | R64 收官 | 2026-09-09] R64 = chunks[63] chunk_vectors+named+create
+(轻块,2 单元 explicit/空绑定)。单 semantic agent 2 脚本
+(semantic_svc_create_01/err_02,全 B)。**2/2 NO_DEFECT,零候选连计#14**。
+coverage 65/66=98.5%。**P0 裁决=duplicate create 数据保留**: 同配置重复 PUT
+/vectors/alpha→200 **幂等 no-op**(全部 alpha vectors bit-exact+count 稳定+
+immediate/1.5s settled 双读)——explicit 契约"400 name conflict"臂从不触发=
+契约文本发现(无数据损坏故非运行时缺陷,NOTE[char] idempotent 表征);**冲突
+size 8 重复→4xx 契约臂兑现**。创建正面: beta create 200+collections+get
+暴露 config.params.vectors.beta;**sparse 暴露双路径钉死**: sparse create
+暴露于 config.params.**sparse_vectors** 而非 dense 的 vectors 路径(取证
+spr modifier idf 正确暴露+sparse upsert 可用)——err_02 首轮在 dense 路径
+找 spr 判 read-your-write broken=artifact,双路径查找修复。invalid params
+(size 0/-1/缺 distance/未知 distance)全 4xx 逐字;ghost 404;裸 config 400
+untagged-enum。**教训㉕-8 姊妹: sparse/dense 暴露路径不同,exposure 检查必
+须双路径**。台账不变 132 链=72D/60N/0NME。next=R65=chunks[64]
+chunk_vectors+named+delete。
+
+[#175 | R65 收官 | 2026-09-09] R65 = chunks[64] chunk_vectors+named+delete
+(轻块,2 单元 explicit/空绑定)。单 semantic agent 2 脚本
+(semantic_svd_del_01/neg_02,全 B)。**2/2 NO_DEFECT 首跑零 artifact,零候选连
+计#15**。coverage 66/66=100%(covered_chunks 满标,chunks_done 60/66 计数口
+径=weight 块)。**正面证据**: DELETE beta→200+collections+get 不再列出
+(explicit 'no longer lists it' 臂兑现)+beta 数据不可读+alpha bit-exact+
+count 稳定;**post-delete upsert 命名已删 beta→400(Vector name not found
+族,与 R64 config-absent 拒绝一致)=explicit 'subsequent upserts naming it
+fail' 臂兑现**;ghost collection delete 404;不存在名 delete 200=幂等 no-op
+NOTE[char](R64 先例,附带数据保全 P0 反向验证 bit-exact);全向量删空后的
+vector 表征记录;re-create wrapper+re-upsert 生命周期闭环。NOTE[C-openapi]:
+openapi 本路由只声明 200(404 臂为 behavioral 单元文本)。台账不变 132 链
+=72D/60N/0NME。next=R66=chunks[65] chunk_vectors+update(最终块)。
+
+[#176 | R66 收官 | 2026-09-09] R66 = chunks[65] chunk_vectors+update(最终
+块,2 单元 explicit+inferred/空绑定)。单 semantic agent 2 脚本
+(semantic_vu_part_01 首跑绿/err_02 **重生成后绿**)。**2/2 NO_DEFECT,零候选
+连计#16——MINE COMPLETE 66/66=100%**。R66 战报: part_01 部分性核心精确
+(alpha-only 更新 {1,2}:alpha 新值/beta 全场 bit-exact 含未触碰
+id3/payload 保留/count 3;beta-only;多名齐更);wrong-dim alpha→400 逐字
+维度报错(inferred 维度不匹配臂兑现);ghost collection 404;**不存在 id
+777→404 "No point with id 777 found"(set 式更新语义,无 upsert-create)**
+;空 points/空 vector 面记录;u64max id update 200+精确 int round-trip
+(主进程 replay:batch [1,2,u64max]→count 3/retrieve u64max 逐字/update
+200);2**64→4xx。**事故与恢复**: err_02 read_point 2 元组解包 bug→主进程
+正则批量修复引发嵌套匹配连环误伤(2/3/4 元组混杂+缩进丢失,文件膨胀至
+57 万行不可逆损坏)→**原 semantic agent 全文件重生成**(578 行,11/11 调用
+点 3 元组审计,COMPILE_OK)→执行 NO_DEFECT。**教训㉕-9: 批量正则改码禁止
+——元数/形态修复必须 agent 重写或单点精确替换,嵌套匹配会在同一文件上连
+环误伤不可逆**;u64max "mangled" NOTE 是变量槽错位(idu_ok 实拿 payload),
+服务器侧 u64max 全程精确(retrieve 逐字返回)。**RUN3 MINE 全量收官**:
+66/66 块,100% 覆盖;累计 136 链=74D/62N/0NME;真候选三件 defect-63
+(mixed batch 非确定部分应用)/defect-64(快照秒级命名碰撞静默丢失)/
+defect-65(bad-archive 500+内部路径泄漏)全部 Step 9 evidence-builder P0;
+defect-61 家族实例(spB_03)在册;契约修复四件套 ticket 28/29/30/31。历史
+残留集合约 24 个挂账 Step 9c 容器清理。**Step 9(novelty gate→issue
+drafts→MRE→报告)待发令**。
+
+[#177 | Step 9 终局收官 | 2026-09-09] **run3 全程闭环（mine 66/66 → Step 9
+DONE）**。**9a novelty_gate（61 链）**: 19 NOVEL 背书/11 COVERED_BY_PR/26
+UNVERIFIED/5 BY_DESIGN——**其中 2 条 BY_DESIGN 为 param 词面误配,主进程人工
+复核 override**（spB_03 param"points"误中"HNSW pagination duplicate points"
+模式;snu_err_02 param"snapshot"误中"Snapshot creation timeout"模式——行为
+语义与所配模式完全不同域;auditor DEFECT 终判维持;**gate 局限入账:
+by_design 匹配是 param 名词边界非语义**）。**9b 四链建成+chain-auditor 终
+判**: (1) boundary_up_spB_03=**DEFECT Type2,defect-61 家族实例不增编号**
+（同参数内 split 签名:indices 在 serde 层不点名/validator 层点名,同脚本
+内对照;serde_derive enum_untagged.rs:39+schema.rs:85 钉死）; (2)
+state_snu_err_02=**DEFECT Type2=新编号 defect-63**（bad-archive 上传 500+
+内部路径泄漏 vs explicit "400 bad archive" 臂;源码链钉死 tar_unpack.rs
+io::Error→blanket From→ServiceError=>500,而同文件 checksum/config 错误
+正确 bad_input 400）; (3) semantic_up_batch_02=NOT_DEFECT（灰区→**
+exploratory_candidate 保留**:8/8 幸存集非确定性真实但维护者认知锚"batch
+非原子+幂等重试纪律"吸收伤害,无契约条款违反;源码机制:update.rs
+AHashMap 随机键序+逐点 ? 中止）; (4) semantic_snap_c_neg_02=NOT_DEFECT
+（A=REFUTED 机械:两个 200 均带合法 SnapshotDescription;**同秒静默丢失现象
+真实且源码钉死**——snapshots.rs:60-64 秒级命名+snapshots_manager.rs:300
+TempPath::persist 静默覆盖——**但在所有契约条款域外,manual-review 旗标
+保留**）。**台账 115→119=70D/49N/0NME;注册表 gap-free 至 defect-63**。
+**9a.6 defect-63 三件套**: defect-63.md+issue.md（curl 可复现+逐字 body+
+file:line 根因+修复方向）+**MRE 实测 DEFECT_REPRODUCED（4/4 诊断命中:
+500-not-4xx/路径泄漏/400 对照/状态中性）**。**9c 清理**: 24 残留集合全清
+（0 剩余）healthz 200。**最终数字**: mine 66/66=100%;119 链 70D/49N/0NME;
+defect 注册 1-63+家族实例;契约修复四件套 ticket 28/29/30/31 挂 phase-3;
+探索性候选 2 件（batch 非确定性/快照同秒碰撞——现象+源码钉死,契约域外,
+论文可作 discussion 素材）。容器保留运行。
+
+[#178 | v1.19.1 存活实测 | 2026-09-09] 用户问"哪些可在最新版上报告"→**三层
+验证完成（v1.19.0 本地源码 + v1.19.1 GitHub 直查 + v1.19.1 容器实测）**。
+**3/4 候选在 v1.19.1 实测存活**: (1) **defect-63 MRE DEFECT_REPRODUCED**
+（garbage tar→500 "Malformed tar archive"/空 archive→500+内部路径泄漏/对
+照腿仍 400/状态中性——唯一变化是对照腿措辞 missing "snapshot" 引号形）;
+(2) **spB_03 DEFECT_FOUND**（10x untagged enum VectorStruct 不点名 400 vs
+2x 点名 422——split 签名 byte 级原样）; (3) **defect-64 双触发面
+DEFECT_FOUND×2**（并发 x2 同名丢一份+顺序快速 x2 同名丢一份;命名格式
+v1.19.1 snapshots.rs 直查未变）。**v1.19.x 文档面**: snapshots/upload 新
+声明 4XX+202（defect-65 判断面更清晰——ErrorResponse 规范形态被路径泄漏破
+坏）; "400 bad archive" 文字臂从渲染页消失（旧 slug 404,新页
+recover-from-uploaded-snapshot 只渲染 200——**判断重锚定到
+"5xx-for-client-error+ErrorResponse 形态违反+路径披露"**）; SparseVector
+约束文字逐字保留（spB_03 锚点完整迁移）; SnapshotDescription 无唯一性承诺
+（defect-64 保持行为缺陷框架）。**上游已修（不可再报）**: defect-59
+（build.rs range(min=1)+openapi minimum:1）/defect-60（aggregator.rs
+groups.min 钳制）/ticket 29（v1.19.0 quota_api.rs 实现+openapi 声明——
+ticket 29 闭环）/ticket 28（1.19 文档 pairs 数组声明正确,误导文字消失=
+moot）。探索性 batch 非确定性机制存活（upsert.rs AHashMap 仍在）。工件:
+defects/v1.19.1-survival-report.md + .sourcedeps/qdrant/
+v1.19.1_openapi_extract.json + output_1191_*.log×4 + v1.19.1 容器
+（6335,保留）。**教训㉕-10: 版本迁移验证三层法——本地旧版源码全查→GitHub
+新版源文件点验→新容器实测,三层齐才可判"可报告"**。

@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "create_index 对不存在集合正确返回 code=100 collection not found，HTTP 200+body code 为该 REST v2 统一约定，同字段单索引限制为 Milvus 既有设计（quick-create 已自动建索引），无契约违反"}
+{"defect_id": "milvus_016", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "搜索接口接受 ef=-1、ef=0、nprobe=0 等越数值下界参数并返回 code=0 成功，属 v3 协议明示可判 CONFIRMED 的数值下界验证缺失类"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "文档明示 aliases/list 的 collectionName 为可选（不指定则返回全部别名），空串按未指定处理且库中无别名时返回空列表，行为与契约一致"}
+{"defect_id": "milvus_018", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "两轮均复现 drop 成功后 rename 误报 duplicated new collection name 而同名 create 紧接成功，rename 与 create 对同一名称可用性自相矛盾（drop 残留墓碑未被 rename 的名称存在性检查过滤，meta_table.go rename 检查不做 dropping 态过滤）"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "维护者在 issue 50193 明确表态 get_stats rowCount 仅统计已 flush 数据属 by design（原话 This is by design），query 返回全量与 rowCount=0 并存是既有设计行为"}
+{"defect_id": "milvus_020", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "删除成功(deleteCount=5)后立即搜索仍返回全部已删 id 且两轮复现，虽 REST 默认 Bounded 一致性可容忍窗口内旧读，但同轮插入却立即可见，删除可见性滞后无法在包内确证归因，按 v3 协议转人工"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "REST v2 create 处理器建集合（含 quick-create 自动建索引）后无条件发起 LoadCollection（handler_v2.go createCollection 末尾 loadReq），从未加载的前提不成立，搜索成功与实现一致"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "维护者在 issue 50192 明确表态同名同参数重复建集合返回成功属 by design（原话 Milvus returns success if creating a collection with the same name and parameters），幂等创建非缺陷"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内 drop 契约行仅要求 collectionName 非空字符串，未承诺对不存在集合报错，幂等删除对不存在集合返回成功不违反任何文档约束"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内无 entities+delete 契约行，且实际删除结果 deleteCount=1 与唯一存在的 id=1 相符，filter 与 ids 并存未产生任何可观察的错误行为"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内无 entities+insert 契约行，接受 101 条批量插入未违反任何已记载约束，亦不属数值下界/枚举闭集可判类"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "包内契约仅要求 collectionName 为字符串，Milvus 命名规则允许下划线开头，创建成功不违反任何契约行"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "顶层 shardsNum 非 REST v2 create 消费字段（源码仅读 params[shardsNum]），维护者 50351 原话明确该字段被静默忽略属 by design，0/-1/65535 均未生效而非被接受"}
+{"defect_id": "milvus_028", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "metricType=空串被归一化为文档默认 COSINE（源码 len==0 时置 DefaultMetricType），顶层 consistencyLevel 非 API 绑定字段（仅 params.consistencyLevel 参与校验且非法值会被拒绝），两者均未真正接受枚举外值，dimension=32769 则被正确拒绝"}

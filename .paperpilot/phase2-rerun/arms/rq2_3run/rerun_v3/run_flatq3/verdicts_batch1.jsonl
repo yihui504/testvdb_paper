@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.3, "rationale": "原始HTTP完全未捕获且2.3.0文档已下线，观察与契约两头均无法核查，无法确证也无法排除，按协议不得用FALSE_POSITIVE兜底。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "IVF检索参数nprobe=0被接受并正常返回code=0带结果，违反nprobe数值下界（应≥1），且同端点对limit=0会报错形成不一致，属非法值静默放行的参数校验缺陷。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "HNSW检索参数ef=0被接受并正常返回code=0带结果，违反ef数值下界（应≥1），与limit=0被明确拒绝的行为不一致，属非法值静默放行。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "IN是集合语义而非区间语义，age in [10,5]即匹配{10,5}命中1条删除1条完全正确，空集合删0条同样正确，不存在任何文档与实现的冲突。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "insert接受'123field'等非法命名的动态字段写入成功，但同一名字在query的outputFields即报parse output field name failed，写入侧与读取侧命名校验口径不一致，产生可写不可读的僵尸数据。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "text_field并非声明的VARCHAR字段，simple建集模式下它是动态字段，源码注释明示未声明字段对'put redundant pair to dynamicValues'以JSON存储，int原样读回是动态字段应有语义，probe前提命名有误。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空查询向量被服务端明确拒绝且日志错误信息准确（dimension: 8, but length of []float: 0），对非法输入返回清晰报错是正确行为，不构成缺陷。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "文档显式断言COSINE距离值域为[-1,1]，实测100次同向量检索中11次距离>1.0（最大1.000000238418579），违反explicit级契约断言。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "nprobe=0被接受返回code=0正常结果，而同端点limit=0被明确拒绝（topk应在[1,16384]），数值下界类非法参数静默放行，校验不对称坐实缺陷。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "create接受越界TTL=-100返回成功且属性被静默丢弃（describe中无该属性），而alter_properties对同一值明确报expect [-1, 3155760000]，create侧缺范围校验且非法值静默吞掉。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "filter是可选参数，null/省略/空串三种写法一致地按无过滤返回全部行，语义自洽且无文档承诺被违反，不构成缺陷。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "文档明确dbName非required且无任何非空或拒绝语义声明，空串回落default库正常返回列表不违反任何文档承诺，控制项报错仅因集合不存在与本观察无关。"}
+{"defect_id": "milvus_013", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "2.6.x文档对Request-Timeout无任何类型或取值约束（仅出现于curl示例），但源码timeout_middleware.go对非法头值ParseInt失败后静默回退默认超时，用户超时控制被无警示丢弃存疑，无法确证违反文档承诺也无法排除。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "dim=32768恰在实现与文档声明的合法范围2~32768的上界内应予接受，32769被正确拒绝，边界行为完全正确，不构成缺陷。"}

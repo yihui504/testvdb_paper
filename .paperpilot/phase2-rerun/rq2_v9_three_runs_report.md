@@ -109,7 +109,7 @@ resolution/by-design 标签），且与 GT 无 held-out 隔离——0.909/0.889 
 
 - FN 4：violates 误标族（001/003/004/024）——判定层无米之炊（链 violates=false 且无
   独立机械信号，契约缺断言）
-- FP 5：011（GT 内部矛盾）、014/028（B 规则2 同族错判，与 029 同族异 GT——已拍板
+- FP 5：011（认知锚点提取遗漏（维护者 MrPresent-Han 2026-06-23 复查否定修复：missing filter≡empty filter 为兼容性设计、revert filter-required PR，2026-08-03 stale 关闭——GT=FP 正确，2026-08-24 复核修正））、014/028（B 规则2 同族错判，与 029 同族异 GT——已拍板
   接受现状）、qdrant_009/weaviate_009（无 by-design 明示标签，保守边界）
 
 ## 产物

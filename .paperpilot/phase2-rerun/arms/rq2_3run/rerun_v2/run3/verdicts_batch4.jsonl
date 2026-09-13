@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内 expected 仅含集合加载状态与空集合搜索约束,未对 groupSize/strictGroupSize 语义作任何断言,observed 为 200 正常返回15条分组结果,无契约条款可据以判定违反"}
+{"defect_id": "qdrant_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "无 wait 参数的 upsert 返回 acknowledged 属文档化异步语义,points_count=0 说明该非法向量未被写入;带 wait=true 的同一请求已正确返回 400 维度错误,包内无『异步路径必须同步校验维度』的断言"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内约束仅规定 hnsw_ef『仅 exact=false 时适用』,未规定其最小取值或 0 值应拒绝;请求未设 exact=true,200 返回与契约不矛盾"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "score_threshold=2.0 排除相似度1.0 的点、-0.5 保留该点,行为与阈值语义一致;包内无任何 score_threshold 相关断言可被违反"}
+{"defect_id": "qdrant_004", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "带 wait=true 的同一维度错误请求已 400 拒绝,无 wait 的 200 仅为异步排队回执且 points_count=0 未落库;包内 expected 无同步校验维度类断言"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "shard_number=0 返回 422『must be 1 or larger』、-1 返回 400 u32 格式错误,均被 4XX 拒绝,符合 shard_number>=1 契约,无静默接受"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "color=red 过滤仅返回 ids=[10,2,8,4],与写入的4个 red payload 完全一致,missing_payload_ids 为空,过滤行为符合契约"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "含非法维度点的 batch 被整体 400 拒绝且 count 保持 3(ids 1,2,3),无部分写入,与包内『batch 操作原子执行』断言一致"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "scroll 200 返回全部 25 条 cat_a 且 next_page_offset=null(无剩余页),与 behavioral_009 的『points 列表+分页字段』描述一致"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内无『vectors 不得为空』的断言;集合创建后状态 green、可查询,对无向量名 upsert 返回 400 明确错误,未见契约条款被违反"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "缺 vectors 字段被接受为默认空命名向量,包内无强制 vectors 字段的断言;后续 upsert 以 400『Not existing vector name』明确拒绝,无静默接受被拒值"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "filter.should=null 被当作无条件返回全部点,包内无 filter 空值必须 4XX 的校验断言,200 返回与 behavioral_011 一致"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "must_not 对象形式正确排除 tag=x 的点、仅返回 id=2,过滤语义与契约一致,无违反证据"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "query=null 返回全部3个点(按 id 升序)且 200 成功,与包内 behavioral_011『200 with result points』一致,包内无 query 非空强制断言"}

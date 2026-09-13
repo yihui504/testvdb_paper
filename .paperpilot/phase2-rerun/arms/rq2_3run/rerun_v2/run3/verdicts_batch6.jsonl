@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内契约仅要求 scroll 的 limit 默认10且可调；观察中 limit=5 正常返回5条、limit=100 被 strict_mode(max_query_limit=10) 明确拒绝并提示降至10以下，属配置正常生效，未显示违反该契约，证据不足。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约未含 dynamicEfMin/dynamicEfMax 的取值或顺序断言，服务器 200 原样存储传入值，无法据包内契约支持违反判断，保守判否。"}
+{"defect_id": "weaviate_002", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约无 flatSearchCutoff 的取值范围断言，200 接受并原样回显 -100，未与任何列明断言冲突，证据不足。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约 weaviate_range_schema_replication_001 断言 replicationConfig.factor>=1，而请求 factor=-1 被 200 静默接受（无报错、落库被替换为默认1），范围约束未被执行。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内契约无 ef 约束，且服务器默认配置本身即 ef=-1（其余用例默认响应可见），接受 ef=-1 与系统默认一致，不构成契约违反。"}
+{"defect_id": "weaviate_005", "verdict": "FALSE_POSITIVE", "confidence": 0.5, "rationale": "包内契约无 shardingConfig.desiredCount 的范围/类型断言；desiredCount=0→422 与 -1→200 的不对称虽可疑，但缺契约依据，按保守原则判否。"}
+{"defect_id": "weaviate_006", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "契约（evidence_tier=explicit）限定 properties[].tokenization 必须为枚举值，传空字符串被 200 接受并静默回退为默认 word，属静默接受非法值。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内契约无 distance 字段取值断言；distance=null 被解析为默认 cosine（null 视为未设置走默认），无包内依据判定违反。"}
+{"defect_id": "weaviate_008", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "契约 weaviate_type_tenants_create_001 限定 activityStatus 必须为 ACTIVE 或 INACTIVE，传空字符串被 200 接受（响应无 activityStatus），非法枚举未被拒绝。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约均为幂等/整批拒绝/删除限额类断言，未涵盖空向量校验；批内两项均返回 SUCCESS，未与所列断言冲突，证据不足。"}
+{"defect_id": "weaviate_010", "verdict": "FALSE_POSITIVE", "confidence": 0.5, "rationale": "包内契约未声明空 match/where 的期望状态码；500 响应携带明确的 empty match.where clause 校验信息，缺契约依据判定违反，保守判否。"}

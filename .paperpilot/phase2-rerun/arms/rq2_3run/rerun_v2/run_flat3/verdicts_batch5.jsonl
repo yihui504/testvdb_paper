@@ -1,0 +1,14 @@
+{"defect_id": "qdrant_014", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "文档对 /cluster/recover 未声明任何 standalone 模式前提或错误行为，源码中该 500 是 cluster_api.rs 里有意的 StorageError::service_error 设计选择且报错信息明确，无文档承诺被违背"}
+{"defect_id": "qdrant_015", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "shard_number=2147483647 被接受后服务整体挂起（连 GET / 都超时），单请求可致全服务无响应，属真实的资源分配无上界导致的崩溃/DoS 缺陷"}
+{"defect_id": "qdrant_016", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "lookup_from 仅在按 id 引取向量时才访问目标集合，纯向量查询无引用可取（fetch_vectors 中 ids 为空即跳过且不校验集合名），返回的正是当前集合的普通查询结果，文档亦未承诺对不存在的 lookup 集合报错"}
+{"defect_id": "qdrant_017", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "三页 search 结果 0-24 无重复无缺失且分数严格递减，scroll 返回 next_page_offset=10，全部行为符合排序与分页契约，日志中不存在任何异常"}
+{"defect_id": "qdrant_018", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "契约原文明确 exact=false 为近似计数且'索引期间可能不可靠'，24 vs 40 的偏差落在文档明示容忍的近似语义内"}
+{"defect_id": "qdrant_019", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "三个规模下 exact 与 approx 的偏差同属文档明示的近似计数（索引期间不可靠）语义，无精确性承诺被违背"}
+{"defect_id": "qdrant_020", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "组合过滤下 approx 与 exact 的偏差（130/99、73/62）仍在 exact=false 被文档定义为'更快但不保证精确'的近似语义范围内"}
+{"defect_id": "qdrant_021", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "geo 半径下 approx 偏差虽高达 +535%，但文档对 exact=false 仅承诺近似且明示索引期间不可靠，未违背任何精确性契约"}
+{"defect_id": "qdrant_022", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "match_any 多值下 approx 误差随值数量增大（至 -33%），仍属文档明示的近似计数语义，非契约违背"}
+{"defect_id": "qdrant_023", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "从快照恢复后 count=3 恰等于快照时刻的 3 个点（恢复后新增的 id=50 被正确回滚），完全符合'recover 恢复快照状态'的契约断言"}
+{"defect_id": "qdrant_024", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "同一 lookup 集合维度不匹配下 positive 路径返回 400 而 negative 路径静默 200，且 id=2 得分 1.367 超出欧氏 best_score 相似度上界（≤1）并反转了与正例向量完全相同的点的排序，属维度校验不一致导致的静默错误结果"}
+{"defect_id": "qdrant_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "逐字 GET 证据显示 PATCH metadata={} 后 metadata 仍为 {owner,env}（200 空更新被忽略），材料未引用任何关于 metadata PATCH 语义的契约条目，且脚本打印的 'null' 与 HTTP 证据相矛盾不足以定案"}
+{"defect_id": "qdrant_026", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "全部点向量相同得分为完全并列时组内成员顺序与组间顺序不固定，文档未承诺确定性排序，各组命中成员集合始终稳定，无契约违背"}
+{"defect_id": "qdrant_027", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "源码中 KeywordIndexParams 首字段为 type 且其余字段 serde(default)，[\"keyword\"] 可经 serde 结构体按序列反序列化为合法 keyword 索引；响应为 acknowledged 异步语义，紧接读取 payload_schema 为空与'索引创建是异步的'契约一致，未证实索引未生效"}

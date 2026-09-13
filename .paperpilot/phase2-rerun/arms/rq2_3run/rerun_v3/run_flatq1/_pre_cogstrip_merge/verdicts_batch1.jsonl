@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "原始执行未捕获任何 HTTP 交互且受测 2.3.0 版本文档已下线，既无观察证据也无契约依据可指认缺陷。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "nprobe=0（探测 0 个聚类）被服务端接受并正常返回 3 条结果，属数值参数下界违例，且与检索语义自相矛盾。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "HNSW ef=0（候选列表长度为 0）被接受并返回结果，同属数值下界违例：0 候选却返回 topk。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "age in [10,5] 是集合成员语义（匹配 10 或 5），age=10 命中一条实体、deleteCount=1 恰为正确结果，降序书写不构成缺陷。"}
+{"defect_id": "milvus_005", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "插入端接受 '123field'/'@field' 等非法标识符动态字段名，读取端 outputFields 却以 parse output field name failed 拒绝，写入-校验不对称致数据按原名不可取回；但未验证 $meta[\"...\"] 显式形式能否取回，无法确证。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "该字段是动态字段而非声明的 VARCHAR，源码 verifyDynamicFieldData 注释明示 \"milvus only support json map\"（internal/proxy/util.go:2342），动态值即 JSON map，同一 key 跨行混合类型是 schemaless 设计的固有语义，无文档承诺类型统一。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "空查询向量被服务端以 code=1801 维度校验错误明确拒绝，拒绝非法输入正是预期行为，不构成文档-实现偏离。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约行 milvus_metric_cosine_range_001 明确 COSINE 距离值域 [-1,1]，实测 100 次同向量检索中 11 次 distance=1.0000002 越界，数值上界违例（规则允许无契约也判 CONFIRMED）。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "nprobe=0 被接受并返回全部结果，而同案日志证明服务端对 limit=0 会报 topk 下界错误——同为下界参数 nprobe 却漏检，属参数校验不对称的下界违例。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "create 接受 collection.ttl.seconds=-100 且 describe 中属性静默消失，而 alter_properties 对同一值报 \"expect [-1, 3155760000], got -100\"——同一参数两路径校验不一致，越界值在 create 路径被放行。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "filter 为 null/省略/空串时 query 一致返回全部行，包内无任何契约行声明 filter 必填或空值应拒绝，可选过滤参数缺省返回全集是合理语义。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "文档将 dbName 描述为非必填的\"The name of an existing database\"，无非空或拒绝语义声明；空串回落到 default 库列表与省略该参数行为一致，无可核查契约被违反。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约核查明确 Request-Timeout 头仅出现在 curl 示例、无任何类型/取值约束定义，且非法值与合法值的响应完全相同（均被忽略），无文档-实现偏差可指认。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "dim=32768 接受、32769 以 \"float vector dimension should be in range 2 ~ 32768\" 拒绝，边界行为与自述值域完全吻合，是正确校验而非缺陷。"}

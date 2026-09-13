@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "观察到的 scroll 行为与契约完全一致：strict 模式 max_query_limit=10 正确拒绝 limit=100(400 并给出帮助信息)且放行 limit=5，group 查询仅平分 tie 顺序随机、契约未承诺任何排序。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "dynamicEfMin=500>dynamicEfMax=10 虽反直觉，但两值各自均为合法整数、冻结契约未含 min<=max 约束，查询时按 clamp 逻辑仍可确定运行，属配置健壮性瑕疵而非文档-实现缺陷。"}
+{"defect_id": "weaviate_002", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "flatSearchCutoff 被文档语义定义为毫秒级截断时间，源码 validate() 对其无任何校验，-100 被原样接受并持久化，等价于静默关闭 flat 搜索，属真实的非法值非法成功。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "replicationConfig.factor=-1 违反冻结契约 factor>=1 却返回 200，源码仅将 Factor<1 静默改写为 1 而对正值低于最小值则报错，显式非法负值被无提示吞掉属校验缺陷。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "ef=-1 是 weaviate 文档化默认哨兵值(表示启用动态 ef)，默认类同样返回 ef:-1，接受该值完全符合契约。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "desiredCount=0 被 422 拒绝说明系统意图有效范围为正，而 desiredCount=-1 却 200 成功(ParseConfig 无正数校验)，负值静默入库会得到零物理 shard 的集合，属真实参数校验缺陷。"}
+{"defect_id": "weaviate_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "源码 setPropertyDefaultTokenization 在校验前把空串 tokenization 显式默认为 word，与省略该字段行为完全一致，落库值为合法枚举，属有意的缺省处理而非缺陷。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "distance=null 按 JSON 惯例等价于未提供，服务端回退默认 cosine，落库值满足枚举约束，属良性 unset 语义。"}
+{"defect_id": "weaviate_008", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "源码 validateActivityStatuses 在创建租户时显式 allowEmpty=true 放行空 activityStatus，等价于不指定而取默认状态，属有意设计而非缺陷。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "vectorizer=none 时 vector 为可选，空数组等价于无向量，单条对照与批量行为一致且批量响应逐条 SUCCESS 不违反冻结契约(idempotency/429 整批拒绝)任何条目。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "openapi 规范对 DELETE /batch/objects 明确承诺 400(Malformed request)/422(Invalid data)，而缺失 where/match 的纯客户端输入校验错误('validate: empty match...')却以 500 返回，错误状态码与文档直接相悖。"}

@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "scroll limit=100 被 400 拒绝是 strict_mode max_query_limit 的既定设计行为(源码 verification/mod.rs check_limit_opt 主动校验)，limit=5 正常返回，未违反 limit default=10 (adjustable) 契约。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "openapi 规范未对 vectorIndexConfig.dynamicEfMin/Max 定义任何约束，实现也无 min<=max 校验，查询时 autoEfFromK 会钳制 ef 结果仍正确，属未文档化参数的宽松校验而非文档-实现矛盾。"}
+{"defect_id": "weaviate_002", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "flatSearchCutoff 在规范中无范围约束，-100 被存储但查询时 len(allowList)<-100 恒为假只会走常规 knn 路径，无错误结果或契约违背。"}
+{"defect_id": "weaviate_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "源码 usecases/schema/class.go 显式将 factor<1 静默重置为默认值 1，终态满足文档'default: 1'且无文档承诺拒绝非法值，属刻意的宽容归一化而非缺陷。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "ef=-1 本就是 weaviate 文档与所有默认响应中的 ef 缺省哨兵值，显式传 -1 与不传等价，无任何契约被违反。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "shardingConfig.desiredCount 无任何范围校验(ParseConfig.validate 只查 key/strategy/function)，-1 被接受返回 200 且 initPhysical 负数循环产生零物理分片的退化集合，而 desiredCount=0 反被 422 拒绝，非对称缺失校验构成真实缺陷。"}
+{"defect_id": "weaviate_006", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "tokenization='' 被当作未设置并落为枚举内合法默认值 word，终态满足 tokenization 枚举契约，空串归默认是常规宽容语义而非文档矛盾。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "distance=null 等价于未提供该可选字段，落为文档默认值 cosine，属标准 JSON 缺省语义，不构成缺陷。"}
+{"defect_id": "weaviate_008", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "源码 validateActivityStatuses 对 create 路径显式 allowEmpty 放行空 activityStatus，且 entities/schema ActivityStatus('') 归一化为 HOT(即文档声明的创建默认 ACTIVE)，租户功能正常，非缺陷。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空 vector 在单条 POST 与批量 POST 中行为一致地被接受并标记 SUCCESS，规范与所列契约(幂等/429 整批拒绝)均未承诺拒绝空 vector，无文档-实现矛盾。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "缺失 match.where/match.class 属用户输入校验错误，却经 usecases/objects/batch_delete.go 中三处裸 errors.New 未包 ErrInvalidUserInput 而落到 handler 的 500 分支，违背 openapi 对非法输入承诺的 422 'Invalid data provided' 并滥用 500 服务端错误语义。"}

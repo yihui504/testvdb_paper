@@ -1,0 +1,14 @@
+{"defect_id": "qdrant_014", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "standalone 是默认正常模式,文档已收录该端点却对其确定性触发的模式前置条件返回 500 'Service internal error',将预期情形误归类为服务端内部错误(源码 service_error 直接落到 5xx),错误类别语义错误。"}
+{"defect_id": "qdrant_015", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "shard_number=2147483647 满足文档约束(>=1)却导致创建请求与后续健康检查全部超时、服务不可用,而对照 rep=0 有 422 校验,说明对合法但资源爆炸的输入完全缺失上界校验,构成真实可用性缺陷。"}
+{"defect_id": "qdrant_016", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "契约对 lookup_from 引用不存在集合未定义任何存在性校验或错误行为,且该纯向量查询形态下 lookup_from 本可不参与求值,静默 200 不违反任何文档承诺。"}
+{"defect_id": "qdrant_017", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "observed 字段为空且日志显示 offset 分页三页结果互不重叠、分数降序、scroll 正常返回 next_page_offset,行为完全符合契约,无任何异常可判。"}
+{"defect_id": "qdrant_018", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约原文明确 exact=false 为近似计数且 'might be unreliable during the indexing process',本案强制 indexing_threshold=1 并在索引创建后立即计数,恰好落在文档明示的不可靠窗口内。"}
+{"defect_id": "qdrant_019", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "同族近似计数偏差(-35%)发生在索引创建 acknowledged 之后立即计数,契约仅承诺 exact=false 使用 segment statistics 近似,未承诺误差上界,索引期内不可靠已被文档豁免。"}
+{"defect_id": "qdrant_020", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "exact=false 按文档即 segment statistics 近似,must_not/跨字段过滤下 130→99 的偏差属近似路径特性,不违反任何已写入契约的断言。"}
+{"defect_id": "qdrant_021", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "geo_radius 近似计数 +535% 偏差虽大,但契约对 exact=false 仅承诺 segment statistics 近似且无任何精度/误差界文档承诺,不构成文档-实现契约违背。"}
+{"defect_id": "qdrant_022", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "match_any 多值下近似计数 -11%~-33% 仍属 exact=false 近似路径的统计误差,契约未承诺近似计数与精确计数一致,无文档承诺被违反。"}
+{"defect_id": "qdrant_023", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "快照取自 3 点状态,恢复后 exact count=3 正是快照保存的状态,恢复语义完整兑现,观察与契约'recover restores collection state from snapshot'一致。"}
+{"defect_id": "qdrant_024", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "同一 lookup_from 引用维度不匹配向量,positive 报 400 而 negative 静默 200 并被无声丢弃,源码 merge_positive_and_negative_avg 用 zip 截断无维度校验,验证不对称且静默吞约束,属真实缺陷。"}
+{"defect_id": "qdrant_025", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约未定义 collection metadata 的更新语义,PATCH 空 object 按部分更新语义为 no-op(200)合理,GET 显示 metadata 原值保留,'null'为探针解析路径错误而非服务端行为缺陷。"}
+{"defect_id": "qdrant_026", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "无 query 向量时全部点并列 score=1.0,各组成员集合恒定仅并列顺序与组顺序变化,契约对并列得分排序确定性无任何承诺,不构成缺陷。"}
+{"defect_id": "qdrant_027", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约明示 index 创建为异步(acknowledged),ack 后约毫秒级 GET 看到 payload_schema={} 与 update_queue length=1 一致,尚在异步窗口内,无证据表明索引被永久丢弃。"}

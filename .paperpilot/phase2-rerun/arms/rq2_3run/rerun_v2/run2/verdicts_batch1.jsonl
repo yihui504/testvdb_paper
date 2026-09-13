@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "FALSE_POSITIVE", "confidence": 0.3, "rationale": "包内无任何观察记录（raw 为空、日志未捕获 HTTP 交互）且契约依据因 2.3 版本文档下线无法核查，双侧证据均缺，无法支持违反契约的判断。"}
+{"defect_id": "milvus_002", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "observed 仅显示 nprobe=0 搜索返回 code=0，而 expected 明确无 entities+search 的可核查约束行；且 RESP3 显示 IVF 索引创建失败（同一字段多索引不支持），所测索引并未建立，无违反依据。"}
+{"defect_id": "milvus_003", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "observed 仅显示 ef=0 搜索返回 code=0，expected 明确无 entities+search 的可核查约束行；且 RESP3 显示 HNSW 索引创建失败，被测索引未建立，包内无可判定违反的契约断言。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "filter 'age in [10, 5]' 按集合成员语义只删除存在的 age=10（deleteCount=1），行为自洽，且 expected 无 entities+delete 约束行，无违反依据。"}
+{"defect_id": "milvus_005", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "插入 '123field' 成功而查询 outputFields 解析失败（code=65535）虽存疑，但 expected 无 entities+insert 约束行，且对照查询因 collection not loaded（code=101）无法反证合法字段可读，证据不足以判定违反契约。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "动态字段按 JSON 语义存储文本与整数异质类型属预期能力，读回与写入一致（code=0），observed 未显示任何契约违背，expected 亦无约束行。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空向量被系统明确拒绝（code=1801 invalid parameter），属正确拒绝而非静默接受；错误信息措辞可疑但 expected 无 entities+search 约束行，不足以判定违反契约。"}
+{"defect_id": "milvus_008", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "同向量 COSINE 距离最大值 1.000000238 仅超文档区间 [-1,1] 上界约 2 个 float32 ULP（日志中实测距离为 1），属归一化舍入精度现象而非语义违约，保守判 FALSE_POSITIVE。"}
+{"defect_id": "milvus_009", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约行仅约束 limit（正数且 limit+offset<16384）：observed 中 limit=0 被正确拒绝（code=65535）恰好符合契约，nprobe=0 无任何包内约束依据。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "同一系统对 -100 TTL 在 alter_properties 返回 code=1100 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter'，而 create 携带同值静默成功 code=0 且 describe 显示该属性未被持久化，属静默接受系统自身已声明越界的被拒值。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "filter 缺省/null/空串均返回全部行属常见默认语义，observed 未见状态或数据违背，且 expected 无 entities+query 约束行。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "expected 仅描述 dbName 为已存在数据库名、未声明非空或拒绝语义；observed 中 dbName='' 仍成功列出集合，与该描述不冲突，无违反依据。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "已核查的 2.6.x 文档中 Request-Timeout 仅出现于 curl 示例、无类型或取值约束条目，observed 接受 '3.5'/'abc' 均返回 code=0，无任何可违反的契约条目。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "控制组错误信息自证系统声明维度范围 2~32768，dim=32768 恰为上界被接受、32769 被正确拒绝，observed 实际符合边界语义，无契约违反。"}

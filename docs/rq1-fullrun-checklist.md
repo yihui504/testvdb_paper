@@ -5,6 +5,8 @@
 >
 > **⚠️ 2026-08-23 全表作废（用户终裁 a）**：15 版本全部无效，下表 #1-#15 旧状态/旧数字一律作废（留证 `results/rq1-fullrun/VOIDED-ALL-15.md`，产物在各版本 `voided/` 子目录）。重跑须按 11 条红线（`docs/experiment-discipline.md` R1-R11）+ 重跑口径（VOIDED-ALL-15.md §重跑口径）执行，旧数字不得引用。
 > 派发词逐字存档：`docs/experiment-ops-prompts-8910.txt`（作废轮 45 条）；重跑新派发词按 R8 三无（无源码路径/无方向点名/无跨轮经验）+ R10 逐字落盘。
+>
+> **⚠️ 2026-08-24 材料口径变更（重跑起生效）**：intel 树已 GT-free 化（leave-one-out，见 `docs/experiment-discipline.md` §八；备份 `results/preserved-intel-sources/full-intel-pre-gtfree/`）；cache 作业区不再放 gt.json（GT_HINT 恒空串、gt.json 物理隔离），B7 与收官 reach 判定改读论文仓 `.paperpilot/phase3/gt/` 权威源。run2（qdrant v1.18.0 新纪律轮）为旧口径产物，其 GT 命中不进 GT-free 口径论文数字。
 
 ## 执行顺序（每版本一个 checkbox，跑完勾选 + 填数字）
 

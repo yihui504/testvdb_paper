@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "limit=0 与 64 维向量均被服务端正确拒绝（65535 topk 越界、1801 维度不匹配），行为与契约'limit 为正整数、data 为匹配维度浮点数组'一致，属正确校验而非缺陷。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "材料包明确注明 users+create 无任何可核查契约行，观察到的只是服务端 6<=密码长度<=72 的长度校验，不存在被违反的文档约束。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "无契约行；请求携带 schema 外字段 color 且集合未开动态 schema，1804 属正确拒绝（仅错误提示语不精确，不构成文档-实现缺陷）。"}
+{"defect_id": "milvus_032", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码证实 v2.6.19 create 仅消费 params.consistencyLevel 并在该处严格枚举校验，顶层字段属未被消费入参被静默忽略后取默认 Bounded，与包内维护者 issue 50351 的 by-design 表态一致。"}
+{"defect_id": "milvus_033", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "快速建 collection 路径完全不消费 vectorFieldType（向量类型硬编码 FloatVector），且包内无该字段的可核查契约行，属未消费字段的静默忽略。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "源码证实 REST upsert 与 insert 共用 checkAndSetData，JSON 字段值按去引号字符串 []byte(\"invalid_json\") 原样写入，成功落库为非法 JSON 文档，违反 upsert 文档'data 须匹配 collection schema'的明文约束，而 gRPC 路径对同值正确报 Invalid JSON string。"}
+{"defect_id": "milvus_035", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约行仅覆盖 collection 存在与实体可检索性，无标量类型约束行；字符串 \"123\" 被值保真转为 123、非数值串被拒，无可观察的文档违背。"}
+{"defect_id": "milvus_036", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "v3.0.0 SearchReqV2 根本没有 groupParams 字段，探针参数未被绑定即发起的是普通搜索；且源码仅在 groupSize>0 时透传、<=0 静默省略，包内亦无 groupSize 校验的契约行。"}
+{"defect_id": "milvus_037", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约行不含 insert 标量类型约束，三种标量错配均为值保真的静默转换且无可观察违背（回查失败仅因集合未 load 的环境原因）。"}
+{"defect_id": "milvus_038", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "groupParams.groupByField 未被 v3.0.0 绑定（契约字段名为顶层 groupingField），分组从未生效，观察到的是普通 top-5 搜索，故不存在 group-by-vector 被接受而违反文档承诺的事实。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "Upsert.md 明文要求 entity 数据匹配 collection schema（id 声明为 Int64），REST 却静默接受字符串 \"100\" 并成功 upsert（gRPC 同输入报 id field should be int64），文档约束与实现的宽松强转相悖。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "REST insert 裸字符串进 JSON 字段返回成功，REST 查询可读但 gRPC get 因非法 JSON（unexpected character）不可读，直接违反'插入实体应可检索'，源码证实 checkAndSetData 将去引号字符串原样写入导致非法 JSON 文档。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "upsert 文档明文要求数据匹配 collection schema，但 string→DOUBLE、'true'→BOOL、int 1→BOOL、'42'→INT16 全部被静默接受并报成功，文档 schema 匹配承诺与实现行为相悖。"}
+{"defect_id": "milvus_042", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约行（collection 存在、实体可检索）均满足——搜索以 distance=1 精确取回同一向量，字符串编码向量被值保真解析，包内无向量字段类型约束行可被违反。"}

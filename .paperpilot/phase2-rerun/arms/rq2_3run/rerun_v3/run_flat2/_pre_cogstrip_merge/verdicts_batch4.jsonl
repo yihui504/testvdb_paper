@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "strictGroupSize=true且groupSize=2时每组返回3条(15条恰为普通top-15降序排列),违反'每组严格返回groupSize条'的文档语义(源码DataGen.h注释'if true, return exactly group_size results per group'同义确认),REST与gRPC一致复现。"}
+{"defect_id": "qdrant_001", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一非法空向量在wait=true时400拒绝、无wait时200 acknowledged且点静默丢失(points_count=0),异步路径未按'非法参数应4XX'契约校验,造成静默数据丢失。"}
+{"defect_id": "qdrant_002", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "search参数hnsw_ef=0被静默接受并字面生效(search.rs:34-36直接取用,无任何下界校验),属beam类计数参数接受0的数值下界违规。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "score_threshold=2.0返回空集、-0.5返回得分1.0的点,完全符合'最低分阈值过滤'的文档语义,文档未承诺拒绝域外阈值,200+空结果是正确的过滤行为。"}
+{"defect_id": "qdrant_004", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "维度错误的向量无wait时返回200 acknowledged且未落盘(count保持0),wait=true时同输入400,同一非法输入两路行为不一致且异步路径静默丢弃,违反参数校验契约。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "shard_number=0返回422'must be 1 or larger'、-1返回400'expected u32',越界值均被正确拒绝,shard_number>=1契约成立。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "filter color=red精确返回且仅返回4条红色点,无payload点未被误纳,过滤语义与文档完全一致。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "batch中单个非法维度点使整批返回400且count前后均为3、无部分应用,恰好满足'batch操作原子执行'契约。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "scroll按过滤条件返回全部25条匹配点且next_page_offset=null,limit=100未截断任何结果,分页契约行为正确。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "vectors:{}空map是已发布schema允许的形态(CreateCollection.vectors无minProperties约束),源码对无向量集合有显式处理分支(config.rs:370 'Vectors are not configured in this collection'),后续写入被400拒绝属预期防护而非契约违反。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "vectors字段经serde(default)在发布schema中为可缺省(collection_meta_ops.rs:112)且可经update collection后续增配向量,建空集后写入被400拒绝属源码显式预期的处理路径。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "'should':null由MaybeOneOrMany适配器显式支持(utils.rs:105-109的.unit(|| Ok(None))分支),其JsonSchema发布含None形态,源码注释明言该helper设计意图,属文档化的有意设计。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "must_not传单对象由MaybeOneOrMany的.map(|x| vec![x])路径显式支持,源码注释原文'allows deserializing both single and an array of values'且经schemars发布进公开schema,文档-实现一致。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "源码文档字符串明文'Query to perform. If missing without prefetches, returns points ordered by their IDs'(schema.rs:573),query:null按ID序返回score=1.0正是该文档化设计行为。"}

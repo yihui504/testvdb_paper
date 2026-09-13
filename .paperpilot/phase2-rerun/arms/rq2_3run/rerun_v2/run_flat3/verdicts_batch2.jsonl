@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "日志仅显示对不存在集合建索引被正确拒绝(code=100 collection not found)，材料包中无任何 indexes+create 可核查契约行，且摘要所称SDK多索引报错在日志中不存在，无承诺被违背。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约行只约束 data/annsField/limit，未给出 ef/nprobe 的文档化取值范围，且日志中 HNSW/IVF 索引每次创建均失败(at most one distinct index)，搜索实际运行在无索引暴力路径上，无法证明文档化约束被违反。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "文档称 collectionName 不指定时返回全部别名，而探测中别名创建本身失败(错用 alias 键)导致系统内零别名，空串过滤与列全部两种语义下结果均为空数组，无可观察的契约违背。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "日志实况是 rename 因目标名仍被异步 drop 占用而报 duplicated new collection name 错误(属正确拒绝)，与摘要宣称的 code=0 相矛盾，且契约行仅要求名称非空字符串，未被违背。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "get_stats 的 rowCount 只统计已 flush 数据而 query 可见全部行是维护者明确表态的 by-design 延迟行为，且材料包中无 get_stats 端点的任何可核查契约行。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "删除后立即搜索仍见已删 id 可由默认 Bounded 一致性的有界陈旧窗口解释(gracefulTime 内的时间戳回退)，材料包无 entities+search 的删除可见性契约行，不构成可证实的文档-实现矛盾。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "源码证实 REST v2 createCollection 末尾无条件调用 LoadCollection(handler_v2.go:2121-2126)，快速建集合自动加载，'从未加载'前提不成立，搜索成功属预期。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "同名同参数重复建集合幂等返回成功是维护者明确表态的 by-design 语义(50192)，文档契约行只承诺成功时返回 200/code=0，并未承诺重复名必须报错。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "对不存在集合执行 drop 幂等返回成功属常见删除语义，契约行仅约束 collectionName 为非空字符串，文档未承诺删除不存在集合必须报错。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "同时携带 filter 与 ids 被接受且 deleteCount=1 与仅存在的一行一致，行为自洽，材料包中无 entities+delete 的互斥参数契约行可被违背。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "材料包中无 entities+insert 的批大小上限契约行，101 行一次插入成功未违背任何文档化约束。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "源码命名校验明确允许首字符为下划线('the first character ... must be an underscore or letter', internal/proxy/util.go)，下划线开头集合名本就合法，契约行仅要求字符串类型。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "源码证实 REST v2 create 仅从嵌套 params 读取 shardsNum(handler_v2.go:2001)，顶层非法值被静默忽略并使用默认值，维护者已就该同型行为明确表态 by design(50351)，且材料包无 shardsNum 契约行。"}
+{"defect_id": "milvus_028", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "顶层 metricType=\"\"/consistencyLevel=\"None\" 属 REST v2 不消费的顶层字段被静默忽略而走默认值(维护者 50351 表态 by design)，参数对象内非法一致性级别会被拒绝(handler_v2.go:2009-2016)，且 dimension=32769 被正确拒绝，未构成实质契约违背。"}

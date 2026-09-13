@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "create_index 对不存在集合明确返回 code=100 collection not found，属正确拒绝而非静默接受；包内行为断言「400 on invalid index type」未被触发，没有契约断言被违反。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "契约包对 entities+search 只约束 data/limit/维度匹配及已加载有索引状态，未对 searchParams 的 ef、nprobe 设任何断言；三次搜索均返回正常结果，证据不足以判定违约。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内明示契约中无 aliases+list 的约束条目，API 模板仅称 200 with list of aliases；空 collectionName 返回 code=0 与 data=[] 与该声明不矛盾，无契约依据支持违约判定。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "维护者注记（issue 50192）明示 rename(dst) 与 create(dst) 同名竞争按幂等容忍属 by design；日志中 create 成功、契约状态约束未被证明违反，证据不足。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "维护者注记（issue 50193）明确 get_stats 的 rowCount 只反映已 flush 数据、插入未 flush 时 rowCount=0 属 by design，与 query 仍返回全量 5 行并存的现象一致。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约未对删除后检索的可见性作任何断言，delete 成功返回 deleteCount=5，且搜索的已加载/有索引状态约束未被违反，证据不足以支持违反契约的判断。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "快速创建（仅 dimension）的集合上 search 返回正常结果（distance=1、命中 id=1），无证据表明集合实际处于未加载态；包内不存在未显式 load 必须报错的断言，证据不足。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "契约状态约束明确相同 schema 重复创建同名集合为幂等 no-op 返回 200，维护者注记（50192）同向；两次相同 create 均返回 code=0，完全符合契约。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "契约行为断言明确 dropping a non-existent collection is treated as idempotent success (200, empty data)，观察到的 code=0 与空 data 与之一致。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内 delete 契约仅约束 filter 表达式有效性、删除不可恢复与非法 filter 返回 400，未禁止 filter 与 ids 同时提供；deleteCount=1 与 filter id>0 语义一致，无断言被违反。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "本案 entities+insert 契约明确 REST insert 无固定行数上限、能装入请求的任意行数均以 HTTP 200 接受；101 条插入返回 code=0 与该契约一致（补充行的 max 100 不替代上方契约依据）。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约只要求 collectionName 为字符串并约束 dimension/shardsNum 等取值范围，未见集合命名规则断言；下划线开头名称创建返回 code=0，没有被违反的文档声明。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "维护者注记（issue 50351）明示 top-level shardsNum 不被 REST v2 create 消费、静默忽略属 by design；观察到的 200 并非接受了非法 shardsNum 值，契约范围断言不适用于未消费字段，证据不足。"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "契约明确 metricType 必须属于 [L2,IP,COSINE]、consistencyLevel 必须属于 [Strong,Session,Bounded,Eventually]，但空 metricType 与 consistencyLevel=None 均被 code=0 静默接受（同案 dimension=32769 却被正确拒绝），构成非法枚举值静默接受。"}

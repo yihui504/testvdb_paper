@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "源码 request_v2.go 显示 REST v2 的分组参数是顶层字段 groupingField/groupSize/strictGroupSize，不存在 groupParams 嵌套对象，probe 的 groupParams/groupByField 被当作未知字段静默忽略，实际执行的是普通 limit=15 检索，返回 15 条为正确行为而非 strictGroupSize 违约。"}
+{"defect_id": "qdrant_001", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "空向量在 wait=true 时被正确 400 拒绝（维度错误），wait=false 仅确认入队属异步语义且无任何契约承诺异步路径同步校验，未发生崩溃，无文档违约。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "openapi.json 中 hnsw_ef 的 minimum 为 0，hnsw_ef=0 是合法输入，返回结果正确，不构成参数校验缺陷。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "score_threshold=2.0 过滤掉 score=1.0 的点、-0.5 时返回该点，行为完全符合阈值过滤语义，观察无任何违约。"}
+{"defect_id": "qdrant_004", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "3 维向量写入 4 维集合在同步路径得到正确的 400 维度错误，异步路径 acknowledged 后被丢弃属异步写语义，无类型强转发生，无契约违约。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "shard_number=0 被拒绝(422 must be 1 or larger)、-1 被 400 拒绝，恰好落实了契约中 shard_number>=1 的约束，属正确校验。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "filter color=red 精确返回且仅返回 4 条红色点并带 payload，过滤行为完全正确，无缺陷。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "批量 upsert 中含 3 维坏向量时整体 400 拒绝且 count 保持 3 不变，原子性契约被正确满足而非违反。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "scroll 按 cat_a 过滤返回恰好 25 条匹配点且 next_page_offset=null，行为正确，两次复现一致，无违约。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "查证 v1.18.2 openapi.json：CreateCollection 无 required 字段且 VectorsConfig anyOf 允许空 map，vectors:{} 创建 200 属规范允许的合法输入，后续 upsert 也正确返回 4XX，不构成文档-实现矛盾。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "与 009 同理，规范未将 vectors 设为必填（源码 serde default），缺省 vectors 创建成功符合 spec，upsert 失败是该合法但退化配置的后果且被正确 4XX 报告。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "should:null 被宽容处理为无过滤并返回全部点，结果与空 should 的语义一致，spec 未声明必填，属无害宽松解析而非行为缺陷。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "must_not 传单对象而非数组被接受，但应用语义与用户意图完全一致（排除 tag=x 仅剩 id2），结果正确，宽松类型解析未造成任何错误行为。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "spec 中 QueryRequest 无 required 字段，query:null 视为缺省并返回全部点（score 1.0）符合 query API 允许不带 query 仅按过滤取点的用法，无契约违约。"}

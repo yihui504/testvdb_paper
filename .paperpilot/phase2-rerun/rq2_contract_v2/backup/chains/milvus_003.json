@@ -1,0 +1,70 @@
+{
+  "defect_id": "milvus_003",
+  "endpoint": "entities+search",
+  "defect_type": "Type4",
+  "built_by": "evidence-builder",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_PARTIAL",
+      "link_reachability": "PASS",
+      "version_match": "PASS",
+      "content_consistency": "PARTIAL",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Source URL (https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md) reachable and documents search endpoint. REST API docs mention searchParams for HNSW but do not explicitly specify ef >= 1 constraint. The contract constraint (milvus_range_entities_search_002) only covers limit+offset, not HNSW ef parameter validation.",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "C",
+      "log_pattern": "c1: REQ5 POST /v2/vectordb/entities/search with searchParams.ef=0, collection with HNSW index -> RESP5 status=200, code=0, returned 3 results with distances [0,0,0] and ids [0,1,2] (HTTP success, no rejection of ef=0)",
+      "secondary_observations": [
+        "c2: REQ3 CreateIndex HNSW M=8 efConstruction=64 -> RESP3 status=200, code=65535, message='CreateIndex failed: creating multiple indexes on same field is not supported' (index already existed)"
+      ],
+      "claim_alignment": "aligned",
+      "http_semantics": {
+        "client_error_returned_as": "HTTP 2xx + 业务错误码 N/A",
+        "note": "ef=0 for HNSW index would be a client-side parameter error if validation existed. Instead returned HTTP 200 + code=0 (success). Similar to nprobe, ef=0 is handled internally with defaults rather than rejection."
+      },
+      "reproducibility": "单脚本",
+      "script_error": false,
+      "triggering_scripts": ["output_milvus_003.log"],
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "milvus_range_entities_search_002",
+      "assertion_text_quoted": "limit + offset must be < 16384",
+      "api_violates_assertion": false,
+      "note": "The applicable constraint (milvus_range_entities_search_002) only validates limit+offset, not searchParams like ef. No contract constraint explicitly asserts ef >= 1 for HNSW search.",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract:milvus_range_entities_search_002 (assertion: limit+offset < 16384)",
+        "doc:https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md (documents searchParams but no ef >= 1 requirement for HNSW)",
+        "script:POST /v2/vectordb/entities/search with payload.searchParams.ef=0",
+        "log:HTTP 200, code=0, data=[{distance:0,id:0},{distance:0,id:1},{distance:0,id:2}] - ef=0 accepted"
+      ],
+      "chain_broken_at": "doc",
+      "break_detail": "Chain breaks at doc layer. Contract constraint milvus_range_entities_search_002 only validates limit+offset, not searchParams like ef. REST API docs do not specify ef >= 1 requirement. The observed behavior (accepting ef=0) is not constrained by documented assertions.",
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": ["ef", "efConstruction", "HNSW", "searchParams", "generateSearchParams", "parameter validation"],
+      "files_examined": [
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10/internal/distributed/proxy/httpserver/handler_v2.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10/internal/distributed/proxy/httpserver/utils.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10/internal/util/indexparamcheck/constraints.go",
+        "C:/Users/11428/Desktop/vdb_src/milvus/v2.6.10/internal/util/indexparamcheck/hnsw_checker_test.go"
+      ],
+      "source_excerpt": "File: internal/distributed/proxy/httpserver/utils.go, lines 2076-2106:\n\nfunc generateSearchParams(reqSearchParams map[string]interface{}) ([]*commonpb.KeyValuePair, error) {\n    var searchParams []*commonpb.KeyValuePair\n    var params interface{}\n    if val, ok := reqSearchParams[Params]; ok {\n        params = val\n    }\n    // ... (no bounds checking on ef parameter)\n    for key, value := range reqSearchParams {\n        searchParams = append(searchParams, &commonpb.KeyValuePair{Key: key, Value: value})\n    }\n    return searchParams, nil\n}\n\nFile: internal/distributed/proxy/httpserver/handler_v2.go, line 1485:\nsearchParams, err := generateSearchParams(httpReq.SearchParams)\n// No ef-specific validation before passing to query layer\n\nFile: internal/util/indexparamcheck/constraints.go, lines 18-19:\nconst (\n\tHNSWMinEfConstruction = 1\n\tHNSWMaxEfConstruction = 2147483647\n)",
+      "call_chain_traced": "REST POST /entities/search -> handler_v2.go:1485 calls generateSearchParams() -> utils.go:2076 passes through all searchParams including ef -> downstream to query layer. No validation of ef range found in HTTP handler. ef=0 handling occurs in query node (similar pattern to nprobe). Source code defines HNSWMinEfConstruction = 1 but this validation only applies to index creation, not search parameters.",
+      "verification_outcome": "by_design_in_source",
+      "sufficiency_check": "grep_hit_pursued",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": ["env", "concurrency", "cache_delay"],
+      "surviving": "by_design"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.92, "rationale": "400是strict_mode自身max_query_limit=10的正确执行(自带help提示),limit=5控制组200正常,scroll契约'默认10可调'并未被违反。"}
+{"defect_id": "weaviate_001", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "dynamicEfMin=500>dynamicEfMax=10的自相矛盾配置被200接受并原样持久化,源码ParseAndValidateConfig无min/max交叉校验,autoEfFromK会钳制到max=10,配置的min被静默架空,属缺失参数校验的真实缺陷。"}
+{"defect_id": "weaviate_002", "verdict": "CONFIRMED", "confidence": 0.62, "rationale": "flatSearchCutoff=-100被原样持久化且无任何下界校验,运行时allowList.Len()<cutoff恒假导致flat search路径被静默永久禁用,非法域值改变查询行为。"}
+{"defect_id": "weaviate_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "factor=-1被静默归一化为默认值1(GET证实factor=1),最终持久化状态满足factor>=1契约,无非法状态产生。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "ef=-1本就是weaviate默认哨兵值(默认类响应同样显示ef:-1),显式传入与缺省等价,状态与文档默认完全一致。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "desiredCount=0被422拒绝而-1却200通过,校验不一致;源码initPhysical对-1循环不执行产生零物理分片,成功创建的类处于无效分片状态,属缺失校验缺陷。"}
+{"defect_id": "weaviate_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "tokenization=''被归一化为合法默认值'word'持久化,空串视为未提供的标准语义,最终状态是合法枚举值。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.88, "rationale": "distance=null等价未提供,按默认'cosine'落库,完全符合默认语义,无任何契约违背。"}
+{"defect_id": "weaviate_008", "verdict": "FALSE_POSITIVE", "confidence": 0.72, "rationale": "创建路径allowEmpty=true显式允许空activityStatus且经schema.ActivityStatus('')归一化为HOT落库,与合法租户一致,属默认归一而非非法状态。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空vector在单条与批量两条路径行为一致(均接受),vectorizer=none下无向量对象是weaviate合法状态,非批量特有缺陷。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "缺少match.where/match.class属请求输入校验失败,OpenAPI对该端点声明400/422却实际返回500,源码中校验错误未包装为ErrInvalidUserInput而映射成服务器错误,错误类别错分。"}

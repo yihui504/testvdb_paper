@@ -30,7 +30,7 @@ TP 39 / FP 6 / FN 5 / TN 21。recall +0.159、precision +0.087、fp_supp +0.111�
 ## 残余错误
 
 FN 5：violates 误标族 ×4（001/003/004/024）+ 029 CONFLICT 悬置 ×1
-FP 6：011（GT 内部矛盾——issue 是 accepted 但 GT 判 FP）+ qdrant_009/010/weaviate_009
+FP 6：011（认知锚点提取遗漏（维护者 MrPresent-Han 2026-06-23 复查否定修复：missing filter≡empty filter 为兼容性设计、revert filter-required PR，2026-08-03 stale 关闭——GT=FP 正确，2026-08-24 复核修正））+ qdrant_009/010/weaviate_009
 （无 by-design 明示标签，不合规不注入——保守边界）+ 027（auditor 判误配维持）
 
 ## v8 全景位置

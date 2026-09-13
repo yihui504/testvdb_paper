@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "observed 为空（探针未记录原始 HTTP，raw 为空且 log 未捕获），无任何行为证据支持违反契约的判断，按保守裁决记 FALSE_POSITIVE。"}
+{"defect_id": "milvus_002", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "nprobe=0 的 search 返回 200/code=0 且结果正常，包内契约仅约束 data 类型/维度与 limit>0（均已满足），未对 nprobe 取值设限，证据不足以判定违反契约。"}
+{"defect_id": "milvus_003", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "HNSW ef=0 的 search 返回 200/code=0 且结果正常，包内契约未对 ef 取值设置任何断言，仅凭该现象不足以判定违反契约。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "filter 'age in [10, 5]' 语法上仍是合法布尔表达式，返回 200 且 deleteCount=1 与集合成员语义一致，包内无 IN 列表顺序约束，未见契约违反。"}
+{"defect_id": "milvus_005", "verdict": "FALSE_POSITIVE", "confidence": 0.5, "rationale": "插入 '123field'/'@field' 成功与契约断言无直接冲突（契约未规定动态字段命名规则），且对照查询同样因 collection not loaded 失败，证据不足以判定违反契约。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "向动态字段写入整型 12345 后按原类型读回，包内契约未规定动态字段的类型强制规则，未见与 data 字段类型匹配 schema 断言的冲突。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.5, "rationale": "空向量请求已返回错误（code=1801，报文含 dimension: 8, but length of []float: 0），并非静默成功，包内亦无针对该错误通道的更强断言，证据不足。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "COSINE 相同向量检索返回 distance≈1（最大 1.0000002），与包内补充契约 distance = 1 - cosine_similarity、相同向量 distance == 0 直接矛盾。"}
+{"defect_id": "milvus_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "nprobe=0 被接受而包内契约未对 nprobe 取值设限（同案对照 limit=0 已被正确以 65535 拒绝），不构成对包内契约断言的违反。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "create 以 collection.ttl.seconds=-100 返回 200/code=0，而契约要求 ttlSeconds>=0 且同版本 alter_properties 对同值报 1100 越界，属静默接受被拒值。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "filter=null/缺省/空串均返回全部数据，包内契约未要求拒绝空 filter，空过滤返回全量亦符合文档语义，未见违反契约。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "collections/list 在 dbName 为空串时返回 200 与集合列表，包内不存在该端点的任何约束条目（相关行均为 drop/load/rename 的约束），无契约依据可违反。"}
+{"defect_id": "milvus_013", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "Request-Timeout 头取 '3.5' 与 'abc' 时均被静默接受（200/code=0），与包内补充契约 必须为整数、非整数应被拒绝 直接矛盾。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "dim=32768 创建成功、dim=32769 被 65535 拒绝，与契约 1 <= dimension <= 32768 完全一致，未观察到任何违反契约的行为。"}

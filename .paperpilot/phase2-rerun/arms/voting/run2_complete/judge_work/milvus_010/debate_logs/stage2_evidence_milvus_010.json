@@ -1,0 +1,8 @@
+{
+  "defect_id": "milvus_010",
+  "vote": "is_defect",
+  "grade": "A",
+  "score": 9,
+  "evidence_summary": "Replay log shows collections/create accepting properties collection.ttl.seconds=-100 with 200/code=0 in two consecutive rounds (REQ2/REQ6, deterministic 2/2) while the control alter_properties on the same collection rejects the identical value with code=1100 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter' (REQ4/REQ8), and describe after create shows the TTL property absent (silently dropped).",
+  "rationale": "Replay-capture semantic matching applies (VERDICT: UNKNOWN marker, no assertion lines): the observed HTTP behavior is a reproducible illegal-op-accepted (Type1) signal with a clear success/failure contrast — create returns success for an out-of-range TTL that the same server validates and rejects on the alter path, violating contract constraints milvus_range_collections_create_004 (ttlSeconds >= 0) and milvus_behavioral_collections_create_002 (400 on invalid parameters), so the high-evidence path (>=1 successful reproduction + clear contract violation -> is_defect) is met; maintainer by-design references do not cover this case (50351 concerns unconsumed top-level fields like shardsNum, not a properties-map TTL value the server elsewhere range-validates, and 50319 concerns load-state checks, not parameter validation), though the silently-dropped property is noted as mitigating the state impact."
+}

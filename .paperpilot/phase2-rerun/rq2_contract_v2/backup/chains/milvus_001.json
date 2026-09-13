@@ -1,0 +1,77 @@
+{
+  "defect_id": "milvus_001",
+  "endpoint": "entities+search",
+  "defect_type": "Type4",
+  "built_by": "evidence-builder",
+  "rework_applied": true,
+  "rework_note": "Auditor rejected previous chain due to PHENOMENON_MISMATCH - no raw HTTP/gRPC traces captured. Re-examination confirms execution evidence reconstruction is impossible with available logs.",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_VERIFIED",
+      "link_reachability": "PASS",
+      "version_match": "PASS",
+      "content_consistency": "PASS",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Documentation URL (https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md) reachable. Version 2.3.22 target loosely matches doc scope (2.6.x). Content explicitly states search requires loaded collection: 'Collection must be loaded; index must exist on annsField'. Endpoint precision verified via endpoint_registry.",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "D",
+      "log_pattern": "pymilvus gRPC client produces no raw HTTP request/response logs - log contains only '[no raw HTTP captured]'. No observable gRPC error traces, no Code 0 error captured, no timestamp evidence proving 'immediately after Collection.load() returns success'. Execution evidence reconstruction impossible with current test setup.",
+      "secondary_observations": [],
+      "claim_alignment": "drifted",
+      "http_semantics": {
+        "client_error_returned_as": "N/A",
+        "note": "No HTTP/gRPC traces available. pymilvus gRPC execution produces no observable request/response logs. Cannot verify if search request returned Code 0 error, nor establish temporal relationship to load() completion."
+      },
+      "reproducibility": "环境问题",
+      "script_error": false,
+      "triggering_scripts": ["milvus_001"],
+      "evidence_gap": "Test executed with pymilvus gRPC client which produces no HTTP/gRPC wire traces. To capture required execution evidence, test would need: (1) REST v2 endpoint with HTTP logging, or (2) gRPC interceptor/wire trace capture, or (3) SDK-level instrumentation. Current execution logs contain insufficient information to verify claimed phenomenon.",
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "milvus_state_entities_search_001",
+      "assertion_text_quoted": "collection is loaded AND index exists on annsField",
+      "api_violates_assertion": false,
+      "note": "Constraint claims search requires loaded collection, but without execution evidence (Code 0 error timing relative to load completion), cannot determine if constraint is violated. Source code suggests load() is asynchronous - load() RPC returns success before collection is fully searchable. Any Code 0 errors during transition window would be by-design async behavior, not a true constraint violation.",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract:milvus_state_entities_search_001 (collection is loaded AND index exists on annsField)",
+        "doc:https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Search.md (reachable, content verified)",
+        "script:milvus_001 (pymilvus gRPC - no raw HTTP captured)",
+        "log:[no raw HTTP captured] (execution evidence unavailable - gRPC produces no HTTP trace)"
+      ],
+      "chain_broken_at": "log",
+      "break_detail": "PHENOMENON_MISMATCH: Chain broken at log layer - pymilvus gRPC client produces no raw HTTP request/response logs. Claimed phenomenon 'Search fails with Code 0 immediately after Collection.load() returns success' cannot be verified against observable evidence. No Code 0 error captured in logs, no timestamp evidence establishing 'immediately after load success', no state violation traces. Without execution evidence, cannot establish whether this constitutes a true Type4_StateViolation or is merely an artifact of asynchronous state transition. Evidence reconstruction requires: HTTP logging for REST v2, or gRPC interceptor/wire trace capture for gRPC, or SDK-level instrumentation. Current test setup insufficient to validate the claimed defect.",
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": [
+        "collection.*loaded.*state|LoadStateLoaded|getLoadState",
+        "checkCollectionLoaded|collectionLoadState",
+        "search.*loaded|validateSearchLoaded",
+        "LoadCollectionJob.*async|load.*transition"
+      ],
+      "files_examined": [
+        "internal/querycoordv2/job/job_load.go",
+        "internal/querycoordv2/meta/collection_manager.go",
+        "internal/querycoordv2/services.go",
+        "internal/proxy/task_search.go",
+        "internal/querynodev2/services.go"
+      ],
+      "source_excerpt": "File: internal/querycoordv2/job/job_load.go, Lines 42-50\n\ntype LoadCollectionJob struct {\n\t*BaseJob\n\treq  *querypb.LoadCollectionRequest\n\tundo *UndoList\n\n\tdist               *meta.DistributionManager\n\tmeta               *meta.Meta\n\tbroker             meta.Broker\n\tcluster            session.Cluster\n}\n\n// LoadCollectionJob manages the asynchronous load process including segment distribution and query node assignment.\n\nLoadCollectionJob orchestrates collection loading -> distributes segments to query nodes -> updates collection load state in meta. Search requests via proxy check collection load state before execution. Load state transition from Loading→Loaded is asynchronous; load() RPC may return success before all segments are fully loaded and searchable on query nodes.",
+      "call_chain_traced": "LoadCollectionJob orchestrates collection loading -> distributes segments to query nodes -> updates collection load state in meta. Search requests via proxy check collection load state before execution. Load state transition from Loading→Loaded is asynchronous; load() RPC may return success before all segments are fully loaded and searchable on query nodes.",
+      "verification_outcome": "by_design_in_source",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": ["env", "concurrency"],
+      "surviving": "asynchronous_state_transition",
+      "note": "Without execution evidence, cannot definitively characterize the phenomenon. Source code analysis reveals load() is asynchronous - load() RPC returns success when load job is initiated, but segments are still being distributed to query nodes. Search arriving during transition window may experience temporary unavailability. If Code 0 errors occur during this window, they would be by-design async behavior, not a Type4_StateViolation. However, without observable execution traces (HTTP/gRPC logs, error codes, timestamps), this explanation remains hypothetical and cannot be empirically verified."
+    }
+  }
+}

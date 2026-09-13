@@ -1,0 +1,28 @@
+> For clean Markdown of any page, append .md to the page URL.
+> For a complete documentation index, see https://api.qdrant.tech/llms.txt.
+> For AI client integration (Claude Code, Cursor, etc.), connect to the MCP server at https://api.qdrant.tech/_mcp/server.
+
+Qdrant is a [vector database](https://qdrant.tech/documentation/overview/) and a [semantic search](https://qdrant.tech/documentation/overview/vector-search/) engine. You can use its REST API to develop a production-ready service to store, search, and manage vectors with an additional payload.
+
+## How does Qdrant work?
+
+1. First, you should create a [collection](/api-reference/collections/create-collection) to store all your data.
+2. Then upsert data [points](/api-reference/points/upsert-points) and enrich them with a custom [payload](/api-reference/points/set-payload).
+3. With a full collection, run a [search](/api-reference/search/points) to find relevant results.
+4. Collections can be [snapshotted, downloaded and restored](/api-reference/snapshots/list-snapshots).
+5. When ready, setup a [distributed system](/api-reference/distributed/create-shard-key) for production.
+
+### Just getting started?
+
+Try the [development quickstart](https://qdrant.tech/documentation/quick-start/) guide.
+
+## Client Libraries
+
+| Client                                               | Repository                                            | Installation                                                                         |                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| ![python](https://qdrant.tech/docs/misc/python.webp) | **[Python](https://github.com/qdrant/qdrant-client)** | `pip install qdrant-client`                                                          |                                                                  |
+| ![typescript](https://qdrant.tech/docs/misc/ts.webp) | **[Typescript](https://github.com/qdrant/qdrant-js)** | `npm install @qdrant/js-client-rest`                                                 |                                                                  |
+| ![rust](https://qdrant.tech/docs/misc/rust.png)      | **[Rust](https://github.com/qdrant/rust-client)**     | `cargo add qdrant-client`                                                            |                                                                  |
+| ![golang](https://qdrant.tech/docs/misc/go.webp)     | **[Go](https://github.com/qdrant/go-client)**         | `go get github.com/qdrant/go-client`                                                 |                                                                  |
+| ![.net](https://qdrant.tech/docs/misc/dotnet.webp)   | **[.NET](https://github.com/qdrant/qdrant-dotnet)**   | `dotnet add package Qdrant.Client`                                                   |                                                                  |
+| ![java](https://qdrant.tech/docs/misc/java.webp)     | **[Java](https://github.com/qdrant/java-client)**     | [Available on Maven Central](https://central.sonatype.com/artifact/io.qdrant/client) | [Latest Release](https://github.com/qdrant/java-client/releases) |

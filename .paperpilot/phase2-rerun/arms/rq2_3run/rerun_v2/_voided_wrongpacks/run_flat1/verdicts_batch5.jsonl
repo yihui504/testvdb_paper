@@ -1,0 +1,14 @@
+{"defect_id": "qdrant_014", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约未规定 standalone 模式下 /cluster/recover 的预期行为,单机模式返回'运行于 standalone 模式'的报错合理,500 状态码归类瑕疵不构成文档-实现缺陷。"}
+{"defect_id": "qdrant_015", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "shard_number=2147483647 满足文档约束(>=1)却被接受后令整个服务(含 GET /健康检查)连续两轮超时无响应且集合未创建,合法入参导致全服务挂起属真实缺陷。"}
+{"defect_id": "qdrant_016", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "契约规定 lookup_from.collection 必须引用已存在集合(不存在应 400/404),实际返回 200 并静默忽略该参数(源码确认 lookup 集合无存在性校验、引用被惰性丢弃)。"}
+{"defect_id": "qdrant_017", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "日志中 search offset 分页与 scroll 的 next_page_offset 行为完全正确,未观察到任何契约违约。"}
+{"defect_id": "qdrant_018", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "文档明确 exact=false 使用 segment 统计的近似计数,24 vs 40 的偏差属文档化近似语义而非缺陷。"}
+{"defect_id": "qdrant_019", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "is_empty 近似计数偏差 35-40% 仍属 exact=false 文档化的 segment 统计近似行为。"}
+{"defect_id": "qdrant_020", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "复合/must_not 过滤下的近似计数偏差同属 exact=false 文档化近似语义,未违约。"}
+{"defect_id": "qdrant_021", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "geo_radius 近似计数偏差最大 +535% 属 exact=false 基于索引统计的文档化近似行为。"}
+{"defect_id": "qdrant_022", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "match_any 多值近似计数偏差同属 exact=false 的文档化近似语义,契约未承诺近似计数精度。"}
+{"defect_id": "qdrant_023", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "REST 契约明确 priority 语义仅在'集群中存在其他副本'时生效,standalone 单副本下恢复后 count=3 与文档一致,且符合快照恢复的本义。"}
+{"defect_id": "qdrant_024", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "同一跨集合 lookup 的 8 维向量:positive 被 400 拒绝而 negative 却 200 通过,源码证实 merge 用 zip 静默截断(返回分数与截断计算完全吻合),维度校验不一致且静默产出错误结果属真实缺陷。"}
+{"defect_id": "qdrant_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约未规定 PATCH metadata={} 的清空语义,逐字捕获的 GET 显示 metadata 原样保留(与'空补丁即无变更'一致),probe stdout 的 null 断言与原始响应相矛盾,不足以证实缺陷。"}
+{"defect_id": "qdrant_026", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "10 次请求各组员集合稳定({1,3,5}/{2,4,6})仅同分平局内排序随机,文档未承诺同分结果的确定性顺序。"}
+{"defect_id": "qdrant_027", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约明示索引创建为异步,wait=false 后立即 GET 的 payload_schema={} 无法证明索引未生效,且数组 field_schema 按源码应被反序列化拒绝,观察不构成文档-实现违约。"}

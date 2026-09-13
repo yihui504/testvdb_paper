@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "scroll limit=100 的 400 来自重放脚本自己刚配置的 strict_mode max_query_limit=10（错误信息即提示降到 10 以内），limit=5 对照 200，契约 'limit default=10 (adjustable)' 并未被违反。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "材料契约与源码(v1.37.4 hnsw validate)均未约束 dynamicEfMin<=dynamicEfMax，服务端原样存储用户自配矛盾参数，无任何已承诺行为被违背。"}
+{"defect_id": "weaviate_002", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约无 flatSearchCutoff 下限条款，源码无校验，负值仅影响 flat search 时间阈值的性能启发式，不构成文档-实现矛盾。"}
+{"defect_id": "weaviate_003", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码(class.go:513)刻意将 factor<1 回退为默认 1，最终状态满足契约 factor>=1，文档也未承诺对非法 factor 返回错误。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "ef=-1 正是 weaviate 自身的默认哨兵值（所有默认配置均显示 ef:-1，表示启用动态 ef），并非非法负值。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "desiredCount=0 被 422 拒绝而 -1 被 200 接受；源码确认创建链路对 desiredCount 无任何下限校验，负值使 initPhysical 循环空转产生服务端自己定义为 'invalid sharding state' 的空 physical 简并状态，属非法值被静默接受的校验缺口。"}
+{"defect_id": "weaviate_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "源码 setPropertyDefaultTokenization 刻意将空串视为未指定并默认为 word，再走枚举校验，生效值满足契约枚举约束。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "distance=null 等价于未提供该字段，服务端应用文档默认值 cosine 属正常缺省行为。"}
+{"defect_id": "weaviate_008", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码 AddTenants 显式以 allowEmpty=true 调用 validateActivityStatuses，空 activityStatus 是刻意支持的'取默认'输入，而非校验缺失。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "空数组仍是合法的 'array of floats'，vectorizer=none 下无向量对象本就可存，且单条 POST 控制组与批量行为一致（均 200），无已文档化约束被违背。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "该版本 OpenAPI 对 DELETE /batch/objects 明确文档化非法请求(如 invalid filter)返回 422，而缺失 where/class 的校验性错误（消息即 'validate: ...'）实际返回 500，把客户端输入错误归类为服务端错误，构成文档-实现契约违背。"}

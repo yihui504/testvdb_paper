@@ -1,0 +1,7 @@
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "补充契约明确 COSINE identical vectors distance==0，而 100 次 identical-vector search 中 11 次返回 distance>1.0（max 1.00000024），相似度恒为 1 时距离不可能为 1，超出文档规定的 [0,2] 语义且数学矛盾，属真实精度/行为缺陷"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "同一负 TTL 值 alter_properties 被拒（code 1100 范围校验 expect [-1,...]），create 却接受并成功建集合，同版本内部校验口径不一致且违反 ttlSeconds>=0 契约，非 by-design 条目可涵盖"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "Request-Timeout 契约条目挂在 entities+query 而非 collections+list，与候选 endpoint 无关按规则忽略；契约无 collections+list 条目，float/string 头被忽略、请求正常成功，无证据构成行为缺陷"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "dim=32768 成功、dim=32769 被正确拒绝（65535 提示范围 2~32768），边界行为符合契约 1<=dimension<=32768，日志中无任何违反契约的异常表现"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "日志显示 rename 到已存在目标名被正确拒绝（65535 duplicated new collection name），随后 create(dst) 成功，均符合契约『new name must not already exist』与唯一性要求；摘要所述双成功并发竞态未在原始日志中出现"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "insert 后未 flush 即 get_stats 得 rowCount=0 而 query 返回全部 5 行，与维护者对 issue 50193 的明确 by-design 表态完全一致（stats 仅反映 flushed 数据），非缺陷"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "完全相同的 duplicate create 返回 200 属幂等 no-op，契约 milvus_state_collections_create_001 与 behavioral_002 明文规定同 schema 重复创建非错误，且维护者表态同参数重创成功为 by design"}

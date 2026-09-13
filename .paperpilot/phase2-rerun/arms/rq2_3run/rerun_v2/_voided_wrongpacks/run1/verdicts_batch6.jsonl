@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "契约断言仅为 scroll limit default=10；observed 中 limit=5→200、limit=100→400 均发生在用户显式开启 strict_mode max_query_limit=10 的集合上，且 400 报错信息明确（Limit exceeded 100 > 10），无任何行为违背 limit 默认值断言。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "observed 确实静默存储了 dynamicEfMin=500 > dynamicEfMax=10，但包内契约对 dynamicEfMin/dynamicEfMax 无任何约束断言，缺乏「违反契约」的依据，保守判 FP。"}
+{"defect_id": "weaviate_002", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "observed 静默存储 flatSearchCutoff=-100，但包内契约对 flatSearchCutoff 无任何范围约束断言，证据不足以支持契约违反判断。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "契约断言 replicationConfig.factor >= 1（explicit，confidence 0.85），提交 factor=-1 违反该断言却返回 200 并静默回退默认 1，属静默接受被拒值。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约无任何关于 ef 的约束断言，且包内默认配置本身即显示 ef:-1（-1 为默认哨兵值），observed 与契约语义一致。"}
+{"defect_id": "weaviate_005", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "desiredCount=0→422 与 desiredCount=-1→200 的不对称虽可疑，但包内契约无任何 shardingConfig.desiredCount 约束断言（仅有 replicationConfig.factor>=1 等无关条目），缺乏契约依据。"}
+{"defect_id": "weaviate_006", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约断言 tokenization must be in {word, lowercase, ...}（explicit，confidence 0.95），提交空串 \"\" 不在枚举内却返回 200 并静默存为默认 word，属静默接受被拒枚举值。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "包内契约无任何关于 distance 的类型/枚举约束，distance:null 静默回退默认 cosine 属宽松解析，无契约断言可判违反。"}
+{"defect_id": "weaviate_008", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约断言 body[].activityStatus in {ACTIVE, INACTIVE}（explicit，confidence 0.95），activityStatus=\"\" 不在枚举内却返回 200 成功创建 tenant（响应省略 activityStatus），静默接受被拒值。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "契约仅要求 vector 为 float 数组，空数组 [] 仍满足该类型断言，且单条与 batch 行为一致（均 200/SUCCESS），包内无「拒绝空 vector」的断言可依据。"}
+{"defect_id": "weaviate_010", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "observed 仅是缺参时返回 500 校验错误，包内契约只有每请求删除上限 10000 的 range 约束，与 observed 行为无关，无被违反的文档/契约声明。"}

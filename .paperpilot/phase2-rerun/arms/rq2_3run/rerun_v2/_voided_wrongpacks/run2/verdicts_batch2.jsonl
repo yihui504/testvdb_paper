@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "系统对不存在集合的建索引请求返回 code=100 'collection not found'，是在执行而非违反 state 约束 'collection must exist'，SDK 侧报 65535 同为拒绝，无静默接受被拒值。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "包内 entities+search 契约条目仅覆盖 limit>0、维度匹配、limit+offset<16384 与 loaded/index 断言，无任何 ef>=1 或 nprobe>=1 的取值范围约束，证据不足以判定违反契约。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "包内明示'契约中无 endpoint=aliases+list 的约束条目'，空 collectionName 返回空列表与 200 无任何契约断言可对照，证据不足。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "执行日志显示 rename 因 'duplicated new collection name' 被 65535 拒绝（符合'新名不得已存在'的 state 约束），且包内维护者 issue 50192 原话明示并发 rename+create 双成功属 by-design 幂等语义。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "包内维护者 issue 50193 原话确认 rowCount 仅反映已 flush 数据、插入未 flush 时为 0 属 by design，契约条目仅泛称'返回行数与统计'，未承诺未 flush 数据计入。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内唯一相关断言 'Deleted entities cannot be recovered' 指删除不可逆，并无'删除后搜索必须立即不可见'的一致性断言，紧随删除的陈旧读结果不足以判定违反所列契约。"}
+{"defect_id": "milvus_021", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约明示 search 前提为 'collection is loaded AND index exists on annsField'（confidence 1.0），日志全程无 load 调用、无建索引，搜索却 code=0 并返回结果，直接违反该 state 断言。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "契约 state_collections_create_001 与 behavioral_002 明文规定同 schema 重复创建为幂等 no-op 返回 200，观察到的 code=0 与契约完全一致。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "契约 behavioral_collections_drop_001 明文规定'dropping a non-existent collection is treated as idempotent success (200, empty data)'，观察行为与契约一致。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "包内 22 条契约无'filter 与 ids 不得同时提供'的互斥断言，filter 'id > 0' 本身是合法布尔表达式，deleteCount=1 未违反任何所列断言。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "该版本主契约 range_entities_insert_001 明文'REST insert has no fixed row-count limit...inserts of any row count that fits the request payload are accepted'，101 条被接受符合契约（补充行 Max 100 按包内说明不替代主契约依据）。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "包内对 collectionName 仅有'必须是 string'的类型约束，不存在禁止下划线开头的命名模式断言，创建成功无契约可判违反。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "包内维护者 issue 50351 原话明示 REST v2 create 不消费顶层 shardsNum、静默忽略属 by design，故未发生对已生效参数的静默接受，'shardsNum>=1'约束未被子举证据证伪。"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "metricType=''（不在 [L2,IP,COSINE]）与 consistencyLevel='None'（不在四值枚举）均被 code=0 静默接受，直接违反两条 confidence=1.0 的 type 约束，且 dimension=32769 被拒证明该端点具备校验能力、属选择性不校验。"}

@@ -55,7 +55,7 @@ v8 0.886/0.867 → v9 全量 0.909/0.889 的构成：
 判定层一致判 DEFECT，但 GT 只有 029 认缺陷。两个解释方向：
 
 - **GT 异质性**：014/028 的原 issue resolution 可能将 REST v2 统一 2xx 包装判为 not-a-bug（设计决定），
-  029 的 issue 单独被认账——GT 层对同族现象态度不一（先例：milvus_011 GT 内部矛盾）
+  029 的 issue 单独被认账——GT 层对同族现象态度不一（注：milvus_011 曾误记 GT 内部矛盾，2026-08-24 复核修正为锚点提取遗漏）
 - **B 规则2 触发条件过宽**：规则2 的"契约声称应拒绝/服务器自证"条件无法区分
   "错误形态是缺陷"vs"统一 2xx 包装是设计"——若 REST v2 的 2xx+业务码是统一设计，
   该规则在 MILVUS REST v2 上系统性偏正
@@ -70,7 +70,7 @@ v8 0.886/0.867 → v9 全量 0.909/0.889 的构成：
 - **FN 4**：violates 误标族 ×4（001/003/004/024）——与 v7.x/v8 同族，判定层无米之炊
   （链 violates=false 且无独立机械信号，契约缺断言）
 - **FP 5**：
-  - milvus_011：GT 内部矛盾（issue accepted 却 GT 判 FP，v8 已注明）
+  - milvus_011：认知锚点提取遗漏（维护者 MrPresent-Han 2026-06-23 复查否定修复：missing filter≡empty filter 为兼容性设计、revert filter-required PR，2026-08-03 stale 关闭——GT=FP 正确，2026-08-24 复核修正）
   - milvus_014/028：B 规则2 同族错判（见上）
   - qdrant_009 / weaviate_009：无 by-design 明示标签（v8 保守边界维持）
 

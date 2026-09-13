@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "日志中 strictGroupSize=true 且 groupSize=2，但每组返回 3 条、结果恰为普通 top-15（REST 与 gRPC 一致），strict 逐组上限未被端到端执行，违背 strict_group_size 语义。"}
+{"defect_id": "qdrant_001", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一空向量请求 wait=true 返回 400 而 wait=false 返回 200 acknowledged，且 points_count 保持 0（维度校验在 segment 应用期才做、异步路径错误被吞），无效输入被静默丢弃构成参数校验不一致缺陷。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "v1.18.0 openapi 明确 hnsw_ef minimum=0，hnsw_ef=0 属合法输入且返回结果正确（score 1.0），行为与契约一致。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "score_threshold=2.0 过滤掉 score 1.0、-0.5 时返回，正是文档承诺的'仅返回 score 大于阈值的结果'语义，无缺陷。"}
+{"defect_id": "qdrant_004", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "同一 3 维向量 wait=true 得 400、wait=false 得 200 acknowledged 且点位从未落库（points_count=0），异步路径跳过维度校验并静默丢数据，属真实校验不一致缺陷。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "shard_number=0 被拒（422 must be 1 or larger）、-1 被拒（400 expected u32），与契约 shard_number>=1/u32 完全一致，校验行为正确。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "filter color=red 精确返回全部 4 条红色点且排除无 payload 点，过滤语义与文档一致。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "批次含 1 个 3 维坏点时整体 400 且 count 保持 3（两次复现），坏点未部分写入，批原子性按契约成立。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "scroll 按过滤条件返回全部 25 条 cat_a 点、limit=100 未截断且 next_page_offset=null，分页行为与契约一致。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "vectors:{} 满足 openapi VectorsConfig 的 map 分支（无 minProperties 限制），创建本身合法，后续写入得到清晰的 400 'Not existing vector name' 错误，未见违背任何文档承诺。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "openapi CreateCollection 无 required 字段，缺省 vectors 属 schema 合法，创建后写入给出明确 400 错误，无文档-实现矛盾。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "openapi 中 Filter.should 显式 anyOf 含 {nullable:true}，null 为合法输入并被按'无过滤'处理，行为符合契约。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "openapi 定义 must_not 为 anyOf[单 Condition, 数组, nullable]，传单个对象合法，且排除 tag=x 仅返回 id 2 的语义与文档一致。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "QueryRequest.query 显式 nullable 且文档写明 query 缺省时按 ID 序返回点（观测 score 1.0、id 升序），行为与契约完全一致。"}

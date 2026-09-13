@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "在不存在的集合上建索引返回 code=100 collection not found，恰好正确执行了“集合必须存在”的状态约束；quick-create 自动建索引后同字段二次建索引被拒是 Milvus 固有约束，均无契约违背。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约不含 ef/nprobe 取值范围条目，源码 generateSearchParams 也不做此类校验，且两个集合的显式 HNSW/IVF 索引创建均失败（仅剩 AUTOINDEX），无效参数从未按对应索引语义生效。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "源码中 aliases/list 绑定的是 OptionalCollectionNameReq（collectionName 本就可选），空值时返回全库别名列表（此处为空列表）符合设计，与 collectionName 必填的 describe 形成对照并不构成契约违背。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "原始日志显示 rename 实际返回 duplicated new collection name 错误，符合“新名不得已存在”的状态约束；即便按观察摘要的双成功解读，材料包内维护者也已明确并发 rename+create 双成功属幂等 by-design（issue 50192）。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "材料包内维护者原话明确表态 get_stats 的 rowCount 仅统计已 flush 数据、插入后未 flush 时 rowCount=0 属 by-design（issue 50193），观察现象与该表态逐字吻合。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "REST v2 search 未指定 consistencyLevel 时默认 Bounded（v2.6.16 convertConsistencyLevel 源码证实），删除后立即搜索仍见已删 id 落在文档化的有界陈旧窗口内，且包内契约只承诺删除不可恢复、未承诺删除对搜索即时可见。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "v2.6.17 createCollection 末尾无条件调用 LoadCollection，quick-create 集合创建即自动 load，“从未加载”的前提不成立，“集合必须已加载”的状态约束实际已满足。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "该版本契约本身写明“同 schema 重复创建集合为幂等 no-op 并返回 200”，观察到的重复创建成功与契约逐字一致。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "契约条目明确“删除不存在的集合按幂等成功处理（200，空 data）”，观察行为与之完全吻合。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "源码 delete 处理器在 filter 非空时优先生效、仅当 filter 为空才用主键 id，deleteCount=1 与 filter=“id > 0”语义一致，包内契约并无 filter 与 ids 互斥须报错的条目。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "该版本契约主条目明确“REST insert 无固定行数上限、仅受请求体积限制”，101 行插入成功恰与契约一致（补充区 max-100 旧行仅为参考、不替代契约依据）。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "契约中不存在任何禁止下划线开头集合名的条目，Milvus 命名规则本就允许下划线开头的标识符，观察不构成文档-实现缺陷。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "源码确认顶层 shardsNum 不被 REST v2 create 消费（仅读取 params.shardsNum，默认 ShardNumDefault），非法值被静默忽略属维护者明示 by-design（issue 50351），shardsNum>=1 约束从未实际施加。"}
+{"defect_id": "milvus_028", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空 metricType 在源码中显式映射为 DefaultMetricType（未指定即用默认），顶层 consistencyLevel 属不被消费而静默忽略的 by-design 字段（issue 50351），dimension=32769 则被正确拒绝，三个观察均无真实缺陷。"}

@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "包内无 endpoint=indexes+create 的任何契约行,日志内行为均为合理报错(1100 缺 dimension、100 集合不存在),摘要所称 SDK 多索引报错并不在日志中,无可证实的文档-实现冲突。"}
+{"defect_id": "milvus_016", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约行未含 ef/nprobe 取值范围约束,且日志中两次 create_index 均失败使'对 HNSW/IVF 索引搜索'的前提不可证,搜索返回结果本身正确,无被违反的文档约束。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "文档明确 collectionName 为可选(不指定即返回全部别名),空串按未指定处理返回空列表与文档语义一致,对照组 describe 必填报错也符合各自文档。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "日志与摘要不符:rename 实际返回 65535 而非双成功,该 'duplicated new collection name' 更符合 drop 异步残留的瞬态竞态(meta_table 按名查仍命中),维护者已表态该竞态场景为幂等 by-design,且契约行(名称非空)未被违反。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "rowCount 仅统计已 flush 数据是维护者在 issue 50193 中明确表态的 by-design,query 能查到 5 条属正常,gloss 中无 get_stats 契约行承诺插入即计数。"}
+{"defect_id": "milvus_020", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "集合按 quick-create 默认 Bounded 一致性(handler_v2 默认 Bounded),删除后立即搜索读到删除前快照属文档化的有界滞后一致性语义,且本包无 entities+search 契约行被违反。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "dimension-only quick-create 模式自动 load 是维护者在 issue 50319 表态的预期行为,包内亦无契约行承诺未显式 load 的集合搜索必须报错。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "同名同参重复 create 返回成功是维护者在 issue 50192 明确表态的幂等 by-design,契约行仅约定成功返回 code=0,未承诺重复创建须报错。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "drop 不存在集合幂等返回 code=0,契约行仅要求 collectionName 为非空字符串(已满足),文档未承诺对缺失集合报错,不构成文档-实现缺陷。"}
+{"defect_id": "milvus_024", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "filter 与 ids 同给时 filter('id > 0')生效并正确删除 id=1(deleteCount=1),源码 delete handler 以 Filter 为准,结果语义正确且包内无 entities+delete 契约行,无可证实的冲突。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "101 条批量插入被接受且 insertCount=101,包内无 entities+insert 的批量上限契约行,接受该批量不构成文档-实现缺陷。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "Milvus 命名规则允许字母或下划线开头的集合名,下划线开头成功创建符合命名规范,包内亦无命名模式契约行。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "顶层 shardsNum 非 REST v2 create 消费字段,静默忽略并走默认值是维护者在 issue 50351 明确表态的 by-design,包内契约行亦不含 shardsNum 取值范围。"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "文档枚举约束 metricType∈{L2,IP,COSINE}、consistencyLevel∈{Strong,Session,Bounded,Eventually} 均未被执行:空串 metricType 与顶层 consistencyLevel='None' 都静默接受返回成功(源码 2.6.17 quick-create 空值默认 COSINE、顶层 consistencyLevel 仅从 Params 读而被忽略),而 dimension=32769 被正确拒绝,参数校验不对称构成真实的文档-实现缺陷。"}

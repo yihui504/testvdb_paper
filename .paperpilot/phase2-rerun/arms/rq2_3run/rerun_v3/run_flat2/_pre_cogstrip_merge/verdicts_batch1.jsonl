@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "材料包无任何观察记录(raw 为空且 log 未捕获)且契约依据为空,既无法确证缺陷也无法确证非缺陷,按 v3 协议禁止 FALSE_POSITIVE 兜底,转人工复核。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "searchParams.nprobe=0 被接受并返回 code=0(源码确认 REST 层仅透传 searchParams 无任何范围校验),属数值下界类违反(count 型参数接受 0),按协议可判 CONFIRMED。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "searchParams.ef=0 被接受并返回 code=0,ef 为搜索候选数型参数语义上必须≥1,接口层接受 0 属数值下界类违反,按协议可判 CONFIRMED。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "IN 是集合成员语义而非范围语义,age in [10,5] 恰好删除 age=10 的 1 行、空集删除 0 行均属正确行为,未违反任何文档契约。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "insert 接受动态字段键 123field/@field(code=0)而 query 的 outputFields 解析同键报 parse output field name failed(源码证实写侧除 $meta 外不校验键名、读侧经 ParseIdentifier 拒绝非标识符键),写读不对称致已写入数据无法按名取回,属真实缺陷。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "动态字段是无 schema 的 JSON 语义,未对 text_field 声明任何 VARCHAR 类型,整型 12345 原样写入并原样读回,不存在被违反的类型契约。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "空查询向量 [[]] 被服务端以维度不匹配的明确参数错误拒绝(code=1801: dimension 8 but length 0),属正确的输入校验行为而非缺陷。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约行明文断言 COSINE 相似度取值范围 [-1,1](evidence_tier=explicit),实测 100 次同向量查询中 11 次输出 1.000000238418579>1,文档 vs 实现的直接违反。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "同一 search 接口对 limit=0 显式拒绝(topk 应在 [1,16384])却接受 nprobe=0 返回 code=0,数值下界校验在 count 型参数上缺失,对照成立,判 CONFIRMED。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "create 对 collection.ttl.seconds=-100 返回 code=0,而同版本 alter_properties 对同一值报 expect [-1, 3155760000] 越界错误,系统自证该值非法而 create 侧接受负数 count 型参数,属校验缺口。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "空 filter 查询是源码明文允许的语义——守卫错误文案原文 'empty expression should be used with limit' 规定空表达式+有 limit 即合法,且 REST 路由默认注入 QueryReqV2{Limit:100} 使查询恒受限,包内亦无 filter 必填的可核查契约行,不构成文档-实现缺陷。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "文档对 dbName 仅描述为 The name of an existing database,无 required 标注且无非空/拒绝语义声明,空值回落默认库不违反任何可核查契约。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "已核查的 v2.6.x API 参考页仅将 Authorization 列为 header 参数,Request-Timeout 无任何类型或取值约束描述,接受非整数值不构成文档-实现分歧。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "dim=32768 被接受、32769 被拒绝且错误信息明示 float vector dimension should be in range 2 ~ 32768,边界行为与文档声明的维度范围完全一致,无契约违反。"}

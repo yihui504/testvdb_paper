@@ -1,0 +1,69 @@
+{
+  "defect_id": "milvus_033",
+  "endpoint": "collections+create",
+  "defect_type": "Type1",
+  "built_by": "evidence-builder",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_VERIFIED",
+      "link_reachability": "PASS",
+      "version_match": "PASS",
+      "content_consistency": "PASS",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Constraint milvus_type_vector_field_type_001 in structured_contract.json with source_url (https://github.com/milvus-io/milvus/issues/51085) reachable; assertion explicitly states 'vectorFieldType in {FloatVector, BinaryVector, Float16Vector, BFloat16Vector, SparseVector}' - closed enum that should reject invalid values",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "A",
+      "log_pattern": "REQ 2: POST /v2/vectordb/collections/create with vectorFieldType='InvalidVectorType' -> http=200, code=0 / REQ 3: describe collection -> vector field type='FloatVector' (silent default)",
+      "secondary_observations": [],
+      "claim_alignment": "aligned",
+      "http_semantics": {
+        "client_error_returned_as": "HTTP 2xx + 业务错误码",
+        "note": "create operation returns HTTP 200 + code:0, accepting InvalidVectorType without error; silent default to FloatVector observed in describe response"
+      },
+      "reproducibility": "单脚本",
+      "script_error": false,
+      "triggering_scripts": ["output_milvus_033.log"],
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "milvus_type_vector_field_type_001",
+      "assertion_text_quoted": "vectorFieldType in {FloatVector, BinaryVector, Float16Vector, BFloat16Vector, SparseVector}",
+      "api_violates_assertion": true,
+      "note": "InvalidVectorType outside closed enum accepted and silently defaulted to FloatVector, violating explicit enum closure requirement",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract: milvus_type_vector_field_type_001 - vectorFieldType closed enum",
+        "doc: issue #51085 (2026-07-06) - documents enum-closure consistency",
+        "script: create collection with vectorFieldType='InvalidVectorType'",
+        "log: HTTP 200 + code=0, describe shows FloatVector (silent default, enum violation)"
+      ],
+      "chain_broken_at": null,
+      "break_detail": null,
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": [
+        "vectorFieldType",
+        "InvalidVectorType",
+        "FloatVector.*default",
+        "vector.*field.*type.*parse",
+        "enum.*vector.*field.*type"
+      ],
+      "files_examined": [],
+      "source_excerpt": "",
+      "call_chain_traced": "",
+      "verification_outcome": "not_found_in_source",
+      "note": "v3.0.0 source tree not available for grep; violation observed in behavior (silent default to FloatVector for invalid enum value)",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": ["env", "concurrency"],
+      "surviving": "Enum validation absence - invalid vectorFieldType silently defaulted"
+    }
+  }
+}

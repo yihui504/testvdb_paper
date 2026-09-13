@@ -1,0 +1,140 @@
+meta:
+  profile: academic-paper
+  figureType: architecture
+  theme: academic
+  layout: horizontal
+  title: TestVDB Pipeline
+  description: Four-stage pipeline for documentation-implementation bug detection in VDBMSs.
+  legend: >-
+    Rounded boxes are pipeline agents/stages; documents are artifacts; dashed arrows denote falsification inputs from
+    the implementation source.
+nodes:
+  - id: apidoc
+    label: API documentation (prose)
+    type: document
+  - id: kex
+    label: knowledge extractor · Crawl4AI
+    type: agent
+    module: s1
+  - id: kj
+    label: knowledge.json
+    type: document
+    module: s1
+  - id: sex
+    label: specification extractor · tier · verify
+    type: agent
+    module: s1
+  - id: sj
+    label: specifications.json
+    type: document
+    module: s1
+  - id: registry
+    label: strategy registry (pre-bound)
+    type: tool
+    module: s2
+  - id: atk
+    label: attack agents · boundary / state / semantic
+    type: agent
+    module: s2
+  - id: scn
+    label: scenario construction (system-level)
+    type: agent
+    module: s2
+  - id: gates
+    label: 5 generation gates
+    type: gate
+    module: s2
+  - id: vdbms
+    label: Docker-pinned VDBMS (target @ version)
+    type: database
+    module: s3
+  - id: logs
+    label: raw HTTP logs (+ atomic .done)
+    type: document
+    module: s3
+  - id: eb
+    label: evidence builder · doc / execution / contract / chain / source grounding
+    type: agent
+    module: s4
+  - id: chain
+    label: evidence_chain.json (five sections)
+    type: document
+    module: s4
+  - id: ca
+    label: chain auditor · 4 checks · A contract / B physical / C cognition / D source
+    type: agent
+    module: s4
+  - id: verdict
+    label: 'verdict: Confirmed / Refuted · Neutral → human'
+    type: decision
+    module: s4
+  - id: src
+    label: implementation source (pinned clone) · falsification anchor
+    type: terminal
+edges:
+  - from: apidoc
+    to: kex
+    type: primary
+  - from: kex
+    to: kj
+    type: primary
+  - from: kj
+    to: sex
+    type: primary
+  - from: sex
+    to: sj
+    type: primary
+  - from: sj
+    to: registry
+    type: primary
+    label: constraints
+  - from: registry
+    to: atk
+    type: primary
+  - from: atk
+    to: scn
+    type: primary
+  - from: scn
+    to: gates
+    type: primary
+  - from: gates
+    to: vdbms
+    type: primary
+    label: probes
+  - from: vdbms
+    to: logs
+    type: primary
+  - from: logs
+    to: eb
+    type: primary
+    label: outputs
+  - from: eb
+    to: chain
+    type: primary
+  - from: chain
+    to: ca
+    type: primary
+  - from: ca
+    to: verdict
+    type: primary
+  - from: ca
+    to: eb
+    type: data
+    label: rebuild ≤ 3
+  - from: src
+    to: eb
+    type: data
+    label: source grounding
+  - from: src
+    to: ca
+    type: data
+    label: D perspective
+modules:
+  - id: s1
+    label: 1 · Specification Extraction
+  - id: s2
+    label: 2 · Test Script Generation
+  - id: s3
+    label: 3 · Sandboxed Execution
+  - id: s4
+    label: 4 · Bug Confirmation (builder / auditor split)

@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.3, "rationale": "包内无任何观察记录（raw HTTP 未捕获）且 2.3.0 版本文档段已下线，缺陷主张内容与证据均无从核查，无法确证亦不允许 FP 兜底。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "IVF 搜索参数 nprobe=0（合法下界为 1）被静默接受并返回成功结果，属数值下界类验证缺失（对照同服务 limit=0 会被显式范围校验拒绝）。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "HNSW 搜索参数 ef=0（合法下界为 1）被静默接受并返回成功结果，与 limit=0 被显式拒绝形成对照，属数值下界类验证缺失。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "IN 列表成员判断与书写顺序无关，\"age in [10, 5]\" 恰删除匹配的 age=10 行、空 IN 列表删除 0 行均为正确语义，无任何契约被违反。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "insert 接受动态字段键 '123field'/'@field'（code=0）而 query outputFields 解析同一键报 \"parse output field name failed\"，写入成功却不可取回，构成文档-实现不一致。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "text_field 是动态字段而非声明的 VARCHAR 列：集合为 quick-create 模式，插入路径(checkDynamicFieldData)将额外键原样打包进 JSON $meta，本就不存在可被违反的字符串类型契约。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空查询向量被服务端以明确的 invalid parameter 错误（expected=FloatVector, actual=[[]], dimension 8 vs length 0）正确拒绝，拒绝本身即正确行为，无文档-实现缺陷。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "契约明示 COSINE 相似度距离值域为 [-1,1]，实测 100 次同向量搜索中 11 次 distance=1.000000238418579>1.0，float32 余弦计算未按文档钳制值域，文档-实现不一致可复现。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "nprobe=0 被接受并返回成功（两轮复现），而对照 limit=0 被 \"should be in range [1, 16384]\" 显式校验拒绝，数值下界验证不对称，属数值下界类缺陷。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "create面对collection.ttl.seconds=-100返回code=0,而系统自身校验器(proxy/task.go validateCollectionTTL)明文定义合法区间[-1,3155760000]且alter_properties面对同一值返回1100,该值在create面被静默丢弃未生效(describe无ttl属性),数值下界校验在create面缺失且两面行为不一致。"}
+{"defect_id": "milvus_011", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "观察显示无 filter 且无 limit 的 match-all 查询返回全部行，但 v2.6.16 源码 task_query.go:482 存在 \"empty expression should be used with limit\" 守卫（IsAlwaysTruePlan 且 Limit==Unlimited 即拒绝，REST 层 limit 缺省时恰为 Unlimited），观察与源码直接矛盾且包内无 entities+query 契约行可仲裁，无法确证。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "文档对 dbName 仅描述为 \"The name of an existing database.\"，无 required 标注、无非空/拒绝语义声明，空串回落默认库未违反任何可核查契约。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "核查结论已确认 2.6.x 文档未将 Request-Timeout 列为参数（仅出现在 curl 示例），对其不存在任何已文档化的类型或取值约束，宽容解析不构成文档-实现缺陷。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "服务端自身错误信息声明合法维度区间为2~32768,dim=32768恰在区间上界内被接受、32769被正确拒绝,观察到的行为与系统声明的边界完全一致,无任何契约被违反,不构成文档-实现缺陷。"}

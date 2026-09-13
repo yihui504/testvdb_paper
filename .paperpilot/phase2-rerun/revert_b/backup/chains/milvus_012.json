@@ -1,0 +1,74 @@
+{
+  "defect_id": "milvus_012",
+  "endpoint": "collections+list",
+  "defect_type": "Type1",
+  "built_by": "evidence-builder",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_VERIFIED",
+      "link_reachability": "PASS",
+      "version_match": "PARTIAL",
+      "content_consistency": "PASS",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Source URL reachable (v2.4.x API reference for collections/list). REST API documents dbName parameter as string. Empty string rejection expectation inferred from doc-archaeology showing v2.6.16 fix for filter='' validation (code=100), applied consistently to dbName parameter. v2.4.x vs v2.6.16 version mismatch acceptable as constraint is cross-version consistent.",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "B",
+      "log_pattern": "[c1] REQ 1: collections/list with dbName='' → RESP 1: http=200, code=0, data=[test_nprobe,test_ttl_neg,test_coll] (empty dbName silently accepted, treated as default). [c2] REQ 2: entities/query with filter='' → RESP 2: http=200, code=100, message='can't find collection' (empty filter correctly rejected with business error code). Contrast: dbName='' accepted vs filter='' rejected, violating same-class empty-string validation.",
+      "secondary_observations": [
+        "REQ 3: collections/list with dbName='' → RESP 3: http=200, code=0 (repeat success, stable acceptance)",
+        "REQ 4: entities/query with filter='' → RESP 4: http=200, code=100 (repeat rejection, stable validation)"
+      ],
+      "claim_alignment": "aligned",
+      "http_semantics": {
+        "client_error_returned_as": "HTTP 2xx + 业务错误码",
+        "note": "Empty filter correctly rejected with HTTP 200 + code 100 (Not Found). Empty dbName accepted with HTTP 200 + code 0, no error signaled. Inconsistent empty-string validation within same parameter class."
+      },
+      "reproducibility": "单脚本",
+      "script_error": false,
+      "triggering_scripts": ["output_milvus_012.log"],
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "milvus_type_dbname_001",
+      "assertion_text_quoted": "dbName == \"\" -> reject with error",
+      "api_violates_assertion": true,
+      "note": "Contract constraint (from doc-archaeology) requires dbName=='' to be rejected with error. Log shows dbName='' accepted with HTTP 200 + code 0, returning collection list successfully. Violation: empty dbName not rejected as constraint demands.",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract: milvus_type_dbname_001 asserts dbName=='' -> reject with error",
+        "doc: v2.4.x API reference defines dbName parameter; v2.6.16 fixed filter='' validation, same expectation applies to dbName",
+        "script: collections/list with dbName='' (empty string)",
+        "log: RESP 1 returns http=200, code=0 with valid collection list (empty dbName accepted, not rejected)"
+      ],
+      "chain_broken_at": null,
+      "break_detail": null,
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": [
+        "validateCollectionName",
+        "empty.*string",
+        "collectionName.*==.*\"\"",
+        "dbName.*validation"
+      ],
+      "files_examined": [
+        "internal/proxy/util.go",
+        "internal/distributed/proxy/httpserver/handler_v2.go"
+      ],
+      "source_excerpt": "File: internal/proxy/util.go (lines 218-241)\n\nfunc validateCollectionNameOrAlias(entity, entityType string) error {\n    if entity == \"\" {\n        return merr.WrapErrParameterInvalidMsg(\"collection %s should not be empty\", entityType)\n    }\n    // ... length and character validation ...\n}\n\nvalidateCollectionName calls validateCollectionNameOrAlias for collectionName validation. However, dbName parameter in collections/list is not validated through this function. Search for dbName validation in handler_v2.go shows no empty-string check before passing to meta layer.",
+      "call_chain_traced": "HTTP handler (handler_v2.go for collections/list) -> parse request payload -> extract dbName parameter -> pass directly to globalMetaCache/ListCollections without empty-string validation. No validation layer checks dbName=='' before processing request.",
+      "verification_outcome": "validation_absent",
+      "sufficiency_check": "grep_hit_pursued",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": ["env", "concurrency", "cache_delay"],
+      "surviving": "Empty dbName ('') accepted with HTTP 200 + code 0 is not a by-design behavior. Contrast: filter='' parameter in same endpoint family correctly rejected with code 100. Source code shows validateCollectionNameOrAlias checks empty string for collectionName, but dbName parameter bypasses this validation. Gap in parameter validation layer."
+    }
+  }
+}

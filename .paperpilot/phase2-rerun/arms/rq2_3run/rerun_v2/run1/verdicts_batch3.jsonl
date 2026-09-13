@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "limit=0 被以 65535（topk 应在 [1,16384]）明确拒绝、64 维向量对 dim=4 集合以 1801 拒绝，系统正确拒绝非法值，符合 expected 的 limit>0 类型约束。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内明示无 users+create 可核查约束行，弱口令被接受无契约依据可判定违规，且长度校验正常执行（'a' 被 1100 拒绝）。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内明示无 entities+upsert 可核查约束行，upsert 与对照 insert 对多余字段 color 均一致返回 1804 错误，未见静默接受或契约违反。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "契约约束 consistencyLevel∈[Strong,Session,Bounded,Eventually]，'Invalid' 被静默接受(code=0)且 describe 回读显示被默认为 Bounded，属静默接受被拒值。"}
+{"defect_id": "milvus_033", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约无 vectorFieldType 取值约束行，'InvalidVectorType' 被接受并默认为 FloatVector 虽可疑但缺乏契约依据，保守判证据不足。"}
+{"defect_id": "milvus_034", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约引文只要求 entity 的 keys 与 schema 匹配（本例 id/vector/meta 均合规），JSON 字段的字符串值不构成明确类型违约，且查询因未 load 全部失败、无可读回证据。"}
+{"defect_id": "milvus_035", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "expected 无字段类型匹配约束；非数字 'abc' 被 1804 正确拒绝，查询失败仅因探针未 load（collection not loaded 属文档内状态），无可归因违规。"}
+{"defect_id": "milvus_036", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "expected 仅有 load 前置/空集合语义约束（均已满足），无 groupSize 取值约束，REST 对 0/-1 返回 code=0 正常结果，无法据包内文本判定违规。"}
+{"defect_id": "milvus_037", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "expected 无类型匹配断言，三类强制转换均被接受但查询仅因未 load 失败（by-design 状态约束），可检索性未被证伪，无契约违反依据。"}
+{"defect_id": "milvus_038", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "expected 自述文档对向量字段作 groupByField 无禁止性规范声明，REST 接受并返回正常结果与文档语义相符。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST 以 code=0 接受字符串 PK \"100\" 写入 Int64 字段并经回读确认覆盖写生效，违反 \"data must match collection schema\"，gRPC 对同 payload 以 \"id field should be int64, got str\" 拒绝。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "REST 接受裸字符串写入 JSON 字段后 gRPC get 报 unexpected character 不可读（同 payload 经 gRPC 亦被 Invalid JSON string 拒绝），违反 expected 的 \"Inserted entities should be retrievable\"。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "字符串 \"3.14159\"/\"42\"、数字 1 等与 DOUBLE/INT16/BOOL 声明类型不符的值均被 upsert 以 code=0 静默接受，违反 \"data must match collection schema\"。"}
+{"defect_id": "milvus_042", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "字符串向量被正确解析（search 以 distance=1 命中 id=0），collection 存在且实体可检索，expected 两条约束均满足，无类型匹配断言可判定违规。"}

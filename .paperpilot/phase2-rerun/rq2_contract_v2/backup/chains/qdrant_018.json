@@ -1,0 +1,91 @@
+{
+  "defect_id": "qdrant_018",
+  "endpoint": "/collections/{collection_name}/points/count POST",
+  "defect_type": "Type4",
+  "built_by": "evidence-builder",
+  "steps": {
+    "doc_verification": {
+      "result": "DOC_PARTIAL",
+      "link_reachability": "PARTIAL",
+      "version_match": "PASS",
+      "content_consistency": "PASS",
+      "endpoint_precision": "PASS",
+      "sdk_rest_confusion": false,
+      "detail": "Contract source_url https://qdrant.tech/documentation/rest-api/count-points/ returns HTTP 404 (qdrant.tech restructured docs: whole rest-api/ section removed; /documentation/concepts/points/ 301-redirects to /documentation/manage-data/points/). Equivalent live pages reachable (200): manage-data/points/ and concepts/filtering/ — per coordinator note the 404 is recorded truthfully but not scored as doc-substance FAIL, hence PARTIAL. Version match PASS via version-pinned docs/redoc/v1.18.x/openapi.json inside the v1.18.3 repo tree (info.version 'Qdrant API v1.18.x'); live web pages are versionless-latest. Content consistency PASS: (1) v1.18.x OpenAPI CountRequest.exact = 'If true, count exact number of points. If false, count approximate number of points faster. Approximate count might be unreliable during the indexing process. Default: true'; (2) live points doc = 'By default, the count is approximate for performance reasons. To get an exact count, set \"exact\": true in the request.'; (3) live filtering doc: is_empty 'will match all records where the field reports either does not exist, or has null or [] value' / is_null 'will match all records where the field reports exists and has NULL value'. No accuracy bound is documented anywhere for exact=false. Endpoint precision PASS: /collections/{collection_name}/points/count POST is registered in contract api_endpoints (doc_version 1.18.3) with exact param described as 'true=accurate scan count; false=approximate indexed cardinality estimate (faster)'.",
+      "evidence_source": "doc"
+    },
+    "execution_evidence": {
+      "grade": "C",
+      "log_pattern": "REQ 6: POST http://localhost:6333/collections/c/points/count payload: {\"exact\": false, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}} === RESP 6 === status: 200 body: {\"result\":{\"count\":24},\"status\":\"ok\",\"time\":0.000406019} — approximate is_empty count 24 vs exact=true 40 (REQ 5). Claim hint said count=25; raw log ground truth is 24.",
+      "secondary_observations": [
+        "REQ 5 (c1): POST /collections/c/points/count payload: {\"exact\": true, \"filter\": {\"must\": [{\"is_empty\": {\"key\": \"kw\"}}]}} → status: 200 body: {\"result\":{\"count\":40},\"status\":\"ok\",\"time\":0.004143432} (exact full-scan count; 40 of 200 upserted points lack kw payload)",
+        "REQ 7 (c3 control): POST /collections/c/points/count payload: {\"exact\": false, \"filter\": {\"must\": [{\"is_null\": {\"key\": \"kw\"}}]}} → status: 200 body: {\"result\":{\"count\":0},\"status\":\"ok\",\"time\":0.000215112}",
+        "Setup context: REQ 2 creates collection with optimizer_config.indexing_threshold=1 (forces indexing); REQ 3 upserts 200 points (ids 1,6,11,...,196 = 40 points without payload; remaining 160 with kw=\"red\"); REQ 4 creates payload index field kw keyword, response status \"acknowledged\" (not completed) — counts issued immediately after"
+      ],
+      "claim_alignment": "aligned",
+      "http_semantics": {
+        "client_error_returned_as": "N/A",
+        "note": "All three count responses are successful 2xx reads with result payloads; no client error / business error code involved. The phenomenon is approximate-vs-exact count divergence, not error-code semantics."
+      },
+      "reproducibility": "单脚本",
+      "script_error": false,
+      "triggering_scripts": ["qdrant_018"],
+      "evidence_source": "behavior"
+    },
+    "contract_grounding": {
+      "constraint_id": "N/A — no constraint in structured_contract.json covers count accuracy; dispatch packet carried no constraint_id (candidates.jsonl absent from session dir). Closest groundings: api_endpoints registry entry for /collections/{collection_name}/points/count (exact param) and state_invariant qdrant_state_point_count_consistent_001 ('After upserting N points, collection point count should increase by N' — total-count scope, not filtered approximate count).",
+      "assertion_text_quoted": "api_endpoints exact param: \"true=accurate scan count; false=approximate indexed cardinality estimate (faster)\"; version-pinned OpenAPI v1.18.x: \"If true, count exact number of points. If false, count approximate number of points faster. Approximate count might be unreliable during the indexing process. Default: true\"",
+      "api_violates_assertion": false,
+      "note": "violates self-check applied: the claim phenomenon is 'exact=false value deviates from true count (24 vs 40)'. The accuracy domain of the cited text constrains only exact=true, which returned the correct 40. exact=false is explicitly documented as approximate with no accuracy bound ('might be unreliable'), so the inexact 24 falls inside the approximate semantics domain — violates=false is the binary truthful call, not a fuzzy 'accepted but probably fine'. The c3 control (is_null=0) is doc-consistent: is_null matches only fields that exist with explicit NULL value; all 40 payload-less points lack the key entirely and none carries an explicit null.",
+      "evidence_source": "doc"
+    },
+    "chain_trace": {
+      "chain_links": [
+        "contract: /collections/{collection_name}/points/count POST registered in api_endpoints with exact param ('false=approximate indexed cardinality estimate'); NO constraint/assertion in constraints{} asserts any accuracy for exact=false",
+        "doc: v1.18.x OpenAPI + relocated live pages explicitly disclaim approximate-count accuracy and document is_empty (missing/null/empty matches) vs is_null (existing field with NULL) semantics",
+        "script: output_qdrant_018.log REQ5-7 issue count requests with exact true/false over is_empty/is_null filters on kw after upserting 200 points (40 without kw) and creating a keyword payload index with indexing_threshold=1",
+        "log: all three counts return HTTP 200 with count=40 (exact) / 24 (approximate) / 0 (is_null control) exactly as observed in raw bodies"
+      ],
+      "chain_broken_at": "contract",
+      "break_detail": "No constraint in structured_contract.json (type/range/state) or assertions/behavioral_contracts covers count-approximation accuracy. The claim ('approximate count deviates from exact count') therefore has no contract-level requirement to violate; the chain's contract link supplies only an endpoint-registry description that itself labels exact=false as approximate. Chain break is at the contract link, not at doc/script/log.",
+      "evidence_source": "doc+behavior"
+    },
+    "source_grounding": {
+      "grep_queries": [
+        "CountRequest",
+        "points/count",
+        "estimate_cardinality",
+        "Condition::IsEmpty / IsEmpty",
+        "is_empty",
+        "null_index"
+      ],
+      "files_examined": [
+        "src/actix/api/count_api.rs",
+        "src/common/query.rs",
+        "lib/collection/src/shards/local_shard/shard_ops.rs",
+        "lib/collection/src/shards/local_shard/mod.rs",
+        "lib/segment/src/index/struct_payload_index/read_view/filtering.rs",
+        "lib/segment/src/index/field_index/null_index/read_ops.rs",
+        "lib/segment/src/index/field_index/map_index/payload_index_impl/str.rs",
+        "lib/collection/src/operations/verification/count.rs",
+        "lib/collection/src/operations/verification/mod.rs",
+        "openapi/openapi-main.ytt.yaml",
+        "docs/redoc/v1.18.x/openapi.json"
+      ],
+      "source_excerpt": "lib/segment/src/index/field_index/null_index/read_ops.rs:155-188 (v1.18.3):\n\npub(super) fn estimate_cardinality<N: NullIndexRead>(\n    null_index: &N,\n    condition: &FieldCondition,\n) -> Option<CardinalityEstimation> {\n    let FieldCondition {\n        key,\n        r#match: _,\n        range: _,\n        geo_bounding_box: _,\n        geo_radius: _,\n        geo_polygon: _,\n        values_count: _,\n        is_empty,\n        is_null,\n    } = condition;\n\n    let has_values_flags = null_index.has_values_flags();\n    let is_null_flags = null_index.is_null_flags();\n    let total_point_count = null_index.total_point_count();\n\n    if let Some(is_empty) = is_empty {\n        if *is_empty {\n            let has_values_count = has_values_flags.count_trues();\n            let estimated = total_point_count.saturating_sub(has_values_count);\n\n            Some(CardinalityEstimation {\n                min: 0,\n                exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted\n                max: estimated,\n                primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_empty(\n                    key.clone(),\n                    true,\n                ))],\n            })\n        } else { /* is_empty=false: exact count of has_values */ }\n    } else if let Some(is_null) = is_null {\n        if *is_null {\n            let count = is_null_flags.count_trues();\n            Some(CardinalityEstimation::exact(count) ...)  // -> 0 when no explicit nulls\n        }\n\nlib/collection/src/shards/local_shard/shard_ops.rs:365-387 (v1.18.3):\n\n        let result: CollectionResult<usize> = if request.exact {\n            let timeout = self.timeout_or_default_search_timeout(timeout);\n            match tokio::time::timeout(\n                timeout,\n                self.read_filtered(            // full scan for exact=true\n                    request.filter.as_ref(),\n                    search_runtime_handle,\n                    hw_measurement_acc,\n                    Some(timeout),\n                    deferred_behavior,\n                ),\n            )\n            .await\n            {\n                Ok(Ok(all_points)) => Ok(all_points.len()),\n                Ok(Err(err)) => Err(err),\n                Err(_elapsed) => Err(CollectionError::timeout(timeout, \"count\")),\n            }\n        } else {\n            self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)\n                .await\n                .map(|cardinality| cardinality.exp)   // expected value returned as count\n        };\n\nlib/segment/src/index/struct_payload_index/read_view/filtering.rs:104-117: Condition::IsEmpty -> FieldCondition::new_is_empty -> estimate_field_condition -> index estimate_cardinality (keyword map index returns None for is_empty, str.rs estimate_cardinality_impl matches only r#match variants; null_index supplies the estimate).",
+      "call_chain_traced": "actix count_points (src/actix/api/count_api.rs:16-70) -> do_count_points (src/common/query.rs:202) -> toc.count -> LocalShard::count (lib/collection/src/shards/local_shard/shard_ops.rs:347): exact=true -> read_filtered full scan -> all_points.len(); exact=false -> LocalShard::estimate_cardinality (local_shard/mod.rs:951-980) which runs per-segment estimate_point_count then merge_independent() -> StructPayloadIndexReadView::estimate_cardinality Condition::IsEmpty (filtering.rs:104-110) -> field indexes -> null_index estimate (null_index/read_ops.rs:175-188) where exp = 2*estimated/3 by hard-coded heuristic with comment 'assuming 1/3 of the points are deleted' -> .exp returned as the count result.",
+      "verification_outcome": "by_design_in_source",
+      "sufficiency_check": "grep_hit_pursued",
+      "evidence_source": "source"
+    },
+    "mundane_explanation": {
+      "excluded": [
+        "env (server healthy; all 7 REQ/RESP 200; exact branch returns correct 40 in same session)",
+        "concurrency (deterministic estimator computation; no race involved)",
+        "request_typo (requests well-formed and match documented CountRequest schema)",
+        "cache_staleness (counts computed live; exact=true immediately returns ground truth 40)"
+      ],
+      "surviving": "by_design approximation: exact=false is documented as approximate with no accuracy bound (v1.18.x OpenAPI: 'Approximate count might be unreliable during the indexing process') and implemented with a deliberate hard-coded exp = 2*estimated/3 discount for is_empty estimation in null_index (comment: 'assuming 1/3 of the points are deleted'). Observed 24/40 = 0.6 matches the designed 2/3 discount (ideal 80/3 = 26; per-segment integer division aggregated via merge_independent, with indexing_threshold=1 forcing multi-segment layout, plausibly yields 24; exact segment split not determinable from the raw log). The c3 control (is_null=0) is an exact-by-design estimate (is_null_flags empty since no point carries an explicit null) and matches documented is_null semantics — not an anomaly. Whether a ~40% designed under-estimate for a documented-approximate endpoint constitutes a defect is for the chain-auditor; the inaccuracy itself is by design in both docs and source."
+    }
+  }
+}

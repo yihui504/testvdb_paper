@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.72, "rationale": "契约仅声明 scroll limit default=10 (adjustable)；observed 中 limit=100 被 400 显式拒绝是用户自建 strict_mode max_query_limit=10 的文档化行为，limit=5 控制组返回 200，limit 参数确实可调，行为符合契约而非违反。"}
+{"defect_id": "weaviate_001", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "observed 仅显示 dynamicEfMin=500 > dynamicEfMax=10 被 200 接受，但包内契约条目（class CamelCase/vectorIndexType/tokenization/replication factor 等）均不覆盖 dynamicEfMin/Max 取值关系，缺乏支持「违反契约」的契约证据，保守判 FP。"}
+{"defect_id": "weaviate_002", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "observed 显示 flatSearchCutoff=-100 被 200 原样接受，但包内契约无任何针对 flatSearchCutoff 的类型/范围约束条目，证据不足以判定违反契约。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "契约明文 replicationConfig.factor >= 1，observed 提交 factor=-1 得到 200 且仅静默回落为默认 1（GET 复核确认），属于静默接受被拒值而非拒绝请求。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "ef=-1 与系统在所有响应中展示的默认值 ef=-1 完全一致（-1 为未设置哨兵值），且包内契约无任何针对 ef 的约束条目，无契约违反证据。"}
+{"defect_id": "weaviate_005", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "observed 中 desiredCount=0→422 而 -1→200 的不对称确属可疑，但包内契约（8 条+补充行）均不含 shardingConfig.desiredCount 的任何范围/类型断言，缺乏契约依据故保守判 FP。"}
+{"defect_id": "weaviate_006", "verdict": "CONFIRMED", "confidence": 0.72, "rationale": "契约断言 properties[].tokenization 必须属于 {word, lowercase, whitespace, field, trigram, gse, ...}，observed 提交 tokenization=\"\" 不在枚举内却返回 200 并静默存为 word，属静默接受被拒值。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "distance=null 按「未提供→默认 cosine」处理属可选字段常规语义，且包内契约无针对 distance 的任何约束条目，无违反依据。"}
+{"defect_id": "weaviate_008", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "契约断言 tenants POST 的 activityStatus 必须属于 {ACTIVE, INACTIVE}，observed 提交 activityStatus=\"\" 返回 200 且响应体甚至不含合法 activityStatus 字段，属静默接受被拒值。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内契约仅要求 vector 为 float 数组（vector is array of number），空数组 [] 类型上仍满足该断言，且无任何最小长度/非空约束条目，证据不足以判定违反契约。"}
+{"defect_id": "weaviate_010", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "observed 中缺 where/空 match 返回 500 且带明确错误信息，但包内契约对该输入只有「删除数 ≤ 10000」的范围约束（未被触及），无任何规定非法 match 应返回的状态码断言，不足以判定错误响应违约。"}

@@ -1,0 +1,313 @@
+For AI agents: a documentation index is available at the root level at /llms.txt. Append /llms.txt to any URL for a page-level index, or .md for the markdown version of any page.
+
+v1.18.x
+
+v1.18.x
+
+Search
+
+`/`
+
+Ask AI
+
+CloudGitHub
+
+v1.18.x
+
+v1.18.x
+
+  * API Reference
+    * Collections
+      * GETGet collection details
+      * PUTCreate a collection
+      * DELDelete a collection
+      * PATCHUpdate collection parameters
+      * GETList all collections
+      * GETCheck collection existence
+      * PUTCreate named vector
+      * DELDelete named vector
+      * GETGet optimization progress
+
+    * Points
+
+    * Search
+
+    * Indexes
+
+    * Snapshots
+
+    * Aliases
+
+    * Distributed
+
+    * Service
+
+    * Beta
+
+  * API Reference
+  * Get collection details
+  * Create a collection
+  * Delete a collection
+  * Update collection parameters
+  * List all collections
+  * Check collection existence
+  * Create named vector
+  * Delete named vector
+  * Get optimization progress
+  * Retrieve points
+  * Upsert points
+  * Retrieve a point
+  * Delete points
+  * Update vectors
+  * Delete vectors
+  * Set payload
+  * Overwrite payload
+  * Delete payload
+  * Clear payload
+  * Batch update points
+  * Scroll points
+  * Count points
+  * Payload field facets
+  * Search points
+  * Search batch points
+  * Search point groups
+  * Recommend points
+  * Recommend batch points
+  * Recommend point groups
+  * Discover points
+  * Discover batch points
+  * Query points
+  * Query points in batch
+  * Query point groups
+  * Distance matrix pairs
+  * Distance matrix offsets
+  * Create payload index
+  * Delete payload index
+  * List all snapshots (collection)
+  * Create a snapshot (collection)
+  * Recover from an uploaded snapshot (collection)
+  * Recover from a snapshot (collection)
+  * Download a snapshot (collection)
+  * Delete a snapshot (collection)
+  * List all snapshots (storage)
+  * Create a snapshot (storage)
+  * Download a snapshot (storage)
+  * Delete a snapshot (storage)
+  * Download shard snapshot
+  * Recover from an uploaded snapshot (shard)
+  * Recover from a snapshot (shard)
+  * List all snapshots (shard)
+  * Create a snapshot (shard)
+  * Download a snapshot (shard)
+  * Delete a snapshot (shard)
+  * Update collection aliases
+  * List collection aliases
+  * List all aliases
+  * Check cluster status
+  * List shard keys
+  * Create a shard key
+  * Delete a shard key
+  * Collect cluster telemetry data
+  * Recover cluster state
+  * Remove peer from cluster
+  * Retrieve cluster details
+  * Update cluster setup
+  * Collect telemetry data
+  * Retrieve instance details
+  * Collect Prometheus metrics data
+  * Kubernetes health check
+  * Kubernetes liveness probe
+  * Kubernetes readiness probe
+  * Report issues
+  * Clear issues
+
+CloudGitHub
+
+Light
+
+API ReferenceCollections
+
+# Create a collection
+
+Copy page
+
+PUT
+
+http://localhost:6333/collections/:collection_name
+
+PUT
+
+/collections/:collection_name
+
+cURL
+    
+    
+    $| # Create a collection with default dense vector  
+    ---|---  
+    $| curl  -X PUT \  
+    >|   'http://localhost:6333/collections/collection_name' \  
+    >|   --header 'api-key: <api-key-value>' \  
+    >|   --header 'Content-Type: application/json' \  
+    >|   --data-raw '{  
+    >|   "vectors": {  
+    >|     "size": 384,  
+    >|     "distance": "Cosine"  
+    >|   }  
+    >| }'  
+    $|   
+    $| # Create a collection with named dense and sparse vectors  
+    $| curl  -X PUT \  
+    >|   'http://localhost:6333/collections/collection_name' \  
+    >|   --header 'api-key: <api-key-value>' \  
+    >|   --header 'Content-Type: application/json' \  
+    >|   --data-raw '{  
+    >|   "vectors": {  
+    >|     "dense-vector-name": {  
+    >|       "size": 1536,  
+    >|       "distance": "Cosine"  
+    >|     }  
+    >|   },  
+    >|   "sparse_vectors": {  
+    >|     "sparse-vector-name": {  
+    >|       "index": {  
+    >|         "on_disk": true  
+    >|       }  
+    >|     }  
+    >|   }  
+    >| }'  
+  
+Try it
+
+200Updated
+    
+    
+    1| {  
+    ---|---  
+    2|   "usage": {  
+    3|     "hardware": {  
+    4|       "cpu": 1,  
+    5|       "payload_io_read": 1,  
+    6|       "payload_io_write": 1,  
+    7|       "payload_index_io_read": 1,  
+    8|       "payload_index_io_write": 1,  
+    9|       "vector_io_read": 1,  
+    10|       "vector_io_write": 1  
+    11|     },  
+    12|     "inference": {  
+    13|       "models": {}  
+    14|     }  
+    15|   },  
+    16|   "time": 0.002,  
+    17|   "status": "ok",  
+    18|   "result": true  
+    19| }  
+  
+Creates a new collection with the given parameters.
+
+### Authentication
+
+api-keystring
+
+API Key authentication via header
+
+### Path parameters
+
+collection_namestringRequired
+
+Name of the new collection
+
+### Query parameters
+
+timeoutintegerOptional`>=1`
+
+Wait for operation commit timeout in seconds. If timeout is reached - request will return with service error.
+
+### Request
+
+Parameters of a new collection
+
+vectorsobject or map from strings to objectsOptional
+
+Vector params separator for single and multiple vector modes Single mode:
+
+{ “size”: 128, “distance”: “Cosine” }
+
+or multiple mode:
+
+{ “default”: { “size”: 128, “distance”: “Cosine” } }
+
+shard_numberuint or nullOptional
+
+For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1
+
+For custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1
+
+sharding_methodenum or anyOptional
+
+Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key
+
+replication_factoruint or nullOptional
+
+Number of shards replicas. Default is 1 Minimum is 1
+
+write_consistency_factoruint or nullOptional
+
+Defines how many replicas should apply the operation for us to consider it successful. Increasing this number will make the collection more resilient to inconsistencies, but will also make it fail if not enough replicas are available. Does not have any performance impact.
+
+on_disk_payloadboolean or nullOptional
+
+If true - point’s payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+
+Default: true
+
+hnsw_configobject or anyOptional
+
+Custom params for HNSW index. If none - values from service configuration file are used.
+
+wal_configobject or anyOptional
+
+Custom params for WAL. If none - values from service configuration file are used.
+
+optimizers_configobject or anyOptional
+
+Custom params for Optimizers. If none - values from service configuration file are used.
+
+quantization_configobject or anyOptional
+
+Quantization parameters. If none - quantization is disabled.
+
+sparse_vectorsmap from strings to objects or nullOptional
+
+Sparse vector data config.
+
+strict_mode_configobject or anyOptional
+
+Strict-mode config.
+
+metadatamap from strings to any or anyOptional
+
+Arbitrary JSON metadata for the collection This can be used to store application-specific information such as creation time, migration data, inference model info, etc.
+
+### Response
+
+successful operation
+
+usageobject or anyOptional
+
+timedoubleOptional
+
+Time spent to process this request
+
+statusstringOptional
+
+resultbooleanOptional
+
+Was this page helpful?
+
+YesNo
+
+Previous
+
+Delete a collection
+
+NextBuilt with

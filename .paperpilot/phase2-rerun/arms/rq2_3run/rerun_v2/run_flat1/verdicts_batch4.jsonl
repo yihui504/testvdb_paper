@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "请求把分组参数包在非 schema 字段 groupParams 内，而 REST v2 契约的 groupingField/groupSize/strictGroupSize 是顶层字段（源码 handler_v2.go 仅从顶层字段构造分组参数），服务端按普通 search 返回 top15 属契约内行为。"}
+{"defect_id": "qdrant_001", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "wait=false 的 acknowledged 是文档化的异步受理语义，非法零维向量被服务端拒绝未落盘（points_count=0），无 crash，材料契约也未承诺 upsert 同步维度校验或异步报错。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "openapi 对 hnsw_ef 明确标注 minimum=0，hnsw_ef=0 是合法入参且搜索返回正确结果，无任何契约违反。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "score_threshold 行为完全符合文档定义：Cosine 得分上限 1.0 时 threshold=2.0 过滤掉全部点、threshold=-0.5 放行 score 1.0，观察即正确实现。"}
+{"defect_id": "qdrant_004", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "与 001 同理：wait=false 异步受理不承诺同步校验报错，三维向量未写入集合，wait=true 路径正确返回 400 维度错误，材料契约无被违反条目。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "shard_number=0 与 -1 均被正确拒绝（422 校验错/400 类型错），shard_number>=1 的契约被正确执行而非违反。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.95, "rationale": "filter color=red 精确返回 4 条红色点并正确排除无 payload 的点，完全符合文档过滤语义。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "批量 upsert 因坏维度点整体返回 400 且 count 保持 3（id4/5 未部分写入），恰好印证批内原子执行契约而非违反。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "limit=100 下返回全部 25 条 cat_a 匹配点且 next_page_offset=null，分页行为与文档一致。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "vectors={} 经 openapi VectorsConfig anyOf 的空 map 分支属合法入参（CreateCollection 无 required 字段），集合正常创建初始化，向量写入以显式 400 'Not existing vector name' 拒绝，无静默损坏。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "v1.18.2 openapi 的 CreateCollection 无 required 字段，省略 vectors 同为 schema 合法输入，集合创建成功且 upsert 显式 400 报错，观察与契约一致。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "should=null 被等价于缺省条件处理并返回全部点，结果语义正确且无错误/崩溃，材料契约未对 filter 字段严格性作规定。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "must_not 传对象而非数组被宽松接受且过滤结果正确（正确排除 tag=x 的点），无错误结果或崩溃，不构成文档-实现缺陷。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "query=null 被等价于无 query 查询，按 id 序返回带 score 的全部点且结果正确，材料契约无被违反条目。"}

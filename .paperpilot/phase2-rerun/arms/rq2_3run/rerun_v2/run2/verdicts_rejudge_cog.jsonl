@@ -1,0 +1,10 @@
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "同一系统对 -100 TTL 在 alter_properties 返回 code=1100 'collection TTL is out of range, expect [-1, 3155760000], got -100: invalid parameter'，而 create 携带同值静默成功 code=0 且 describe 显示该属性未被持久化，属静默接受系统自身已声明越界的被拒值。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "控制组错误信息自证系统声明维度范围 2~32768，dim=32768 恰为上界被接受、32769 被正确拒绝，observed 实际符合边界语义，无契约违反。"}
+{"defect_id": "milvus_018", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "日志全文显示 rename 实际被拒 code=65535 duplicated name（与摘要 code=0 矛盾），expected 仅约束名称为非空字符串且未被违反，串行日志无法确立并发竞态违反契约，证据不足。"}
+{"defect_id": "milvus_019", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "rowCount=0 与 query 返回 5 行虽自相矛盾，但 expected 明示'无 endpoint=collections+get_stats 的可核查约束行'，包内无任何 rowCount 准确性契约断言，不足以支持违反契约判断。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "expected 契约仅有类型约束与成功返回 200/code=0 断言，无重复创建必须失败的条目，幂等成功不违反包内任何断言。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "expected 仅约束 collectionName 为字符串，'_test_collection' 为合法字符串且创建成功符合'成功返回 code=0'断言，包内无命名首字符限制条款。"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "expected 契约无 shardsNum 任何范围/类型约束行，接受 0/-1/65535 无包内断言可违反，按保守规则判证据不足。"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "包内显式约束 metricType in [L2,IP,COSINE] 但空串被静默接受 code=0，consistencyLevel in [Strong,Session,Bounded,Eventually] 但 'None' 被接受 code=0，同请求中 dim=32769 对照被正确拒绝，证明验证存在而枚举约束被违反。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "包内约束 consistencyLevel in [Strong,Session,Bounded,Eventually]，'Invalid' 被接受 code=0 且 describe 显示其被静默改为 Bounded，构成对显式枚举约束的静默接受被拒值。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "'InvalidVectorType' 被接受 http=200/code=0 且 describe 显示字段类型被静默改为 FloatVector，违反包内 '400 on invalid parameters' 行为断言；因 vectorFieldType 无专属约束行故置信度调低。"}

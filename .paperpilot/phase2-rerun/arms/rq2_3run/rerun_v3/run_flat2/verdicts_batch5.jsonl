@@ -1,0 +1,14 @@
+{"defect_id": "qdrant_014", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "文档对该端点 standalone 模式行为零声明，实现将确定性的模式前置条件用 service_error 归入 500 内部错误（错误码语义可疑），但无明文注释可证 by-design、也无契约条目可证违反，按 v3 协议无法确证交人工复核。"}
+{"defect_id": "qdrant_015", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "shard_number=2147483647 满足契约下界(min=1)却使单请求令整个服务器包括 GET / 健康端点全部超时失联，属无上限校验且不 fail-fast 的全局可用性(DoS)缺陷。"}
+{"defect_id": "qdrant_016", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "纯向量查询中 lookup_from 本就不参与（控制组与实验组结果完全一致），文档仅描述其用途未承诺存在性校验，未演示出任何文档-实现行为偏离。"}
+{"defect_id": "qdrant_017", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "包内观察日志显示 offset 0/10/20 三页结果 0-24 无重复无遗漏且按分数降序，与全部契约条目一致，未观察到任何违规。"}
+{"defect_id": "qdrant_018", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约明文 exact=false 为近似值且'Approximate count might be unreliable during the indexing process'，本例在建索引(acknowledged)后立即计数，偏差落在文档明示的不可靠窗口内。"}
+{"defect_id": "qdrant_019", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内契约即'exact=false uses segment statistics'且文档明示索引期间近似计数可能不可靠，三轮观测均在索引创建 acknowledged 后立即进行，未超出文档允许范围。"}
+{"defect_id": "qdrant_020", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "组合过滤的 exact=false 偏差(130→99、73→62)同样发生在建索引 acknowledged 后立即计数窗口内，契约明示近似值用 segment statistics 且索引期间可能不可靠。"}
+{"defect_id": "qdrant_021", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "geo_radius 近似计数 +535% 虽极显著，但观测仍处于建索引 acknowledged 后立即计数的窗口，落在文档明示'索引期间近似计数可能不可靠'的允许范围内，未能证明索引完成后仍持续失准。"}
+{"defect_id": "qdrant_022", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "match_any 多值过滤的近似偏差(-11%~-33%)同属建索引后立即计数窗口，契约明文 exact=false 使用 segment statistics 且文档允许索引期间不可靠。"}
+{"defect_id": "qdrant_023", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "文档原文将 priority 限定于'if there are other replicas in the cluster'，源码 recover.rs 有明文注释'No other active replicas, we can activate this shard as there is no de-sync possible'——单副本时优先级被显式跳过属设计内行为。"}
+{"defect_id": "qdrant_024", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "recommend 正例经 lookup_from 跨集合取 8 维向量报 400 维度错误，而负例同路径被静默截断为 4 维参与打分(score 0.9643651=√0.93 恰为截断向量距离)返回 200，同参数双侧校验不一致且静默改变语义。"}
+{"defect_id": "qdrant_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "源码 UpdateCollectionOperation 明文文档字符串'Metadata to update...will merge with existing metadata. Individual keys can be removed by setting their value to null'——空对象合并不改动任何键是文档化的合并语义，且包内 HTTP GET 原文显示 metadata 未变与该语义一致。"}
+{"defect_id": "qdrant_026", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "8 个点向量全同导致全部 score=1.0 完全并列，契约仅承诺按分数降序而对并列项顺序无任何约定，并列顺序不稳定不构成文档-实现违反。"}
+{"defect_id": "qdrant_027", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内契约明文'Index creation is asynchronous; query optimization applies after the index is built'，acknowledged 后立即 GET 未见 payload_schema 与文档声明的异步语义一致。"}

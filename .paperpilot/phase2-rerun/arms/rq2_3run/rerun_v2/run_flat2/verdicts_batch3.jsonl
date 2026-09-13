@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "两项观察均为服务端按契约正确拒绝非法入参(limit=0 与维度不匹配各返回明确错误码),没有任何文档承诺被违反。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "材料包中 users+create 经核查后无任何可核查契约行,弱口令被接受无法对证为文档-实现缺陷,长度校验(6-72)本身工作正常。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "1804 报错源于 payload 中携带未声明字段 color 且集合未开动态 schema,属对无效输入的正确拒绝,且 upsert 与 insert 行为一致、材料无 upsert 契约行。"}
+{"defect_id": "milvus_032", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码证实 quick-create 路径仅从 params.consistencyLevel 取值且对非法值会显式报错(handler_v2.go:2043-2055),顶层 consistencyLevel 属未被消费的顶层字段被静默忽略,与维护者 issue 50351 的 by-design 表态一致。"}
+{"defect_id": "milvus_033", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "v2.6.19 源码中 REST v2 create 不存在 vectorFieldType 字段(向量类型硬编码 FloatVector),非法值属未消费顶层字段被静默忽略,符合维护者 50351 的 by-design 立场,且材料亦无该参数契约行。"}
+{"defect_id": "milvus_034", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "JSON 字段接受合法 JSON 字符串值与 schema 相符,键名亦匹配,gRPC 侧报错是对未加引号原始串的传输层差异,查询失败仅因集合未加载,未证明任何数据损坏。"}
+{"defect_id": "milvus_035", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "数字字符串 \"123\" 被无损解析为 Int64 且 insertIds 正确返回,材料中 insert 契约仅有集合存在与可检索两条,无被违反的类型约束行。"}
+{"defect_id": "milvus_036", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "v3.0.0 源码证实 REST v2 分组参数为顶层 groupingField/groupSize(request_v2.go:499-501),请求中 groupParams 嵌套与键名均未被消费而整体静默忽略,服务端从未收到分组请求,材料中亦无 groupSize 契约行。"}
+{"defect_id": "milvus_037", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "insert 契约无任何类型约束行,全部查询因集合未加载而失败、跨类型写入后的存储结果未经验证,仅凭接受成功无法证实构成真实的文档-实现缺陷。"}
+{"defect_id": "milvus_038", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "与 036 同因,groupParams.groupByField 是未被消费的请求形状,向量字段分组从未到达服务端,该观察无法证明服务器接受向量字段分组,材料契约行也仅称文档无拒绝向量字段的规范表述。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "材料含显式 upsert 契约\"data must match collection schema\"且 schema 声明 id 为 Int64,REST 静默接受字符串主键 \"100\" 并返回成功,直接违反该文档约束。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "REST 写入 JSON 字段的值经 gRPC get 读取报 \"unexpected character\" 而不可读,证明存储值并非合法 JSON,REST 写入的数据违反\"插入实体应可检索\"契约且跨路径不可读。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "材料含显式 schema 匹配契约,字符串写入 DOUBLE、'true' 与整数 1 写入 BOOL、'42' 写入 INT16 全部静默成功,值类型与声明的字段类型均不匹配,违反 data must match collection schema。"}
+{"defect_id": "milvus_042", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "字符串向量被无损解析为 [0.1,0.2,0.3,0.4] 且检索距离精确等于 1(完全匹配),下游行为正确,材料中 insert 契约无类型约束行,未见任何错误行为。"}

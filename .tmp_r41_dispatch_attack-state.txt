@@ -1,0 +1,30 @@
+R41 attack-gen dispatch (chunk 41/66, chunk_points+recommend+groups, 3 units) — session qdrant-1180-r1, qdrant v1.18.0, plugin 2.5.0 (D2 v3.5 path B unconditional).
+
+ENVIRONMENT
+- Target: docker testvdb-qdrant-standalone at http://127.0.0.1:6333 (healthy). TESTVDB_DB_URL=http://127.0.0.1:6333. Liveness = GET /healthz.
+- SESSION_DIR = C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/2026-09-04T12-14-11Z
+- Contract: C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.5.0/results/qdrant/v1.18.0/structured_contract.json
+- OpenAPI: C:/Users/11428/Desktop/testvdb_paper/.sourcedeps/qdrant/v1.18.0/openapi.json
+- Threat model: C:/Users/11428/Desktop/testvdb_paper/docs/ops-prompts-run3/tma-run3.txt
+- Source: C:/Users/11428/Desktop/vdb_src/qdrant/v1.18.0 (git db3fca3)
+- Scripts → SESSION_DIR/debate_logs/<name>.py + <name>.meta.json. STD LIB ONLY (urllib). py -3.12.
+
+FACE = POST /collections/{c}/points/recommend/groups. group_size REQUIRED here (missing → 400 "missing field `group_size`"; differs from query groups default-3). Main-probe: G1 full body → 200 groups; G2 no positive → 400 avg-strategy message; G3 offset=1 → 200 same groups (flatten-ignore suspected; intra-group tie-order noise observed); G4 ghost 404; G5 best_score 200.
+
+UNITS (2 state-flavored path B + shared):
+1. qdrant_state_recommend_groups_001 [state, endpoint, explicit, bound=[] → path B]
+   assert: recommend groups API does not allow offset pagination
+   → offset characterization (0/1/100 vs plain, parsed time-stripped; intra-group TIE-tolerant compare — probe showed intra-group hit-order noise on tied scores; per R38 query-groups disposition = characterization cross-ref + doccons note unless recommend-groups-specific divergence).
+2. qdrant_behavioral_recommend_groups_001 [behavioral; Type2 → path B]
+   → state-flavored angles below.
+
+PATH B ASSIGNMENT:
+- Write-spectrum: id-referencing positives in recommend groups — positive=[id] with using; upsert flips the id's vector (wait=true) → group scores/tracking must follow new geometry (recompute oracle from post-flip read-back); delete id → positive=[id] → 404 (R39 lifecycle semantics); resurrect → tracks. Stale = Type4.
+- Vectorless-positive lifecycle (defect-62 family on groups face): named fixture vec_a/vec_b subset; recommend groups using=vec_b positive=[vec_b-less id] under best_score (single face R39 = 200-drop) vs average (zero-survivors 400 / partial 200-drop W1c) — groups-face extension characterization: same drop family expected (fetch_vectors shared); cross-ref defect-62, verdict only on recommend-groups-specific divergence.
+- Group-membership under writes: point's grp payload flips a→b (wait=true) → re-group moves it between groups (group id sets change); delete last member of a group → group vanishes; fresh new-group point → new group appears.
+- Group_size window under ties: exact=true with crafted EQUAL-distance members in a group → group_size window picks which members? (intra-group tie selection is unspecified — characterization; R33/R36 tie lessons).
+- Cross-request: duplicate groups requests byte-stable (tie-tolerant); concurrency light (characterize).
+
+OPERATIONS TICKETS (R40 version — 18 items): 1 stdlib urllib; 2 Oracle single line; 3 teardown try-wrapped; 4 naming state_rg_<short>_NN.py + full meta; 5 score-grouped multiset; 6 monotonic/tie-tolerant (probe showed intra-group tie noise); 7 expected-set completeness; 8 strict-schema rejection COMPLIANT; 9 verdict all anomalies; 10 server defaulting COMPLIANT; 11 silent-ignore characterization; 12 empty/absent equivalence; 13 str/int normalize; 14 u64 canary; 15 py3.12+compile+single VERDICT; 16 MaybeOneOrMany; 17 parsed time-stripped compare; 18 scorer=-d² family pinned.
+
+OUTPUT: 4-6 scripts + metas. Brief report.

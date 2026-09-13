@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "观察记录与契约依据双双缺失（无任何 HTTP 交互被捕获、v2.3 文档段已下线），既无法确证缺陷也无法排除，按 v3 协议禁止 FP 兜底转人工复核。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "IVF 检索参数 nprobe=0（数值下界类参数，合法域自 1 起）被服务端以 code=0 正常接受并返回结果，属搜索参数下界校验缺口。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "HNSW 检索参数 ef=0（数值下界类参数，合法域自 1 起）被服务端以 code=0 正常接受并返回结果，属搜索参数下界校验缺口。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "\"age in [10, 5]\" 是无序集合成员语义，库中仅 age=10 一行匹配故 deleteCount=1 完全正确，未违反任何契约。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "insert 接受动态字段名 '123field'（写入 code=0）而查询端按标识符文法解析同一名字失败（parse output field name failed），写入成功却永久不可读回的写读不对称是真实缺陷。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "该字段是 quick-create 模式下无 schema 声明的动态 JSON 字段而非 VARCHAR，动态字段本无类型契约可违，且 int 值 12345 原样往返读写一致。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "空查询向量被服务端以 code=1801 invalid parameter（dimension 8 vs length 0）正确拒绝，属合规参数校验而非非法接受。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "探针实测 100 次同向量 COSINE 检索中 11 次返回 distance>1.0（max≈1.00000024），违反文档明示的闭区间相似度范围 [-1, 1]。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "对照实验显示同一请求 topk=0 被明确拒绝（should be in range [1, 16384]）而 nprobe=0 被接受并返回结果，搜索参数下界校验的不一致缺口有系统内自证。"}
+{"defect_id": "milvus_010", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "create 载荷中的 properties 字段在该版本 REST CollectionReq 结构体中不存在、被静默丢弃(describe 无 TTL 属性,越界 TTL 未生效),但包内无 properties 契约行,是否属'文档承诺却被忽略的参数'无法离线确证,交人工复核。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "材料核查 entities+query 无任何可核查约束行，filter 为 null/缺省/空串三种形态行为一致（全表扫描语义），无文档承诺 filter 必填，构不成可证实的文档-实现矛盾。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "文档对 dbName 仅描述为 \"The name of an existing database\" 且无 required/非空拒绝语义声明（材料已核实），空串回落默认库属常见约定，无可证实的契约违反。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "材料已逐页核查 2.6.x REST 文档，Request-Timeout 仅出现于 curl 示例而无任何类型/取值约束条目，接受非整数值头无契约可违。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "对照分支报错原文即声明合法域 2~32768,dim=32768 恰为含上界合法值,观察行为与系统自述契约一致,非缺陷。"}

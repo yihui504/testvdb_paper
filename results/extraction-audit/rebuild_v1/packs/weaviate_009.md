@@ -1,0 +1,51 @@
+=== 候选缺陷 weaviate_009 ===
+[vendor=weaviate version=1.38.2 defect_type=behavior endpoint=POST /batch/objects]
+--- 观察到的行为（observed） ---
+观察摘要（probe 产出）：
+- [c1] POST schema BatchVectorBugRepro -> http=200
+- [c2] control: singular POST with vector=[] -> http=200
+- [c3] batch with empty-vector item -> http=200, per-item statuses=None
+
+执行日志全文（output_weaviate_009.log）：
+=== REQ 1 ===
+DELETE http://localhost:18080/v1/schema/BatchVectorBugRepro
+=== RESP 1 ===
+status: 200
+body: 
+
+=== REQ 2 ===
+POST http://localhost:18080/v1/schema
+payload: {"class": "BatchVectorBugRepro", "vectorizer": "none", "vectorIndexType": "hnsw", "vectorIndexConfig": {"distance": "cosine"}}
+=== RESP 2 ===
+status: 200
+body: {"class":"BatchVectorBugRepro","invertedIndexConfig":{"bm25":{"b":0.75,"k1":1.2},"cleanupIntervalSeconds":60,"stopwords":{"additions":null,"preset":"en","removals":null},"usingBlockMaxWAND":true},"multiTenancyConfig":{"autoTenantActivation":false,"autoTenantCreation":false,"enabled":false},"properties":null,"shardingConfig":{"virtualPerPhysical":128,"desiredCount":1,"actualCount":1,"desiredVirtualCount":128,"actualVirtualCount":128,"key":"_id","strategy":"hash","function":"murmur3"},"vectorIndexConfig":{"skip":false,"cleanupIntervalSeconds":300,"maxConnections":32,"efConstruction":128,"ef":-1,"dynamicEfMin":100,"dynamicEfMax":500,"dynamicEfFactor":8,"vectorCacheMaxObjects":1000000000000,"flatSearchCutoff":40000,"distance":"cosine","pq":{"enabled":false,"bitCompression":false,"segments":0,"centroids":256,"trainingLimit":100000,"encoder":{"type":"kmeans","distribution":"log-normal"}},"bq":{"enabled":false},"sq":{"enabled":false,"trainingLimit":100000,"rescoreLimit":20},"rq":{"enabled":false,"bits":8,"rescoreLimit":20},"filterStrategy":"acorn","multivector":{"enabled":false,"muvera":{"enabled":false,"ksim":4,"dprojections":16,"repetitions":10},"aggregation":"maxSim"},"skipDefaultQuantization":false,"trackDefaultQuantization":false},"vectorIndexType":"hnsw","vectorizer":"none","replicationConfig":{"deletionStrategy":"TimeBasedResolution","factor":1,"asyncEnabled":false}}
+
+
+=== REQ 3 ===
+POST http://localhost:18080/v1/objects
+payload: {"class": "BatchVectorBugRepro", "properties": {"name": "control-singular"}, "vector": []}
+=== RESP 3 ===
+status: 200
+body: {"class":"BatchVectorBugRepro","creationTimeUnix":1786647802626,"id":"472773d8-7342-495c-9ea5-8d57c46fee08","lastUpdateTimeUnix":1786647802626,"properties":{"name":"control-singular"}}
+
+
+=== REQ 4 ===
+POST http://localhost:18080/v1/batch/objects
+payload: {"objects": [{"class": "BatchVectorBugRepro", "id": "11111111-1111-4111-8111-111111111111", "properties": {"name": "valid-item"}, "vector": [0.1, 0.2, 0.3, 0.4]}, {"class": "BatchVectorBugRepro", "id": "22222222-2222-4222-8222-222222222222", "properties": {"name": "bad-empty-vector"}, "vector": []}]}
+=== RESP 4 ===
+status: 200
+body: [{"class":"BatchVectorBugRepro","creationTimeUnix":1786647802646,"id":"11111111-1111-4111-8111-111111111111","lastUpdateTimeUnix":1786647802646,"properties":{"name":"valid-item"},"vector":[0.1,0.2,0.3,0.4],"deprecations":null,"result":{"status":"SUCCESS"}},{"class":"BatchVectorBugRepro","creationTimeUnix":1786647802646,"id":"22222222-2222-4222-8222-222222222222","lastUpdateTimeUnix":1786647802646,"properties":{"name":"bad-empty-vector"},"deprecations":null,"result":{"status":"SUCCESS"}}]
+
+--- 契约依据（expected，M1 过滤后初稿） ---
+约束条目（6 条，来自 weaviate 1.38.2 契约，endpoint=POST /batch/objects）：
+{"constraint_id": "weaviate_state_batch_idempotent_001", "endpoint": "POST /batch/objects", "type": "state_constraint", "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)", "assertion": "batch create is idempotent; existing UUIDs are replaced", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "aligned", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["PUT", "UUID", "UUIDs", "are", "batch", "create", "existing", "idempotent", "item", "overwritten", "per", "replaced"], "priority": "bulk"}}
+{"constraint_id": "weaviate_state_batch_reject_all_001", "endpoint": "POST /batch/objects", "type": "state_constraint", "description": "429 WHOLE BATCH rejected (no partial fill)", "assertion": "usage limit exceeded rejects entire batch, no partial success", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "aligned", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["BATCH", "WHOLE", "batch", "entire", "exceeded", "fill", "limit", "partial", "rejected", "usage"], "priority": "bulk"}}
+{"assertion_id": "weaviate_behavioral_batch_reject_partial_001", "endpoint": "POST /batch/objects", "description": "429 WHOLE BATCH rejected (no partial fill)", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "aligned", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["BATCH", "WHOLE", "fill", "partial", "rejected"], "priority": "bulk"}}
+相关契约段（关键词定位 4 条）：
+{"endpoint": "POST /batch/objects", "kind": "state_constraints", "description": "429 WHOLE BATCH rejected (no partial fill)", "assertion": "usage limit exceeded rejects entire batch, no partial success", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "NO_VC_ROW", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["BATCH", "WHOLE", "batch", "entire", "exceeded", "fill", "limit", "partial", "rejected", "usage"], "priority": "bulk"}}
+{"endpoint": "POST /batch/objects", "kind": "state_constraints", "description": "idempotent by UUID -- existing UUIDs overwritten (PUT semantics per item)", "assertion": "batch create is idempotent; existing UUIDs are replaced", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "NO_VC_ROW", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["PUT", "UUID", "UUIDs", "are", "batch", "create", "existing", "idempotent", "item", "overwritten", "per", "replaced"], "priority": "bulk"}}
+{"endpoint": "POST /batch/objects", "kind": "assertion", "description": "429 WHOLE BATCH rejected (no partial fill)", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "confidence": 0.95, "_audit": {"g1": "NO_VC_ROW", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["BATCH", "WHOLE", "fill", "partial", "rejected"], "priority": "bulk"}}
+VERDICT: UNKNOWN (replay capture — no attack-agent assertion output; raw HTTP only)
+--- 补充契约行（M1 端点过滤后） ---
+{"constraint_id": "weaviate_range_batch_delete_001", "endpoint": "/batch/objects DELETE", "description": "max deletions per request is QUERY_MAXIMUM_RESULTS (default 10000)", "assertion": "results.matches + results.failed + results.successful <= 10000", "type": "range_constraint", "confidence": 0.9, "evidence_tier": "explicit", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "source_status": "reachable", "_audit": {"g1": "aligned", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["QUERY_MAXIMUM_RESULTS", "default", "deletions", "failed", "matches", "max", "per", "request", "results", "successful"], "priority": "bulk"}}
+{"constraint_id": "weaviate_state_batch_objects_001", "endpoint": "/batch/objects POST", "description": "batch is idempotent by UUID; existing UUIDs are overwritten (PUT semantics per item)", "assertion": "POST /batch/objects with existing UUID overwrites rather than errors", "type": "state_constraint", "confidence": 0.95, "evidence_tier": "explicit", "source_url": "https://github.com/weaviate/weaviate/blob/v1.38.0/openapi-specs/schema.json", "source_status": "reachable", "_audit": {"g1": "aligned", "g2": "OK", "issue_no": false, "page": "text", "kw_hits": ["POST", "PUT", "UUID", "UUIDs", "are", "batch", "errors", "existing", "idempotent", "item", "objects", "overwritten"], "priority": "bulk"}}

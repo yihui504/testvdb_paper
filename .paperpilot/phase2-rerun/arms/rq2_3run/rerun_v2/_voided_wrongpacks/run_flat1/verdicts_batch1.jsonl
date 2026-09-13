@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "材料包无任何观察记录（raw 为空且 log 未捕获），没有可证实的文档-实现偏差，无法确认缺陷存在。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "nprobe=0 远低于文档规定的有效范围下限(≥1)却被静默接受并返回 3 条结果，属非法参数非法成功；同参数类的 topk=0 有范围校验（见 milvus_009 对照）而 nprobe 完全不校验。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "HNSW 的 ef=0 低于文档有效范围(≥1)却被静默接受并返回结果，参数范围契约完全未被实施。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "filter 'age in [10, 5]' 中仅 age=10 存在，deleteCount=1 恰为精确匹配集，IN 列表含不存在值只删匹配实体完全符合过滤语义，无契约违背。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "insert 成功接受动态字段名 '123field'/'@field' 并返回 insertCount=2，但 query 对同一字段名报 'parse output field name failed'，说明系统写入了自身无法输出/解析的字段名，写入-可检索一致性被破坏。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "该集合由 dimension 快速创建，text_field 是动态(JSON)字段，动态字段本无 schema 类型约束，int/string 混存且原样往返('hello'/12345)忠实还原，不构成 schema 类型违约。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空向量 [[]] 被服务端以 code=1801 invalid parameter 拒绝（dimension: 8, but length 0），拒绝本身正确且日志消息与维度事实一致，观察摘要声称的误导性类型报错与实际 HTTP 日志不符。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "COSINE 下完全相同向量按文档 distance=1-cos 应为 0，实测 100 次查询距离≈1.0 且 11 次>1.0(max 1.0000002)，数值恰等于把相似度当距离返回，直接违背文档化度量语义。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "同一接口内 topk=0 被范围校验拒绝而 nprobe=0 静默接受并返回结果，两轮复现一致，nprobe 的文档化取值范围完全未被校验，属真实的参数校验缺失。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "create 携带 collection.ttl.seconds=-100 返回 code=0 且 describe 中属性被静默丢弃，而同一属性同一值经 alter_properties 被范围校验拒绝（expect [-1, 3155760000]），同一属性的创建/修改路径校验不一致，违反 ttlSeconds 有效范围契约。"}
+{"defect_id": "milvus_011", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "契约规定 filter 必须是有效布尔表达式，但 filter=null/缺省/''（空串并非有效表达式）均被接受并当作无条件匹配返回全部行，非法 filter 非法成功且造成无界全表扫描。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "契约中不存在 endpoint=collections+list 的任何约束条目，dbName='' 回落 default 库属未文档化的宽容行为，无任何文档承诺被违背。"}
+{"defect_id": "milvus_013", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "API 参考明确 Request-Timeout 为整数类型，'3.5' 与 'abc' 均被静默接受且行为与合法值无异，文档化类型契约完全未校验（对应 issue #49890 的静默截断/忽略）。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "dim=32768 接受、dim=32769 报错拒绝，边界行为与文档规定的 dimension ≤32768 完全一致，无契约违背。"}

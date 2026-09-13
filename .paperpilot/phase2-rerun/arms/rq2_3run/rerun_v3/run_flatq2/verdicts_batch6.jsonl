@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "scroll 观察与契约一致:strict 配置 max_query_limit=10 下 limit=5 正常返回、limit=100 被 400 明确拒绝并给出上限指引,包内其余探针(维度错误、恢复 404)也均为正确的校验行为,无文档-实现背离。"}
+{"defect_id": "weaviate_001", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "dynamicEfMin=500 大于 dynamicEfMax=10 的矛盾区间被 200 接受并原样持久化,源码 validate() 仅校验 maxConnections/efConstruction 等而无任何 min<=max 检查,也无注释表明该区间倒置是有意设计。"}
+{"defect_id": "weaviate_002", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "count 阈值参数 flatSearchCutoff=-100 被 200 接受并持久化为负值,属数值下界类违反(闭区间阈值为非负),包内外其余参数有正数下限校验而其无,且无有意设计注释。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "replicationConfig.factor=-1 违反契约明文 factor>=1(显式 range 约束),服务器既不报错也不回显请求值而是静默改写为 1 返回 200,构成非法输入静默纠正的文档-实现缺陷。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "源码明文注释 entities/vectorindex/hnsw/config.go: DefaultEF = -1 // indicates \"let Weaviate pick\",-1 是_ef_未指定时的官方哨兵默认值(各案默认 GET 均回显 ef:-1),显式传 -1 等于默认行为,非缺陷。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "同类参数校验不对称:desiredCount=0 被 422 拒绝而 desiredCount=-1 被 200 接受,负分片数明显非法却绕过校验,属数值下界违反且无任何有意设计说明。"}
+{"defect_id": "weaviate_006", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "tokenization=\"\" 不在文档枚举集内却获 200,但服务端将其视作未提供并归一为合法默认 word(源码 validation.go 以 ==\"\" 短路判断但无明文注释),介于可选字段惯例与枚举校验缺口之间的灰区。"}
+{"defect_id": "weaviate_007", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "JSON null 语义等价于该可选字段未提供,回退到文档默认 distance=cosine 与省略字段行为一致,未落入枚举集外取值,不构成文档-实现背离。"}
+{"defect_id": "weaviate_008", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "activityStatus=\"\" 不在契约枚举 {ACTIVE, INACTIVE} 内却返回 200,且响应体中该租户 status 字段缺失(非法空枚举被持久化而非归一为合法值),源码未找到任何有意接受的注释。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "空 vector 在单条 POST 对照与批量 POST 中行为完全一致(200、按无向量对象存储),vectorizer=none 类的向量本为可选,批量侧无额外背离,所引契约(幂等/429 整批拒绝)均未被违反。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "纯客户端请求体校验失败(缺 match.where / 空 match)返回 HTTP 500,而该案源码目录 openapi.json 明文文档化 422 Invalid data provided (e.g., invalid filter),状态码语义与文档承诺直接矛盾。"}

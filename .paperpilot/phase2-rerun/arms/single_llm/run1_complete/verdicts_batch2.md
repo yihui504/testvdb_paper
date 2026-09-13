@@ -1,0 +1,7 @@
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "契约对 collectionName 仅有字符串类型约束，无任何命名模式限制；下划线开头是合法字符串名，200/code=0 完全符合契约，也无维护者表态涉命名规则"}
+{"defect_id": "milvus_027", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "维护者明确表态顶层 shardsNum 未被 REST v2 create 消费、静默忽略是 by-design（issue 50351），本案 payload 正是顶层 shardsNum，200 成功反映字段未消费而非范围校验失效"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "metricType=\"\" 与 consistencyLevel=\"None\" 均在置信度 1.0 的显式枚举约束之外却返回 200/code=0，违反枚举约束与 400-on-invalid 断言（c3 dimension=32769 已正确拒绝，但 c1/c2 独立成立）"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "consistencyLevel=\"Invalid\" 不在显式枚举 [Strong/Session/Bounded/Eventually] 内却被 200 接受，describe 显示静默回落默认 Bounded，违反枚举约束与 400-on-invalid"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "vectorFieldType=\"InvalidVectorType\" 非法枚举被静默接受并回落默认 FloatVector，违反 '400 on invalid parameters' 行为断言；同批 idType/autoID 均被消费生效，故非未消费字段忽略的 by-design 情形"}
+{"defect_id": "milvus_038", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "文档考古补全契约（explicit 层）明确 group_by_field 必须为标量字段，REST 端 groupByField=vector 却静默 200 且返回未分组的 5 条同向量结果，对照 gRPC 端直接抛异常，属静默吞掉非法参数"}
+{"defect_id": "qdrant_016", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "补全契约明确 lookup_from.collection 必须引用已存在集合（非存在应 400/404），观察到 nonexistent_collection_xyz 仍 200 返回源集合结果，非法跨集合引用被静默忽略"}

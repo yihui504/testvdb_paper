@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "limit=0 与 64 维向量搜索均被明确拒绝并返回描述性错误(code=65535/1801,含具体原因),未静默接受非法参数,行为符合契约语义。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "8 字符密码 abcdefgh 处于契约规定的 8-64 长度范围内,被接受不构成违反长度约束,包内亦无密码复杂度断言,证据不足以判定缺陷。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "含 schema 外字段 color 的 upsert 与对照 insert 均返回 1804 描述性错误,未见静默接受非法数据,行为符合契约的拒绝语义。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "consistencyLevel=Invalid 不在契约白名单 [Strong/Session/Bounded/Eventually] 内,create 却返回 code=0 静默接受,describe 显示实际落为默认 Bounded,违反类型约束。"}
+{"defect_id": "milvus_033", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约条目与补充依据均无 vectorFieldType 允许值约束,非法值被忽略落为默认 FloatVector 缺乏明确契约断言支撑,证据不足。"}
+{"defect_id": "milvus_034", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "REST upsert 将非 JSON 字符串写入 JSON 字段返回 code=0,gRPC 对照报 Invalid JSON string;但包内无 upsert 契约断言,且后续查询因 collection not loaded 失败,无法验证存储值违背契约,证据不足。"}
+{"defect_id": "milvus_035", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "REST 对可解析的数值字符串 123 宽容转成 Int64 主键 123 并拒绝不可解析的 abc,值语义无损,无充分依据判定违反类型约束。"}
+{"defect_id": "milvus_036", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "包内契约无 groupSize 取值约束(文档考古亦未补出),groupSize=0/-1 被忽略缺乏可援引的契约断言,证据不足。"}
+{"defect_id": "milvus_037", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "字符串/数值/布尔间的转换均可无损解析(123、true、42),且查询验证因 collection not loaded 失败未取得存储证据,不足以判定违反契约。"}
+{"defect_id": "milvus_038", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "补充契约约束明确 group_by_field 必须为标量字段,而 REST 对 groupByField=vector 返回 code=0 静默接受,直接违反该断言。"}
+{"defect_id": "milvus_039", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "upsert 接受字符串主键 100 后查询验证 id=100 实体被正确更新为 [0.9,0.9,0.9,0.9],值语义与契约一致,属无损宽容解析。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST insert 将普通字符串写入 JSON 字段返回成功,且 gRPC 读取该写入值报 unexpected character 不可读,证明非法 JSON 值被静默接受并落库,违反实体可检索/类型匹配契约。"}
+{"defect_id": "milvus_041", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "DOUBLE/BOOL/INT16 字段对可无损解析的字符串或 0/1 值(3.14159、true、1、42)宽容接受,包内无禁止此类转换的断言,证据不足。"}
+{"defect_id": "milvus_042", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "字符串编码向量 [0.1,0.2,0.3,0.4] 被解析后插入成功且可被搜索命中(id=0),未见数据损坏,包内无禁止该写法的契约断言,证据不足。"}

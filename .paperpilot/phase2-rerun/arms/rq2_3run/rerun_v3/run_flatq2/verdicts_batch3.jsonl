@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "limit=0 与维度不符向量均被明确拒绝(code 65535/1801),与契约 limit>0 及 data 类型约束完全一致,未观察到任何违反。"}
+{"defect_id": "milvus_030", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "实现仅强制密码长度6-72(v2.6.17 proxy/util.go ValidatePassword 只有长度检查),包内无可核查契约行,文档是否承诺复杂度规则无法确证。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "两请求报错均因未声明的 color 字段(dynamic schema 未开属预期拒绝),insert 与 upsert 行为完全一致,upsert-缺PK 假设实际未被测试,无契约违反。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "契约明文 consistencyLevel∈{Strong,Session,Bounded,Eventually},集合外值 Invalid(内部 proto 枚举零值经 convertConsistencyLevel 映射表漏入)被 code=0 接受并静默回落 Bounded,枚举闭集违反未报错。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "v2.6.19 REST CollectionReq 无 vectorFieldType 字段、集合外值被静默丢弃默认 FloatVector;v3.0.0 同一层已补显式校验且其单测恰用 InvalidVectorType 期望报错,反证旧版静默接受即缺陷。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "REST upsert 将非法 JSON 文档的裸字符串写入 JSON 字段返回 code=0,同一输入 gRPC 面被 Invalid JSON string 拒绝,违反 explicit 契约 data 须匹配 schema 的验证一致性。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "Int64 主键接受字符串 '123' 并强制转码为 123 成功返回,而 gRPC 对同一输入报 should be int64;REST 层 String()+cast 静默强转无源码明文注释支持有意设计,属类型约束放宽。"}
+{"defect_id": "milvus_036", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "计数类参数下界违反:groupSize=0 与 -1 均 code=0 接受且分组检索静默退化为普通检索(返回5行含同组多实体)未报错。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "string→INT64、int→VarChar、string→BOOL 三组类型不匹配值全部被 REST 以 code=0 接受(utils.go 字段转换走 String() 中转强转路径),违反 schema 声明类型且无有意设计明文。"}
+{"defect_id": "milvus_038", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "对 vector 向量字段分组被静默忽略(同组5行全返回、code=0),但重建契约明言文档对向量字段分组无规范性陈述,gRPC 对照面又因 harness 度量错误未建立,无法确证违反。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "字符串主键 '100' 经 REST upsert 实际覆盖 id=100(query 证实向量已更新),端到端演示静默类型强转且与 gRPC 拒绝行为不一致,违反 explicit 契约(schema 声明 Int64)。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "REST 将裸字符串写入 JSON 字段成功且查询原样返回,导致 gRPC 读取报 unexpected character——utils.go JSON 分支直接存 dataString 字节无校验,造成跨接口不可读的真实数据损坏。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "string→DOUBLE、'true'→BOOL、1→BOOL、'42'→INT16 四种类型不匹配值均被 REST upsert 以 code=0 静默接受,属同一 String()+cast 强转路径的类型约束违反。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "字符串编码向量 '[0.1,...]' 被 REST insert 接受并可正常检索,而 gRPC 对同一输入报 vector field should be float_vector got str,REST 静默绕过声明的数组类型。"}

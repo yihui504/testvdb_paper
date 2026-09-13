@@ -1,0 +1,535 @@
+🚀 Zilliz Cloud: fully managed Milvus — 10x faster. Zero hassle. Built for AI.Try Free Now →
+
+  * Why Milvus
+
+    * What is Milvus
+    * Use Cases
+
+  * Docs
+  * Tutorials
+
+    * Bootcamp
+    * Demos
+    * Video
+
+  * Tools
+
+    * Attu
+    * Milvus CLI
+    * Sizing Tool
+    * Milvus Backup
+    * VTS
+    * Deep Searcher
+    * Claude Context
+
+  * Blog
+  * Community
+
+    * Milvus Office Hours
+    * Slack
+    * Discord
+    * GitHub
+    * More Channels
+
+Star46.0KBook a DemoTry Managed Milvus
+
+< Docs
+
+v2.6.x
+
+  * v3.0.x
+  * v2.6.x
+  * v2.5.x
+  * v2.4.x
+
+  * RESTful
+
+    * About
+
+    * v2
+
+      * Alias (v2)
+
+      * Collection (v2)
+
+        * Add Field
+
+        * Alter Field Properties
+
+        * Alter Properties
+
+        * Compact
+
+        * Create
+
+        * Describe
+
+        * Drop Properties
+
+        * Drop
+
+        * Flush
+
+        * Get Load State
+
+        * Get Stats
+
+        * Has
+
+        * List
+
+        * Load
+
+        * Refresh Load
+
+        * Release
+
+        * Rename
+
+      * Database (v2)
+
+      * Import (v2)
+
+      * Index (v2)
+
+      * Partition (v2)
+
+      * Resource Group (v2)
+
+      * Role (v2)
+
+      * User (v2)
+
+      * Vector (v2)
+
+    * v1
+
+  * Home
+  * Docs
+  * API Reference
+  * RESTful
+
+  * v2
+
+  * Collection (v2)
+
+  * Create
+
+# Create Collection
+
+This operation creates a collection in a specified cluster.
+
+POST
+
+/v2/vectordb/collections/create
+
+Try it out
+
+Cluster Endpoint
+
+The base URL for this API is in the following format:
+
+http://localhost:19530
+    
+    
+    export CLUSTER_ENDPOINT="http://localhost:19530"
+
+Parameters
+
+Authorizationstringheaderrequired
+
+The authentication token should be a pair of colon-joined username and password, like `username:password`.
+
+Example Value: Bearer {{TOKEN}}
+
+Request Bodyapplication/json
+
+QUICK SETUP
+
+dbNamestring
+
+The name of the database.
+
+collectionNamestringrequired
+
+The name of the collection to create.
+
+dimensionintegerrequired
+
+The number of dimensions a vector value should have. This is required if **dtype** of this field is set to **DataType.FLOAT_VECTOR** or **DataType.Binary_VECTOR**.
+
+metricTypestring
+
+The metric type applied to this operation.
+
+Possible Values: 
+
+L2IPCOSINE
+
+idTypestring
+
+The data type of the primary field. This parameter is designed for the quick-setup of a collection and will be ignored if **schema** is defined.
+
+autoIDstring
+
+Whether the primary field automatically increments. This parameter is designed for the quick-setup of a collection and will be ignored if **schema** is defined.
+
+primaryFieldNamestring
+
+The name of the primary field. This parameter is designed for the quick-setup of a collection and will be ignored if **schema** is defined.
+
+vectorFieldNamestring
+
+The name of the vector field. This parameter is designed for the quick-setup of a collection and will be ignored if **schema** is defined.
+
+CUSTOM SETUP
+
+dbNamestring
+
+The name of the database.
+
+collectionNamestring
+
+The name of the collection to create.
+
+schemaobject
+
+The schema is responsible for organizing data in the target collection. A valid schema should have multiple fields, which must include a primary key, a vector field, and several scalar fields. Setting this parameter means that `dimension`, `idType`, `autoID`, `primaryFieldName`, and `vectorFieldName` will be ignored.
+
+autoIDstring
+
+Whether allows the primary field to automatically increment. Setting this to True makes the primary field automatically increment. In this case, the primary field should not be included in the data to insert to avoid errors. Set this parameter in the field with is_primary set to True.
+
+enableDynamicFieldstring
+
+Whether allows to use the reserved **$meta** field to hold non-schema-defined fields in key-value pairs.
+
+fieldsarrayrequired
+
+A list of field objects.
+
+[]fieldsobjectrequired
+
+A field object
+
+fieldNamestringrequired
+
+The name of the field to create in the target collection
+
+dataTypestringrequired
+
+The data type of the field values.
+
+Possible Values: 
+
+DataType.BOOLDataType.INT8DataType.INT16DataType.INT32DataType.INT64DataType.FLOATDataType.DOUBLEDataType.VARCHARDataType.ARRAYDataType.JSONDataType.BINARY_VECTORDataType.FLOAT_VECTORDataType.FLOAT16_VECTORDataType.BFLOAT16_VECTORDataType.SPARSE_FLOAT_VECTORDataType.INT8_VECTOR
+
+elementDataTypestring
+
+The data type of the elements in an array field. This is required if the current field is of the array type.
+
+Possible Values: 
+
+DataType.BOOLDataType.INT8DataType.INT16DataType.INT32DataType.INT64DataType.FLOATDataType.DOUBLEDataType.VARCHAR
+
+nullableboolean
+
+Whether the field can be null. If set to `true`, the field can contain null values.
+
+defaultValuestring
+
+The default value of the field. This is required if the current field is of the `VarChar` type.
+
+isPrimaryboolean
+
+Whether the current field is the primary field. Setting this to True makes the current field the primary field.
+
+isPartitionKeyboolean
+
+Whether the current field serves as the partition key. Setting this to True makes the current field serve as the partition key. In this case, MilvusZilliz Cloud manages all partitions in the current collection.
+
+isClusteringKeyboolean
+
+Whether the current field serves as the clustering key. Setting this to True makes the current field serve as the clustering key. You can read more about the cluster key in Clustering Compaction.
+
+elementTypeParamsobject
+
+Extra field parameters.
+
+max_lengthinteger
+
+An optional parameter for VarChar values that determines the maximum length of the value in the current field.
+
+diminteger
+
+An optional parameter for FloatVector or BinaryVector fields that determines the vector dimension.
+
+max_capacityinteger
+
+An optional parameter for Array field values that determines the maximum number of elements in the current array field.
+
+functionsarray
+
+A list of functions.
+
+[]functionsobject
+
+A function is used to generate vector embeddings for user-provided raw data or applying a raranking strategy to the search results.
+
+namestring
+
+The name of the function to create.
+
+descriptionstring
+
+The description of the function to create.
+
+typestring
+
+The type of the function to create.
+
+Possible Values: 
+
+FunctionType.BM25FunctionType.TEXTEMBEDDINGFunctionType.RERANK
+
+inputFieldNamesarray
+
+The names of the input fields for the function to create.
+
+[]inputFieldNamesstring
+
+A field name.
+
+outputFieldNamesarray
+
+The names of the output fields for the function to create.
+
+[]outputFieldNamesstring
+
+A field name.
+
+paramsobject
+
+Configuration parameters specific to the current function. Once the function type is set to `FunctionType.BM25`, no parameter is required. For applicable parameters to functions of `FunctionType.TEXTEMBEDDING` or `FunctionType.RERANK`, refer to Embedding Functions and Reranking Functions
+
+indexParamsarray
+
+The parameters that apply to the index-building process.
+
+[]indexParamsobject
+
+metricTypestringrequired
+
+The similarity metric type used to build the index. For more information, refer to Similarity Metrics](https://milvus.io/docs/metric.md).
+
+Possible Values: 
+
+L2IPCOSINE
+
+fieldNamestringrequired
+
+The name of the target field on which an index is to be created.
+
+indexNamestringrequired
+
+The name of the index to create. The value defaults to the target field name.
+
+paramsobject
+
+The index type and related settings. For details, refer to Vector Indexes.
+
+index_typestringrequired
+
+The type of the index to create
+
+Minteger
+
+The maximum degree of the node. This applies only when **index_type** is set to **HNSW**.
+
+efConstructioninteger
+
+The search scope. This applies only when **index_type** is set to **HNSW**.
+
+nlistinteger
+
+The number of cluster units. This applies only when **index_type** is set to **IVF-related** index types.
+
+paramsobject
+
+Extra parameters for the collection.
+
+max_lengthinteger
+
+The maximum number of characters in a VarChar field. This parameter is mandatory when the current field type is VarChar.
+
+enableDynamicFieldboolean
+
+Whether to enable the reserved dynamic field. If set to true, non-schema-defined fields are saved in the reserved dynamic field as key-value pairs.
+
+shardsNuminteger
+
+The number of shards to create along with the current collection.
+
+consistencyLevelstring
+
+The consistency level of the collection.
+
+Possible Values: 
+
+StrongEventuallySessionBounded
+
+partitionsNuminteger
+
+The number of partitions to create along with the current collection. This parameter is mandatory if one field of the collection has been designated as the partition key.
+
+ttlSecondsinteger
+
+The time-to-live (TTL) period of the collection. If set, the collection is to be dropped once the period ends.
+
+QUICK SETUP
+    
+    
+    export TOKEN="root:Milvus"
+    
+    
+    
+    
+    curl --request POST \
+    
+    --url "${CLUSTER_ENDPOINT}/v2/vectordb/collections/create" \
+    
+    --header "Authorization: Bearer ${TOKEN}" \
+    
+    --header "Request-Timeout: 5" \
+    
+    --header "Content-Type: application/json" \
+    
+    -d '{
+    
+        "collectionName": "test_collection",
+    
+        "dimension": 5
+    
+    }'
+
+QUICK SETUP WITH CUSTOM FIELDS
+    
+    
+    export TOKEN="root:Milvus"
+    
+    
+    
+    
+    curl --request POST \
+    
+    --url "${CLUSTER_ENDPOINT}/v2/vectordb/collections/create" \
+    
+    --header "Authorization: Bearer ${TOKEN}" \
+    
+    --header "Request-Timeout: 5" \
+    
+    --header "Content-Type: application/json" \
+    
+    -d '{
+    
+        "collectionName": "custom_quick_setup",
+    
+        "dimension": 5,
+    
+        "primaryFieldName": "my_id",
+    
+        "idType": "VarChar",
+    
+        "vectorFieldName": "my_vector",
+    
+        "metric_type": "L2",
+    
+        "autoId": true,
+    
+        "params": {
+    
+            "max_length": "512"
+    
+        }
+    
+    }'
+
+Responses200 \- application/json
+
+SUCCESS
+
+codeinteger
+
+Response code.
+
+dataobject
+
+Response payload which is an empty object.
+
+FAILURE
+
+A failure response.
+
+codeinteger
+
+Response code.
+
+messagestring
+
+Error message.
+
+SUCCESS
+    
+    
+    {
+    
+        "code": 0,
+    
+        "data": {}
+    
+    }
+
+Made with Love  by the Devs from Zilliz
+
+### Get Milvus Updates
+
+Subscribe
+
+Follow Us
+
+Ask AI about Milvus
+
+Copyright © Milvus. 2026 All rights reserved.
+
+Resources
+
+  * Docs
+  * Blog
+  * Managed Milvus
+  * Book a Demo
+  * AI Quick Reference 
+
+Tutorials
+
+  * Bootcamps
+  * Demo
+  * Video
+
+Tools
+
+  * Attu
+  * Milvus CLI
+  * Milvus Sizing Tool
+  * Milvus Backup Tool
+  * Vector Transport Service (VTS)
+  * Deep Searcher
+  * Claude Context
+
+Community
+
+  * Milvus Office Hours
+  * Slack
+  * Discord
+  * Github
+
+Ask AI

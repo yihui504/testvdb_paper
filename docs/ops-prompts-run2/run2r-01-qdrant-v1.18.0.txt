@@ -1,0 +1,423 @@
+==========================================================================================
+[#1 重跑 | A 段 | 2026-08-24] 前置（新规范轮：ADR-0009 = commit 650673f+8000afa）
+==========================================================================================
+- 作业区 CACHE = C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0（run2 同址）
+- 同步核验：agents/scripts（含 exploration_phase/exploratory_channel/get_setting）/
+  settings（mining.confirm_per_round=true 默认；exploration {8,4,3}）均已就位
+- A3 spec 预取：62 paths -> CACHE/.sourcedeps/qdrant/v1.18.0/openapi.json
+  （CACHE 内直连超时，经 testvdb4exp 同源脚本取得后拷贝，内容同源）
+- A4 容器：testvdb-qdrant-standalone up healthy
+- A5 版本核验：GET / -> version "1.18.0" commit db3fca3 ✓
+- A6 源码：CACHE/.qdrant-src-1180 junction（在位）
+- 口径注记（08-24 材料）：GT_HINT 恒空串，作业区不放 gt.json；reach 判定
+  读论文仓 .paperpilot/phase3/gt/ 权威源；终止判定 = 轮数上限（4-6，GT 密集 8）
+  + 探索僵局（exploration_phase stalled K=3）——C1/C9/C11 的 GT_HINT 计数
+  相关步骤按此口径跳过/替换
+- C 段规范变化（ADR-0009）：3 attack agents（vein 已删）+ 8a.5 阶段评估
+  （每轮 Bash exploration_phase.py switch）+ 8b-expl 探索模式（若切换）+
+  auditor 输出含 candidate_class 三态标注
+
+==========================================================================================
+[#1 重跑 | B1 | 2026-08-24] knowledge-extractor 派发词（逐字 = mine.md Step 4 原生模板，仅替换变量）
+subagent_type = testvdb:knowledge-extractor
+==========================================================================================
+
+按照 agents/knowledge-extractor.md 规范，为 qdrant v1.18.0 提取 API 文档知识。将结果写入 results/qdrant/v1.18.0/raw_knowledge.md
+
+（agent 工作目录 = 插件根 C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0，路径按相对语义解析）
+
+==========================================================================================
+[B1 派发后机械验证] ls -la results/qdrant/v1.18.0/raw_knowledge.md
+[B2 待跑] py -3 scripts/validate_doc_coverage.py qdrant v1.18.0
+
+==========================================================================================
+
+==========================================================================================
+[#1 重跑 | B1 完成 | 2026-08-24] 执行事故留痕 + B2 结果
+==========================================================================================
+- B1 agent 线程无 Write/Bash（运行时工具注入故障，frontmatter 定义 Write 在列已核实
+  ——环境层间歇问题非规范缺陷，phase2 同类先例）；12/12 段 SendMessage 分段回传，
+  主进程分块 Write + cat 合并落盘（.rk_part1-4 已删）
+- 落盘校验：37027 字节 / 13 主节 / 50 个 #### 显式端点节（75 端点总量含行式）/
+  尾部 Concept-Doc Minimum 与回传逐字一致
+- B2 doc_coverage_pct = 97.3%（阈值 90% PASS）；missing = [GET /issues, DELETE /issues]
+  （Beta 端点行式写法解析差异 + 低价值，不触发 B3 补爬）；validator 打印层 cp1252
+  崩溃不影响 JSON 落盘（老已知问题）
+
+==========================================================================================
+[#1 重跑 | B4 | 2026-08-24] contract-formalizer 派发词（逐字 = contract.md Step 4 原生模板，仅替换变量）
+subagent_type = testvdb:contract-formalizer
+==========================================================================================
+
+按照 agents/contract-formalizer.md 规范，将 results/qdrant/v1.18.0/raw_knowledge.md 转换为 structured_contract.json。将结果写入 results/qdrant/v1.18.0/structured_contract.json
+
+（agent 工作目录 = 插件根 C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0，路径按相对语义解析。若你的线程没有 Write 工具，将完整 JSON 内容分段经 SendMessage 回传 main，由主进程代落盘。）
+
+==========================================================================================
+[B4 后验证] ls -la results/qdrant/v1.18.0/structured_contract.json
+[B5 待跑] py -3 scripts/enrich_contract_from_spec.py results/qdrant/v1.18.0 --fill-missing-fields
+
+==========================================================================================
+[#1 重跑 | B4-B7 完成 | 2026-08-24]
+==========================================================================================
+- B4 formalizer 自落盘成功（157,876B；75 端点/60 约束全 EXPLICIT/20 assertions；
+  闸门 _validate_contract PASS + passport 双验稳定）——B1 工具故障确认间歇性
+- B5 enrich：8 端点 182 字段回填
+- B6 passport_verify：PASS（enrich 后重签 hash 4b14a818...1b62 一致）
+- B7 门控：CRUD 100%（validate PASS 内含）+ GT 参数面 2/2 HIT
+  （9039=vector/points ✓、9045=wait/points ✓，对论文仓权威源抽查）
+
+==========================================================================================
+[#1 重跑 | C1/C2 | 2026-08-24] R1 session 初始化 + 三 attack 派发
+==========================================================================================
+- SESSION=2026-08-24T12-37-33Z，chunks=32 块 95 单元，R1 块=chunk_aliases+update
+  （2 单元：qdrant_state_aliases_update_001 + qdrant_bc_alias_switch_atomic_001）
+- C1：THREAT_MODEL_ATTACK 125 行（tmp_gen/tma_r1.txt，GT-free 化版 threat_model）；
+  GT_HINT 恒空（新口径不采集）
+- 8a.5 阶段评估 R1：exploration_phase.py switch -> false（enum 模式，照旧分块派发）
+- C2：三 attack 并行派发（boundary/state/semantic；session_id=qdrant-1180-rr1；
+  派发词 = mine.md 8b 模板 + TMA 节选注入 + 本轮块单元清单；vein 无——ADR-0009）
+
+==========================================================================================
+[#1 重跑 | C2 完成 + C3 结果 | 2026-08-24]
+==========================================================================================
+- R1 三 attack 全收：boundary 15 + state 6 + semantic 7 = 28 脚本（+meta 28 + analyzed_documents×3）
+  全部落盘复核（ls/py_compile 28/28）；无 vein（ADR-0009 后首跑）
+- C3 四项验证：py_compile 28/28 ✓ / risky all-pass ✓ / api_format all-pass ✓ /
+  neutrality skip（契约无 target 字段，与旧轮同）
+- 注记：state agent 源码论证引用了 .qdrant-src-1190（版本 1190 非 1180）——
+  仅设计论证参考，脚本打的是运行中 1.18.0；builder 派发时锚 .qdrant-src-1180
+- C4 executor 已派（8d 模板 + export TESTVDB_DB_URL + 不清容器）
+
+==========================================================================================
+[#1 重跑 | C4 事故 + 处置 | 2026-08-24]
+==========================================================================================
+- C4 首跑 28/28 落 log，但 22 个系统性早退：boundary 15（统一 76B，exit=2，
+  脚本自捕获 "VERDICT: SCRIPT_ERROR — runtime import failed"）+ semantic 7
+  （统一 349B traceback，ModuleNotFoundError: No module named 'runtime'）；
+  state 6 真实执行（日志各异，404/409/200 实录）
+- 根因：runtime 位于 CACHE/scripts/runtime/；semantic/boundary 的 bootstrap
+  只认 TESTVDB_SCRIPTS_DIR 或错误相对路径（../scripts=SESSION_DIR/scripts，
+  无 runtime）；state 的 bootstrap 含向上遍历父目录逻辑故成功；
+  .executor.env 未设 TESTVDB_SCRIPTS_DIR
+- 处置：SendMessage executor 带 TESTVDB_SCRIPTS_DIR=CACHE/scripts 重跑 22 个
+  （不改脚本文件，环境变量优先级在前即可过）
+- ⚠️ 机制坑（R2 起必看）：C4 executor 派发词模板必带
+  export TESTVDB_SCRIPTS_DIR=C:/Users/11428/.claude/plugins/cache/testvdb/testvdb/2.3.0/scripts
+  另：qdrant v1.18.0 /health 返回 404，健康端点为 /healthz（executor 事实修正，
+  SOP 模板过时）
+- 追记（同日）：第一层修复（TESTVDB_SCRIPTS_DIR）后推进到第二层失败点
+  get_runtime() 抛 "unsupported TESTVDB_TARGET=''"——semantic/boundary 不像
+  state 从契约自读 target，依赖环境变量。已发 executor 第二轮重跑
+  （+TESTVDB_TARGET=qdrant）。
+  ⚠️ 机制坑补全：C4 派发词环境变量三件套 =
+  export TESTVDB_SCRIPTS_DIR=<CACHE>/scripts TESTVDB_TARGET=qdrant TESTVDB_DB_URL=http://localhost:6333
+  （R2 起固化；三 attack 脚本 bootstrap 行为不统一是根因——state 有向上遍历+
+  契约读 target 两层 fallback，semantic/boundary 无。后续可作为 attack 规范
+  统一化改进项，不在本轮热修 scope）
+- 追记 2（同日）：第二层修复后 boundary 15 全分化（9 种尺寸真实执行，exit 0×3/
+  1×4/2×8，action_enum 日志含真实 400/404+judge）+ state 6 不变 ✓；
+  semantic 7 仍统一死（setup 建集合 30s 读超时）。主进程实测 /collections
+  5s 超时无响应但容器进程活着（202MiB/4%CPU）= 半死态 → 中止条款 4 触发，
+  C10 白名单 docker restart（healthz 一次过，78ms 恢复），清 dos 残留集合
+  bnd_al_dos_c1（dos_actions_size 10 万 actions 未清干净所致）。
+  已发 executor 第三轮重跑 semantic 7。
+  ⚠️ 机制坑追加：dos_actions_size 类资源极限脚本必须 setup 集合名前缀化 +
+  结尾强制 drop（本次靠 drop_collection 级联清理但集合本体 bnd_al_dos_c1
+  残留拖垮容器）——executor 重跑前先查残留集合
+- 追记 3（同日 C4/C5 间）：semantic 第三轮全分化（7 尺寸各异，0×2/1×5，
+  1-2s/脚本，容器 3ms 稳定——证实半死根因）。但 boundary exit=2 的 8 个
+  （long_string/malformed_json/nonexistent_collection/nul_surrogate/
+  special_values/timeout_boundary/type_confusion/type_missing）日志尾部同是
+  "setup: create 0: Read timed out (30s)"= 第二轮跑时容器半死的连带受害者
+  （restart 只救了 semantic）。已发第四轮重跑。
+  C5 首跑 _classify_script_errors: 23 errors 全 cleanup_unwrapped（静态卫生类，
+  teardown 未包 try/except 模式）——待重跑后重新分类再裁决（疑分类器对
+  rt.drop_column 包装模式的保守匹配；实际 VERDICT 均正常落盘无掩盖）
+- 追记 4（C5 修复段，同日）：三族修复完成——boundary 15 文件 21 包裹点
+  （分类器复检残留 0）+ semantic 7 文件 9 包裹点 + state 族连带发现共享
+  runtime 路由 bug：list_aliases 误映射 GET /collections/aliases（被 qdrant
+  路由成 per-collection 名为 aliases 的查询→404），正确为 GET /aliases。
+  runtime/qdrant.py 已修（+新增 list_collection_aliases）+ state 5 脚本
+  探测加固（404 JSON 体不再被解析成"空表探测 OK"）。
+  ⚠️ 假阳性作废申报（state agent 诚实申报非静默）：state_01/02/05 旧产出
+  3 个 DEFECT_FOUND 为 404 空视图假象（03 数据面证实别名全程存在+原子切换
+  无中间态）。19/28 脚本用 list_aliases 受影响。已发第五轮全 28 重跑统一口径。
+  注：rt.drop_collection 内部本就吞异常——cleanup 包裹是满足分类器静态契约，
+  语义无变化（boundary agent 复检注记）
+- 追记 5（第五轮中止+处置，同日）：dos_actions_size 首次到达测试体（前几轮
+  均死于 setup）→ 10 万 actions 载荷静默 180s 被看门狗杀（exit=124 伪码）→
+  容器半死复现（/healthz 200 但 /collections 8s 超时——与第三轮同签名，
+  docker healthy 检查抓不到）。restart + drop bnd_al_dos_c1（级联清空全部
+  dos alias，collections=[]/aliases=0）。
+  处置：dos_actions_size 标记容器杀手本轮不重跑（run2 旧轮先例+C10 白名单），
+  潜在无界 actions 阻塞服务信号如实留痕归后续判定。剩余 21 个续跑中。
+  ⚠️ 机制坑追加：dos 类脚本此前从未真正执行过载荷（setup 先死于容器半死），
+  第五轮才是首真执行——资源极限脚本的"跑过"要区分 setup 死/测试体真死
+
+==========================================================================================
+[#1 重跑 | C7-C9 | 2026-08-24] R1 判定链收官
+==========================================================================================
+- C7 builder×7：原子性三链（atomic_partial/semantic_02/state_01）grade A 源码定位
+  （collection_meta_ops.rs:298-338 顺序循环 ? 早退无回滚）；timeout 两条被源码证伪
+  （脚本把 timeout 放 body 非 query，serde 丢弃）；special_values/semantic_06
+  chain_broken（契约不覆盖主张）；state_01 确证非假象（时间戳唯一名+零路由错误）
+- C8 机械预跑：A 定案×7（DEFECT 3 全为原子性三链 violates=true+quote 核验过；
+  NOT_DEFECT 4）；B 全 NOT_TRIGGERED；exploratory_signal×2（semantic_02/state_01，
+  inference_consistency）均落已定案案——ADR-0009 通道首战形态：块小证据硬零灰区
+- C8 auditor：6000-token 上限截断×1（SendMessage 分段恢复；根因=全局
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS=6000，用户拍板调 16000，新会话生效）；
+  判定 7/7：DEFECT 3（strict_defect）/NOT_DEFECT 4（rejected×4：
+  below_strict=false 机械定案不翻案）；exploratory_candidate 0；
+  root_cause 分布 contract_misread×2+script_error×2；fp 源 both×4
+- D 视角记录：既有盲区锚点"batch operations are not promissed to be atomic"
+  现象级同构 SUPPORTS_DEFECT（原始语料非注入）——by-design 抗辩与认知锚点
+  均入 rationale 不改机械 A 定案；auditor 建议主进程人工复核（挂账：与
+  RQ2 revertb 发现 ④ 同型：维护者"不保证原子"表述 vs 契约"原子性应用"断言）
+- C9：pipeline_state init（C1 漏做，逐级补推）→ REPORTING；
+  chain_verdicts_r1.json 落盘验证（主进程拼装，两段逐字）
+- R2 新线索挂账：query 通道 timeout min=1 校验 validator 未调用（未测空白）
+
+==========================================================================================
+[#1 重跑 | R1-8f/8f.5 完成 + R2 启动 | 2026-08-25]
+==========================================================================================
+- 8f Reporter：defect-1/2/3.md + presubmit runner 落盘；summary.md 被线程工具策略
+  拦截（report 类拒写）→ 全文回传主进程代落盘（SUMMARY-OK 实测过）
+- Pre-Submit Gate：runner 首跑语法错（reporter 笔误括号，主进程修复）后
+  **REPRODUCED 2/2**（case1 defect-1/2A + case2 defect-3A 均 404+residue；
+  控制组 invalid-first residue=False 验证顺序不对称性）
+- 8f.5 verify_defects：CONFIRMED 2 + NEEDS_IMPROVEMENT 1（defect-1 被
+  "log 含 Python error 痕迹"标——实为通用 judge 对 404 的中间分类行，
+  auditor 已解释 + gate 独立复现背书 → 裁决维持 CONFIRMED 附注，不重写）
+- R1 终态：28/7/3 + Gate 2/2。R2 已启动（collections+create-1of2 12 单元，
+  三 attack + reporter-mre 四 agent 并行；reflection_context 注入；
+  8a.5 R2=enum）
+
+==========================================================================================
+[#1 重跑 | R2 C2/C3 | 2026-08-25]
+==========================================================================================
+- R1 MRE 三案实测复现（DEFECT_REPRODUCED×3 + cleanup 卫生通过）——R1 产物链完整闭合
+- R2 三 attack：boundary 13 + state 14 + semantic 19 = 46 脚本（12/12 单元全覆盖）；
+  py_compile 46/46；risky/api_format all-pass；R1 教训全面内化（断言域核对/
+  valid-first/轮询结算窗口/silent-drop 三态判/DESCRIBE_FAILED 哨兵分离）
+- C4 executor 已派（四件套环境变量直接带上 + 残留预检 + 同族同尺寸监控）
+- ⚠️ 新发现实现缺口挂账：runtime rt.request 不支持 query 通道参数——
+  timeout min=1 线索（R1 遗留）无法脚本化，需扩展 runtime query 支持后另派
+  （实现侧小改进项，ADR-0009 外围，待用户拍板优先级）
+
+==========================================================================================
+[#1 重跑 | R2 C4-C8 | 2026-08-25]
+==========================================================================================
+- C4 一次过（R1 学费红利）：46/46 真实执行零事故零重跑（DEFECT_FOUND 14/
+  NO_DEFECT 30/SCRIPT_ERROR 2→分类后非错误）；无聚簇；无残留
+- C5 PASS 零修复；C6：21 候选（R2 新 14）；L1 后入链
+- C7 双批 builder（7+7）并行——**16000 输出上限首秀：两批均单 turn 落盘
+  完整链 JSON，分段协议退役**（6000 时代对照：R1 builder 7 链需分段）
+- C8 机械预跑：A=DEFECT ×5（uint8_range/semantic_13/state_02/04/08——
+  uint8 主题三案 + insert 原子性变体 + 并发）；A=NOT_DEFECT ×9；B 全静默无信号
+- builder 交叉确认：uint8 dense 越界静默饱和存储为真实持久化缺陷（两批独立
+  violates=true grade A，readback 逐位吻合）；sharding_method 真实漂移方向
+  颠倒（文档散文大写 vs wire 小写）但脚本前提不成立
+- ⚠️ 事故留痕：executor 产物 4 案脚本↔日志编号错位（state_04/07/08/14），
+  builder 按内容唯一配对记入 chain_trace.break_detail（非断链）——R3 起
+  executor 派发词加"log 文件名与脚本名逐一对应"核对要求
+- auditor 已派（14 案，预期 strict 5/rejected 9 待其复核）
+
+==========================================================================================
+[#1 重跑 | R2 C8 判定收官 | 2026-08-25]
+==========================================================================================
+- 整批 14>12 被 auditor 自身规范拒审（BATCH_LIMIT_EXCEEDED，v4 串扰防线——
+  规范行为正确）；按其建议分批 6+8 并行重派
+- 批 A：6 NOT_DEFECT（全 rejected；root_cause=contract_misread 4+mundane 2）
+- 批 B：5 DEFECT（strict）+3 NOT（rejected）——uint8 三案同主题收敛
+  （-1→0.0/≥255→255.0/0.5→0.0/12.7→12 饱和+截断，B 侧独立评类型恒真 CONFIRMED）
+  + state_02 维度不匹配 200 + state_08 并发 200-ack
+- R2 终态：14 案 = strict_defect 5 / rejected 9 / exploratory 0（两轮累计
+  strict 8）；chain_verdicts_r2.json 主进程合并版落盘
+- wait=false 抗辩家族（state_02/08）如实进 rationale + 人工复核建议
+- ⚠️ 契约资产疑义挂账（批 A）：qdrant_type_collections_create_004 断言取
+  prose 大写 {Auto,Custom} 弃 OpenAPI 规范 enum 小写 [auto,custom]——
+  formalizer 提取缺陷，待人工复核修契约（影响 R2 两个 NOT 判定的根基）
+- Reporter 已派（defect-4~8 + presubmit_gate_r2.py，R2 runner 必须含
+  应用期回读验证——wait=false 的 200 不能只断言状态码）
+
+==========================================================================================
+[#1 重跑 | R2 全闭环收官 | 2026-08-25]
+==========================================================================================
+- Reporter：defect-4~8 落盘 + summary_r2.md 代落盘（SUMMARY-OK）；
+  MRE 挂账待 reporter-mre 批量派（R2 五案）
+- Pre-Submit Gate r2：**REPRODUCED 25/25**——两处 runner 修复（healthz 纯文本
+  JSON 回退 + vec_eq Cosine 归一化容忍：stored=[0.73,0.55,0.37,0.18] 实为
+  [0.4,0.3,0.2,0.1] 的精确归一化，模长 0.5477）——gate runner 三修留痕
+  （R1 括号/R2 healthz/R2 归一化），共同教训：runner 需实测调试后才能定案
+- R2 终态：46 脚本/14 候选/5 DEFECT（uint8×3+wrong-dim×2）/gate 25/25
+- 两轮累计 strict_defect 8（defect-1~8 报告齐）
+
+==========================================================================================
+[#1 重跑 | R3 C2/C3 | 2026-08-25]
+==========================================================================================
+- R3 三 attack：boundary 10 + state 10 + semantic 15 = 35 脚本（9/9 单元；
+  create2 前缀防 R2 名冲突——R2 executor 错位教训）
+- py_compile 35/35 + risky/api_format PASS；R2 已耗尽面显式规避（rf/sn/
+  sharding/uint8/wrong-dim 不重探）；wait=false 轮询回读纪律全面内化
+- 高价值预期面：indexing_threshold 0-disable 哨兵吞没（describe 键差异
+  optimizer_config/optimizers_config 实时发现）、inline_storage 耦合矩阵、
+  重复 PUT 配置溢出、批幂等性、可见性时序
+- C4 executor 已派（四件套 + 残留预检 + **log↔脚本名对应抽查**——R2 错位
+  防线前移到执行侧）
+- 追记（R3 C4 首批）：新 executor 实例 Step 0 自写 TESTVDB_SCRIPTS_DIR=debate_logs
+  （错值——把脚本目录当 helper 目录），3/35 runtime import 失败聚簇，早退防线
+  正确触发停批（零 DB 副作用）。已确认正确值=CACHE/scripts 令其重跑全部 35。
+  ⚠️ 机制坑固化：每个新 executor 实例都会重写 .executor.env——R4 起派发词
+  把四件套正确值直接写死在指令里（不再依赖 agent 自行推导）
+- 追记 2（R3 C4 重跑+C5/C6）：SCRIPTS_DIR 修正后 35/35 真实执行（DF 11/ND 20/
+  SE 4；零聚簇；log↔内容 1:1 正向确认）。C5 PASS。C6 首跑异常：R3 executor
+  runner v2 把 log 写进 debate_logs/（R1/R2 都在 SESSION_DIR 根，
+  extract_candidates 只扫根）→ 移位 35 份后重提取 = 11 新候选（total 32）。
+  ⚠️ 机制坑追加：executor 产物落位必须 SESSION_DIR 根（R4 派发词写死）
+- C7 builder 已派（11 案单批）；预期面命中：indexing_threshold 哨兵、
+  inline_storage 耦合、state_01 哨兵持久化、semantic_09/10 inline
+- 追记 3（R3 C7/C8 派发）：builder 11 链完成（两大簇：indexing_threshold
+  文档-实现漂移 ×3——文档 20000 vs 实现 10000（DEFAULT_INDEXING_THRESHOLD_KB
+  +config.yaml 链完整），qdrant 文档内部自相矛盾；inline_storage 耦合 ×4——
+  源码 warn+ignore 设计，警告仅在 describe.warnings 脚本未捕获）。
+  机械预跑 A=DEFECT ×8/NOT ×3；auditor 已派（11 案单批）
+- 追记 4（R3 判定收官）：11 案单批一次过 = DEFECT 8（strict）/NOT 3（rejected）/
+  exploratory 0。三轮累计 strict 16。两簇人工复核挂账（indexing doc-stale 方向
+  ×3——若 qdrant 文档缺陷而非服务端缺陷则定性翻案；inline warn+ignore 软要求
+  vs 硬不变量读法 ×4）。auditor 建议主进程复核，机械定案不受影响。
+  Reporter 已派（defect-9~16 + gate r3）
+
+==========================================================================================
+[#1 重跑 | R3 全闭环收官 | 2026-08-25]
+==========================================================================================
+- Gate r3：GATE_EXIT 0 三簇全 REPRODUCED（indexing 回读 10000+三控制腿；
+  inline A/C 腿持久化+B/D 对照；churn 908 探针 33×5xx+settle 恢复）
+- summary_r3.md 代落盘；8f.5 verify_defects 过；defect 报告累计 16 份
+- R3 终态：35 脚本/11 候选/8 DEFECT/Gate 全绿
+- 三轮累计：109 脚本/32 候选/16 strict_defect；人工复核挂账 4 簇
+
+==========================================================================================
+[#1 重跑 | R4 启动 | 2026-08-25]
+==========================================================================================
+- 合并派发实验（单 agent 内三视角）：delete 块 11 脚本（boundary 4/state 4/
+  semantic 3）三视角策略分化良好——实验成立（小单元块可用，省 2/3 派发开销；
+  大块仍用三 agent 并行）
+- MRE 挂账清零：defect-4~16 共 13 案 MRE 落盘（累计 16/16）；构型约束全内化
+  （uint8 逐位/Cosine 归一化容忍/settle 双向/churn 20 轮窗口）
+- runtime 增量补丁（R4 agent 沿 ponytail-fix 先例）：+collection_exists
+  PATHS key +request(query=) kwarg——后者顺手解决 R2 挂账的 query 通道
+  实现缺口（timeout min=1 线索后续块可脚本化）
+- C3 全过（11/11）；C4 executor 已派（四件套+落位写死派发词——R3 双教训）
+- 追记（R4 C4-C8）：执行一次过（写死派发词生效，11/11 零事故）。C5 PASS/
+  5 新候选。builder 5 链（absent/name_attacks 的 result:false 为文档化行为
+  +断言子句无原文；semantic_02 唯一存活主张：读路径解析别名 vs 删除路径不
+  解析——doc-vs-impl；state_01/02 断链/伪影）。
+  **机械 B 规则 2 首次实战触发**（B=CONFIRMED ×3——HTTP 语义恒真：2xx vs
+  契约移除声称）+ A=CONFLICT 首现（state_01 → NEEDS_MORE_EVIDENCE+rework
+  路径）。auditor 已派（B 触发案的第四查对应性裁量是本轮看点——观测是否
+  落断言域内决定 B 的 CONFIRMED 可否降级）
+- 追记 2（R4 判定收官）：5 案 = strict 1（semantic_02 别名解析不对称——
+  读路径 resolve_name vs 删除路径字面名，concepts 原文地基）/rejected 3+NME 1。
+  **机械 B 边界控制实战首验成功**：absent/name_attacks 两案的 B=CONFIRMED
+  被第四查域裁量正确降级（断言子句 content_consistency=FAIL + 官方文档化
+  result:boolean → 观测不在可辩护断言域），避免两个伪 DEFECT——RQ2 时代
+  "机械预定案+边界控制"设计的实战验证。
+  builder 规范化挂账：A=NEUTRAL 的 quote_mismatch 系括号注记混入
+  assertion_text_quoted（两案）；修正后可入机械定案路径
+- rework 补证（state_01 定向三项）+ Reporter（defect-17）已合并派发
+
+==========================================================================================
+[#1 重跑 | R4 全闭环收官 | 2026-08-25]
+==========================================================================================
+- state_01 复审终判 NOT_DEFECT + **exploratory_candidate 首例**（三条件全满足：
+  doc-gap 同族分裂可指认 + inference_consistency + 机械层 CONFLICT 非定案）——
+  ADR-0009 通道设计的目标形态首验
+- defect-17（via-alias DELETE 零变更）+ gate REPRODUCED（agent 自执行）；
+  summary_r4.md 终版落盘
+- M4 HALT 定性=检查器 schema 错配（接受；ai_failure_check 文件名模式挂账 D 段）；
+  M5 markdown 正则错配（defect-17 中性修正 PASS，R3 同款记录）
+- R4 终态：11 脚本/5 候选/strict 1 + exploratory 1/rejected 3
+- **四轮累计：131 脚本/37 候选/17 strict + 1 exploratory**；人工复核挂账 4 簇
+  + ai_failure_check schema 修 + builder quote 规范化
+- 追记（R5 C4）：boundary 三连 exit=1 触发聚簇停批——抽查判明为真实
+  DEFECT_FOUND 收尾（设计退出路径非故障）；单单元块多脚本同判 DF 属预期。
+  已令续跑剩余 6。⚠️ 聚簇规则细化挂账：同 exit 聚簇语义应区分（SE 类聚簇=
+  危险信号必须停；DF 类聚簇=单单元块预期形态，抽查后放行）——写入 executor
+  派发词模板（本轮已人工裁量）
+- 追记（R5 判定链）：builder 8 链——决定性发现：exists 的 {"exists": bool}
+  object 形状为 v1.18.0 正确行为（API ref 示例 + openapi.json CollectionExistence
+  + 源码 serde 三面独立证据），契约裸 bool 断言=提炼失真 → 6/8 案 shape 主线
+  断链 doc。真实存活：05 churn describe 500（R3 defect-16 同根因
+  execute_read_operation 空集）+ 06 defect-17 本体复现（第三面检查：exists 面
+  读路径 resolve_name 正确解析——不对称是删除独有）
+  ⚠️ 契约资产质量挂账 +1（exists_001 形状失真，与 R2 sharding 枚举/R4 absent
+  子句同族——formalizer 提取系统性问题，D 段汇总复核）
+  semantic_09 修复重执行 DF 收尾（_flap_key 哈希化），链补建中
+
+==========================================================================================
+[#1 重跑 | R5 全闭环收官 | 2026-08-25]
+==========================================================================================
+- 首个全灰区块（A 9/9 GREY_ZONE）：9 DF 候选全灭 = strict 0 / **exploratory 6**
+  /rejected 3——通道首次批量产出（shape doc-gap 三确认 + defect-16/17 关联
+  + 诊断梯度）；假阳性抑制 0 漏网（doc+source 双证据反证）
+- semantic_09 脚本 bug 修复闭环（unhashable dict → _flap_key 哈希化）
+- 聚簇规则细化挂账（DF 类聚簇=单单元块预期 vs SE 类=危险）
+- 五轮累计：140 脚本/46 候选/**17 strict + 7 exploratory**；契约资产质量
+  挂账 3 项（sharding 枚举/absent 子句/exists 形状）
+
+==========================================================================================
+[#1 重跑 | R6 收官 | 2026-08-25]
+==========================================================================================
+- 10 脚本 DF 1 → 1 候选 → NOT_DEFECT/rejected（客户端 requests 点段折叠伪象，
+  builder 抓线三重互证：echo 上线实为 GET /collections 与 GET /、dotdot-enc
+  对照腿获文档化 404）——第 4 查对应性的深水样本（wire 级证据推翻脚本观测）
+- 生成期自检（shape 先查 openapi）压伪候选：9 脚本阴性
+- 契约提炼失真证据 +1（describe 的 consistency 参数 openapi 无）
+- 六轮累计：150 脚本/47 候选/17 strict + 7 exploratory
+- 追记（R7 执行）：13 脚本 SE 停批正确触发（semantic_01 格式串 bug：%d %s %r
+  三占位符两参数，elapsed 8s 崩溃非 DB 问题）→ 11 执行 = DF 1（Type2 诊断：
+  四字段 400 不指名——boundary_05）+ ND 9。semantic_01 修复中，02/03 待补跑。
+  脚本格式串 bug 是 R5 unhashable dict 后的第二类脚本级 bug 模式
+- 追记 2（R7 判定）：3 案 = NOT 2 + NME 1。semantic_03 的机械 B 触发再次被
+  第四查正确降级（触发器锚错位 points+upsert + malformed 前提不适用——B 降级
+  第 3 例）。semantic_02（metadata {} 清除 vs 实现 no-op，链完整源码定位）因
+  契约零锚保守回炉——rework 补锚中；契约质量挂账第 5 项（openapi 的 metadata
+  merge 描述被 formalizer 漏提）；doc-as-ground 翻案权留主进程人工
+
+==========================================================================================
+[#1 重跑 | R7 全闭环收官 | 2026-08-25]
+==========================================================================================
+- 13 脚本（semantic_01 格式串 bug 修复补跑）→ 3 候选 → NOT 3（strict 0）+
+  exploratory 1（semantic_02 metadata {} no-op——第 8 例，doc-as-ground
+  翻案权留人工）
+- 机械 B 第 3 次正确降级（锚错位+前提不适用）；Type2 无锚第 3 例先例重演
+- 七轮累计：163 脚本/50 候选/17 strict + 8 exploratory；人工复核池 +doc-as-ground
+  裁量（semantic_02）
+- 追记（R8 收官）：14/14 全 ND（全局不变量跨面全阴性——read-your-write/
+  zombie/cascade/别名名字释放全过）零候选零判定，最快轮。八轮累计：
+  177 脚本/50 候选/17 strict + 8 exploratory
+- 追记（R9 中断恢复，2026-08-25）：主进程重启致 R9 生成 agent 中断于收尾段
+  ——9 脚本（boundary 4/state 3/semantic 2）+ meta 已落盘且 py_compile/
+  risky/api_format 全过；analyzed_documents R9 段由主进程补记（URL 集合未变）。
+  executor 已派。docker/容器实际存活（preflight 误报为未运行）
+
+==========================================================================================
+[#1 重跑 | R9 收官 | 2026-08-25]
+==========================================================================================
+- 9 脚本（主进程重启中断恢复）→ 3 候选 → strict 1（boundary_01 field_schema
+  数组规约——灰区 B 枚举闭集兜底 CONFIRMED）+ rejected 2（state_02 脚本伪报
+  核实 / boundary_04 机械定案）
+- ⚠️ 通道边界设计反馈（D 段人工复核项）：boundary_04 的接口奇偶性信号
+  （collections 面 timeout min=1 422 vs index 面无校验——实质跨面不一致证据）
+  被 ADR-0009 §5 条件③（机械 REFUTED 定案不入通道）挡住——auditor 建议
+  以面间不对称为主张另立候选重派。这是"机械定案不经推断翻案"规则与
+  interface-parity 信号的边界冲突首例
+- 九轮累计：186 脚本/53 候选/18 strict + 8 exploratory
+- 追记（R9 全闭环）：Reporter 线程无 Bash（诚实拒绝伪造执行）→ 主进程执行
+  gate r9 PASS（G1/G2/G3 全过，defect-18 100% 复现）；defect-18 gate 节
+  PENDING→PASS；summary_r9 落盘。
+  **R9 终态：9 脚本/3 候选/strict 1（field_schema 数组规约）/rejected 2。
+  九轮累计：186 脚本/53 候选/18 strict + 8 exploratory/defect 报告 18 份/
+  MRE 16 份（defect-17/18 挂账）**
+  用户指示：本轮后暂停，出运行报告

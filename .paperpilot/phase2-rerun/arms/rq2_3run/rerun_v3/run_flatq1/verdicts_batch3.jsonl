@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "两项观察(limit=0 与 64 维向量对 dim=4 集合)均被服务端以错误码拒绝,符合契约 limit>0 与向量维度须匹配的承诺,仅错误文案略有误导,未构成文档-实现缺陷。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内无 users+create 可核查契约行,观察显示密码长度 6-72 区间被正确强制执行,8 位纯小写密码长度合规,接受它不违反材料中任何已承诺条款。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "1804 错误信息明确指向无动态 schema 时多传的 color 字段,且对照 insert 报同样错误,未显示 upsert 特有的 PK 异常,观察到的校验本身正确,原缺陷主张未被证明。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "consistencyLevel=\"Invalid\" 被接受返回 code=0 并被静默替换为 Bounded(describe 证实),违反包内契约『consistencyLevel must be Strong, Session, Bounded, or Eventually』——集合外枚举值既未报错也未生效。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "vectorFieldType=\"InvalidVectorType\" 为枚举值集之外的非法取值,create 返回 code=0 且 describe 显示字段被静默建成 FloatVector,越界枚举被静默默认而非拒绝,符合红线『枚举参数接受集合外值可判 CONFIRMED』。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "REST upsert 向 JSON 字段写入裸字符串 invalid_json 返回 code=0,而同一服务端 gRPC 路径对同值明确报 Invalid JSON string,REST 层绕过 JSON 校验,违反包内 explicit 契约行(数据须匹配集合 schema)。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "Int64 主键接受字符串 123 并被静默强转,对照 gRPC 对同值明确拒绝(id field should be int64, got str),属文档声明类型域外取值被 REST 静默接受的类型套套逻辑违规。"}
+{"defect_id": "milvus_036", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "groupSize=0 与 -1 均返回 code=0 且分组语义完全未生效;源码显示 REST 层以 GroupSize>0 条件静默丢弃非法值,而代理层对 <=0 本应报错,构成数值下界类违规被静默接受。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST insert 对 INT64 收字符串、VarChar 收整数、BOOL 收字符串三类跨类型值全部 code=0 静默接受,违反 schema 声明类型域,属类型套套逻辑类违规,包内无有意强转的明文注释。"}
+{"defect_id": "milvus_038", "verdict": "HUMAN_REVIEW", "confidence": 0.4, "rationale": "包内契约行自述文档并未规范性拒绝向量字段作 groupByField,但观察显示传入 vector 后返回 code=0 且分组效果未体现(10 条同值向量按 groupSize=1 应归组),既无法确证违反文档承诺也无法排除静默忽略参数之嫌。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "字符串 PK 100 被 REST upsert 接受并被强转为 Int64(回读正确),对照 gRPC 同值报错;包内 explicit 契约行援引页面原文并括注 schema declares id Int64,类型域仍被违反且属静默强转。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "REST 向 JSON 字段写入裸字符串 plain_string 被接受,回读证实存储的是非法 JSON——gRPC 读取报 unexpected character,产生跨接口不可读的数据完整性缺陷,且同值经 gRPC 写入会被服务端自己拒绝。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST upsert 对 DOUBLE 收字符串、BOOL 收字符串 true、BOOL 收整数 1、INT16 收字符串 42 全部 code=0 静默强转,违反包内 explicit 契约行援引的数据须匹配 schema 的页面原文。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "字符串编码向量 [0.1,0.2,0.3,0.4] 被 REST insert 静默接受并正确解析(检索 distance=1),但对照 gRPC 明确拒绝(vector field should be float_vector, got str),属文档声明类型域外取值被静默接受的类型违规。"}

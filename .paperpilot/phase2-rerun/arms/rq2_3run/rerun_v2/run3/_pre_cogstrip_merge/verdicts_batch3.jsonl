@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "limit=0 与 64 维查询在 dim=4 集合上均被明确报错拒绝(code 65535 提示 topk 范围 [1,16384];code 1801 提示维度不符),行为符合 expected 的 limit>0 与类型约束,无静默接受。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "expected 明确记载 users+create 无经核查的约束行,且观察中短密码被 code 1100 按长度 6-72 拒绝,行为与可核查的文档语义不冲突。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "upsert 与对照 insert 对含 schema 外字段(color)的实体均返回 code 1804 明确报错、行为一致,且 expected 无该端点可核查约束,无违反证据。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "create 传入枚举外的 consistencyLevel=Invalid 仍返回 code=0,describe 显示静默落为默认 Bounded,违反约束 003(consistencyLevel 须为 Strong/Session/Bounded/Eventually)。"}
+{"defect_id": "milvus_033", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "expected 的 collectionName/metricType/consistencyLevel 约束均未被该探测触犯,包内不存在 vectorFieldType 的契约断言,证据不足以支持违反判断。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "REST upsert 将裸字符串写入 JSON 字段返回 code=0,而同值经 gRPC 被以 DataNotMatchException(Invalid JSON string) 拒绝,属静默接受非法值、与 data 须匹配 schema 的显式约束相悖。"}
+{"defect_id": "milvus_035", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "字符串 '123' 被无损强制为 Int64(insertIds=[123])、非数字 'abc' 被 code 1804 正确拒绝,expected 仅 state/behavioral 行、无类型匹配约束,且可检索性因集合未加载未验证。"}
+{"defect_id": "milvus_036", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "groupSize=0/-1 被接受返回结果,但 expected 仅含 load 与 empty 两条约束(均满足),无 groupSize 契约行;gRPC 对照因无关的 metric type 错误失败,支持不了违反判断。"}
+{"defect_id": "milvus_037", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "字符串/整数/布尔互转被接受但查询因 collection not loaded 未验证实际存储,且 expected 无类型匹配断言(仅 state/behavioral 行),证据不足以判定违反。"}
+{"defect_id": "milvus_038", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "包内约束明确记载文档对被分组字段值无「向量值应被拒绝」的规范性语句,groupByField=vector 搜索正常返回结果,无可判定违反。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "REST 将字符串 '100' upsert 进 Int64 主键返回 code=0 且查询确认 id=100,而 gRPC 同操作被拒(id field should be int64, got str),违反带 Int64 标注的 schema 匹配约束。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST insert 接受裸字符串 'plain_string' 入 JSON 字段后,该实体经 gRPC get 报错 unexpected character(REST 写入值无法解析),违反「插入实体应可检索」的行为断言。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "字符串→DOUBLE、'true'/1→BOOL、'42'→INT16 被全部静默接受(code=0),与包内 schema 匹配断言(标注这些类型不符的接受值)相悖。"}
+{"defect_id": "milvus_042", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "字符串向量 '[0.1,0.2,0.3,0.4]' 被解析入库且搜索以 distance=1 正确命中向量,功能与数据一致;expected 无禁止该转换的约束行,证据不足。"}
