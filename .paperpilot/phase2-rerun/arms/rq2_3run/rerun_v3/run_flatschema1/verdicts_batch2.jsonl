@@ -1,0 +1,14 @@
+{"defect_id": "milvus_015", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "两条观察都是正确的失败上报：集合创建因缺 dimension 未成功，create_index 返回 collection not found 属实；SDK 报 65535 是 quick-create 已自动建索引后的每字段单索引限制，均非缺陷。"}
+{"defect_id": "milvus_016", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "search 对 ef=-1、ef=0、nprobe=0 等越界数值直接返回 code=0，源码中 ef/nprobe 原样透传给索引引擎、无任何范围校验，属参数下界校验缺口。"}
+{"defect_id": "milvus_017", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "文档将 collectionName 标注为可选且未指定即返回全部别名，源码也仅在名称非空时做校验、空值按未指定处理，返回空列表与该语义一致，未见契约违反。"}
+{"defect_id": "milvus_018", "verdict": "HUMAN_REVIEW", "confidence": 0.4, "rationale": "冻结材料自相矛盾：观察摘要称并发 rename 返回 code=0，而执行日志显示 rename 报 65535 duplicated new collection name 且随后同名 create 又成功，两次迭代均如此，无法据现有材料确证双成功竞态是否存在。"}
+{"defect_id": "milvus_019", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "query 能取回 5 行数据时 get_stats 仍返回 rowCount=0，同一集合两个读数自相矛盾，与文档承诺的返回集合实体数不符。"}
+{"defect_id": "milvus_020", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "delete 已确认删除 5 条（deleteCount=5）后紧随的 search 仍返回 id 1-5，删除对后续读不可见，属真实的读一致性缺陷。"}
+{"defect_id": "milvus_021", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "该集合由 REST quick-create 创建，源码中 quick-create 建索引后无条件调用 LoadCollection，从未 load 的前提不成立，search 成功属预期行为。"}
+{"defect_id": "milvus_022", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "源码明文注释 errIgnoredCreateCollection = errors.New(\"ignored create collection\") // create collection with same schema, so it can be ignored.，rootcoord 对同 schema 重名创建有意忽略并返回成功，属有意设计。"}
+{"defect_id": "milvus_023", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "源码明文注释 errIgnoredDropCollection = errors.New(\"ignored drop collection\") // drop collection or database not found, so it can be ignored.，删除不存在的集合被有意忽略并返回成功。"}
+{"defect_id": "milvus_024", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "delete 的 filter 与 ids 属二选一参数，同时给出时未报错而静默按 filter 执行（源码无互斥校验、ids 根本不在请求结构体内），属互斥参数被静默接受的校验缺口。"}
+{"defect_id": "milvus_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "插入 101 条实体返回 code=0 且 insertCount=101；包内无该端点任何条数约束行，源码只有按字节的 maxInsertSize 而无条数上限，观察未违反可核查约束。"}
+{"defect_id": "milvus_026", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "源码校验明示 the first character of a collection name must be an underscore or letter，下划线开头集合名合法，创建成功与命名规则一致。"}
+{"defect_id": "milvus_027", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "shardsNum 取 0/-1/65535 均返回成功，源码对 shardsNum<=0 直接静默替换为默认分片数而不报错，取值范围校验缺口成立（探针置于顶层使该字段被当未知字段忽略，证据只覆盖默认路径）。"}
+{"defect_id": "milvus_028", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "metricType 传空串（枚举外值）被静默接受并回落到默认 COSINE，未按契约行 metricType 属于 [L2, IP, COSINE] 拒绝；另一观察 consistencyLevel=None 置于顶层被忽略、未触达校验路径。"}

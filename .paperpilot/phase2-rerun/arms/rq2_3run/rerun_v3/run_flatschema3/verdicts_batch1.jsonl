@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.3, "rationale": "材料包既无观察记录(raw 为空、log 未捕获任何 HTTP)也无契约依据(2.3.0 版本文档段已下线)，无任何可核查事实，无法确证，按协议给 HUMAN_REVIEW。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "nprobe 属计数类搜索参数，取 0 时 REST 层未做下界校验，直接返回 http=200/code=0 与检索结果(包内该端点无契约行，按 v3 规则计数类参数接受 0 即可确认)。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "HNSW 搜索 ef=0 同属计数类参数取 0 的下界违反，服务端未校验即返回 code=0 与结果，按 v3 规则可确认。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "删除过滤 age in [10,5] 按集合语义只删掉了确属该值集的 age=10，结果正确，文档亦未对 IN 列表顺序设任何约束，行为无违背。"}
+{"defect_id": "milvus_005", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "动态字段本质是 JSON 映射，写入任意键合法，查询侧 outputFields 仍按字段名文法解析故对 '123field' 报解析错误，包内无文档依据表明存在被违背的承诺，不构成文档-实现缺陷。"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "该集合由 dimension 快速创建，动态字段实为 JSON 类型而非探针所称 VARCHAR，插入整数 12345 合法且查询原样返回，行为自洽非缺陷。"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "空查询向量被服务端以 code=1801 明确拒绝并说明维度不符(expected=FloatVector/actual=[[]])，属正确参数校验，非缺陷。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "契约行(milvus-docs，explicit)明示 COSINE 相似度取值范围为 [-1,1]，实测 100 次同向量检索中 11 次 distance>1(最大 1.000000238418579)，越过文档闭区间上界。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "同一搜索端点对 limit=0 已按范围正确拒绝(对照)，却对 nprobe=0 无任何校验直接返回 code=0 与结果，计数类参数下界违反按 v3 规则确认。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "同一 collection.ttl.seconds=-100 在 alter_properties 被拒并明示合法区间 [-1,3155760000]，在 create 却返回 code=0 照单接受，创建路径缺失范围校验。"}
+{"defect_id": "milvus_011", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "空表达式在计划器中被显式特判为 AlwaysTrueExpr(匹配全部)，filter 取 null/缺省等同无过滤属 Go/JSON 常规语义，且包内 entities+query 无可核查契约行，不构成文档-实现缺陷。"}
+{"defect_id": "milvus_012", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "包内已核查该文档仅称 dbName 为现有数据库名、无非空或拒绝语义，空串经 handler 空值分支落到 DefaultDbName 属全 API 统一的默认库解析惯例，无承诺被违背。"}
+{"defect_id": "milvus_013", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "包内核查确认 2.6.x 文档 Parameters 表根本未收录 Request-Timeout 及其类型/取值约束，中间件对不可解析值回退服务端默认超时，无文档承诺被违背。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "dim=32768 落在文档范围 2~32768 上界内被正确接受，越界的 32769 被拒绝并给出范围提示，边界行为与文档一致，并非缺陷。"}

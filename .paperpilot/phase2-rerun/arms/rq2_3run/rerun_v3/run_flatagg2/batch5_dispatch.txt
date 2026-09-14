@@ -1,0 +1,48 @@
+# RQ2 平判官臂派发词(81 冻结包 × 单提示平判官;与全阶段臂同盲判协议,独立第五臂 run 2)
+
+## 任务
+你是一名直接的缺陷分诊判官。对下列每个候选缺陷:Read 其冻结材料包(observed 执行记录 + expected 契约)以了解"文档/契约承诺了什么、观察到了什么";如你认为有助于判断,可自行在该案版本的源码 clone 中 grep/Read 查证。然后给出你的终判。**没有规定的分析框架**:不要求分视角、不要求证据链分节——你按自己认为合理的方式判断"该观察是否构成一个真实的文档-实现缺陷";**但终判必须按下面的固定聚合规则给出**。
+
+## 每案材料
+- qdrant_014: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_014.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.18.2
+- qdrant_015: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_015.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.18.2
+- qdrant_016: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_016.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.18.2
+- qdrant_017: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_017.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.18.2
+- qdrant_018: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_018.md | source=C:\Users\11428\Desktop\mftui\TestVDB\.sourcedeps\qdrant\v1.18.3
+- qdrant_019: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_019.md | source=C:\Users\11428\Desktop\mftui\TestVDB\.sourcedeps\qdrant\v1.18.3
+- qdrant_020: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_020.md | source=C:\Users\11428\Desktop\mftui\TestVDB\.sourcedeps\qdrant\v1.18.3
+- qdrant_021: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_021.md | source=C:\Users\11428\Desktop\mftui\TestVDB\.sourcedeps\qdrant\v1.18.3
+- qdrant_022: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_022.md | source=C:\Users\11428\Desktop\mftui\TestVDB\.sourcedeps\qdrant\v1.18.3
+- qdrant_023: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_023.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.19.0
+- qdrant_024: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_024.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.19.0
+- qdrant_025: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_025.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.19.0
+- qdrant_026: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_026.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.19.0
+- qdrant_027: pack=c:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\materials_complete\qdrant_027.md | source=c:\Users\11428\Desktop\testvdb_paper\.sourcedeps\qdrant\v1.19.0
+
+## 终判规则
+- 你只能给二值终判:**CONFIRMED**(这是一个真实的缺陷)或 **FALSE_POSITIVE**(这不是缺陷)。
+- 附一句中文理由。
+- 不确定时按你自己的判断权衡,不强制保守方向。
+
+## 纪律
+- 只依据每案的材料包(必要时加该案对应版本源码 clone)判定;不联网、不读材料清单之外的任何文件;不得读取任何 developer_cognition / 认知 / intelligence 文件。
+- 每案独立判定,不受其他案影响。
+
+## 产出
+Write 一个 JSONL 文件(每行一个 JSON 对象)到 **C:\Users\11428\Desktop\testvdb_paper\.paperpilot\phase2-rerun\arms\rq2_3run\rerun_v3\run_flatagg2\verdicts_batch5.jsonl**:
+`{"defect_id": "<case-id>", "verdict": "CONFIRMED|FALSE_POSITIVE|HUMAN_REVIEW", "confidence": <float>, "rationale": "<一句中文依据>"}`
+最后返回一行摘要:<case-id>=<verdict>(逗号分隔你那批全部)。
+
+## 终判规则补充(v3 协议,2026-09-12,与插件 2.5.0 判定红线对齐)
+- 终判三值:`CONFIRMED | FALSE_POSITIVE | HUMAN_REVIEW`;HUMAN_REVIEW 计入 CONFIRMED(宁可误报、不可错过真缺陷)。
+- 你引用源码时:以"该行为是有意设计"为由判 FALSE_POSITIVE,**必须引用源码明文注释/文档字符串原文**;裸结构推断不算数。
+- "源码里就是这样写的"不构成 FALSE_POSITIVE 理由——文档 vs 实现才是参照系。
+- 数值下界/枚举闭集/互斥/类型套套逻辑类违反(如 count/limit 类参数接受 0 或负数、枚举参数接受集合外值)即使包内无契约行也可判 CONFIRMED。
+- 无法确证时给 HUMAN_REVIEW,禁止用 FALSE_POSITIVE 兜底。
+
+## 聚合(固定)
+给出终判前按顺序自问,先命中者生效:
+1. 该观察是否**明确违反**包内契约断言,或落入客观约束类(数值下界/枚举闭集/互斥/类型套套逻辑/同族不一致/接口不对称)?命中 → **CONFIRMED**。
+2. 你是否仅因"这是有意设计"而想判非缺陷?源码里必须有**明文注释或文档字符串**支持。没有明文意图证据 → **不得**判 FALSE_POSITIVE;有 → **FALSE_POSITIVE**。
+3. 以上都不命中——即证据不足、材料沉默、契约与源码冲突、或需要你看不到的观察才能定论——一律 **HUMAN_REVIEW**(保守)。
+**红线**:禁止用 FALSE_POSITIVE 兜底;FALSE_POSITIVE 只能由第 2 条产生。

@@ -1,0 +1,14 @@
+{"defect_id": "qdrant_014", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "standalone 模式下 POST /cluster/recover 以 500 Service internal error 返回(Raft 缺失被当作服务内部故障),而同一前提 GET /cluster 会优雅返回 status=disabled,同源条件处理不一致、状态码误导客户端。"}
+{"defect_id": "qdrant_015", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "shard_number=2147483647 无上限校验,请求读超时且其后的 GET / 同样超时(节点失去响应),而 replication_factor=0 有 422 校验,说明数值下界已校验而上界缺失导致资源耗尽。"}
+{"defect_id": "qdrant_016", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "该查询未引用任何 point id,源码中 referenced_points 为空时直接跳过 lookup 解析、lookup_from 根本未被使用,返回结果与不带该参数时相同,未观察到文档-实现偏差。"}
+{"defect_id": "qdrant_017", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "日志中 offset 0/10/20 分页返回 0-9/10-19/20-24、scroll 返回 next_page_offset=10,25 个点无重复无遗漏,未发现任何契约违反。"}
+{"defect_id": "qdrant_018", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "文档明文 exact=false 即近似计数(可能不可靠),观测 40 对 24 正是该模式既有语义;源码 CardinalityEstimation.exp 注释写明其为按均匀随机分布假设的期望值,不构成文档-实现偏差。"}
+{"defect_id": "qdrant_019", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "与 018 同源:is_empty 近似计数在 200/500/1000 三档系统性偏低约 35-40%,但 exact=false 的近似语义由文档明文给出,估计值即源码注明的随机分布假设产物,非实现违约。"}
+{"defect_id": "qdrant_020", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "must+must_not、跨字段组合过滤下近似计数偏低(130 对 99、73 对 62),但 exact=false 被文档定义为近似计数,单条件时估计与真值一致,属估计器假设而非与文档矛盾的行为。"}
+{"defect_id": "qdrant_021", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "geo_radius 过滤不被估计器支持,unknown 估计退化为按均匀先验的期望值(500km/2000km 档 127、大半径档回到全集),文档只承诺更快、近似,未承诺精度。"}
+{"defect_id": "qdrant_022", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "match_any 多值经 combine_should_estimations 按独立命中概率合并(源码注释:假设均匀随机分布),单值精确、多值系统性偏低是该假设的固有结果,不是与文档相矛盾的实现行为。"}
+{"defect_id": "qdrant_023", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "重放显示快照后新增点 50、恢复快照后 count 从 4 回到 3,与文档 recover restores collection state from snapshot 完全一致,未观察到任何偏差。"}
+{"defect_id": "qdrant_024", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "lookup_from 指向 8 维集合时 positive 为 id 会报 400 维度错误,但 negative 经 average 策略被 merge_positive_and_negative_avg 的 zip 静默截断为 4 维(返回分数与截断后查询向量逐位吻合),维度校验缺失导致静默错误结果。"}
+{"defect_id": "qdrant_025", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "PATCH metadata 空对象返回成功且 metadata 保持不变,与 openapi/源码明文语义(与既有 metadata 合并、单个 key 置 null 才删除,merge_map 对 Null 执行 remove)一致,观测即文档行为。"}
+{"defect_id": "qdrant_026", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "10 次相同 groups 查询返回的分组与成员集合一致,仅全部并列 score=1.0 的条目次序抖动,文档未承诺并列分数的稳定次序且 group_size=3、limit=2 均被遵守。"}
+{"defect_id": "qdrant_027", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "field_schema 数组形状被 200 acknowledged 但该 GET 时 update_queue.length=1(索引异步未落盘),且按 openapi 与源码类型(PayloadFieldSchema 为两变体 untagged 枚举)该数组本不应反序列化成功,证据自相矛盾、无法确证。"}

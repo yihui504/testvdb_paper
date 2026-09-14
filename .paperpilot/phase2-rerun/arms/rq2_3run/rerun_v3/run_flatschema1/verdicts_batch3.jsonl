@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "limit=0 与 64 维向量对 dim=4 集合均被正确拒绝（code=65535/1801，报错信息明确），契约要求的 limit>0 与维度一致均被遵守，未见实现偏差。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "观测只显示长度策略（6<=len<=72，源码 ValidatePassword 仅校验长度上下界）被遵守，8 位纯小写口令落在合法长度内被接受符合既定策略；包内亦无 users+create 的任何契约行，无从支撑“文档要求口令复杂度”的主张。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "upsert 与对照 insert 返回的 1804 均由载荷中多余字段 color（集合未启用动态字段）触发，错误信息与真实原因一致，无效载荷被正确拒绝，不构成缺陷。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "consistencyLevel='Invalid' 不在文档闭集 [Strong, Session, Bounded, Eventually] 内却被静默接受（code=0）并回落为 Bounded，属枚举闭集违反。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "vectorFieldType='InvalidVectorType' 被静默接受（code=0）并回落为 FloatVector，枚举参数接受集合外值且不报错，属枚举闭集违反。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "REST upsert 把裸字符串写入 JSON 字段并返回成功，同一载荷经 gRPC 报 Invalid JSON string；源码 REST 路径将字符串直接落为字节（reallyData[fieldName] = []byte(dataString)）且不做 JSON 校验，跨协议行为不一致。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "声明为 Int64 的主键字段接受字符串 '123' 并静默强转为 123（insertIds=[123]），同一载荷经 gRPC 报 id field should be int64, got str，字段类型未被强制。"}
+{"defect_id": "milvus_036", "verdict": "CONFIRMED", "confidence": 0.62, "rationale": "groupSize=0 与 -1 均返回 code=0 且结果与未分组搜索完全一致（参数被静默忽略），而代理层对 groupSize<=0 明确报参数错误，count 类参数的下界未被遵守。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "Int64 列接受字符串 '123'、VarChar 列接受数字 123、Bool 列接受字符串 'true' 均返回 code=0，声明类型未被强制且无任何类型错误提示。"}
+{"defect_id": "milvus_038", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "以向量字段 vector 作为 groupByField 的搜索返回 code=0，且结果与普通搜索完全一致，无效分组字段未被拒绝、分组语义被静默丢弃。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "声明为 Int64 的主键字段接受字符串 '100' 完成 upsert 且落库正确（code=0），同一载荷经 gRPC 报 id field should be int64, got str，字段类型未被强制。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "REST insert 将裸字符串写入 JSON 字段并返回成功，随后 gRPC 读取报 unexpected character（写入字节不是合法 JSON），而同值经 gRPC insert 被拒，属跨路径写入不可解析值。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "DOUBLE 列接受字符串 '3.14159'、BOOL 列接受 'true' 与 1、INT16 列接受字符串 '42' 均返回 code=0，声明类型未被强制。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.62, "rationale": "FloatVector 字段接受字符串 '[0.1,0.2,0.3,0.4]' 并返回成功（insertCount=1），同一载荷经 gRPC 报 vector field should be float_vector, got str，字段类型未被强制。"}

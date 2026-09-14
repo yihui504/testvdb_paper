@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "契约要求 limit>0，观察中 limit=0 被明确拒绝并给出合法区间 [1,16384]，属正确校验；错误码 65535 仅为诊断质量瑕疵，无契约依据构成文档-实现缺陷。"}
+{"defect_id": "milvus_030", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "材料包内无 users+create 的可核查契约行，无法确证文档是否规定密码强度策略；实现仅校验长度（6<=len<=72），8 位全小写密码被接受，探针设计指向字符类强度要求，需人工核实文档原文。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "1804 报错源于 payload 携带了 schema 未声明且未开启动态字段的 color 字段（对照组 insert 同样报 1804），属预期校验行为；探针未隔离“autoID 集合 upsert 缺主键”这一声称机制。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "包内契约规定 consistencyLevel 取值限于 Strong/Session/Bounded/Eventually，传入 Invalid 却返回 code 0 并静默落为默认 Bounded，属枚举闭集未生效/非法值静默接受。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "vectorFieldType 传入集合外值 InvalidVectorType 仍返回 code 0，集合被静默按默认 FloatVector 建成，属枚举参数接受集合外值且无任何提示。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "REST upsert 将裸字符串 \"invalid_json\" 写入 JSON 字段并返回成功，而同一取值经 gRPC 被拒（Invalid JSON string），写入内容非合法 JSON 文档，属类型/数据一致性违背。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "schema 声明 id 为 Int64，REST insert 却接受字符串 \"123\" 并强转成功（gRPC 侧对 str 主键直接拒绝），文档要求实体键与 schema 声明类型一致。"}
+{"defect_id": "milvus_036", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "REST 对 groupSize=0/-1 未报错并以未分组结果返回，但该版本 REST 搜索以顶层 groupingField/groupSize 字段解析，探针的嵌套 groupParams 未触达声称机制，无法确证亦不能排除参数下界未校验。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "声明为 Int64、VarChar、BOOL 的字段分别接受字符串 \"123\"、数字 123、字符串 \"true\" 并静默强转成功，违反 schema 声明的字段类型约束。"}
+{"defect_id": "milvus_038", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "groupByField=vector 未报错返回未分组结果，但该端点实际字段为顶层 groupingField，观察未触达分组机制；包内契约亦指出文档未规定向量字段应被拒绝（疑似非法参数静默忽略），需人工复核。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "Int64 主键接受字符串 \"100\" 并实际完成 upsert（gRPC 侧拒绝 str 主键），文档要求实体键与 schema 类型一致，属类型强转未约束。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "REST insert 将裸字符串 \"plain_string\" 存入 JSON 字段且返回成功，存入值非合法 JSON，导致 gRPC 读取报 unexpected character，跨协议数据不可读，属数据一致性缺陷。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "upsert 对 DOUBLE/BOOL/INT16 字段分别接受字符串 \"3.14159\"、\"true\"/1 、\"42\" 并静默强转成功，违反 schema 声明的字段类型。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "FloatVector 字段接受字符串编码向量 \"[0.1,0.2,0.3,0.4]\" 并可正常检索（gRPC 侧拒绝 str 向量），文档要求向量数据为浮点数组。"}

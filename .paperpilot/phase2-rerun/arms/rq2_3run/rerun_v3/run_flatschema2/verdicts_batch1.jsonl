@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "包内无任何观察记录(原始 HTTP 未捕获)、版本文档段已下线,既无法确证也无法否证存在文档-实现缺陷"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "IVF 检索接受 nprobe=0 仍返回结果,越下界的参数值被静默接受(同族 limit=0 会被明确拒绝),属参数边界校验缺失"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "HNSW 检索接受 ef=0 仍返回结果,越下界参数值被静默接受并生效,参数校验缺失"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "IN 为集合成员判断,age in [10,5] 命中 age=10、空集合命中 0 行均符合 IN 的文档化语义,未见过失"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "insert 接受动态键 '123field' 但 query 按名取该字段报 parse output field name failed,写入端校验缺失导致写入可读不可取的不对称"}
+{"defect_id": "milvus_006", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "动态字段本质是 JSON,整数被原样存入并原样返回,无强制转换或数据丢失,未违反任何契约断言"}
+{"defect_id": "milvus_007", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "空查询向量被明确拒绝并给出维度不匹配错误,属正确参数校验,而非静默成功"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "COSINE 相同向量检索距离达到 1.000000238,超出文档明示的取值域 [-1,1],100 次查询中 11 次越界,可复现"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "nprobe=0 被静默接受并返回结果,而同包对照 limit=0 被明确拒绝(topk [0] is invalid),下界校验缺失且前后不一致"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "create 接受 collection.ttl.seconds=-100 且 describe 中该属性消失,而 alter_properties 对同一值明确报 out of range,同一属性两处校验不一致"}
+{"defect_id": "milvus_011", "verdict": "CONFIRMED", "confidence": 0.55, "rationale": "filter 显式传 JSON null 被静默按无过滤处理并返回全表,类型不符(非字符串)的谓词未报错且与空表达式应配 limit 的服务端规则相悖"}
+{"defect_id": "milvus_012", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "dbName='' 被静默落到 default 库并返回其集合,文档仅称其为现有数据库名而未声明空值语义,难以确证是否构成缺陷"}
+{"defect_id": "milvus_013", "verdict": "CONFIRMED", "confidence": 0.5, "rationale": "Request-Timeout 头接受 '3.5'/'abc' 并静默忽略,非整数超时值未报错即按默认超时执行,类型校验缺失"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "dim=32768 属文档范围 2~32768 内的合法上界值被正常接受,32769 被明确拒绝,边界行为与声明范围一致"}

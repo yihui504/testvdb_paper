@@ -1,0 +1,11 @@
+{"defect_id": "qdrant_028", "verdict": "FALSE_POSITIVE", "confidence": 0.55, "rationale": "观察到的 strict 模式 scroll limit=100 被 400 拒绝与文档一致：openapi 明示 max_query_limit 约束的是没有自身上限的 API 的 limit 参数，错误文本也与源码 strict_mode 错误完全一致；其余交互（用未文档化路径恢复快照得 404、metadata PATCH 属合并语义、等分排序任意）均无文档-实现冲突。"}
+{"defect_id": "weaviate_001", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "dynamicEfMin=500 大于 dynamicEfMax=10 这一自相矛盾配置被 200 接受并原样存储，HNSW 校验只覆盖 maxConnections/efConstruction/filterStrategy；该组合使搜索 ef 在 k=1 时取 500、k>=2 时取 10（非单调），属真实校验缺口。"}
+{"defect_id": "weaviate_002", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "flatSearchCutoff 是对象数阈值，负值 -100 被 200 接受并入配置，源码对任何 HNSW 数值字段外无下限校验，效果等价于静默禁用 flat 检索路径。"}
+{"defect_id": "weaviate_003", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "包内契约明列 replicationConfig.factor 大于等于 1，实测 factor=-1 仍得 200 且被静默改写为 1（setClassDefaults 对小于 1 一律替换为 MinimumFactor），越界值未被拒绝。"}
+{"defect_id": "weaviate_004", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "ef=-1 是文档化哨兵默认值，源码常量注释写明 let Weaviate pick（默认由服务端决定），且所有未显式设置 ef 的集合响应里 ef 本身就是 -1，并非越界。"}
+{"defect_id": "weaviate_005", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "同一参数校验不一致：desiredCount=0 得 422，而 -1 反得 200 且响应体为空——该字段全链路无下限校验，负数会在 sharding InitState 触发 make 负长度 panic 并被恢复中间件吞掉（客户端看到伪 200），属真实缺陷。"}
+{"defect_id": "weaviate_006", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "tokenization 的文档枚举为 word/lowercase/whitespace 等九个取值（包内契约 evidence_tier=explicit），空串不在集合内却被 200 接受并静默改写成 word。"}
+{"defect_id": "weaviate_007", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "distance=null 被当作未提供而回退默认 cosine（Go 反序列化下 null 与字段缺省不可区分），文档未定义 null 语义、包内也无 distance 契约行，无法确证构成文档-实现缺陷。"}
+{"defect_id": "weaviate_008", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "文档明示创建租户时 activityStatus 仅允许 ACTIVE 与 INACTIVE，空串被 200 接受（服务端以 allowEmpty 放行）并静默落到默认状态，属枚举闭集违反。"}
+{"defect_id": "weaviate_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "空向量在单条与批量两条路径行为一致（都返回 200、对象落库无向量，响应也省略 vector 字段），实现以向量长度大于 0 判定是否携带向量，即空数组等价于未提供，未违反任何文档承诺。"}
+{"defect_id": "weaviate_010", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "缺少 where 或空 match 这类客户端输入错误返回 500（REST handler 只在 ErrInvalidUserInput 时映射 422），而接口文档为无效数据列出 400/422，且同函数处理 filter 解析失败处的注释正说明否则会错报 500，属错误定级缺陷。"}

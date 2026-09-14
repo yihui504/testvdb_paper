@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "HUMAN_REVIEW", "confidence": 0.5, "rationale": "探针把 groupByField/groupSize/strictGroupSize 塞进 REST 并不存在的 groupParams 字段（源码 SearchReqV2 只认顶层 groupingField/groupSize/strictGroupSize，已核），观察实际未触达分组机制，既无法确证也无法证伪该观察是否构成缺陷，转人工。"}
+{"defect_id": "qdrant_001", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "空向量 [] 在 wait=false 时被 200 acknowledged 接收随后静默丢弃（points_count 仍为 0），只有 wait=true 才报 400；上游 1.19 新增 validate_non_empty_dense 并注明 wait=false 会静默入队空向量、还会触发断言崩溃（qdrant#9045/#7967）。"}
+{"defect_id": "qdrant_002", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "hnsw_ef=0 被 200 接受且 1.18.0 的 SearchParams 无任何下界校验，而上游 1.19 已补 #[validate(range(min = 1))]，属 count/limit 类参数接受 0 的下界违反。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "score_threshold 文档语义即 less similar results will not be returned、cosine 只返回更高分，阈值 2.0 过滤掉 1.0 分的点、阈值 -0.5 放行，观察与文档完全一致。"}
+{"defect_id": "qdrant_004", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "维度不匹配（3≠4）在 wait=false 时返回 200 acknowledged 但点未写入（points_count=0），仅 wait=true 才 400；上游 1.19 新增 validate_vector_dimensions 并注释此举正是为了让 wait=false 的维度错误也能上报、不再后台静默丢弃。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "shard_number=0 被 422 拒绝（must be 1 or larger）、-1 被 400 拒绝，文档 minimum=1 的下界对两种非法值都挡住，未构成缺陷。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "filter color=red 精确返回 4 条红点（10/2/8/4），无 payload 的点未被误纳入，与文档过滤语义一致。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "批量端点遇非法维度点整批 400 拒绝、count 保持 3 无部分写入，正是文档承诺的 batch 原子性，未违反契约。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "wait 在 create-index 端点是 query 参数（body schema CreateFieldIndex 只有 field_name/field_schema），探针写进 body 被正常忽略故回 acknowledged；索引随后建成、scroll 过滤结果正确，无文档-实现偏离。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "CreateCollection 的 openapi 无任何必填字段、vectors 允许空对象，服务端 200 与文档一致，随后 upsert 的 400 属合法校验拒绝（仅报错文案带空向量名不够友好）。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "vectors 为文档可选字段（required 为空）且 1.12 至 1.19 一直把空向量集当作合法状态，创建成功与文档一致，写点被 400 挡住属正确拒绝。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "Filter.should 在 openapi 中显式 nullable，null 等价于未给条件故返回全部 2 点，行为与文档一致。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "must_not 文档允许单个 Condition 对象（anyOf Condition|array|null），其语义是排除 tag=x，观察返回 id=2 正确。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "query 字段在 openapi 中 nullable 且注明缺失时按 ID 顺序返回全部点，观察恰为 1,5,10 升序返回，行为与文档一致。"}

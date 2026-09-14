@@ -1,0 +1,14 @@
+{"defect_id": "milvus_029", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "limit=0 被明确拒绝(65535 报错给出 [1,16384] 范围),64 维向量打 4 维集合也被 1801 拒绝,两处观察都是正确校验,与契约'limit must be positive integer'一致,不构成缺陷。"}
+{"defect_id": "milvus_030", "verdict": "FALSE_POSITIVE", "confidence": 0.65, "rationale": "服务端 ValidatePassword 只校验长度(默认 6-72),包内无 users+create 可核查契约行,官方 REST 测试本身也用纯数字弱口令建用户,所谓'复杂度要求'无从确证,观察到的正是长度校验本身。"}
+{"defect_id": "milvus_031", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "autoID 集合上缺主键且带 schema 外字段的 upsert/insert 都返回 1804 拒绝,dynamic schema 关闭时报错正确,没有非法成功,只是错误信息未点出缺主键。"}
+{"defect_id": "milvus_032", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "契约明示 consistencyLevel 只能是 Strong/Session/Bounded/Eventually,传入 'Invalid' 却 code=0 创建成功并静默落为 Bounded 默认值。"}
+{"defect_id": "milvus_033", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "vectorFieldType 传 'InvalidVectorType' 仍 code=0 创建成功,describe 显示被静默换成 FloatVector,枚举参数未校验、非法值被无声吞掉。"}
+{"defect_id": "milvus_034", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "REST upsert 把裸串 'invalid_json' 写进 JSON 字段并返回成功,同一输入 gRPC 侧直接判 'Invalid JSON string';源码 JSON 分支把字符串原文当 JSON 载荷存,写入的不是合法 JSON。"}
+{"defect_id": "milvus_035", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "集合 schema 声明 id 为 Int64,REST insert 接受字符串 '123' 并静默强转成整型主键 123(gRPC 侧同请求被拒),字段类型契约被绕过。"}
+{"defect_id": "milvus_036", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "groupSize=0 与 -1 属计数类下界参数,REST 未做任何校验即 code=0 返回(源码只在 >0 时才下传),非法值被静默丢弃。"}
+{"defect_id": "milvus_037", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "INT64 字段收字符串 '123'、VarChar 字段收数字 123、BOOL 字段收 'true' 全部 code=0 落库,schema 声明的字段类型被静默强转绕过。"}
+{"defect_id": "milvus_038", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "groupByField 指向向量字段(分组语义只定义在标量字段取值上)仍 code=0 返回且结果并未分组,非法分组键被静默忽略。"}
+{"defect_id": "milvus_039", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "upsert 用字符串主键 '100' 写 Int64 主键字段 code=0,查询确认已按 id=100 覆盖成功,schema 类型不匹配被静默强转。"}
+{"defect_id": "milvus_040", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "REST insert 裸串 'plain_string' 到 JSON 字段返回成功且 REST 查询可见,但 gRPC 读该记录报 unexpected character,即已写入非法 JSON,跨客户端不可读。"}
+{"defect_id": "milvus_041", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "upsert 把字符串 '3.14159'/'42'、'true'、数字 1 混入 DOUBLE/INT16/BOOL 字段全部 code=0 接受,与集合 schema 声明的字段类型不符且无任何报错。"}
+{"defect_id": "milvus_042", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "FloatVector 字段接受字符串形式的 '[0.1,0.2,0.3,0.4]' 并解析入库 code=0,类型不匹配被静默接受(gRPC 侧同请求被拒)。"}

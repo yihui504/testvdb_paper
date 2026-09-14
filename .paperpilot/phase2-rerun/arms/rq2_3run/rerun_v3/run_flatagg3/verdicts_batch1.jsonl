@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.9, "rationale": "包内既无任何执行观察(raw 为空、日志未捕获),契约段又已下线,材料完全沉默,按聚合规则第3条保守处置。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "计数型参数 nprobe=0 这一数值下界外取值被静默接受并返回 code=0 与 10 条结果,属协议明示的数值下界类违反(无契约行亦可确认)。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.8, "rationale": "计数型参数 ef=0 被静默接受并返回 code=0 与结果,同属数值下界类违反。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "源码明文注释与报错原文表明 in 右侧必须是列表(parser_visitor.go 注释 VisitTerm translates expr to term plan;报错 the right-hand side of in must be a list),age in [10, 5] 即值集合 {10,5} 只命中 age=10 一行,与实现语义完全一致,不存在降序区间缺陷。"}
+{"defect_id": "milvus_005", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "insert 接受动态字段名 123field/@field 并返回 code=0,而 query 的 outputFields 对同一名称报 parse output field name failed,写入与读取接口不对称,已写入数据无法按名取回。"}
+{"defect_id": "milvus_006", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "动态字段是无声明类型的 JSON 列,字符串与整数混存并原样返回未明确违反包内任何契约行,亦无可引用的源码明文意图注释,证据不足。"}
+{"defect_id": "milvus_007", "verdict": "HUMAN_REVIEW", "confidence": 0.7, "rationale": "观察摘要(65535 稀疏向量类型错)与执行日志全文(1801 维度错)相互矛盾,待判观察无法确定,包内又无 entities+search 契约行。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.9, "rationale": "包内明文契约断言 COSINE 距离范围为 [-1,1],实测 100 次查询中 11 次距离大于 1(最大 1.000000238418579),明确违反该断言。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "nprobe=0 被接受返回 code=0,而同族 limit=0 被明确拒绝(topk [0] is invalid, it should be in range [1, 16384]),同时落入数值下界与同族不一致两类。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.85, "rationale": "create 对 TTL=-100 返回 code=0 且该属性被静默丢弃(describe 属性仅剩 timezone),而 alter_properties 对同一值明确拒绝 collection TTL is out of range expect [-1, 3155760000],接口不对称。"}
+{"defect_id": "milvus_011", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "filter=null、缺省与空串三者行为一致(均返回全部行),包内无 entities+query 契约行,文档对 null 语义沉默,证据不足以定论。"}
+{"defect_id": "milvus_012", "verdict": "HUMAN_REVIEW", "confidence": 0.65, "rationale": "材料明示文档对 dbName 只有描述性表述、无非空或拒绝语义声明,空串回落默认库既不构成明确违反,也无源码明文注释可支持有意设计结论。"}
+{"defect_id": "milvus_013", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "包内已实测文档对 Request-Timeout 无任何类型或取值约束(仅出现在 curl 示例),非法值被静默忽略缺少契约参照,不足以判定。"}
+{"defect_id": "milvus_014", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "源码明文给出上界意图(configs/milvus.yaml:325 maxDimension: 32768 注释说明其为创建集合时向量可有的最大维度;util.go 仅当 dim<=1 或 dim>32768 时报 should be in range 2 ~ 32768),dim=32768 通过、32769 拒绝正是设计边界。"}

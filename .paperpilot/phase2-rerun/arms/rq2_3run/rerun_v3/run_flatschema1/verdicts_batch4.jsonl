@@ -1,0 +1,14 @@
+{"defect_id": "milvus_043", "verdict": "HUMAN_REVIEW", "confidence": 0.45, "rationale": "探针把分组参数塞进不存在的 groupParams 字段（SearchReqV2 只有顶层 groupingField/groupSize/strictGroupSize，源码已验），参数根本没送达服务端，15 条结果只是普通 top-k，既不能证实也不能证伪分组语义缺陷，按协议不判 FALSE_POSITIVE。"}
+{"defect_id": "qdrant_001", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "空向量在 wait=true 时被正确 400 拒绝，异步路径返回的 200 + status=acknowledged 正是文档/源码定义的排队语义（Acknowledged - Request is saved to WAL and will be process in a queue；wait 默认 false），日志无崩溃、points_count 保持 0 无脏数据。"}
+{"defect_id": "qdrant_002", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "openapi 明载 hnsw_ef 类型 uint、minimum=0 且 nullable，接受 0 属文档允许范围，且本次搜索返回了正确结果，未见任何契约违反。"}
+{"defect_id": "qdrant_003", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "score_threshold 文档未设取值范围，观测的 2.0→空集、-0.5→命中的行为正是文档所述『cosine 相似度只返回高于阈值的结果』语义，无违反。"}
+{"defect_id": "qdrant_004", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "3 维向量在 wait=true 同步路径被 400 维度错误正确拒绝，异步路径的 200 acknowledged 是文档化的排队语义、数据并未被写入（points_count 仍为 0），属 wait=false 的既定异步设计。"}
+{"defect_id": "qdrant_005", "verdict": "FALSE_POSITIVE", "confidence": 0.9, "rationale": "shard_number=0 返回 422『must be 1 or larger』、-1 返回 400 类型错误，两者都被拒绝且与 openapi 的 minimum=1 完全一致，实现按契约执行。"}
+{"defect_id": "qdrant_006", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "filter color=red 精确返回全部 4 个 red 点（2/4/8/10）且 payload 完整，无 payload 的 3/6 未误命中，摘要自记 missing_payload_ids=[]，行为与契约一致。"}
+{"defect_id": "qdrant_007", "verdict": "FALSE_POSITIVE", "confidence": 0.75, "rationale": "batch 中一个维度非法的点使整批返回 400 且未写入任何点（count 保持 3），与包内『批量原子执行』断言一致，openapi 亦未承诺部分成功，无违反。"}
+{"defect_id": "qdrant_008", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "scroll+filter 精确返回 25 个 cat_a 点、limit=100 下 next_page_offset=null，行为正确；wait 是 query 参数而探针写进了 body（openapi 明载），响应 acknowledged 属预期而非缺陷。"}
+{"defect_id": "qdrant_009", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "vectors 为可选字段（CreateCollection.vectors 带 #[serde(default)]，另有独立 sparse_vectors 与文档化的 PUT /collections/{name}/vectors/{vector_name} 后续补加路径），空配置建库属支持路径，随后 upsert 被正确拒绝。"}
+{"defect_id": "qdrant_010", "verdict": "FALSE_POSITIVE", "confidence": 0.7, "rationale": "openapi 未把 vectors 列为必填，缺省即空多向量配置且可事后添加向量，建库成功属设计；upsert 报 400 属正确拒绝（错误串里向量名为空是诊断瑕疵，不构成契约违反）。"}
+{"defect_id": "qdrant_011", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "openapi Filter.should 显式允许 null（anyOf：Condition / [Condition] / nullable），观测返回全部点即『无附加条件约束』的正确语义。"}
+{"defect_id": "qdrant_012", "verdict": "FALSE_POSITIVE", "confidence": 0.85, "rationale": "openapi Filter.must_not 同样允许单个 Condition 对象（anyOf 含 Condition），观测按 must_not 正确排除了 tag=x 的点，语义与文档一致。"}
+{"defect_id": "qdrant_013", "verdict": "FALSE_POSITIVE", "confidence": 0.8, "rationale": "openapi QueryRequest.query 明载『If missing without prefetches, returns points ordered by their IDs』，观测正是 query=null 时按 ID 序返回 1/5/10，属文档化行为。"}

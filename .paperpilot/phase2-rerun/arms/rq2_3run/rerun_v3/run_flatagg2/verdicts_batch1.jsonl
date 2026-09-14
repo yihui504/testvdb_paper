@@ -1,0 +1,14 @@
+{"defect_id": "milvus_001", "verdict": "HUMAN_REVIEW", "confidence": 0.85, "rationale": "包内既无任何观察记录（raw 为空、log 未捕获），又无可核查契约行，材料对观察与依据均沉默，无从判断是否构成缺陷。"}
+{"defect_id": "milvus_002", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "nprobe=0 属 count 类搜索参数的数值下界违反（同族 nlist/efConstruction/M 都有 Min 常量校验，搜索参数却无），服务端静默接受并返回结果（code=0），属非法成功。"}
+{"defect_id": "milvus_003", "verdict": "CONFIRMED", "confidence": 0.6, "rationale": "ef=0 同属 count 类搜索参数的数值下界违反，服务端 http=200/code=0 静默接受并返回结果，未做任何参数校验或报错。"}
+{"defect_id": "milvus_004", "verdict": "FALSE_POSITIVE", "confidence": 0.6, "rationale": "源码明文注释 \"// VisitTerm translates expr to term plan.\"（parser_visitor.go:694）及右值必须是列表的判定表明 in 为集合项语义、元素逐个取值，顺序无意义，故 age in [10, 5] 删除 age=10 一行符合既定设计。"}
+{"defect_id": "milvus_005", "verdict": "FALSE_POSITIVE", "confidence": 0.5, "rationale": "源码明文注释（util.go:1644-1655）\"only $meta[\\\"xxx\\\"] is allowed for now\" 与 \"$meta[\\\"dyn_field\\\"] explicit form\" 表明动态字段输出名须为合法标识符或走 $meta[\"...\"] 显式形式，裸名 '123field' 解析失败属既定设计。"}
+{"defect_id": "milvus_006", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "包内无任何 entities+insert 契约行，动态字段值按 JSON 原样往返（\"hello\"→\"hello\"、12345→12345）本身自洽，是否应强转 VARCHAR 无据可依，需人工定夺。"}
+{"defect_id": "milvus_007", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "日志实际返回的是清晰的分参错误（code=1801，dimension: 8 但长度为 0），与摘要所称 VECTOR_SPARSE 误导性报错不符，材料自相矛盾且无契约行，无法定论。"}
+{"defect_id": "milvus_008", "verdict": "CONFIRMED", "confidence": 0.65, "rationale": "包内明文契约断言 COSINE 相似度距离值域为 [-1, 1]，观察显示 100 次查询中 11 次距离大于 1（最大 1.000000238418579），明确越出上界。"}
+{"defect_id": "milvus_009", "verdict": "CONFIRMED", "confidence": 0.7, "rationale": "nprobe=0 被静默接受（code=0 返结果），而同版本 limit=0 却被明确拒绝并给出 [1, 16384] 区间提示，同族参数校验不一致，属数值下界类违反。"}
+{"defect_id": "milvus_010", "verdict": "CONFIRMED", "confidence": 0.75, "rationale": "同一 collection.ttl.seconds=-100 在 collections/create 被静默接受（code=0 且 describe 未落库），在 alter_properties 被按 [-1, 3155760000] 区间明确拒绝，数值下界+同族不一致双违反。"}
+{"defect_id": "milvus_011", "verdict": "HUMAN_REVIEW", "confidence": 0.55, "rationale": "包内无 entities+query 契约行；空/缺省 filter 返回全量在引擎侧是被支持的用法，仅凭 REST 层静默放行不足以证成非法成功，需人工定夺。"}
+{"defect_id": "milvus_012", "verdict": "HUMAN_REVIEW", "confidence": 0.6, "rationale": "包内依据仅为描述性文档（\"The name of an existing database.\"），未声明非空或拒绝语义，dbName=\"\" 落到默认库属实现选择，材料不足以证成缺陷。"}
+{"defect_id": "milvus_013", "verdict": "CONFIRMED", "confidence": 0.5, "rationale": "Request-Timeout 为数值（秒）参数，\"abc\"/\"3.5\" 这类域外值被静默接受（http=200、code=0）且无任何错误或告警，属类型/取值域校验缺失的客观违反。"}
+{"defect_id": "milvus_014", "verdict": "HUMAN_REVIEW", "confidence": 0.55, "rationale": "dim=32768 处于服务端自述区间 2~32768 之内、32769 被明确报错，观察只复现了正常边界行为，未给出任何契约违反或后续失败证据，无法定论。"}
