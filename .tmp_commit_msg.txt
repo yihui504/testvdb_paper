@@ -1,30 +1,28 @@
-fix(paper): 更正 anchor 协议描述 — 实为更严的 A/B/D 二值协议，非 full-stage
+feat(paper): 1B-轻 — 32 案 anchor 在现行 full-stage 协议下重跑（0.594 → 31/32）
 
-溯源 anchor 原始 dispatch（9 份全同）后发现论文叙述有误。
+回应四轮 review 持续提出的"被报告的 run 贡献 0 案、论文从未测所描述配置"。
 
-**论文原写**：re-adjudicated ... "under the same frozen-package blinding and
-full-stage protocol"。
+做法：把 anchor 的 32 个预审计 pack，用**实际 run 用过的完整协议**（从
+run_full1/batch1_dispatch.txt 逐字提取，含 v3 五条红线、七类客观约束、三值
+判决）交给三个独立裁决者重判（工具调用 81/76/98 次，源码取证到 file:line）。
 
-**dispatch 实际写**：
-- 视角只有 A/B/D，**明写「本臂无认知材料，无 C 视角」**（表头虽称"四视角"，
-  操作段只列三个）
-- 判决二值：CONFIRMED | FALSE_POSITIVE，无 HUMAN_REVIEW
-- 聚合规则第 4 条：**「证据不足一律 FALSE_POSITIVE」**——强制关闭，不路由
+结果：
+| 口径 | 确认数 | 每 run |
+|---|---|---|
+| 旧 anchor（A/B/D 二值，证据不足一律 FP） | 19/32 = 0.594 | 17/19/17 |
+| 新 anchor（full-stage v3，三值 + 路由） | **31/32 = 0.969** | 31/32/31 |
 
-即 anchor 用的是一套比 full stage 更严、无路由的协议，本质接近 source-only
-臂。
+12 案翻转，全部 FP → 确认/HR。三 run HR 率 19%/25%/9%（合并 17.7%），
+与主池 full 臂 19.8% 一致，说明协议应用可比。
 
-**该错误方向对论文有利**：不是"用 full-stage 协议得到 0.594"，而是"用会把
-判不了直接算成误报的更严协议，仍得到 0.594"。故修正后 anchor 从"协议存疑"
-变成**下界**（lower bound on what the deployed protocol would confirm）。
+**论文写法（经权衡）**：0.594 保留为主、0.969 一句附带。理由——两者各答
+不同问题：主对比答"哪个判官更好"（需部署工作点，故 convention 主位）；
+anchor 答"未提交流是不是垃圾"，需要一个**在最严读法下仍站得住**的界，
+故强制关闭的 0.594 主位。0.969 继承宽松口径，用批评者不信任的口径论证
+会被一并怀疑。
 
-已验证的锚点事实（脚本 81）：
-- 32 案，全部在 81 池外（defect-N 命名空间）
-- majority 确认 19/32 = 0.594，三 run 一致 26 —— 与论文逐字相符
-- 4 案（defect-54/57/58/59）因 linked 到已提交的 #9255 而排除，论文此句无误
-
-同批完成：把该次运行的完整文件备份到
-C:\Users\11428\Desktop\testvdb_run_backup_2026-09-14（49MB，5958=5958 文件校验
-通过：qdrant 两次 run 31M + checkpoints 3.8M + 会话日志 14M）。
+同时如实写明三点：①两个数都不是召回测量（这 32 案从未提交，无维护者裁决
+即无 ground truth）；②0.969 高，部分因路由算确认；③部分因预审计包契约
+行更弱，把案子推到"无需契约背书即可确认"的客观约束视角。
 
 编译 32 页 0 undefined。
