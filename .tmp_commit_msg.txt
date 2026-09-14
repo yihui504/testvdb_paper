@@ -1,29 +1,14 @@
-fix(paper): 披露 payload 形状边界 — 四案观察不触达其声称机制（源码已验）
+fix(paper): §5 补"判官指出前提失效、人工依上游证据覆盖"的实例
 
-溯源 6 案上游 issue 后新增的披露（用户要求写）。
+承接上一提交的 payload 形状披露，把审计链补完整。
 
-已自验的决定性证据（v3.0.0 internal/distributed/proxy/httpserver/request_v2.go）：
-SearchReqV2 结构体没有 groupParams 字段，group 旋钮是平铺的
-（groupingField / groupSize / strictGroupSize）；且 GroupSize 是 int32、
-StrictGroupSize 是 bool 的值类型——分不出"没传"与"传了 0/负"，
-正是 PR #52346 改成指针要修的东西。
+三例 group-by 案上，第一轮判官发现前提本身未绑定（探针的 group 旋钮放在
+binder 会丢弃的嵌套对象里，服务端从未收到声称所涉的参数），并据此**路由**
+而非确认或否决；人工档推翻路由、改为确认，依据是维护者自己用正确 payload
+的复现与它暴露的接口不对称，随后的合并修复 PR 印证了这一点。
 
-四案的探针复刻了上游报告的错误参数形状：
-- milvus_036/038/043：group 旋钮放在嵌套 groupParams（非 SearchReqV2 字段）
-  整包被 binder 丢弃，观察显示的是"未知键被丢弃"而非校验缺口
-- milvus_027：顶层 shardsNum（只有 params.shardsNum 被读），同型
+要点：**判官对证据的判断可以是对的，而对案件的判断可以是错的**——路由
+通道存在的意义正是把这两件事分开。§4.3 记录的 payload 形状边界解释了
+这三案的材料为何偏薄。
 
-关键是区分两类后果（避免过度自我指控）：
-- 三例 group-by 是真 TP——维护者用正确 payload 复现并在 PR #52346 一并
-  修掉（PR 开篇即 "Three REST requests were accepted and then quietly did
-  something other than what they said"），其确认依据是上游复现+合并修复，
-  不是我们自己的观测
-- milvus_027 是泄漏侧（by-design，无修复 PR，报告者自关）
-
-不动任何数字：GT 不变（51 T + 30 F），池子与三臂判决不变；
-改变的是这三案确认的证据权重。
-
-改动：§4.3 pack 重建段补该边界（明确"审计核验的是引用、不是观察
-payload"）；§5 那句由 "a source reading suggests" 改为已证实的表述。
-
-编译 31 页 0 undefined。
+正文只改 §5 一句到一段，不动任何数字。编译 31 页 0 undefined。
