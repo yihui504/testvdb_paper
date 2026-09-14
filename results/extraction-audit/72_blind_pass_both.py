@@ -52,10 +52,12 @@ def load_verdicts(path):
 
 
 passes = {
-    "pack-only  (script 68)": load_verdicts(
+    "pack-only     (68)": load_verdicts(
         "results/extraction-audit/blind_pass_verdicts.jsonl"),
-    "pack+source (script 71)": load_verdicts(
+    "pack+source   (71)": load_verdicts(
         "results/extraction-audit/blind_pass_source_verdicts.jsonl"),
+    "full protocol (73)": load_verdicts(
+        "results/extraction-audit/blind_pass_protocol_verdicts.jsonl"),
 }
 
 print(f"authors' rulings: {len(authors)}; routed cases with no author ruling: "
