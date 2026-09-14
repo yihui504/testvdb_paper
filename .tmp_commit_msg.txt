@@ -1,14 +1,30 @@
-fix(paper): §5 补"判官指出前提失效、人工依上游证据覆盖"的实例
+fix(paper): 更正 anchor 协议描述 — 实为更严的 A/B/D 二值协议，非 full-stage
 
-承接上一提交的 payload 形状披露，把审计链补完整。
+溯源 anchor 原始 dispatch（9 份全同）后发现论文叙述有误。
 
-三例 group-by 案上，第一轮判官发现前提本身未绑定（探针的 group 旋钮放在
-binder 会丢弃的嵌套对象里，服务端从未收到声称所涉的参数），并据此**路由**
-而非确认或否决；人工档推翻路由、改为确认，依据是维护者自己用正确 payload
-的复现与它暴露的接口不对称，随后的合并修复 PR 印证了这一点。
+**论文原写**：re-adjudicated ... "under the same frozen-package blinding and
+full-stage protocol"。
 
-要点：**判官对证据的判断可以是对的，而对案件的判断可以是错的**——路由
-通道存在的意义正是把这两件事分开。§4.3 记录的 payload 形状边界解释了
-这三案的材料为何偏薄。
+**dispatch 实际写**：
+- 视角只有 A/B/D，**明写「本臂无认知材料，无 C 视角」**（表头虽称"四视角"，
+  操作段只列三个）
+- 判决二值：CONFIRMED | FALSE_POSITIVE，无 HUMAN_REVIEW
+- 聚合规则第 4 条：**「证据不足一律 FALSE_POSITIVE」**——强制关闭，不路由
 
-正文只改 §5 一句到一段，不动任何数字。编译 31 页 0 undefined。
+即 anchor 用的是一套比 full stage 更严、无路由的协议，本质接近 source-only
+臂。
+
+**该错误方向对论文有利**：不是"用 full-stage 协议得到 0.594"，而是"用会把
+判不了直接算成误报的更严协议，仍得到 0.594"。故修正后 anchor 从"协议存疑"
+变成**下界**（lower bound on what the deployed protocol would confirm）。
+
+已验证的锚点事实（脚本 81）：
+- 32 案，全部在 81 池外（defect-N 命名空间）
+- majority 确认 19/32 = 0.594，三 run 一致 26 —— 与论文逐字相符
+- 4 案（defect-54/57/58/59）因 linked 到已提交的 #9255 而排除，论文此句无误
+
+同批完成：把该次运行的完整文件备份到
+C:\Users\11428\Desktop\testvdb_run_backup_2026-09-14（49MB，5958=5958 文件校验
+通过：qdrant 两次 run 31M + checkpoints 3.8M + 会话日志 14M）。
+
+编译 32 页 0 undefined。
