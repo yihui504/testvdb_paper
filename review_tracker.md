@@ -885,7 +885,19 @@ R2 **独立复算**了 census 边际、池子算术、F1 对、两个 Holm 家�
 ### 17.6 待办（留给下一轮取舍）
 
 1. **匿名快照同步**（用户）；2. `paperpilot.yml` 元数据更新（已陈旧数月）；
-3. 上述五项 minor 修复（**摘要是最高性价比**，两处各一句，且摘要是最被引用的一段）。
+3. ~~上述五项 minor 修复~~ → **已于 §18 完成 7 项**。
+4. ~~匿名快照同步~~ → **2026-09-16 用户已同步，我逐字节验过**：
+
+```
+文件                                       本地LF     快照       identical_after_LF
+README.md                                  18047    18047      True
+rq2/analyses/audit/aclosure_evidence.json  11250    11250      True
+rq2/analyses/audit/negatives_provenance.py  5325     5325      True
+```
+
+（本地 CRLF 与快照 LF 的差是 Windows 检出的行尾，非内容差。）
+**这一层验证是被坑出来的纪律**：前几次都是"本地和 GitHub 都好了、论文里那个 URL 没好"。
+**验快照要验到读者实际点开的那一层，且要逐字节，不能只看 HTTP 200。**
 
 ---
 
