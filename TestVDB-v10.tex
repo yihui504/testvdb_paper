@@ -34,7 +34,8 @@ them.
 \textbf{The audit.} The packages that stage reads are distilled from vendor documentation. Auditing
 their 134 (constraint, cited-page) pairs, as produced before the repair, against the page each cites:
 \textbf{18 are supported as cited, 58 cite a source file or a landing page and
-were re-anchored, and 58 have no support on their cited page}---43.3\%. The same audit exposed two
+were re-anchored, and 58 have no support on their cited page}---the last two \textbf{43.3\%} each of
+134. The same audit exposed two
 leak channels, since repaired and the affected cases re-judged; \textbf{every rate below is computed
 on the cleaned pool}.
 
@@ -44,7 +45,8 @@ primary backbone, and not reproduced on the second. Contract refutation carries 
 requirement, closes 50 judgments, and 24 of them are maintainer-confirmed bugs; verbatim-guarded
 by-design refutation closes 19 and is right 17 times. \textbf{80\% of the stage's incorrect closures
 to False-Positive come from the unguarded clause}; routing it instead of closing on it recovers seven
-true bugs for nine more false positives released.
+true bugs for nine more false positives released \textbf{under the deployment's convention}, which
+credits a routed case, and changes nothing under the forced reading.
 \end{abstract}
 
 \maketitle
@@ -98,7 +100,7 @@ We contribute:
 \end{enumerate}
 
 We also report defects in our own instrument. Four defects in our own dispatches were found by
-reviewers reading the shipped texts, not by us: eight of twelve declare an output field that
+readers external to the project, working from the shipped texts, rather than by us: eight of twelve declare an output field that
 contradicts their own verdict vocabulary; the deployed dispatch prints two aggregation rules with
 opposite defaults and defines the four perspectives twice with C and D exchanged; and its output
 schema declares the source vocabulary for a perspective the text calls maintainer cognition, which
@@ -376,6 +378,9 @@ We evaluate on 81 adjudicated cases from three production VDBMSs, under one froz
   \item \textbf{RQ3:} Where does the confirmation stage's error come from?
 \end{itemize}
 
+Section~\ref{sec:method} states the method and the frozen materials; Section~\ref{sec:buys} supplies
+the instrument the three questions need, and Section~\ref{sec:baseline} runs the baseline.
+
 \subsection{Methodology}
 \label{sec:method}
 
@@ -443,25 +448,28 @@ GLM-5.3-Flash and the second Qwen3.8-Flash}, and Table~\ref{tab:configs} lists t
 
 \begin{table}[t]
 \caption{The twelve judge configurations. Each re-adjudicates all 81 cases three times; only what
-the judge is given and which rules it applies differ.}
+the judge is given and which rules it applies differ. Every figure in the last four columns is the
+majority of that run's three runs: recall and the confirmed set under the deployment's convention,
+forced recall under the forced reading, and suppression as the share of the 30 negatives the
+configuration does not confirm.}
 \label{tab:configs}
 \footnotesize
-\begin{tabular}{@{}rlcccl@{}}
+\begin{tabular}{@{}rlccclrrrr@{}}
 \toprule
-\# & configuration & perspectives & rule & source & backbone \\
+\# & configuration & persp. & rule & source & backbone & recall & forced & supp. & confirmed \\
 \midrule
-1 & contract core & --- & --- & --- & GLM-5.3-Flash \\
-2 & flat judge & --- & --- & $\bullet$ & GLM-5.3-Flash \\
-3 & flat $+$ schema fix & --- & --- & $\bullet$ & GLM-5.3-Flash \\
-4 & flat $+$ aggregation & --- & $\bullet$ & $\bullet$ & GLM-5.3-Flash \\
-5 & full, no aggregation & $\bullet$ & --- & $\bullet$ & GLM-5.3-Flash \\
-6 & source-only & --- & --- & $\bullet$ & GLM-5.3-Flash \\
-7 & full stage & $\bullet$ & $\bullet$ & $\bullet$ & GLM-5.3-Flash \\
-8 & full, no source & $\bullet$ & $\bullet$ & --- & GLM-5.3-Flash \\
-9 & flat judge & --- & --- & $\bullet$ & Qwen3.8-Flash \\
-10 & flat $+$ aggregation & --- & $\bullet$ & $\bullet$ & Qwen3.8-Flash \\
-11 & source-only & --- & --- & $\bullet$ & Qwen3.8-Flash \\
-12 & full stage & $\bullet$ & $\bullet$ & $\bullet$ & Qwen3.8-Flash \\
+1 & contract core & --- & --- & --- & GLM-5.3-Flash & 8/51 & 8 & 29/30 & 9 \\
+2 & flat judge & --- & --- & $\bullet$ & GLM-5.3-Flash & 30/51 & 25 & 26/30 & 34 \\
+3 & flat $+$ schema fix & --- & --- & $\bullet$ & GLM-5.3-Flash & 35/51 & 29 & 26/30 & 39 \\
+4 & flat $+$ aggregation & --- & $\bullet$ & $\bullet$ & GLM-5.3-Flash & 39/51 & 27 & 18/30 & 51 \\
+5 & full, no aggregation & $\bullet$ & --- & $\bullet$ & GLM-5.3-Flash & 33/51 & 27 & 27/30 & 36 \\
+6 & source-only & --- & --- & $\bullet$ & GLM-5.3-Flash & 36/51 & 20 & 22/30 & 44 \\
+7 & full stage & $\bullet$ & $\bullet$ & $\bullet$ & GLM-5.3-Flash & 39/51 & 27 & 21/30 & 48 \\
+8 & full, no source & $\bullet$ & $\bullet$ & --- & GLM-5.3-Flash & 48/51 & 31 & 12/30 & 66 \\
+9 & flat judge & --- & --- & $\bullet$ & Qwen3.8-Flash & 27/51 & 23 & 25/30 & 32 \\
+10 & flat $+$ aggregation & --- & $\bullet$ & $\bullet$ & Qwen3.8-Flash & 41/51 & 26 & 20/30 & 51 \\
+11 & source-only & --- & --- & $\bullet$ & Qwen3.8-Flash & 37/51 & 19 & 21/30 & 46 \\
+12 & full stage & $\bullet$ & $\bullet$ & $\bullet$ & Qwen3.8-Flash & 30/51 & 26 & 25/30 & 35 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -595,8 +603,8 @@ these three vendors' documentation---but they
 are high enough that the next pipeline in this line should measure its own numbers before
 attributing a confirmation rate to its judge. \textbf{A blind second reader on a stratified sample
 of 36 of the 122 pairs whose cited page is still reachable agrees on 30 (\textbf{$\kappa = 0.75$})}:
-all 12 SWAP pairs were called SWAP again, and the six disagreements are three at the DROP/SWAP
-boundary and three at SUPPORTED/DROP.
+all 12 re-anchored pairs were called re-anchored again, and the six disagreements are three at the
+re-anchored/unsupported boundary and three at the supported/unsupported.
 
 \subsection{What the confirmation stage buys}
 \label{sec:buys}
@@ -612,7 +620,9 @@ under the hand-adjudicated joint reading, 33/51. The contract-only core suppress
 \textbf{The headline contrast, priced.} The flat judge differs from the deployed stage in several
 things, so we added the missing pieces to the flat judge in turn. The schema-line repair alone moves
 recall 30$\to$35 (recall level 0/5, $p{=}0.0625$; confirmed-set level 34$\to$39, 1/6,
-$p{=}0.1250$) and forced recall 25$\to$29; adding the routing rule on top moves recall 35$\to$39 at
+$p{=}0.1250$) and forced recall 25$\to$29. That step adds confirmations---93 Confirmed judgments
+against the flat judge's 82, with fewer Human-Review (19 against 21) and False-Positive (131 against
+140)---whereas adding the routing rule on top moves recall 35$\to$39 at
 the recall level (2/6, $p{=}0.2891$; confirmed-set 39$\to$51, 2/14, $p{=}0.0042$) and, forced, the
 other way (29$\to$27, 3/1). \textbf{The bundled contrast---flat judge to rule-bearing judge---moves
 30$\to$39} at the recall level (0/9, $p{=}0.0039$) and 34$\to$51 on the confirmed set (0/17,
@@ -788,9 +798,10 @@ true bugs and all seven unconfirmed---\textbf{seven is the case-level maximum on
 further negative closes in a single run. \textbf{The guard prices the same.} The prescription is a
 guard, not a routing rule, so we read the fifty closures on the axis the by-design clause is held to:
 \textbf{forty-two cite neither} an in-source comment or docstring nor a maintainer quote, and the
-eight that do are five runs of one docstring and three others. Routing those 42 leaves \textbf{the
-same confirmed set}, because every case the clause touches closes in two or more runs and clears in
-one. So the replay is not a loose upper bound but the guard's own price---and that price is still one
+eight that do are five runs of one docstring and three others. Routing those 42 rather than all
+fifty leaves \textbf{the same confirmed set as the replay above}: every case the clause touches
+closes in two or more runs and clears in exactly one, so the runs it leaves closed keep the case
+closed. So the replay is not a loose upper bound but the guard's own price---and that price is still one
 the convention sets rather than the stage's decisions.
 
 \textbf{The escalation channel, restricted to the cells the rule defines.} The catch-all routes 69
@@ -859,8 +870,8 @@ defects: a declared output field contradicting the prompt's verdict vocabulary (
 arms); a prompt printing two aggregation rules with opposite defaults; two perspective definitions
 with C and D exchanged; and an output schema declaring the source vocabulary for the perspective the
 text calls cognition, which 98 of 243 recorded cells use. A one-line schema repair moved five of the
-headline nine bugs. \textbf{None was found by our own audit}; all were found by reviewers reading the
-shipped texts, which is the limit of self-audit.
+headline nine bugs. \textbf{None was found by our own audit}; all four were found by readers external
+to the project, working from the shipped texts, which is the limit of self-audit.
 
 \textbf{Self-auditing a stage against its own rules is cheap and informative.} Replaying the printed
 rule over the judge's own recorded values showed 22 forward departures, 17 in the direction the red
@@ -1000,11 +1011,13 @@ the twelve frozen configurations of Section~\ref{sec:method} are for.
 \label{sec:conclusion}
 
 We set out to measure what determines which candidate defects an LLM confirmation judge confirms,
-and the answer on this pool is not the judge's internal organization. Two configurations that differ
-in whether they carry a four-perspective decomposition confirm the same number of true bugs under
+and the answer on this pool is not the judge's internal organization. The full stage and the
+rule-bearing flat judge (Table~\ref{tab:configs}) differ in whether they carry a four-perspective
+decomposition, and they confirm the same number of true bugs under
 forced verdicts on both backbones---27 of 51 and 26 of 51---while agreeing on only 22 and 23 of those
-cases: the organization changes which cases are decided, not how many. What moves the outcome is how
-often the judge declines to decide. Adding an aggregation rule that lets it route a case to human
+cases: the organization changes which cases are decided, not how many. What moves the outcome is
+where the judge's verdicts land and how they are counted. The routing edit moves it by deferral; the
+schema-line repair moves it the other way, by confirming (Section~\ref{sec:buys}). Adding an aggregation rule that lets it route a case to human
 review rather than close it raises recall on both backbones (0.588 to 0.765, 0/9 at the recall level,
 $p{=}0.0039$; 0.529 to 0.804, 0/14, $p{=}0.0001$)---a two-edit bundle on the primary, where the
 schema-line repair alone carries five of its nine bugs---and on the confirmed set the same two contrasts

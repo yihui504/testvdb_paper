@@ -886,3 +886,63 @@ R2 **独立复算**了 census 边际、池子算术、F1 对、两个 Holm 家�
 
 1. **匿名快照同步**（用户）；2. `paperpilot.yml` 元数据更新（已陈旧数月）；
 3. 上述五项 minor 修复（**摘要是最高性价比**，两处各一句，且摘要是最被引用的一段）。
+
+---
+
+## 18. 第 13 轮修复批次（2026-09-16，用户拍板"开始修"）
+
+**篇幅**：17.78 → **17.86**（余量 0.14 页）。净代价 0.08 页，其中**加宽 Table 2 是零成本**（加列不加行）。
+
+### 18.1 已做（7 项，按 Meta 的 Priority Revisions 排序）
+
+1. **摘要两处限定**（三家同时点到）
+   - 反事实句补回计数约定：*"…released **under the deployment's convention**, which credits a
+     routed case, **and changes nothing under the forced reading**"*；
+   - `43.3%` 改为 *"the last two **43.3%** each of 134"*（原来只挂在第二个 58 上）。
+2. **Table 2 加四列**（R1 5.4 / R2 5.4 / R3 5.7 三家要的）——`recall / forced / supp. / confirmed`，
+   十二臂全给，表题写明"每一格都是三次运行的多数票"及各列用哪个读法。
+   **数从 `recompute_paper_numbers.py` 取，不是凭记忆**；与正文六处声明逐条对上
+   （48 vs 34、48 vs 66、27 vs 27 与 26 vs 26、8/51 + 29/30、33+3、0.706/0.725）。
+3. **§4.5 的指代**：*"Routing those 42 **rather than all fifty** leaves **the same confirmed set
+   as the replay above**"* ——补上 referent 与机制（R2 5.1 / R3 5.3）。
+4. **SUPPORTED/DROP/SWAP 定义**：改用 Table 3 的词（re-anchored / supported / unsupported）。
+5. **§4.4 的角色指针**：评估章 RQ 列表后加一句，说明 4.1 是方法、4.4 是工具、4.6 是基线
+   （R3 5.5：§4.4 是最大实验却答不了三问）。
+6. **"reviewers" 歧义**（R3 5.6）：两处改为 *"readers external to the project, working from the
+   shipped texts"*。
+7. **结论点名配对**（R2 5.5）：*"The full stage and the rule-bearing flat judge (Table 2)…"*。
+
+### 18.2 ⚠️ 本轮最有价值的一条：**R2 问对了，而答案比它想的更要紧**
+
+R2 2.6/W1 问："schema 修复那五个 bug，是增加了**弃权**还是增加了**确认**？"
+——论文没答，而结论的论点是"what moves the outcome is how often the judge declines to decide"。
+
+**我从发货判决实算了**（`run_flat*` vs `run_flatschema*`，243 判定 ×2）：
+
+```
+               HUMAN_REVIEW  CONFIRMED  FALSE_POSITIVE
+flat judge          21           82          140
+flat + schema       19           93          131
+```
+
+**是"多确认"**——Confirmed +11，而 Human-Review **少了两个**；逐轮转移里 `FP→CONFIRMED` 12 次居首。
+
+**更要紧的是**：顺着查下去，**source 臂也一样**（recall +9 而 forced 只 +4，即 4/9 是确认）。
+
+**所以结论那句对两个组件都不成立。** 已改：
+
+> What moves the outcome is where the judge's verdicts land and how they are counted. The routing
+> edit moves it by deferral; the schema-line repair moves it the other way, by confirming (§4.4).
+
+§4.4 也补了机制（93 vs 82 确认、19 vs 21 弃权、131 vs 140 假阳）。
+
+**教训**：R2 把它标为 `[minor, fixable]` 的一个"机制没给"，**底下藏着一句与主结论有张力的陈述**。
+——评审的 severity 标注会低估"补上机制后结论要改"这一类。
+
+### 18.3 未做（记在此）
+
+- **成本数字**（R3 1.3：token / wall-clock / 人工小时）——**我没有这些数据**，需你提供；
+- **FP 侧限定在 23 条维护者处置负例上重算**（R1 Q1 / R2 1.4）——会换分母、要重写一段，
+  且两位都只作为"问题"提出；
+- **成本效益判断**：Presentation 连续三轮 Adequate 是"呈现形状"的选择，不是错误，
+  三家都没把判定挂在它上面。
