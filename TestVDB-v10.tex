@@ -144,18 +144,16 @@ paper works.
 \textbf{What we target.} The subset we study is \emph{documentation--implementation inconsistency}:
 the system silently accepts an input, errors where it documented success, returns a shape its API
 reference does not describe, or leaves state the documentation says cannot arise. We separate this
-from \emph{correctness}. Consistency asks whether observable behavior matches what the API
-documentation prescribes---what is accepted, what is rejected, what is returned, how state evolves.
-Correctness asks whether a returned result is right in the mathematical sense, such as whether an
-approximate nearest-neighbour search returns the true top-$k$. Vector-search correctness is not what
-this paper measures; a documentation-conformant query that returns the documented (approximate)
-answer is out of scope here, and the distinction matters because the two are checked by different
-means.
+from \emph{correctness}. Consistency asks whether observable behavior matches what the documentation
+prescribes---what is accepted, rejected, returned, how state evolves; correctness asks whether a
+result is right in the mathematical sense, such as whether an approximate search returns the true
+top-$k$. Vector-search correctness is not what this paper measures, and the two are checked by
+different means.
 
-The reverse shape of inconsistency also occurs and is harder to see: an operation the documentation
-describes as all-or-nothing applies partially, or a transition---delete, recreate, restore---leaves
-behavior the documentation does not allow. These are the silent majority's own subclass, and none of
-them produces a signal a crash oracle can fire on.
+The reverse shape also occurs and is harder to see: an operation documented as all-or-nothing applies
+partially, or a transition---delete, recreate, restore---leaves behavior the documentation does not
+allow. These are the silent majority's own subclass, and none produces a signal a crash oracle can
+fire on.
 
 \textbf{Why the expectation has to be read from prose.} Every testing oracle needs an expectation,
 and oracle families differ in where they get one. Table~\ref{tab:oracles} lists the candidates
@@ -215,17 +213,16 @@ concentrate, and which parts of the judge change the answer.
 \subsection{Overview}
 \label{subsec:overview}
 
-The pipeline this paper measures has four stages, and it is worth stating what each is \emph{for} in
-the measurement rather than only what it does. (i)~\textbf{Behavioral-specification extraction} turns
-a vendor's natural-language API documentation into structured constraint records, each with a
-citation to the page it came from. (ii)~\textbf{Test-script generation} turns each constraint into
-executable probes, assigning every probe to a strategy that was registered before it ran.
-(iii)~\textbf{Sandboxed execution} runs the probes against a pinned instance of the target and
-records raw HTTP traffic. (iv)~\textbf{Bug confirmation} decides, per candidate, whether the
-observation is a defect---and this stage is the object of study for most of what follows:
-Section~\ref{sec:buys} and Section~\ref{sec:census} vary its internal organization and its evidence
-access against one common set of frozen packages, and Section~\ref{sec:method} states which of the
-resulting contrasts change more than one thing.
+The pipeline has four stages, and it is worth stating what each is \emph{for} in the measurement
+rather than only what it does. (i)~\textbf{Behavioral-specification extraction} turns a vendor's
+natural-language API documentation into structured constraint records, each citing the page it came
+from. (ii)~\textbf{Test-script generation} turns each constraint into executable probes, every probe
+assigned to a strategy registered before it ran. (iii)~\textbf{Sandboxed execution} runs them
+against a pinned instance and records raw HTTP traffic. (iv)~\textbf{Bug confirmation} decides, per
+candidate, whether the observation is a defect---and this stage is the object of study for most of
+what follows: Section~\ref{sec:buys} and Section~\ref{sec:census} vary its internal organization and
+its evidence access against one common set of frozen packages, and Section~\ref{sec:method} states
+which contrasts change more than one thing.
 
 \begin{figure}[t]
 \centering
@@ -238,23 +235,20 @@ and the evidence it is allowed to read.}
 \label{fig:pipeline}
 \end{figure}
 
-Figure~\ref{fig:pipeline} shows the four stages. Two features of the design make it measurable
-rather than merely usable. First, each stage writes a
-structured artifact---a constraint record, a probe with an inline oracle line, a request/response
-log, an evidence chain---so a claim about a stage can be traced to the file that grounds it. Second,
-the confirmation stage's evidence is \emph{frozen} per case: a candidate's package (observation plus
-documented contract) is fixed once built, and the judge configurations in Section~\ref{sec:eval}
-read the same packages. Whatever a configuration concludes, it concluded from the same material as
-the others.
+Figure~\ref{fig:pipeline} shows the four stages. Two features make the design measurable rather than
+merely usable: each stage writes a structured artifact---a constraint record, a probe with an inline
+oracle line, a request/response log, an evidence chain---so a claim about a stage traces to the file
+that grounds it; and the confirmation stage's evidence is \emph{frozen} per case, so every judge
+configuration in Section~\ref{sec:eval} reads the same packages, and whatever it concludes it
+concluded from the same material as the others.
 
-We carry two real candidates through the description. Milvus issue \#49823 documents \texttt{nprobe}
-as an integer in $[1, 16384]$; the REST search API accepts \texttt{nprobe=0}, returns HTTP 200, and
-answers the query. That is a boundary violation visible in one response. Qdrant issue \#10369
-documents that a collection referenced through \texttt{lookup\_from} must have the same vector size
-as the target; the \texttt{recommend} API bypasses that check for negative examples and returns
-silently wrong scores. That one needs a state transition---delete the lookup collection, recreate it
-at a different size---to become observable at all. The two differ in which generation path they take
-in stage~(ii), and both were confirmed by maintainers.
+Two real candidates run through the description. Milvus \#49823 documents \texttt{nprobe} as an
+integer in $[1, 16384]$; the REST search API accepts \texttt{nprobe=0}, returns 200, and
+answers---a boundary violation visible in one response. Qdrant \#10369 documents that a collection
+referenced through \texttt{lookup\_from} must match the target's vector size; \texttt{recommend}
+bypasses that check for negative examples and returns silently wrong scores, observable only after a
+state transition. The two take different generation paths in stage~(ii), and both were confirmed by
+maintainers.
 
 \subsection{Behavioral-specification extraction}
 \label{subsec:extraction}
@@ -271,24 +265,21 @@ disagrees with the pinned version, the versioned documentation stays authoritati
 \textbf{Specification extraction.} A \emph{specification extractor} reads that file and emits one
 record per constraint: a unique identifier, the endpoint, a natural-language description, a
 checkable assertion (for \#49823's family, \texttt{nprobe >= 1 \&\& nprobe <= 16384}), a type, an
-evidence tier, and a source URL with a verification flag. Three mechanisms discipline the model
-here. \emph{Categorization} types every constraint as range, type, state, behavioural, or other,
-which downstream decides which attack agent owns it. \emph{Evidence tiering} records how directly
-the page supports the constraint---stated verbatim, inferred from an example, inferred from
-behaviour, or convention---so that test strength can be graded by its support. \emph{Source
-verification} fetches the cited page and confirms it actually carries the asserted semantics;
-constraints that fail are marked and excluded from downstream reporting as bug evidence. A judge's
-package is not the extractor's output alone---it also carries contract rows matched to the
-parameters a candidate probes and appended when the package was rebuilt---and
-Section~\ref{sec:audit} audits every citation that reaches a package against the page it names and
-at the version the row claims, independently of this or any earlier verification step.
+evidence tier, and a source URL with a verification flag. Three mechanisms discipline the model.
+\emph{Categorization} types each constraint as range, type, state, behavioural or other, deciding
+which attack agent owns it. \emph{Evidence tiering} records how directly the page supports the
+constraint---verbatim, from an example, from behaviour, or convention---so test strength is graded
+by its support. \emph{Source verification} fetches the cited page and confirms it carries the
+asserted semantics; failures are marked and excluded from downstream reporting. A judge's package
+also carries contract rows matched to the parameters a candidate probes and appended at rebuild, and
+Section~\ref{sec:audit} audits every citation that reaches a package independently of this or any
+earlier step.
 
-\textbf{Two levels, decided observationally.} Each constraint is endpoint-level or system-level, and
-the criterion is what would prove a violation rather than how hard it is to construct: a constraint
-violated by a single request/response pair is endpoint-level even where elaborate setup is needed to
-reach the violating request, and a constraint violated only by relating observations across requests
-or against evolved state is system-level. \#49823 is endpoint-level; \#10369 is system-level because
-the coupling it describes becomes visible only after a transition.
+\textbf{Two levels, decided observationally.} A constraint is endpoint-level or system-level by what
+would prove a violation, not by how hard it is to construct: violated by a single request/response
+pair is endpoint-level even where elaborate setup is needed, and violated only by relating
+observations across requests or against evolved state is system-level. \#49823 is endpoint-level;
+\#10369 is system-level, since the coupling it describes becomes visible only after a transition.
 
 \subsection{Test-script generation}
 \label{subsec:generation}
@@ -302,14 +293,13 @@ use, and cross-object references left dangling by a transition. Semantic strateg
 documented meaning of a response rather than its shape---a right status code with a misleading
 message, or the accept/reject semantics of a documented parameter.
 
-\emph{Strategy selection is not left to the model at generation time.} Strategies are bound to
-constraints deterministically by a registry of (strategy, trigger predicate) entries matched against
-the constraint's type, level, and assertion surface; a constraint may trigger several and the agent
+\emph{Strategy selection is not left to the model.} Strategies are bound to constraints
+deterministically by a registry of (strategy, trigger predicate) entries matched against the
+constraint's type, level and assertion surface; a constraint may trigger several and the agent
 generates for each, and one that triggers none falls through to scenario construction. Because the
-mapping is a function of the constraint record alone, the (constraint, strategy) pairs are
-reproducible from the specification file, and each generated probe carries an inline oracle
-line---a machine-checkable assertion about the expected response---which removes a degree of freedom
-in which the model could drift.
+mapping is a function of the constraint record alone, the pairs are reproducible from the
+specification file, and each probe carries an inline oracle line---a machine-checkable assertion
+about the expected response---removing a degree of freedom in which the model could drift.
 
 Generation splits on the constraint's level. An endpoint-level constraint with a bound strategy is
 instantiated directly against its violation surface. A system-level constraint always goes through
@@ -321,8 +311,8 @@ recreate at size 8 after which the same request must be rejected with a dimensio
 Every probe passes five gates before it may execute: it must compile; its constraint must exist in
 the structured contract; it must avoid registered risky patterns (a request path with no safe
 wrapper, a swallowed exception); it must not carry helper code fingerprinted to another vendor's
-environment; and its oracle line must match the response shape the endpoint actually returns. A
-failing probe is regenerated; only passing ones reach the sandbox.
+environment; and its oracle line must match the response shape the endpoint returns. Only passing
+probes reach the sandbox; failures are regenerated.
 
 \subsection{Sandboxed execution}
 \label{subsec:execution}
@@ -343,21 +333,19 @@ The last stage decides whether a candidate is a defect. It is not a single judgm
 explicit rebuild loop---a builder/judge split whose purpose is to keep the falsification separate
 from the claim.
 
-\textbf{Assembly.} The builder first checks the observation against the specification and
-re-verifies the citation independently of the extractor's own check, then traces the chain
-\emph{contract $\rightarrow$ doc $\rightarrow$ script $\rightarrow$ log} and flags broken links. It
-then greps a local clone of the implementation \emph{at the pinned version}---the only authority for
-what the implementation does---for the parameter and error-code keywords, follows the relevant call
-chain, and records an outcome: the validation the documentation promises is absent, present, the
-behaviour is by design in the source, the code could not be located, or the search was shallow. The
-result is a five-section evidence chain---document verification, execution evidence, contract
-grounding, chain trace, source grounding---each section labelled with the kind of evidence it rests
-on.
+\textbf{Assembly.} The builder checks the observation against the specification, re-verifies the
+citation independently of the extractor's own check, traces the chain \emph{contract $\rightarrow$
+doc $\rightarrow$ script $\rightarrow$ log} and flags broken links. It then greps a clone of the
+implementation \emph{at the pinned version}---the only authority for what the implementation
+does---for the parameter and error-code keywords, follows the call chain, and records one outcome:
+the promised validation is absent, present, by design in the source, unlocatable, or the search was
+shallow. The result is a five-section chain---document verification, execution evidence, contract
+grounding, chain trace, source grounding---each labelled with the kind of evidence it rests on.
 
-\textbf{Cross-examination.} The auditor first applies four mechanical checks: that all five sections
-are non-empty, that contract, documentation, log and source agree, that nothing inside the chain
-contradicts anything else, and that the primary observation matches the specification. A chain that
-fails goes back for rebuild, at most three times. Surviving chains are then read from four
+\textbf{Cross-examination.} The auditor applies four mechanical checks: all five sections non-empty;
+contract, documentation, log and source agreeing; no internal contradiction; and the primary
+observation matching the specification. A chain that fails goes back for rebuild, at most three
+times. Surviving chains are then read from four
 perspectives:
 
 \begin{itemize}
@@ -370,11 +358,10 @@ perspectives:
     semantics. An \texttt{ef}/\texttt{nprobe}-class carve-out applies where the source documents a
     negative-sentinel convention.
   \item \textbf{C --- behavioural elegance.} May the implementation refuse the bug reading? Only an
-    \emph{explicit} by-design may refute: the source excerpt must contain intent evidence---a
-    comment or docstring saying the behaviour is intended---or a maintainer quote must declare the
-    same class of phenomenon intended. Bare structural inference (``no validation is present'') is
-    recorded as a weak refutation and routed to human review rather than closing the case. This is
-    the clause Section~\ref{sec:census} audits.
+    \emph{explicit} by-design may refute: the excerpt must carry intent evidence---a comment or
+    docstring---or a maintainer quote must declare the class intended. Bare structural inference
+    (``no validation is present'') is a weak refutation, routed to human review rather than closing
+    the case. This is the clause Section~\ref{sec:census} audits.
   \item \textbf{D --- maintainer cognition.} Does a corpus distilled from the target's historical
     issues and merged PRs support either reading? Hits must match at the level of phenomenon, never
     by word overlap. Cognition states a maintainer's attitude; it may decide a contract-neutral case
@@ -387,11 +374,11 @@ is part of the design: a contract confirmation decides the case; a contract refu
 the objective-constraint perspective confirmed routes rather than closing; otherwise a contract
 refutation closes to False-Positive; an objective-constraint confirmation decides a
 contract-neutral case; a cognition hit on either side decides a case the earlier clauses left open;
-an explicit by-design refutation closes; and everything else routes to human review. The order is
-not a detail---\textbf{the clause that closes a judgment is the first in this sequence that decides
-it}, and which clause that is is exactly what Section~\ref{sec:census} counts. The rule is
-deliberately asymmetric---only explicit intent evidence may refute, and anything unsettled goes to a
-person rather than closing---and that asymmetry is a design position rather than a claim of
+an explicit by-design refutation closes; everything else routes. The order is not a
+detail---\textbf{the clause that closes a judgment is the first in this sequence that decides
+it}, which is exactly what Section~\ref{sec:census} counts. The rule is deliberately
+asymmetric---only explicit intent evidence may refute, and anything unsettled goes to a
+person---a design position rather than a claim of
 precision. An LLM-derived oracle is expected to over-report; the protocol keeps the over-reporting
 visible in a review queue instead of suppressing it at the cost of discarding real defects.
 Section~\ref{sec:eval} measures what the asymmetry costs and what it buys, and
@@ -411,7 +398,9 @@ rather than re-running the pipeline.
 \textbf{The pool.} Eighty-one candidates from Milvus, Qdrant, and Weaviate: 51 maintainer-confirmed
 bugs and 30 adjudicated false positives. Ground truth is maintainer adjudication for the 51 (labels,
 closures, merged fix PRs); the 30 negatives are adjudicated by us against the maintainers'
-disposition where available. There is no inter-annotator study. The shipped ledger holds 132 rows
+disposition where available---\textbf{eleven of the thirty carry one} (a wontfix closure, or a
+maintainer ruling the behaviour by design) and nineteen are our own calls, as the shipped ledger's
+per-row classification basis records. There is no inter-annotator study. The shipped ledger holds 132 rows
 for these three systems: 81 adjudicated and 51 unadjudicated, of which 49 carry no maintainer verdict
 and 2 are our own withdrawn submissions. \textbf{One of the 81, \texttt{milvus\_001}, is
 unjudgeable}---its observation was never captured and its version's documentation segment is
@@ -519,7 +508,10 @@ bundled contrast on the second backbone ($0.0001$), that backbone's perspective 
 ($0.0034$), the bundled contrast on the primary backbone ($0.0039$) and the evidence-access contrast
 ($0.0039$), tested against $\alpha/10$, $\alpha/9$, $\alpha/8$ and $\alpha/7$---and stops at the
 fifth ($0.0225$), so the deployed stage's own recall-level advantage over the flat judge, and
-everything larger than it, should be read descriptively. All rates, the census on both backbones,
+everything larger than it, should be read descriptively. \textbf{The family choice is load-bearing,
+so we report it both ways}: read instead as the twenty printed tests, seven clear their step-down
+thresholds and the sequence stops at the first $0.0039$, so the two $0.0039$ contrasts also fall to
+descriptive---while the second backbone's perspective contrast at $0.0034$ survives either family. All rates, the census on both backbones,
 both replays, the net and $F_1$ intervals and the pair audit are recomputable from the artifact's
 five analysis scripts, all under \texttt{rq2/analyses/}: \texttt{recompute\_paper\_numbers.py},
 \texttt{clause\_tally.py}, \texttt{convention\_pricing.py}, \texttt{bootstrap\_net\_f1.py} and
@@ -719,8 +711,9 @@ separates three kinds of evidence rather than one: \textbf{fifteen} cite a comme
 the implementation; \textbf{two} (\texttt{milvus\_026}, in two of its three runs) cite the server's
 own name-validation rule, whose code and error message those runs name; and \textbf{two}
 (\texttt{milvus\_011} and \texttt{milvus\_012}, each in its third run) rest on code structure---a
-default expression, a fallback chain. None rests on observed behaviour alone, which is the property
-the legend requires of this clause. But the last two are the weaker kind, and the same two cases
+default expression, a fallback chain. None rests on observed behaviour alone---but the legend asks
+for more than that, \textbf{affirmative} intent evidence in a comment, docstring or maintainer
+quote, and the last two do not clear it. The same two cases
 show why the distinction is not academic: in both, the case's \emph{other} runs recorded a weak
 refutation and gave their reason---\texttt{milvus\_011}'s second run notes that a silent behaviour
 has no comment behind it, and \texttt{milvus\_012}'s second run states that the fallback-chain
@@ -778,7 +771,13 @@ strata: of the 24, \textbf{20 fall on the 59 cases whose rebuilt packages carry 
 eighteen the audit left without documented evidence} (rate 0.00) or on the eighty-first, whose
 observation replay is incomplete. The strata are a different object from the twelve assertion-level
 rows of Section~\ref{sec:audit}. The clause fires on material the audit judged
-supported. Three facts make this count the census's most
+supported. \textbf{A second rival is selection.} Contract refutation is tried before the by-design
+perspective, so it fires on the largest and most heterogeneous set, while C = Refuted closes only
+the 19 that A, B and D all left open; the accuracy gap (0.52 against 0.89) is therefore consistent
+both with the guard working and with C's residual being the easier set. The prescription does not
+need that resolved, because it rests on \textbf{error mass}---50 closures wrong 48\% of the time is
+24 errors, against 19 wrong 11\% of the time is 2---and a guard belongs wherever the errors are.
+Three facts make this count the census's most
 robust, all of them about how it is constructed rather than how far it travels---the scope above
 bounds the latter---with one disclosure: the counts above are post-repair, and the archived
 pre-repair cells would give contract refutation 47 closures and by-design 20, so ``by-design is the
@@ -923,7 +922,9 @@ no-ops under the forced reading.
 
 \textbf{Instrument.} Four dispatch defects are reported rather than repaired, and
 Section~\ref{sec:census}'s departure count and its catch-all composition both depend on treating the
-appended aggregation as operative. \textbf{Contamination.} Both backbones may have seen these
+appended aggregation as operative---throughout, the operative rule is the aggregation block the
+dispatch prints \emph{last}, and the shipped dispatch texts show both blocks and their order, so a
+reader can re-run the census under the other. \textbf{Contamination.} Both backbones may have seen these
 projects' public code, documentation and issue trackers in training; we cannot exclude it.
 
 \section{Related Work}
@@ -1017,7 +1018,8 @@ forced verdicts on both backbones---27 of 51 and 26 of 51---while agreeing on on
 cases: the organization changes which cases are decided, not how many. What moves the outcome is how
 often the judge declines to decide. Adding an aggregation rule that lets it route a case to human
 review rather than close it raises recall on both backbones (0.588 to 0.765, 0/9 at the recall level,
-$p{=}0.0039$; 0.529 to 0.804, 0/14, $p{=}0.0001$)---and on the confirmed set the same two contrasts
+$p{=}0.0039$; 0.529 to 0.804, 0/14, $p{=}0.0001$)---a two-edit bundle on the primary, where the
+schema-line repair alone carries five of its nine bugs---and on the confirmed set the same two contrasts
 are 0/17 and 0/19, both $p{<}0.0001$. Almost all of that is deferral: forced-verdict recall moves
 only 25 to 27 and 23 to 26. Under the deployment's convention, where a routed case counts as
 confirmed, the rule's effect and the routing rate are the same quantity, and we say so rather than
