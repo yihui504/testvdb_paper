@@ -22,17 +22,31 @@ EXEMPT_HEADING = "Data Availability"
 REFS_HEADING = "References"
 
 
+# The running head (the paper title, or the copyright line) sits in the top
+# margin, ABOVE the first body line. Counting it as body overstates the budget
+# by a fraction of a page and, worse, mis-reads a page whose only non-heading
+# block is the head. Body text begins at the line-number gutter's first entry,
+# which is never inside the head band.
+HEAD_BAND = 80.0  # pt; the head spans roughly y 57-76, body starts at ~87
+
+
+FOOT_BAND = 672.0  # pt; the footer rule and imprint run below this
+
+
+def body_blocks(page):
+    return [b for b in page.get_text("blocks")
+            if b[4].strip() and HEAD_BAND <= b[1] < FOOT_BAND]
+
+
 def text_frame(doc):
     """The text frame, measured on the page carrying the most body text."""
     best = None
     for i in range(doc.page_count):
-        blocks = [b for b in doc[i].get_text("blocks") if b[4].strip()]
+        blocks = body_blocks(doc[i])
         if not blocks:
             continue
         top = min(b[1] for b in blocks)
         bottom = max(b[3] for b in blocks)
-        # a running-head page: content starts at the very top and runs to the
-        # very bottom of the frame
         if best is None or (bottom - top) > (best[1] - best[0]):
             best = (top, bottom)
     return best
@@ -63,8 +77,8 @@ def main():
 
     last_y = last_page = None
     for i in range(stop_page - 1, -1, -1):
-        ys = [b[3] for b in doc[i].get_text("blocks")
-              if b[4].strip() and (i + 1 < stop_page or b[3] < stop_limit - 1)]
+        ys = [b[3] for b in body_blocks(doc[i])
+              if i + 1 < stop_page or b[3] < stop_limit - 1]
         if ys:
             last_y, last_page = max(ys), i + 1
             break
