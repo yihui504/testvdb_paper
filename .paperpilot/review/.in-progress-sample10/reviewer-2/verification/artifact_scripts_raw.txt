@@ -1,0 +1,242 @@
+### recompute_paper_numbers.py
+pool: 51 true bugs + 30 false positives = 81
+
+==============================================================================
+per-arm matrices (convention: HUMAN_REVIEW counts as CONFIRMED)
+==============================================================================
+  arm                          run1       run2       run3   majority   HR rate
+  contract core                 9+1        9+1        9+1        8+1   0.0%
+  full stage                   40+8       38+9      35+11       39+9   19.8%
+  source-only                  35+7      38+11       37+5       36+8   28.0%
+  flat judge                   30+6       31+3       27+6       30+4   8.6%
+  flat + schema fix            29+6       37+6       34+0       35+4   7.8%
+  flat + aggregation          40+15       43+8      39+11      39+12   28.4%
+  full, no source             47+19      43+16      49+19      48+18   34.6%
+  full, no aggregation         34+2       27+2       34+7       33+3   8.6%
+  source-only-Qwen            32+10       36+7       39+8       37+9   28.8%
+  full-Qwen                    30+6       31+7       26+5       30+5   10.3%
+  flat-Qwen                    27+5       31+3       30+5       27+5   7.8%
+  flat + aggregation-Qwen      39+13      40+12      36+10      41+10   26.3%
+
+==============================================================================
+majority readings (recall / suppression / precision with Wilson CIs)
+==============================================================================
+  contract core          recall 8/51 0.157 (0.082, 0.28)  supp 29/30 0.967  prec 0.889  forced 8/51
+  full stage             recall 39/51 0.765 (0.632, 0.86)  supp 21/30 0.700  prec 0.812  forced 27/51
+  source-only            recall 36/51 0.706 (0.57, 0.813)  supp 22/30 0.733  prec 0.818  forced 20/51
+  flat judge             recall 30/51 0.588 (0.452, 0.712)  supp 26/30 0.867  prec 0.882  forced 25/51
+  flat + schema fix      recall 35/51 0.686 (0.55, 0.797)  supp 26/30 0.867  prec 0.897  forced 29/51
+  flat + aggregation     recall 39/51 0.765 (0.632, 0.86)  supp 18/30 0.600  prec 0.765  forced 27/51
+  full, no source        recall 48/51 0.941 (0.841, 0.98)  supp 12/30 0.400  prec 0.727  forced 31/51
+  full, no aggregation   recall 33/51 0.647 (0.51, 0.764)  supp 27/30 0.900  prec 0.917  forced 27/51
+  source-only-Qwen       recall 37/51 0.725 (0.591, 0.829)  supp 21/30 0.700  prec 0.804  forced 19/51
+  full-Qwen              recall 30/51 0.588 (0.452, 0.712)  supp 25/30 0.833  prec 0.857  forced 26/51
+  flat-Qwen              recall 27/51 0.529 (0.395, 0.659)  supp 25/30 0.833  prec 0.844  forced 23/51
+  flat + aggregation-Qwen recall 41/51 0.804 (0.675, 0.89)  supp 20/30 0.667  prec 0.804  forced 26/51
+
+==============================================================================
+paired exact McNemar on the confirmed set (majority, convention)
+==============================================================================
+  full stage             vs flat judge            : discordant 16/2  net +14  p=0.0013
+  flat + aggregation     vs flat judge            : discordant 17/0  net +17  p=0.0000
+  flat judge             vs contract core         : discordant 25/0  net +25  p=0.0000
+  flat + aggregation     vs full stage            : discordant 9/6  net +3  p=0.6072
+  full, no source        vs full stage            : discordant 18/0  net +18  p=0.0000
+  full, no aggregation   vs full stage            : discordant 1/13  net -12  p=0.0018
+  full, no aggregation   vs flat + aggregation    : discordant 3/18  net -15  p=0.0015
+  flat + schema fix      vs flat judge            : discordant 6/1  net +5  p=0.1250
+  flat + aggregation     vs flat + schema fix     : discordant 14/2  net +12  p=0.0042
+  full, no aggregation   vs flat judge            : discordant 6/4  net +2  p=0.7539
+  full, no aggregation   vs flat + schema fix     : discordant 2/5  net -3  p=0.4531
+  flat + aggregation-Qwen vs flat-Qwen             : discordant 19/0  net +19  p=0.0000
+  full-Qwen              vs flat + aggregation-Qwen: discordant 2/18  net -16  p=0.0004
+  full-Qwen              vs flat-Qwen             : discordant 8/5  net +3  p=0.5811
+  full stage             vs flat + schema fix     : discordant 13/4  net +9  p=0.0490
+
+==============================================================================
+paired exact McNemar over the true bugs only (recall level, n=51)
+==============================================================================
+  full stage             vs flat judge            : 39/51 vs 30/51  discordant 11/2  diff +9  p=0.0225  +/-0.13
+  flat + aggregation     vs flat judge            : 39/51 vs 30/51  discordant 9/0  diff +9  p=0.0039  +/-0.10
+  flat judge             vs contract core         : 30/51 vs 8/51  discordant 22/0  diff +22  p=0.0000  +/-0.14
+  flat + aggregation     vs full stage            : 39/51 vs 39/51  discordant 4/4  diff +0  p=1.0000  +/-0.11
+  full, no source        vs full stage            : 48/51 vs 39/51  discordant 9/0  diff +9  p=0.0039  +/-0.10
+  full, no aggregation   vs full stage            : 33/51 vs 39/51  discordant 1/7  diff -6  p=0.0703  +/-0.10
+  full, no aggregation   vs flat + aggregation    : 33/51 vs 39/51  discordant 2/8  diff -6  p=0.1094  +/-0.12
+  flat + schema fix      vs flat judge            : 35/51 vs 30/51  discordant 5/0  diff +5  p=0.0625  +/-0.08
+  flat + aggregation     vs flat + schema fix     : 39/51 vs 35/51  discordant 6/2  diff +4  p=0.2891  +/-0.11
+  full, no aggregation   vs flat judge            : 33/51 vs 30/51  discordant 5/2  diff +3  p=0.4531  +/-0.10
+  full, no aggregation   vs flat + schema fix     : 33/51 vs 35/51  discordant 1/3  diff -2  p=0.6250  +/-0.08
+  flat + aggregation-Qwen vs flat-Qwen             : 41/51 vs 27/51  discordant 14/0  diff +14  p=0.0001  +/-0.12
+  full-Qwen              vs flat + aggregation-Qwen: 30/51 vs 41/51  discordant 1/12  diff -11  p=0.0034  +/-0.13
+  full-Qwen              vs flat-Qwen             : 30/51 vs 27/51  discordant 6/3  diff +3  p=0.5078  +/-0.11
+
+==============================================================================
+routed queues (a case is routed when >=1 of its 3 runs says HUMAN_REVIEW)
+==============================================================================
+  full stage             queue 26 (TP 16, FP 10)  queue precision 0.615  pooled HR 48/243=19.8%
+  flat judge             queue 14 (TP 9, FP 5)  queue precision 0.643  pooled HR 21/243=8.6%
+  flat + aggregation     queue 35 (TP 21, FP 14)  queue precision 0.600  pooled HR 69/243=28.4%
+  full, no source        queue 39 (TP 25, FP 14)  queue precision 0.641  pooled HR 84/243=34.6%
+  full, no aggregation   queue 14 (TP 10, FP 4)  queue precision 0.714  pooled HR 21/243=8.6%
+
+==============================================================================
+perspective votes and red-line compliance (full stage, 243 judgments)
+==============================================================================
+  A: {'NEUTRAL': 172, 'REFUTED': 50, 'CONFIRMED': 21}
+  B: {'NEUTRAL': 146, 'CONFIRMED': 80, 'REFUTED': 17}
+  C: {'CONFIRMED': 72, 'NEUTRAL': 71, 'WEAK_REFUTED': 59, 'REFUTED': 41}
+  D: {'NO_SIGNAL': 91, 'validation_present': 39, 'SUPPORTS_DEFECT': 36, 'validation_absent': 28, 'by_design_in_source': 19, 'SUPPORTS_NOT_DEFECT': 18, 'not_found': 12}
+  C = REFUTED (explicit by-design) total: 41
+
+### clause_tally.py (primary)
+==============================================================================
+clause accuracy over the primary-backbone full stage's 243 judgments
+==============================================================================
+  clause                                 outcome             n   ok  bad    acc
+  B = Confirmed (objective constraint)   Confirmed          61   56    5   0.92
+  A = Confirmed (contract assertion)     Confirmed          21   17    4   0.81
+  D = Supports-Defect (cognition)        Confirmed           7    5    2   0.71
+  A = Refuted (contract contradicted)    False-Positive     50   26   24   0.52
+  C = Refuted (by-design in source)      False-Positive     19   17    2   0.89
+  D = Supports-Not-Defect (cognition)    False-Positive     16   12    4   0.75
+  catch-all                              Human-Review       69    -    -     --
+  total                                                    243
+
+  pool: 51 true bugs x 3 runs = 153 judgments rest on true bugs; 90 on false positives
+  D cells carrying the source vocabulary: 98 of 243 (the other 145 carry the cognition vocabulary)
+
+==============================================================================
+rule compliance: where the printed rule mandates Human-Review
+==============================================================================
+  rule mandates Human-Review : 69 of 243
+  judge recorded Human-Review: 48 of 243
+    recorded FALSE_POSITIVE    17  <-- the red lines forbid this
+    recorded CONFIRMED          5
+    of the 17 forced to False-Positive, 10 rest on true bugs
+
+==============================================================================
+measured vs strict rule compliance (convention: Human-Review confirmed)
+==============================================================================
+  measured [convention]              recall 39/51 = 0.765   suppression 21/30 = 0.700   confirmed set 39+9
+  measured [forced]                  recall 27/51 = 0.529   suppression 27/30 = 0.900   confirmed set 27+3
+  strict rule compliance [convention] recall 43/51 = 0.843   suppression 19/30 = 0.633   confirmed set 43+11
+  strict rule compliance [forced]    recall 27/51 = 0.529   suppression 27/30 = 0.900   confirmed set 27+3
+  contract refutation routed [convention] recall 46/51 = 0.902   suppression 12/30 = 0.400   confirmed set 46+18
+  contract refutation routed [forced] recall 27/51 = 0.529   suppression 27/30 = 0.900   confirmed set 27+3
+
+  The last replay is the census's prescription: routing contract
+  refutation instead of closing on it. **It is a no-op under the forced
+  reading** -- Human-Review and False-Positive score the same there -- so
+  the gain it shows exists only under the counting convention.
+  Of the 24 judgment-level true-bug closures, 15 cases are closed by
+  A=Refuted in at least two of three runs and 7 of those are true bugs;
+  all 7 are unconfirmed by the measured stage.
+
+### clause_tally.py second
+==============================================================================
+clause accuracy over the second-backbone full stage's 243 judgments
+==============================================================================
+  clause                                 outcome             n   ok  bad    acc
+  B = Confirmed (objective constraint)   Confirmed          61   59    2   0.97
+  A = Confirmed (contract assertion)     Confirmed          14   13    1   0.93
+  A = Refuted (contract contradicted)    False-Positive     56   32   24   0.57
+  C = Refuted (by-design in source)      False-Positive     50   28   22   0.56
+  D = Supports-Not-Defect (cognition)    False-Positive      2    0    2   0.00
+  A = Refuted with B = Confirmed         Human-Review        3    -    -     --
+  catch-all                              Human-Review       57    -    -     --
+  total                                                    243
+
+  pool: 51 true bugs x 3 runs = 153 judgments rest on true bugs; 90 on false positives
+  D cells carrying the source vocabulary: 217 of 243 (the other 26 carry the cognition vocabulary)
+
+  The rule-compliance and replay tables are the primary backbone's;
+  the second backbone's dispatches differ, so they are not printed.
+
+### convention_pricing.py
+==============================================================================
+the two bounds on the counting convention (full stage)
+==============================================================================
+  convention  (Human-Review counts as confirmed): 39/51 = 0.765   confirmed set 39+9
+  forced floor (Human-Review re-scored as FP)  : 27/51 = 0.529   confirmed set 27+3
+
+  joint (author pass on the routed queue): 33/51 = 0.647   confirmed set 33+3
+    routed queue: 25 unique cases; authors ruled 22; 11 confirmed on the materials
+
+==============================================================================
+an independent adjudicator on the same queue
+==============================================================================
+  comparable subset (both ruled): 20
+
+  pass                  joint  CONFIRM    agree    raw   kappa
+  pack only          27/51        2    4/20   0.20   -0.01
+  pack+source        27/51        0    5/20   0.25    0.08
+  full protocol      30/51        4    6/20   0.30    0.11
+
+  A joint reading from an independent pass is a re-estimate, not a
+  replication: where the two passes disagree case by case, the totals
+  can still land near each other, so both the agreement and the joint
+  value are reported.
+
+### bootstrap_net_f1.py
+  full stage             net +30   F1 0.788
+  full, no source        net +30   F1 0.821
+  full, no aggregation   net +30   F1 0.759
+  flat judge             net +26   F1 0.706
+  flat + schema fix      net +31   F1 0.778
+  flat + aggregation     net +27   F1 0.765
+
+  full, no source  -  full stage
+    net  +0   95% CI [-8, +8]  spans zero
+    F1  +0.033 95% CI [-0.044, +0.115]  spans zero
+
+  full stage  -  flat judge
+    net  +4   95% CI [-4, +12]  spans zero
+    F1  +0.082 95% CI [-0.018, +0.189]  spans zero
+
+  flat + aggregation  -  flat judge
+    net  +1   95% CI [-7, +9]  spans zero
+    F1  +0.059 95% CI [-0.029, +0.155]  spans zero
+
+### audit/pair_audit.py
+==============================================================================
+pair level: 134 (constraint, cited-page) pairs
+==============================================================================
+  source-file anchor          34 pairs   {'DROP': 19, 'SWAP': 15}
+  API landing page anchor     57 pairs   {'SWAP': 43, 'DROP': 14}
+  documentation page anchor   43 pairs   {'DROP': 25, 'SUPPORTED': 18}
+
+  base: 134 pairs
+  SUPPORTED   18   13.4%
+  SWAP        58   43.3%
+  DROP        58   43.3%
+
+  unsupported-as-cited (DROP / base): 58/134 = 43.3%
+  supported-as-cited (SUPPORTED / base): 18/134 = 13.4%
+
+  the SWAP category is not 'unsupported': the cited anchor was a source
+  file or an API landing page, and the constraint was re-anchored. A
+  couple of examples from each of the two files that carry it:
+    constant  from ['milvus_type_entities_delete_001', 'https://github.com/milvus-io/milvus/blob/…
+              to   https://raw.githubusercontent.com/milvus-io/milvus-docs/v2.6.x/site/en/userGui…
+    constant  from ['milvus_type_entities_insert_001', 'https://github.com/milvus-io/milvus/blob/…
+              to   https://milvus.io/api-reference/restful/v2.6.x/v2/Vector%20(v2)/Upsert.md…
+    openapi   from ['qdrant_type_upsert_points_003', 'https://api.qdrant.tech/v-1-18-x/api-refere…
+              to   https://github.com/qdrant/qdrant/blob/1.12.1/docs/redoc/master/openapi.json…
+    openapi   from ['qdrant_type_overwrite_payload_004', 'https://api.qdrant.tech/v-1-18-x/api-re…
+              to   https://github.com/qdrant/qdrant/blob/1.12.1/docs/redoc/master/openapi.json…
+
+==============================================================================
+case level: 12 main assertions (a different object)
+==============================================================================
+  base: 12 assertions
+  SUPPORTED              5
+  UNSUPPORTED            3
+  WEAK_EVIDENCE          2
+  OVER_STRONG_REWRITE    1
+  OVER_STRONG_WEAKEN     1
+
+  each carries the action taken, e.g.:
+    milvus_013   UNSUPPORTED          -> drop; contract section states no constraint entry in 2.6.x docs …
+    milvus_008   OVER_STRONG_REWRITE  -> rewrite assertion to page's own claim: metric table 'COSINE: sim…
+    milvus_038   OVER_STRONG_WEAKEN   -> weaken to descriptive: page presents group_by_field as grouping …

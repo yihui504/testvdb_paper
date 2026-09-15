@@ -1,0 +1,98 @@
+pool: 51 T + 30 F = 81   (paper says 51 + 30 = 81)
+
+================================================================================================
+A. PER-ARM MAJORITY MATRICES  (convention: HR counts confirmed)
+================================================================================================
+arm                        recall    supp   prec  forced  conf set  HR/243
+contract core              8/51  29/30  0.889   8/51    8+1       0   0.0%
+full stage                39/51  21/30  0.812  27/51   39+9      48  19.8%
+source-only               36/51  22/30  0.818  20/51   36+8      68  28.0%
+flat judge                30/51  26/30  0.882  25/51   30+4      21   8.6%
+flat + schema fix         35/51  26/30  0.897  29/51   35+4      19   7.8%
+flat + aggregation        39/51  18/30  0.765  27/51   39+12     69  28.4%
+full, no source           48/51  12/30  0.727  31/51   48+18     84  34.6%
+full, no aggregation      33/51  27/30  0.917  27/51   33+3      21   8.6%
+source-only-Qwen          37/51  21/30  0.804  19/51   37+9      70  28.8%
+full-Qwen                 30/51  25/30  0.857  26/51   30+5      25  10.3%
+flat-Qwen                 27/51  25/30  0.844  23/51   27+5      19   7.8%
+flat + aggregation-Qwen   41/51  20/30  0.804  26/51   41+10     64  26.3%
+
+================================================================================================
+B. PAIRED EXACT McNEMAR -- confirmed set (n=81) and recall level (n=51)
+================================================================================================
+full stage               vs flat judge               | 81set 16/ 2 p=0.0013 | 51recall 39/30 11/ 2 p=0.0225 +/-0.13
+flat + aggregation       vs flat judge               | 81set 17/ 0 p=0.0000 | 51recall 39/30  9/ 0 p=0.0039 +/-0.10
+flat judge               vs contract core            | 81set 25/ 0 p=0.0000 | 51recall 30/8 22/ 0 p=0.0000 +/-0.14
+flat + aggregation       vs full stage               | 81set  9/ 6 p=0.6072 | 51recall 39/39  4/ 4 p=1.0000 +/-0.11
+full, no source          vs full stage               | 81set 18/ 0 p=0.0000 | 51recall 48/39  9/ 0 p=0.0039 +/-0.10
+full, no aggregation     vs full stage               | 81set  1/13 p=0.0018 | 51recall 33/39  1/ 7 p=0.0703 +/-0.10
+full, no aggregation     vs flat + aggregation       | 81set  3/18 p=0.0015 | 51recall 33/39  2/ 8 p=0.1094 +/-0.12
+flat + schema fix        vs flat judge               | 81set  6/ 1 p=0.1250 | 51recall 35/30  5/ 0 p=0.0625 +/-0.08
+flat + aggregation       vs flat + schema fix        | 81set 14/ 2 p=0.0042 | 51recall 39/35  6/ 2 p=0.2891 +/-0.11
+full, no aggregation     vs flat judge               | 81set  6/ 4 p=0.7539 | 51recall 33/30  5/ 2 p=0.4531 +/-0.10
+full, no aggregation     vs flat + schema fix        | 81set  2/ 5 p=0.4531 | 51recall 33/35  1/ 3 p=0.6250 +/-0.08
+flat + aggregation-Qwen  vs flat-Qwen                | 81set 19/ 0 p=0.0000 | 51recall 41/27 14/ 0 p=0.0001 +/-0.12
+full-Qwen                vs flat + aggregation-Qwen  | 81set  2/18 p=0.0004 | 51recall 30/41  1/12 p=0.0034 +/-0.13
+full-Qwen                vs flat-Qwen                | 81set  8/ 5 p=0.5811 | 51recall 30/27  6/ 3 p=0.5078 +/-0.11
+full stage               vs flat + schema fix        | 81set 13/ 4 p=0.0490 | 51recall 39/35  7/ 3 p=0.3438 +/-0.12
+
+================================================================================================
+C. FORCED TRUE-BUG SET INTERSECTIONS (paper: 22 of 27 and 23 of 26)
+================================================================================================
+  full stage forced TPs 27; flat+agg-Qwen forced TPs 26; intersection 21
+  full-Qwen  forced TPs 26; flat-Qwen    forced TPs 23; intersection 21
+
+================================================================================================
+D. CLAUSE CENSUS (primary: run_full1..3, candidate-anchor rejudge applied)
+================================================================================================
+
+  --- primary backbone ---
+    B=Confirmed              n= 61  onBugs= 56  onFPs=  5
+    A=Confirmed              n= 21  onBugs= 17  onFPs=  4
+    D=Supports-Defect        n=  7  onBugs=  5  onFPs=  2
+    A=Refuted                n= 50  onBugs= 24  onFPs= 26
+    C=Refuted                n= 19  onBugs=  2  onFPs= 17
+    D=Supports-Not-Defect    n= 16  onBugs=  4  onFPs= 12
+    catch-all                n= 69  onBugs= 45  onFPs= 24
+    TOTAL                    n=243  onBugs=153  onFPs= 90
+    D-cell source vocabulary: 98 of 243
+    incorrect closures to FP total = 30;  A=Refuted share = 24/30 = 0.800
+
+  --- second backbone ---
+    B=Confirmed              n= 61  onBugs= 59  onFPs=  2
+    A=Confirmed              n= 14  onBugs= 13  onFPs=  1
+    A=Refuted                n= 56  onBugs= 24  onFPs= 32
+    C=Refuted                n= 50  onBugs= 22  onFPs= 28
+    D=Supports-Not-Defect    n=  2  onBugs=  2  onFPs=  0
+    A=Refuted+B=Confirmed    n=  3  onBugs=  2  onFPs=  1
+    catch-all                n= 57  onBugs= 31  onFPs= 26
+    TOTAL                    n=243  onBugs=153  onFPs= 90
+    D-cell source vocabulary: 217 of 243
+    incorrect closures to FP total = 48;  A=Refuted share = 24/48 = 0.500
+
+================================================================================================
+E. CATCH-ALL COMPOSITION (primary)
+================================================================================================
+  catch-all judgments: 69
+  carrying source vocabulary in D: 37 (53.6%)  rest on true bugs: 28
+  carrying cognition vocabulary  : 32  rest on true bugs: 17 = 0.531
+  pool base rate: 153/243 = 0.630
+
+================================================================================================
+F. RULE COMPLIANCE / REPLAYS (primary)
+================================================================================================
+  rule mandates HR: 69;  judge recorded HR: 48
+  deviations: Counter({'FALSE_POSITIVE': 17, 'CONFIRMED': 5})
+  reverse deviations (judge HR, rule not catch-all): 1
+  measured             [convention] recall 39/51 supp 21/30 conf set 39+9
+  measured             [forced    ] recall 27/51 supp 27/30 conf set 27+3
+  A=Refuted routed     [convention] recall 46/51 supp 12/30 conf set 46+18
+  A=Refuted routed     [forced    ] recall 27/51 supp 27/30 conf set 27+3
+  strict compliance    [convention] recall 43/51 supp 19/30 conf set 43+11
+  strict compliance    [forced    ] recall 27/51 supp 27/30 conf set 27+3
+
+================================================================================================
+G. OF THE 24 A=REFUTED TRUE-BUG CLOSURES: case-level span
+================================================================================================
+  cases closed by A=Refuted in >=2 of 3 runs: 15; of them true bugs: 7
+  of those true bugs, confirmed by the measured majority: 0

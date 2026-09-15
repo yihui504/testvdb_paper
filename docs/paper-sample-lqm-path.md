@@ -1,5 +1,13 @@
 # 样本 v10
 
+> ⚠️ **本文件已不是正本。** 自转 LaTeX 起，**`TestVDB-v10.tex` 是提交物与唯一正本**。
+> 二者已**结构性分叉**：本文件仍含被删除的附录（CFP 无附录豁免，为页数合规移出），
+> 且**未含** sample10 之后的全部修复（§8 配对顺序、§4.4 路由总数、suppression 定义、
+> 判官纪律条款、A/B/C 词表、确认集层补印等）。保留本文件仅为留工作笔记与修订史。
+> **改论文请改 `.tex`。**
+
+---
+
 **v9 送审结果**（首份完整稿）：三票 **Weak Accept / CONDITIONAL**。
 **每一项准则都离开了 Adequate**（round-18 是五项 Adequate）：
 Importance / Insights / Perspective / Verifiability / Presentation 全部 **Good**，

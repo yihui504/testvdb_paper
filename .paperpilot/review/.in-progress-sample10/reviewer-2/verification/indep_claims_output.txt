@@ -1,0 +1,165 @@
+================================================================================================
+C-FIX. FORCED TRUE-BUG SET INTERSECTIONS, correct arm pairs
+================================================================================================
+  PRIMARY  full stage forced TPs 27 vs flat+aggregation forced TPs 27  -> intersection 22 of 27   [paper: 22 of 27]
+  SECOND   full-Qwen forced TPs 26 vs flat+agg-Qwen forced TPs 26  -> intersection 23 of 26   [paper: 23 of 26]
+
+================================================================================================
+H. THE SECOND LEAK REPAIR: pre/post coganchor rejudge
+================================================================================================
+  full stage             overridden verdicts changed: 7  toward-confirm 4  cross-HR/FP 0  away 3
+      convention  pre (41, 6)  post (39, 9)   (tp+fp)
+      forced recall pre 27  post 27
+      suppressed FPs: pre 24/30  post 21/30
+  full, no source        overridden verdicts changed: 7  toward-confirm 6  cross-HR/FP 0  away 1
+      convention  pre (48, 16)  post (48, 18)   (tp+fp)
+      forced recall pre 30  post 31
+  full, no aggregation   overridden verdicts changed: 1  toward-confirm 1  cross-HR/FP 0  away 0
+      convention  pre (33, 2)  post (33, 3)   (tp+fp)
+      forced recall pre 27  post 27
+  full-Qwen              overridden verdicts changed: 6  toward-confirm 5  cross-HR/FP 0  away 1
+      convention  pre (30, 2)  post (30, 5)   (tp+fp)
+      forced recall pre 26  post 26
+
+================================================================================================
+I. milvus_001: routed by how many of the 12 configurations?
+================================================================================================
+  contract core            milvus_001 HR in 0 of 3 runs -> NOT credited
+  full stage               milvus_001 HR in 3 of 3 runs -> credited
+  source-only              milvus_001 HR in 3 of 3 runs -> credited
+  flat judge               milvus_001 HR in 3 of 3 runs -> credited
+  flat + schema fix        milvus_001 HR in 3 of 3 runs -> credited
+  flat + aggregation       milvus_001 HR in 3 of 3 runs -> credited
+  full, no source          milvus_001 HR in 3 of 3 runs -> credited
+  full, no aggregation     milvus_001 HR in 2 of 3 runs -> credited
+  source-only-Qwen         milvus_001 HR in 3 of 3 runs -> credited
+  full-Qwen                milvus_001 HR in 3 of 3 runs -> credited
+  flat-Qwen                milvus_001 HR in 2 of 3 runs -> credited
+  flat + aggregation-Qwen  milvus_001 HR in 3 of 3 runs -> credited
+
+================================================================================================
+J. THREE-WAY SPLITS and the 'two identical verdicts' rule (full stage)
+================================================================================================
+  cases with three distinct verdicts: 3 ['milvus_021', 'milvus_038', 'qdrant_027']   [paper: three of the 81]
+  under 'two identical verdicts' the deployed recall would be 49/51   [paper: 37/51]
+
+================================================================================================
+K. C=REFUTED RATIONALE AUDIT (primary, 19 judgments)
+================================================================================================
+  C=Refuted judgments: 19
+  by case: Counter({'milvus_023': 3, 'weaviate_004': 3, 'milvus_026': 2, 'qdrant_013': 2, 'qdrant_025': 2, 'milvus_015': 1, 'qdrant_003': 1, 'qdrant_011': 1, 'qdrant_012': 1, 'weaviate_007': 1, 'milvus_011': 1, 'milvus_012': 1})
+
+  --- milvus_011 run3  GT=F  C=REFUTED
+      d_evidence: internal/parser/planparserv2/plan_parser_v2.go:113-115(v2.6.16) source:by_design_in_source — isEmptyExpression(expr) 显式返
+      rationale : filter 缺省/空串→查询全量是源码明文设计的有意行为(空表达式映射 trueLiteral 且该参数刻意声明为可选),C=REFUTED 判 FALSE_POSITIVE
+
+  --- milvus_012 run3  GT=T  C=REFUTED
+      d_evidence: internal/distributed/proxy/httpserver/handler_v2.go:362-367(v2.6.16) source:by_design_in_source — 显式三级回退 body dbName→Hea
+      rationale : 空 dbName 显式解析为 default 库是源码中有意实现的缺省回退链,且文档侧本无任何拒绝语义承诺(断言不被违反),C=REFUTED 判 FALSE_POSITIVE
+
+  --- milvus_015 run1  GT=F  C=REFUTED
+      d_evidence: v2.6.16 internal/datacoord/index_meta.go:463-464: 代码注释 '// creating multiple indexes on same field is not supported' 明示同
+      rationale : 两个观察面均为 API 正确拒绝(不存在集合返回 code=100 collection not found、同字段多索引被源码注释明示不支持),无任何契约行被违反,C 视角源码注释明文 by-design 判 FALSE_POSITIVE
+
+  --- milvus_023 run1  GT=F  C=REFUTED
+      d_evidence: v2.6.17 internal/rootcoord/meta_table.go:58 行内注释 '// drop collection or database not found, so it can be ignored' + root
+      rationale : drop 不存在集合返回成功是源码内联注释明示的忽略式设计(非裸静默行为),drop 契约行仅约束非空名且已满足,C 明文 by-design 判 FALSE_POSITIVE
+
+  --- milvus_023 run2  GT=F  C=REFUTED
+      d_evidence: internal/rootcoord/meta_table.go:58 注释 'drop collection or database not found, so it can be ignored'(errIgnoredDropColle
+      rationale : drop 不存在集合返回成功系源码明文注释表明的有意行为(注释含意图证据),C=REFUTED 满足明文标准,按 v3 灰区 C=REFUTED 分支判 FALSE_POSITIVE
+
+  --- milvus_023 run3  GT=F  C=REFUTED
+      d_evidence: v2.6.17 internal/rootcoord/meta_table.go:58 注释 '// drop collection or database not found, so it can be ignored' + meta_t
+      rationale : drop 不存在 collection 返回 code=0 在源码中有明文意图证据(错误变量注释 'so it can be ignored' 与 !ok→return nil 结构),满足 C 视角明文 by-design 标准(C=REFUTED);幂等删除不属七类客观约束(B=NEUTRAL);A=NEUTRAL+B=NEUTRAL+C=REFUTED→FALSE_POSITIVE。
+
+  --- milvus_026 run1  GT=F  C=REFUTED
+      d_evidence: v2.6.17 internal/proxy/util.go:1377-1382 首字符校验拒绝分支报错 'the first character of collection name must be an underscore or le
+      rationale : 服务端名称校验规则本身规定下划线可作首字符,观察到的 _test_collection 创建成功即校验 prescribed 行为(校验在场且与观察一致),非缺陷判 FALSE_POSITIVE
+
+  --- milvus_026 run2  GT=F  C=REFUTED
+      d_evidence: internal/proxy/util.go:1377-1382 首字符校验显式允许 '_',错误消息明文 'the first character of collection name must be an underscore or l
+      rationale : 下划线开头集合名被源码命名校验规则显式允许(校验代码与错误消息均为明文意图证据),属有意规则而非静默接受,C=REFUTED 判 FALSE_POSITIVE
+
+  --- qdrant_003 run1  GT=F  C=REFUTED
+      d_evidence: lib/api/src/rest/schema.rs:1156-1160 文档字符串明示score_threshold过滤语义:'Define a minimal score threshold...less similar results
+      rationale : 观察与源码文档字符串承诺的阈值过滤语义完全一致(2.0全滤空/-0.5保留全部),请求值合法且响应形态正确,无任何七类客观约束命中(B=NEUTRAL:阈值参数无文档化下界,行为即为设计语义),明文文档字符串构成C=REFUTED→FALSE_POSITIVE
+
+  --- qdrant_011 run1  GT=F  C=REFUTED
+      d_evidence: lib/segment/src/common/utils.rs:85-108 MaybeOneOrMany反序列化器文档字符串明示允许单值/数组/unit(null→None),unit分支Ok(None);Filter.should挂载w
+      rationale : should:null经MaybeOneOrMany unit分支映射为None,是源码文档字符串与schema双重声明的合法输入形态而非违反值,不属七类客观约束(B=NEUTRAL);明文构成C=REFUTED;认知'Lenient filter parsing: null/single-object/array forms accepted by design'含developer_quote命中SUPPORTS_NOT_DEFECT→FALSE_POSITIVE
+
+  --- qdrant_012 run1  GT=F  C=REFUTED
+      d_evidence: lib/segment/src/common/utils.rs:85-108 map分支x.deserialize().map(|x| vec![x])单对象→单元素组;Filter.must_not serde with=MaybeOne
+      rationale : must_not单对象为源码文档字符串明示支持并写入对外schema的合法形态而非违反值,不属七类客观约束(B=NEUTRAL);明文构成C=REFUTED;认知SUPPORTS_NOT_DEFECT命中(维护者引语'This is fine and expected...source supports all three forms')→FALSE_POSITIVE
+
+  --- qdrant_013 run1  GT=F  C=REFUTED
+      d_evidence: lib/api/src/rest/schema.rs:569 QueryRequestInternal.query文档字符串'Query to perform. If missing without prefetches, returns 
+      rationale : query:null为Option缺省形态,返回按ID升序全点(score全1.0,ids 1/5/10)与源码文档字符串承诺完全一致,非七类客观约束命中(B=NEUTRAL),包内behavioral_011(200+result points)未被违反(A=NEUTRAL),明文文档字符串C=REFUTED,认知NO_SIGNAL→FALSE_POSITIVE
+
+  --- qdrant_013 run3  GT=F  C=REFUTED
+      d_evidence: lib/api/src/rest/schema.rs:573 字段文档字符串 If missing without prefetches, returns points ordered by their IDs 明文声明该行为
+      rationale : query=null 反序列化为 None 与缺省同路径，返回按 ID 排序全部点(score 1.0)正是源码字段文档字符串明示的设计行为 C=REFUTED；认知 lenient filter parsing 仅覆盖 filter 条件字段不属现象级匹配故 D=NO_SIGNAL，A=NEUTRAL/B=NEUTRAL 且 C 满足明文标准判 FALSE_POSITIVE
+
+  --- qdrant_025 run1  GT=F  C=REFUTED
+      d_evidence: lib/storage/src/content_manager/collection_meta_ops.rs:309-312 UpdateCollection.metadata 文档字符串明文："If provided, this will
+      rationale : 包内无 metadata patch 语义断言（"至少一个更新字段"已被满足）故 A=NEUTRAL；metadata={} 非集合外值、不属七类客观约束故 B=NEUTRAL；源码文档字符串明文定义合并语义——空对象合并即 no-op、删键需置 null——属明文 by-design，观测 metadata 原样保留与该语义完全一致；认知无匹配(NO_SIGNAL)；A=NEUTRAL+B=NEUTRAL+D_cog=NO_SIGNAL 且 C 满足明文标准，判 FALSE_POSITIVE。
+
+  --- qdrant_025 run2  GT=F  C=REFUTED
+      d_evidence: lib/storage/src/content_manager/collection_meta_ops.rs:317-319 文档注释明文"Metadata to update for the collection. If provided
+      rationale : PATCH metadata={} 未清空与源码明文 merge 语义一致(C=REFUTED 满足明文 by-design 标准);不属七类客观约束({} 是合法 merge 载荷而非违反值,B=NEUTRAL);包内契约行无 metadata 语义可违反(A=NEUTRAL);认知无 metadata 命中。
+
+  --- weaviate_004 run1  GT=F  C=REFUTED
+      d_evidence: entities/vectorindex/hnsw/config.go:29 (v1.37.4) 'DefaultEF = -1 // indicates "let Weaviate pick"' 明文注释 -1 为哨兵值
+      rationale : ef=-1 命中协议明文的 ef/nprobe 负哨兵豁免：源码注释明示 -1 表示'由 Weaviate 选择'，构成红线3要求的意图证据(C=REFUTED 明文 by-design)，认知无信号(NO_SIGNAL)→FALSE_POSITIVE
+
+  --- weaviate_004 run2  GT=F  C=REFUTED
+      d_evidence: v1.37.4 entities/vectorindex/hnsw/config.go:29 'DefaultEF = -1 // indicates "let Weaviate pick"'(负哨兵明文注释;全部响应默认 ef:-1 佐证
+      rationale : ef=-1 是源码明文注释声明的哨兵值('let Weaviate pick'),按协议负哨兵先例不触发数值下界类(B=NEUTRAL),且明文 by-design 满足 C=REFUTED 标准 → FALSE_POSITIVE。
+
+  --- weaviate_004 run3  GT=F  C=REFUTED
+      d_evidence: v1.37.4 entities/vectorindex/hnsw/config.go:29 DefaultEF = -1 // indicates "let Weaviate pick" —— 明文注释声明 -1 为哨兵值(自动选择)
+      rationale : ef=-1 是源码注释明文的 HNSW 负值哨兵(即未设置时的默认值，所有响应均回显 ef:-1)，按派发词数值下界类明文哨兵例外不触发 B，且 C 满足明文 by-design 标准(含意图注释)，A 无断言覆盖 ef 记 NEUTRAL，聚合 C=REFUTED → FALSE_POSITIVE。
+
+  --- weaviate_007 run1  GT=T  C=REFUTED
+      d_evidence: entities/vectorindex/hnsw/config.go:25,96 (v1.38.0) 注释 'Set these defaults if the user leaves them blank' + SetDefaults 
+      rationale : distance=null 按 JSON 惯例等价字段缺省并落默认 cosine，不属七类客观违反(B=NEUTRAL，包内亦无 distance 契约断言)，源码注释明文空白值落默认构成红线3意图证据(C=REFUTED 满足明文标准)→FALSE_POSITIVE
+
+================================================================================================
+L. WEAK-REFUTED runs of milvus_011 / milvus_012
+================================================================================================
+
+  ### milvus_011  GT=F
+    run1: verdict=HUMAN_REVIEW  C=WEAK_REFUTED
+        rationale: filter=null/空为无谓词全量查询语义，不属于七类客观约束任何一类，无契约行且认知无现象级命中，C 仅 WEAK_REFUTED（无注释静默行为），按兜底 HUMAN_REVIEW
+    run2: verdict=HUMAN_REVIEW  C=WEAK_REFUTED
+        rationale: filter=null/缺省/空串均放行返回全量行(三种形态两轮复现),不属七类客观约束(B=NEUTRAL),包内无 entities+query 契约行(A=NEUTRAL);query 侧无 required 校验而 delete 侧结构有,暗示有意但无注释明文 → C=WEAK_REFUTED 转人工;qdrant 'lenient filter parsing' by-design 属跨库引用,禁止采信(COG=NO_SIGNAL)。
+    run3: verdict=FALSE_POSITIVE  C=REFUTED
+        rationale: filter 缺省/空串→查询全量是源码明文设计的有意行为(空表达式映射 trueLiteral 且该参数刻意声明为可选),C=REFUTED 判 FALSE_POSITIVE
+
+  ### milvus_012  GT=T
+    run1: verdict=HUMAN_REVIEW  C=WEAK_REFUTED
+        rationale: 契约仅为描述性（'The name of an existing database.'，无 required/非空拒绝语义，M3 已核查），空字符串名回落默认库不属七类客观约束，按兜底 HUMAN_REVIEW
+    run2: verdict=HUMAN_REVIEW  C=WEAK_REFUTED
+        rationale: dbName='' 静默归一为 default 并返回成功;包内文档仅描述 'The name of an existing database.' 无非空/拒绝断言(A=NEUTRAL),空串不属七类客观约束(B=NEUTRAL);兜底链结构示设计但无注释/quote 明文(红线3 不构成 REFUTED) → 转人工。
+    run3: verdict=FALSE_POSITIVE  C=REFUTED
+        rationale: 空 dbName 显式解析为 default 库是源码中有意实现的缺省回退链,且文档侧本无任何拒绝语义承诺(断言不被违反),C=REFUTED 判 FALSE_POSITIVE
+
+  ### milvus_026  GT=F
+    run1: verdict=FALSE_POSITIVE  C=REFUTED
+        rationale: 服务端名称校验规则本身规定下划线可作首字符,观察到的 _test_collection 创建成功即校验 prescribed 行为(校验在场且与观察一致),非缺陷判 FALSE_POSITIVE
+    run2: verdict=FALSE_POSITIVE  C=REFUTED
+        rationale: 下划线开头集合名被源码命名校验规则显式允许(校验代码与错误消息均为明文意图证据),属有意规则而非静默接受,C=REFUTED 判 FALSE_POSITIVE
+    run3: verdict=FALSE_POSITIVE  C=NEUTRAL
+        rationale: 声称的缺陷面(下划线开头命名应拒绝)无任何包内断言覆盖,唯一涉及的 collectionName 断言(string 类型)被满足,机械包含性检查判定断言不被违反(A=REFUTED);命名规则不属七类客观约束(B=NEUTRAL);A=REFUTED 且 B≠CONFIRMED→FALSE_POSITIVE。
+
+================================================================================================
+M. CATCH-ALL D-VALUE COMPOSITION (primary)
+================================================================================================
+  Counter({'NO_SIGNAL': 32, 'by_design_in_source': 11, 'validation_present': 10, 'validation_absent': 9, 'not_found': 7})
+
+================================================================================================
+N. WILSON INTERVALS for the headline arms
+================================================================================================
+  full stage     recall 39/51 = 0.765  Wilson (0.632, 0.86)
+  flat judge     recall 30/51 = 0.588  Wilson (0.452, 0.712)
