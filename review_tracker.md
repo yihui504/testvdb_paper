@@ -707,3 +707,52 @@ with maintainer-validated yield"*），一次 mining campaign 报告的正是"�
 
 终态：0 错 / 0 undefined（双族）/ 0 overfull / 0 控制字符 / 正文 **18.00 ≤ 18**。
 **标题改动不占篇幅，正文总账未变。**
+
+---
+
+## 15. 结构与篇幅：向 LQM 对齐 + 摘要压缩（2026-09-15 23:50）
+
+**参考物**：`C:\Users\11428\Desktop\lqm-paper-master\LQM.tex`（ASE 2026 投稿）。
+论文头部注释本来就写着 *"Source of truth for the prose: docs/paper-sample-lqm-path.md"*，
+所以这是**既定的对标物**。
+
+### 15.1 骨架对比：只有一件值得对齐
+
+| | LQM（工具论文） | TestVDB（测量论文） |
+|---|---|---|
+| 1–3 | Intro / Preliminaries / Approach | 同 |
+| 4 | **Evaluation**：开头列三问 → 4.1 Methodology、4.2 **(RQ1)**、4.3 **(RQ2)**、4.4 **(RQ3)**、4.5 False Positive Analysis（不挂 RQ） | Evaluation：4.1–4.6，**全文零 RQ** |
+| 5 | **Limitations**（105 词，3 条） | **Discussion**（470）+ **Threats**（463） |
+| 6–7 | Related Work（236 词）/ Conclusion（64 词） | Related Work（984）/ Conclusion（345） |
+
+**关键发现**：TestVDB **全文没有任何 RQ**——但**那三个问题早就在论文里**，
+逐字写在 §4.3/§4.4/§4.5 的**斜体导语**里，只是没编号、没汇总。
+
+**判断（分三类）**：
+- **A 该对齐的只有 RQ 编号**：成本≈0（把 §1 的两份列表并成一份即可腾出空间），
+  收益是读者一眼看出哪节答哪问——**正面打 R2 5.2 / R3 5.3 说的"过密、遮蔽主张"**。
+- **B 不该对齐的三处（对齐=降级）**：LQM 的 Limits 只有 105 词且讲的是"**工具做不到什么**"
+  （相关子查询/非确定性函数——一份方法适用范围清单）；我们的 Threats 463 词讲"**证据覆盖不到什么**"，
+  **Verifiability 连续三轮共识 Excellent 就压在这上面**。LQM 的 Related Work 只占 2.6%（薄得反常），
+  我们那 984 词是 R1/R2 逐条核过、第 12 轮还从里面找出真缺口（Testora）的。
+  LQM **根本没有 Discussion 节**，而我们那 5 条教训是 Perspective 共识 Excellent 的依据。
+- **C 体裁差异非缺陷**：LQM 评估占 35%、Approach 最大（工具论文）；我们评估占 46%（**评估就是贡献本体**）。
+
+### 15.2 落地三步（互相咬合）
+
+1. **§1 两份列表合并**：「Three results follow」的 3 条 + 「We contribute」的 3 条
+   → **一份三条**（框架改为贡献，各带自己的头条数字）。
+2. **§4 挂 RQ**：章首加三问（复用原有的斜体句），§4.2→`(RQ1)`、§4.3→`(RQ2)`、§4.5→`(RQ3)`；
+   §4.1/§4.4/§4.6 **不挂**（§4.4 自称 *"supplies the instrument"*，与 LQM 的 False Positive Analysis 同构）。
+   四处斜体导语一并移除（三处已成 RQ，§4.4 那处若不删会被误读成 RQ4）。
+3. **摘要 371 → 287 词**（−84）。
+
+### 15.3 终态
+
+```
+计页正文 17.84 ≤ 18（余量 0.16 页 ≈ 8 行，此前为 0.00）  参考文献 3.16 ≤ 4
+0 错 / 0 undefined（双族）/ 0 overfull / 0 控制字符 / PDF 内 0 处 [?]
+RQ1/RQ2/RQ3 三处列表项与三处小节标题均正确渲染
+```
+
+**余量从 0.00 买回 0.16 页**——终于不是"每一个字都要先删一个"了。
