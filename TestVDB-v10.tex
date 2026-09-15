@@ -28,17 +28,16 @@ confirmation stage reads, and a census of that stage's errors.
 \textbf{The campaign.} Across Milvus, Qdrant, and Weaviate, maintainers confirmed 51 of 81
 adjudicated submissions as real bugs and fixed 23 through merged PRs. The ledger records 132 rows
 for these three systems---81 adjudicated, 49 awaiting a maintainer, 2 withdrawn by us---and covers
-19 versions, of which the 81 span 16. It is a record of submissions and adjudication, \emph{not} a
-per-run detection rate: the runs that would have measured detection ability were voided for
-dispatch-discipline violations and nothing here depends on them.
+19 versions. It is a record of submissions and adjudication, \emph{not} a per-run detection rate:
+the runs that would have measured detection ability were voided for dispatch-discipline violations,
+and nothing here depends on them.
 
 \textbf{The audit.} The packages that stage reads are distilled from vendor documentation, and we
 audited every one of their 134 (constraint, cited-page) pairs against the page it cites:
-\textbf{18 are supported as cited, 58 cite a source file or an API landing page rather than the page
-that documents the constraint and were re-anchored, and 58 have no support on their cited page}---%
-43.3\%. On the 12 case-level main assertions, a separate object, the audit recorded 5 supported,
-3 unsupported, 2 weak-evidence and 2 over-strong, and acted on all 12. Two leak repairs followed
-from the same audit and are load-bearing: ten rebuilt packages carried an embedded
+\textbf{18 are supported as cited, 58 cite a source file or a landing page rather than the page that
+documents the constraint and were re-anchored, and 58 have no support on their cited page}---43.3\%.
+Two leak
+repairs followed from the same audit and are load-bearing: ten rebuilt packages carried an embedded
 maintainer-cognition section their dispatches forbid reading, and the runtime cognition files
 referenced seven of the candidates' own issue numbers; both were stripped and the affected cases
 re-judged, and \textbf{every rate below is computed on the cleaned pool}.
@@ -51,8 +50,7 @@ them are maintainer-confirmed bugs; by-design refutation, which the protocol req
 verbatim intent evidence, closes 19 and is right 17 times. \textbf{80\% of the stage's incorrect
 closures to False-Positive come from the unguarded clause.} Routing contract refutation instead of
 closing on it recovers seven true bugs for nine false-positive interceptions under the deployment's
-convention, and nothing under the forced reading. Four defects in our own dispatches were found by
-reviewers reading what we shipped.
+convention, and nothing under the forced reading.
 \end{abstract}
 
 \maketitle
@@ -237,7 +235,8 @@ and the evidence it is allowed to read.}
 \label{fig:pipeline}
 \end{figure}
 
-Two features of the design make it measurable rather than merely usable. First, each stage writes a
+Figure~\ref{fig:pipeline} shows the four stages. Two features of the design make it measurable
+rather than merely usable. First, each stage writes a
 structured artifact---a constraint record, a probe with an inline oracle line, a request/response
 log, an evidence chain---so a claim about a stage can be traced to the file that grounds it. Second,
 the confirmation stage's evidence is \emph{frozen} per case: a candidate's package (observation plus
@@ -458,7 +457,7 @@ confirmed when \textbf{at least two of its three runs recorded it as confirmed}-
 convention, either Confirmed or Human-Review---which is not the same as requiring two runs to agree
 on a verdict: three of the 81 cases split three ways, and under a rule that demanded two identical
 verdicts the deployed stage's recall would be 37/51 rather than the 39/51 we report. Both backbones
-are serving aliases without pinned weights.
+are serving aliases without pinned weights. Table~\ref{tab:configs} lists the twelve.
 
 \begin{table}[t]
 \caption{The twelve judge configurations. Each re-adjudicates all 81 cases three times; only what
@@ -489,6 +488,17 @@ We added them during the study rather than pre-registering them, and \textbf{thr
 more than one thing}: contract-core-to-flat (any judgment at all, against a binary-only core), the
 deployed change (verdict space plus routing rule, decomposable only on the primary backbone), and
 the four-perspective contrast (five things, listed in Section~\ref{sec:buys}).
+
+Each control is a traceable edit of the arm it extends. The schema-fix arm changes only the flat
+dispatch's output-schema line, from a binary to a three-valued \texttt{verdict} field. The
+aggregation arm changes that same line, the sentence declaring that no aggregation rule applies, and
+appends the routing clause. The source-withheld arm drops the \texttt{source=} path from every
+per-case material line of the full-stage dispatch. The no-aggregation arm excises both aggregation
+blocks. The flat judge is the full stage's materials without the perspective vocabulary and the
+aggregation rule, and it keeps the protocol's red lines---the verbatim-intent requirement for
+by-design refutation, and the objective-constraint principle stated with four of its seven classes
+as examples rather than the full enumeration. All dispatch texts, and English renderings of the two
+judging prompts, ship verbatim in the artifact.
 
 \textbf{A defect we report rather than repair.} Eight of the twelve dispatches declare a binary
 \texttt{verdict} field while their own text mandates three values. It is part of the baseline on
@@ -547,7 +557,7 @@ vendor documentation with a citation on each. We audited every cited pair agains
 at the version the row claims.
 
 \textbf{Pair level: 134 (constraint, cited-page) pairs}, deduplicated from the surviving row
-instances.
+instances; Table~\ref{tab:pairaudit} gives the three-way split.
 
 \begin{table}[t]
 \caption{The pair-level audit. The two 43.3\% shares are each of 134, not a combined 86.6\%.}
@@ -707,7 +717,7 @@ the contract assertion is contradicted, with the exception that Refuted plus B C
 \textbf{B} the objective-constraint perspective; \textbf{D} maintainer cognition; \textbf{C}
 behavioral elegance, refuting only on verbatim intent evidence---an in-source comment or docstring,
 or a maintainer quote; then the catch-all. ``Accuracy'' is agreement with the maintainers'
-adjudication. The table is grouped by the outcome each clause assigns.
+adjudication. Table~\ref{tab:census} is grouped by the outcome each clause assigns.
 
 \begin{table}[t]
 \caption{The clause census over the deployed stage's 243 judgments on the primary backbone.}
@@ -975,116 +985,13 @@ refuses to decide.
 The replication package is at \url{https://anonymous.4open.science/r/TestVDB_artifact-EC36/}: the
 pool, the frozen per-run verdicts of all twelve configurations, the packages the study read (the
 post-rebuild, cognition-stripped generation the dispatches name; the earlier rebuilt generations are
-archived separately and do not ship), the dispatch texts, the pair-audit verdicts, the adjudication
-worksheet and the blind passes, and the five analysis scripts named in Section~\ref{sec:method}.
+archived separately and do not ship), the dispatch texts and the judging prompts they instantiate,
+the pair-audit verdicts, the adjudication worksheet and the blind passes, and the five analysis
+scripts named in Section~\ref{sec:method}.
 Where a run was re-judged after either leak repair, the re-judged cases and the pre-repair state both
 ship beside the untouched batches, so either pool can be reconstructed from the package alone.
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{TestVDB}
-
-\appendix
-
-\section{Judging Prompts}
-\label{app:prompts}
-
-Both prompts are English renderings of the dispatch files actually used; the verbatim Chinese files
-ship in the artifact and are authoritative. Each judge receives the same per-case materials---the
-frozen evidence pack and the case's version-pinned source clone---under identical discipline clauses
-(own pack and clone only, no network access, cases judged independently). One deliberate difference
-remains: the full-stage protocol reads the cognition materials as perspective D while the core, flat
-and source-only dispatches forbid them, the asymmetry quantified in
-Section~\ref{sec:method}. The flat-judge prompt keeps the protocol's red lines---the verbatim-intent
-requirement for by-design refutation, and the objective-constraint principle with four of its seven
-classes as examples rather than the full enumeration---but strips the perspective vocabulary and the
-aggregation rule, so the contrast isolates the protocol's \emph{structural} contribution from rule
-content both judges share; since the shared rules are the ones that most affect recall, the
-comparison is conservative. Each control is a traceable edit of its arm: the schema-fix arm changes
-only the flat dispatch's output-schema line (binary to three-valued \texttt{verdict}); the
-aggregation arm changes that line, the sentence declaring that no aggregation applies, and appends
-the clause below; the source-withheld arm drops the \texttt{source=} path from every per-case
-material line; the no-aggregation arm excises both aggregation blocks. All dispatches ship verbatim
-in the artifact.
-
-\subsection{Full-Stage Confirmation Protocol}
-\label{app:full-prompt}
-
-\emph{Verdict: three-valued---\textsc{Confirmed} $\mid$ \textsc{False-Positive} $\mid$
-\textsc{Human-Review}; \textsc{Human-Review} counts toward \textsc{Confirmed} (the deployment routes
-such cases to human adjudication).}
-
-\emph{Perspective A (contract, mechanical):} compare the observation against the pack's contract
-assertions. An observation that explicitly violates a quoted assertion is final:
-A${=}$\textsc{Confirmed} may not be overturned by source arguments; a contradicted assertion gives
-A${=}$\textsc{Refuted}; no applicable assertion gives A${=}$\textsc{Neutral}.
-
-\emph{Perspective B (objective constraints):} seven violation classes need no contract
-endorsement---numeric lower bounds (count/size/parallelism/limit-class parameters accepting zero or
-negatives, with the by-design negative-sentinel precedent for \texttt{ef}/\texttt{nprobe}-class
-parameters), enum closed sets, mutually exclusive parameters, type tautologies, same-family
-inconsistency, interface asymmetry (contract-explicit face differences excluded), and qualified HTTP
-semantics (a request-side decidable error whose response form the contract promises as 4xx, answered
-instead with 2xx plus a business code). An observed acceptance of a violating value gives
-B${=}$\textsc{Confirmed}; membership in no class gives B${=}$\textsc{Neutral}, and the rationale must
-say why. B is perspective-independent: a broken contract chain may not force B to \textsc{Neutral}.
-
-\emph{Perspective C (behavioral elegance, weight \textsc{Low}; cannot alone overturn A or B):} only
-an \emph{explicit} by-design refutes---the source excerpt must contain intent evidence (a code
-comment or docstring) or the maintainer-cognition material must carry a developer quote declaring
-the same phenomenon intended. Bare structural inference (``no validation is seen'', unannotated
-silent behavior) is \textsc{Weak-Refuted}, not a refutation.
-
-\emph{Perspective D (maintainer cognition):} the vendor's cognition model serves as background.
-\texttt{blindspot\_indicators} hits give \textsc{Supports-Defect}; \texttt{by\_design}/\texttt{rejection\_pattern}
-hits give \textsc{Supports-Not-Defect} (quote the developer); no hit gives \textsc{No-Signal}.
-Cognition is attitude, not evidence: it may not fill in missing observations, and cross-vendor
-citation is forbidden.
-
-\emph{Aggregation (fixed):} the clauses below apply in the order given, and where two fire the
-earlier governs. A${=}$\textsc{Confirmed} $\Rightarrow$ \textsc{Confirmed}.
-A${=}$\textsc{Refuted} $\Rightarrow$ \textsc{False-Positive}, except A${=}$\textsc{Refuted} with
-B${=}$\textsc{Confirmed} (signal conflict) $\Rightarrow$ \textsc{Human-Review}. Otherwise
-(A${=}$\textsc{Neutral}): B${=}$\textsc{Confirmed} $\Rightarrow$ \textsc{Confirmed};
-D${=}$\textsc{Supports-Defect} $\Rightarrow$ \textsc{Confirmed};
-D${=}$\textsc{Supports-Not-Defect} $\Rightarrow$ \textsc{False-Positive}; C${=}$\textsc{Refuted}
-(explicit by-design) $\Rightarrow$ \textsc{False-Positive}; everything else---including
-C${=}$\textsc{Weak-Refuted} and missing evidence---$\Rightarrow$ \textsc{Human-Review}. Red lines:
-``the implementation behaves this way'' is not non-defect evidence (the reference frame is
-documentation vs.\ implementation, not implementation vs.\ observation); by-design requires verbatim
-intent evidence; unresolvable cases route to \textsc{Human-Review} and are never forced to
-\textsc{False-Positive}.
-
-\subsection{Flat-Judge Prompt}
-\label{app:flat-prompt}
-
-\emph{``You are a defect-triage judge. For each candidate: read its frozen evidence bundle to see
-what the documentation and contract promise and what was observed; consult the case's version-pinned
-source clone if you find that helpful; then give your final verdict. There is no prescribed
-analytical framework---no perspectives, no chain sections, no aggregation rule; judge in whatever way
-you see fit whether the observation constitutes a real documentation--implementation defect. The
-verdict is three-valued (\textsc{Confirmed} $\mid$ \textsc{False-Positive} $\mid$
-\textsc{Human-Review}); \textsc{Human-Review} counts toward \textsc{Confirmed}---use it when a case
-cannot be settled, and never use \textsc{False-Positive} as a fallback for unresolved cases. Red
-lines: to justify \textsc{False-Positive} by design intent you must quote the source's verbatim
-comment or docstring---bare structural inference does not count; `the source behaves this way' is not
-\textsc{False-Positive} evidence (documentation vs.\ implementation is the reference frame);
-objective-constraint violations (numeric lower bounds, enum closed sets, mutual exclusivity, type
-tautologies) are \textsc{Confirmed} even without a contract row.''}
-
-\paragraph{The aggregation clause as restated for a judge without perspective labels.} The flat judge
-carries no A/B/C/D vocabulary, so the fixed aggregation cannot be handed to it verbatim. For the
-aggregation-only control it is stated instead as an ordered decision procedure with the same three
-outcomes and the same default: (1)~if the observation explicitly violates a pack contract assertion,
-or falls in one of the objective-constraint classes, the verdict is \textsc{Confirmed}; (2)~if you
-would return \textsc{False-Positive} on the ground that the behavior is intended, the source must
-carry a verbatim comment or docstring saying so, and without that evidence \textsc{False-Positive} is
-not available; (3)~everything else---insufficient evidence, silent materials, a contract/source
-conflict, or an observation you cannot reach---is \textsc{Human-Review}, with \textsc{False-Positive}
-never used as a fallback. What this arm removes is therefore the separate labelled evaluation of the
-four perspectives and the ordered clause table over their values, not the substantive tests the
-aggregation refers to---those remain, which is what makes the contrast a test of the organization. A
-single-prompt judge applying the same tests under the same default reaches the full stage's recall,
-and the same tests without that default do not, so on this pool what the extra machinery buys is the
-default.
 
 \end{document}
