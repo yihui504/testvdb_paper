@@ -675,3 +675,35 @@ Anchoring/Testora/比较器三条各需 1–2 行，结果表（三家都要）�
 **为腾篇幅做的等量删除**：§7 "What this paper adds" 句收紧（−1 行）、
 §7 工具句 "keeping the derived oracle as final arbiter"（−0.7 行）、
 §4.1 筛查句重写（净 0）。**总账仍是 18.00——B 批次是纯换字，没有加字。**
+
+---
+
+## 14. 标题：换掉假承诺的动词（2026-09-15 23:20）
+
+**旧**：`Detecting Documentation--Implementation Bugs in Vector Database Management Systems:
+A Mining Campaign, an Evidence-Package Audit, and a Clause-Level Error Census`（20 词）
+
+**两处病**：① 第一个动词 `Detecting` 是**假承诺**——§4.2 白纸黑字 *"It is not a per-run
+detection rate, and we cannot supply one"*，§4.1 还记着检测能力实验全量作废（R3 5.5 点过）；
+② 20 词里副标题占 12 词，且全是**活动**不是**发现**。
+
+用户提出 `TestVDB: Using LLMs to detect … in VDBMS`。**结构对、动词错**——`to detect`
+把 5.5 那条原样装回去，而且后果不在于"说错"，在于**定位错**：标题写"用 LLM 检测 X"，
+评审就按**工具论文**评（要基线、要 precision/recall、要跟 VDBFuzz 正面比），而本文故意不给。
+
+**定案（用户拍板）**：
+
+> **TestVDB: Using LLMs to Mine Documentation--Implementation Bugs in Vector Database
+> Management Systems**（15 词）
+> 短标题（运行页眉）：`TestVDB: Mining Documentation--Implementation Bugs in Vector Databases`
+
+`to mine` 是**论文自己的词**（§4.2 题作 *Mining yield*，贡献列表首条 *"A mining campaign
+with maintainer-validated yield"*），一次 mining campaign 报告的正是"报了什么、维护者怎么裁"，
+**恰好是 §4.2 给的东西**，不承诺率。
+
+**连带项（零篇幅净增）**：`\title[短]{长}` 设短标题——实测运行页眉此前印的是**完整标题**
+且被截断（页 5 / 页 19 可见）；§3 首句改为 *"Our pipeline, \system{}, has four stages…"*，
+**正式在正文引入系统名**——此前 `\system{}` 只出现在图题里，正是 R3 5.6 报的那条。
+
+终态：0 错 / 0 undefined（双族）/ 0 overfull / 0 控制字符 / 正文 **18.00 ≤ 18**。
+**标题改动不占篇幅，正文总账未变。**
