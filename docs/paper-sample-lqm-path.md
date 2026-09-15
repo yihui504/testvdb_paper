@@ -216,12 +216,226 @@ auditable, and an audit that only reports what it finds in the target is not one
 
 ---
 
-## 2 Preliminaries（骨架，~700 词）
+## 2 Preliminaries（~710 词，已写全）
 
-## 3 Approach（骨架，~1,800 词）
+**The non-crashing majority.** Studies of VDBMS defects converge on one structural fact: most do not
+crash. The systematic bug study attributes the dominant share to functional failures — the service
+stays up and silently returns wrong results — with crash-producing defects a minority class
+\cite{bugstudy25,roadmap25}. The one dedicated VDBMS fuzzer, VDBFuzz, reaches exactly that minority:
+its oracle fires on a 5xx response or a failed request induced by template-driven input mutation,
+not on the silent misbehaviour at issue here \cite{vdbfuzz26}. The
+community roadmap names oracle definition as the open problem for what is left \cite{roadmap25},
+and that residual is where this paper works.
 
-- 3.1 Overview / 3.2 Behavioral-specification extraction / 3.3 Test-script generation /
-  3.4 Sandboxed execution / 3.5 Bug confirmation
+**What we target.** The subset we study is *documentation–implementation inconsistency*: the
+system silently accepts an input, errors where it documented success, returns a shape its API
+reference does not describe, or leaves state the documentation says cannot arise. We separate this
+from *correctness*. Consistency asks whether observable behavior matches what the API documentation
+prescribes — what is accepted, what is rejected, what is returned, how state evolves. Correctness
+asks whether a returned result is right in the mathematical sense, such as whether an approximate
+nearest-neighbour search returns the true top-$k$. Vector-search correctness is not what this paper
+measures; a documentation-conformant query that returns the documented (approximate) answer is out
+of scope here, and the distinction matters because the two are checked by different means.
+
+The reverse shape of inconsistency also occurs and is harder to see: an operation the documentation
+describes as all-or-nothing applies partially, or a transition — delete, recreate, restore — leaves
+behavior the documentation does not allow. These are the silent majority's own subclass, and none of
+them produces a signal a crash oracle can fire on.
+
+**Why the expectation has to be read from prose.** Every testing oracle needs an expectation, and
+oracle families differ in where they get one. The candidates relevant here, and the structural
+reason each anchors somewhere other than system-level API prose:
+
+| Candidate oracle | Expectation anchored in | Why it misses this residual |
+|---|---|---|
+| crash signal (VDBFuzz) | process death or 5xx | the bugs here do not crash |
+| differential testing (NoREC, TLP, DQE) | another evaluation of the same engine, or another vendor | intra-system variants compare an engine with itself and derive nothing from documentation; cross-vendor behavior diverges by design |
+| metamorphic relations | a relation the tester already poses | deriving *which* relation the prose prescribes is the semantic step non-LLM tooling does not perform |
+| property-based testing, schemas | field types, declared ranges, enum sets | a schema bounds fields; it does not carry cross-request or state-coupling behaviour, and where a schema declares a minimum it may omit the maximum that matters |
+| structured-source oracles (AGORA+, SATORI, MASTOR, MASTEST) | OpenAPI fields, execution traces, or the implementation source | anchored in structured sources; source-anchored oracles encode implemented behaviour and so cannot report a documentation–code gap as a defect |
+| documentation-derived oracles (@tComment, JDoctor, DocTer, RBCTest, RESTInfer) | tagged or method-/parameter-level prose | prose-derived, but the derived oracle stays the final arbiter and the granularity sits below system-level behavioural prose |
+
+Each of these reaches something real. The point of the table is narrower: none takes its
+expectation from untagged, system-level API prose, which is where the VDBMS documentation states the
+constraints that matter here — "the other collection should have the same vector size as the current
+one", an `nprobe` bound, a password length. Those constraints are prose: implicit, ambiguous, spread
+across pages, and rarely stated as a machine-checkable value. "Optional, default 1" may or may not
+admit zero, and the documentation usually does not say. The systems also diverge by design — each
+VDBMS standardizes its own parameter semantics, error codes, and state model — so no cross-vendor
+reference adjudicates which of two behaviours is the bug.
+
+**The consequence, and what it costs.** Reading that prose is a semantic-interpretation step, which
+makes an LLM the practical oracle for this residual — and imports the LLM's false-positive problem,
+because the same class of model that reads an ambiguous sentence into an over-strong constraint
+later judges whether an observation violates it. That import is not a defect of a particular
+pipeline; it is the price of the only oracle family that anchors where the residual lives. The rest
+of this paper measures what that price buys, where inside a judge the errors concentrate, and which
+parts of the judge change the answer.
+
+## 3 Approach（~1,770 词，已写全）
+
+### 3.1 Overview
+
+The pipeline this paper measures has four stages, and it is worth stating what each is *for* in the
+measurement rather than only what it does. (i) **Behavioral-specification extraction** turns a
+vendor's natural-language API documentation into structured constraint records, each with a citation
+to the page it came from. (ii) **Test-script generation** turns each constraint into executable
+probes, assigning every probe to a strategy that was registered before it ran. (iii) **Sandboxed
+execution** runs the probes against a pinned instance of the target and records raw HTTP traffic.
+(iv) **Bug confirmation** decides, per candidate, whether the observation is a defect — and this
+stage is the object of study for most of what follows: §4.4 and §4.5 vary its internal organization
+and its evidence access, holding everything else fixed.
+
+Two features of the design make it measurable rather than merely usable. First, each stage writes a
+structured artifact — a constraint record, a probe with an inline oracle line, a request/response
+log, an evidence chain — so a claim about a stage can be traced to the file that grounds it.
+Second, the confirmation stage's evidence is *frozen* per case: a candidate's package (observation
+plus documented contract) is fixed once built, and the judge configurations in §4 read the same
+packages. Whatever a configuration concludes, it concluded from the same material as the others.
+
+We carry two real candidates through the description. Milvus issue \#49823 documents `nprobe` as an
+integer in $[1, 16384]$; the REST search API accepts `nprobe=0`, returns HTTP 200, and answers the
+query. That is a boundary violation visible in one response. Qdrant issue \#10369 documents that a
+collection referenced through `lookup_from` must have the same vector size as the target; the
+`recommend` API bypasses that check for negative examples and returns silently wrong scores. That
+one needs a state transition — delete the lookup collection, recreate it at a different size — to
+become observable at all. The two differ in which generation path they take in stage (ii), and both
+were confirmed by maintainers.
+
+### 3.2 Behavioral-specification extraction
+
+**Knowledge extraction.** A *knowledge extractor* crawls the vendor's documentation for the target
+and its version and writes a per-endpoint knowledge file: method, path, source URL, parameters,
+constraints, expected responses, plus a table tracking each page's documentation version. Two
+self-checks gate the output — an endpoint-coverage check against the vendor's published API surface,
+and a version-alignment check requiring the documentation version to match the target's
+major.minor, because a specification read from the wrong documentation version tests the wrong
+system. Version alignment is a precondition, not a post-hoc filter: where a crawled artifact
+disagrees with the pinned version, the versioned documentation stays authoritative.
+
+**Specification extraction.** A *specification extractor* reads that file and emits one record per
+constraint: a unique identifier, the endpoint, a natural-language description, a checkable assertion
+(for \#49823's family, `nprobe >= 1 && nprobe <= 16384`), a type, an evidence tier, and a source URL
+with a verification flag. Three mechanisms discipline the model here. *Categorization* types every
+constraint as range, type, state, behavioural, or other, which downstream decides which attack agent
+owns it. *Evidence tiering* records how directly the page supports the constraint — stated verbatim,
+inferred from an example, inferred from behaviour, or convention — so that test strength can be
+graded by its support. *Source verification* fetches the cited page and confirms it actually carries
+the asserted semantics; constraints that fail are marked and excluded from downstream reporting as
+bug evidence. A judge's package is not the extractor's output alone — it also carries contract rows
+matched to the parameters a candidate probes and appended when the package was rebuilt — and §4.3
+audits every citation that reaches a package against the page it names and at the version the row
+claims, independently of this or any earlier verification step.
+
+**Two levels, decided observationally.** Each constraint is endpoint-level or system-level, and the
+criterion is what would prove a violation rather than how hard it is to construct: a constraint
+violated by a single request/response pair is endpoint-level even where elaborate setup is needed to
+reach the violating request, and a constraint violated only by relating observations across requests
+or against evolved state is system-level. \#49823 is endpoint-level; \#10369 is system-level because
+the coupling it describes becomes visible only after a transition.
+
+### 3.3 Test-script generation
+
+Three attack agents — boundary, state, and semantic — turn constraint records into executable
+Python probes, each bound to strategies registered before generation with trigger conditions and
+oracle templates. Boundary strategies probe at and beyond documented bounds, wrong JSON types, and
+the same resource addressed through two key forms. State strategies build multi-request scenarios:
+partial application of an operation the documentation describes as all-or-nothing, deletion
+concurrent with use, and cross-object references left dangling by a transition. Semantic strategies
+check the documented meaning of a response rather than its shape — a right status code with a
+misleading message, or the accept/reject semantics of a documented parameter.
+
+*Strategy selection is not left to the model at generation time.* Strategies are bound to
+constraints deterministically by a registry of (strategy, trigger predicate) entries matched against
+the constraint's type, level, and assertion surface; a constraint may trigger several and the agent
+generates for each, and one that triggers none falls through to scenario construction. Because the
+mapping is a function of the constraint record alone, the (constraint, strategy) pairs are
+reproducible from the specification file, and each generated probe carries an inline oracle line —
+a machine-checkable assertion about the expected response — which removes a degree of freedom in
+which the model could drift.
+
+Generation splits on the constraint's level. An endpoint-level constraint with a bound strategy is
+instantiated directly against its violation surface. A system-level constraint always goes through
+scenario construction: the agent must first build the state in which the constraint binds, then
+evaluate the assertion against that live state in both directions of any transition. For \#10369,
+that means a size-4 lookup collection answering `recommend` with 200, then a delete and recreate at
+size 8 after which the same request must be rejected with a dimension-mismatch error.
+
+Every probe passes five gates before it may execute: it must compile; its constraint must exist in
+the structured contract; it must avoid registered risky patterns (a request path with no safe
+wrapper, a swallowed exception); it must not carry helper code fingerprinted to another vendor's
+environment; and its oracle line must match the response shape the endpoint actually returns. A
+failing probe is regenerated; only passing ones reach the sandbox.
+
+### 3.4 Sandboxed execution
+
+An executor runs each passing probe from the host runtime against a Docker-pinned instance of the
+target at the tested version — nothing but the database itself executes inside the container. Each
+probe writes its raw request/response pair to a log and, only after the log is flushed, a completion
+marker; per-batch marker counts are reconciled, so an interrupted batch is detectable and
+re-runnable. The sandbox is what lets a candidate reproduce under a clean probe, and the raw records
+are the behavioural evidence every later stage consumes. §4.3 describes what an audit of that
+evidence found.
+
+### 3.5 Bug confirmation
+
+The last stage decides whether a candidate is a defect. It is not a single judgment. An *evidence
+builder* assembles evidence and a *chain auditor* cross-examines it, with an explicit rebuild loop —
+a builder/judge split whose purpose is to keep the falsification separate from the claim.
+
+**Assembly.** The builder first checks the observation against the specification and re-verifies the
+citation independently of the extractor's own check, then traces the chain `contract → doc → script
+→ log` and flags broken links. It then greps a local clone of the implementation *at the pinned
+version* — the only authority for what the implementation does — for the parameter and error-code
+keywords, follows the relevant call chain, and records an outcome: the validation the documentation
+promises is absent, present, the behaviour is by design in the source, the code could not be
+located, or the search was shallow. The result is a five-section evidence chain — document
+verification, execution evidence, contract grounding, chain trace, source grounding — each section
+labelled with the kind of evidence it rests on.
+
+**Cross-examination.** The auditor first applies four mechanical checks: that all five sections are
+non-empty, that contract, documentation, log and source agree, that nothing inside the chain
+contradicts anything else, and that the primary observation matches the specification. A chain that
+fails goes back for rebuild, at most three times. Surviving chains are then read from four
+perspectives:
+
+- **A — contract.** Does the quoted contract text actually ground the assertion? Run as a mechanical
+  containment check.
+- **B — objective constraints.** Seven classes that constitute violations without any contract
+  endorsement: numeric lower bounds on count-, size- and limit-class parameters, closed enum sets,
+  mutually exclusive parameters, type tautologies, same-family inconsistency, interface asymmetry
+  across a system's REST, gRPC and SDK faces, and (heavily qualified) HTTP response semantics. An
+  `ef`/`nprobe`-class carve-out applies where the source documents a negative-sentinel convention.
+- **C — behavioural elegance.** May the implementation refuse the bug reading? Only an *explicit*
+  by-design may refute: the source excerpt must contain intent evidence — a comment or docstring
+  saying the behaviour is intended — or a maintainer quote must declare the same class of phenomenon
+  intended. Bare structural inference ("no validation is present") is recorded as a weak refutation
+  and routed to human review rather than closing the case. This is the clause §4.5 audits.
+- **D — maintainer cognition.** Does a corpus distilled from the target's historical issues and
+  merged PRs support either reading? Hits must match at the level of phenomenon, never by word
+  overlap. Cognition states a maintainer's attitude; it may decide a contract-neutral case but may
+  not supply a missing observation.
+
+**Aggregation, and the verdict space.** The verdict is three-valued: Confirmed, False-Positive, or
+Human-Review. Aggregation is fixed, and the order in which its clauses are tried is part of the
+design: a contract confirmation decides the case; a contract refutation *with* the objective-constraint
+perspective confirmed routes rather than closing; otherwise a contract refutation closes to
+False-Positive; an objective-constraint confirmation decides a contract-neutral case; a cognition hit
+on either side decides a case the earlier clauses left open; an explicit by-design refutation closes;
+and everything else routes to human review. The order is not a detail — **the clause that closes a
+judgment is the first in this sequence that decides it**, and which clause that is is exactly what
+§4.5 counts. The rule is
+deliberately asymmetric — only explicit intent evidence may refute, and anything unsettled goes to a
+person rather than closing — and that asymmetry is a design position rather than a claim of
+precision. An LLM-derived oracle is expected to over-report; the protocol keeps the over-reporting
+visible in a review queue instead of suppressing it at the cost of discarding real defects. §4
+measures what the asymmetry costs and what it buys, and §4.5 shows where the errors it does not
+catch actually land.
+
+**Implementation.** The pipeline runs as a multi-agent system on an agentic coding runtime, one role
+prompt per agent, all agents on a single model backbone under vendor-default sampling. Each stage's
+artifact is versioned, and the §4 study reads frozen copies of them rather than re-running the
+pipeline.
 
 ## 4 Evaluation
 
@@ -644,7 +858,96 @@ statements put it at the forced floor. Both §4.5 replays are no-ops under the f
 **Instrument.** Four dispatch defects are reported rather than repaired, and §4.5's departure count
 and its catch-all composition both depend on treating the appended aggregation as operative.
 
-## 7 Related work（骨架，~800 词）· 8 Conclusion（~250 词）
+## 7 Related work（~790 词，已写全）
+
+**Oracles derived from documentation.** Deriving test oracles from documentation is an old idea:
+tabular specifications (Peters and Parnas \cite{peters98}) and natural-language resource
+specifications (Zhong et al. \cite{zhong09}) predate LLMs, and the comment–code inconsistency
+literature (\cite{icomment07,docref13}) and its LLM-era successors (\cite{docchecker24,c4rllama25})
+share this paper's premise that a prose artifact is the statement of intent. The tagged-Javadoc and
+dependency-grammar tools — @tComment, JDoctor, DocTer, Toradocu \cite{tcomment12,jdoctor18,docter22,toradocu16}
+— and the REST-side constraint miners (RESTInfer, ICON, RBCTest
+\cite{restinfer22,icon16,rbctest26}) derive checkable expectations from prose, but at method or
+parameter granularity, and they keep the derived oracle as the final arbiter, validating it through
+runtime behaviour. Konstantinou et al. \cite{konstantinou24} document the gap this produces: such
+oracles tend to capture actual rather than expected behaviour. The line we are closest to
+operationally is Metamon \cite{metamon25}, which asks an LLM whether a generated regression oracle
+agrees with the method's documented specification and then stabilises that same LLM judge; its
+falsifier is another LLM question, which is the self-reference this pipeline's source grounding
+exists to break. Its published profile (precision 0.722 at recall 0.480) is the same tradeoff
+measured on a different pool and ground truth, not a head-to-head baseline. Structured-source
+oracles — AGORA+ from traces, SATORI from OpenAPI fields, MASTOR from source, MASTEST from a
+specification composed into executed tests \cite{agoraplus25,satori25,mastor26,mastest26} — anchor
+their expectations in something other than system-level prose; MASTOR in particular takes the
+implementation as its authority, whereas here the implementation can only refute a claim the prose
+supplied, never supply one. What this paper adds to the line is not a new oracle but an audit of the
+oracle's *input*: §4.3 measures how much of the distilled specification the judge reads is supported
+by the pages it cites.
+
+**LLM judges, and what a multi-perspective organization does.** That LLM evaluators prefer their own
+output is established \cite{zheng23judge,panickssery24,wataoka24}, as is intra-judge
+inconsistency — one judge's ratings on the same input varying across runs \cite{haldar25}. The
+closest work to ours is Ma et al. \cite{manyminds25}, who measure multi-agent judging for *bias*
+rather than for accuracy and find that debate amplifies judge biases after an initial round while a
+meta-judge resists them; they establish that adding perspectives is not a uniform correction, which
+is the premise our four-perspective stage is built on and, on this pool, the finding we reproduce in
+a different currency: the organization changes *which* cases are decided, not how many, and on a
+second backbone it costs recall rather than buying it. Two further results shape our design.
+Bodicoat et al. \cite{bodicoat25} find in a controlled study that prompting technique and supplied
+context dominate model choice in oracle accuracy — which is why our flat-judge comparison holds the
+materials fixed and varies the organization instead. Molinelli et al. \cite{molinelli25} show on a
+leakage-free benchmark that LLM oracles reach near-human mutation scores on average while remaining
+unreliable per-subject, and that training-data contamination is a first-order validity threat; §6
+carries that threat here rather than claiming to have excluded it. TRACE \cite{trace26} is adjacent
+in spirit: it measures where LLM judgment breaks down on conflicting artifacts and finds a
+systematic blind spot when the implementation drifts while the documentation stays plausible — the
+asymmetry a source-anchored falsifier is built for.
+
+**Non-crashing bugs in database systems.** The DBMS-side literature targets wrong-result bugs
+without documentation: NoREC, TLP, DQE, PQS and DDLCheck \cite{norec20,tlp20,dqe23,pqs20,ddlcheck25}
+compare an engine against its own alternative evaluations or schemas, BUZZBEE \cite{buzzbee24}
+fuzzes DBMSs generically, and ACME \cite{acme26} and Argus \cite{argus25} bring LLMs in to derive
+clause mappings or query-equivalence oracles — Argus validating them with a formal prover, the
+DBMS-side instance of grounding oracle authority outside the model. All of these anchor in the
+implementation's own semantics and so expose optimization and internal-consistency bugs rather than
+violations of external documentation; the roles are inverted here, with the prose supplying the
+expectation and the implementation serving only as the falsifier. LogicHunter \cite{logichunter26}
+is a near neighbour in an adjacent domain, and its oracle is a telling contrast: it treats retrieved
+documentation as the statement of intent but consults and executes the implementation freely before
+returning a verdict, where here the implementation is never the statement of intent.
+
+**Testing vector databases.** VDBFuzz \cite{vdbfuzz26} is the first dedicated VDBMS fuzzer and is
+crash-oracle by construction; §4.6 runs its released configuration and prices what that oracle
+reaches. The roadmap \cite{roadmap25} identifies oracle definition as the field's open problem, and
+the empirical bug study \cite{bugstudy25} supplies the taxonomy that motivates the focus on
+non-crashing defects. To our knowledge no prior work measures the reliability of a
+documentation-derived oracle on an adjudicated pool of VDBMS cases, which is what the pool and the
+twelve frozen configurations below are for.
+
+## 8 Conclusion（~410 词，已写全）
+
+We set out to measure what determines which candidate defects an LLM confirmation judge confirms,
+and the answer on this pool is not the judge's internal organization. Two configurations that differ
+in whether they carry a four-perspective decomposition confirm the same number of true bugs under
+forced verdicts on both backbones — 27 of 51 and 26 of 51 — while agreeing on only 22 and 23 of
+those cases: the organization changes which cases are decided, not how many. What moves the outcome
+is how often the judge declines to decide. Adding an aggregation rule that lets it route a case to
+human review rather than close it raises recall on both backbones (0.588 to 0.765, 17/0,
+$p{<}0.0001$; 0.529 to 0.804, 19/0, $p{<}0.0001$), and almost all of that is deferral: forced-verdict
+recall moves only 25 to 27 and 23 to 26. Under the deployment's convention, where a routed case
+counts as confirmed, the rule's effect and the routing rate are the same quantity, and we say so
+rather than presenting the difference as the rule getting better at deciding.
+
+Two measurements bound what a judge is worth even when it is right about the evidence. An audit of
+the specifications it reads found 43.3\% of their cited (constraint, page) pairs unsupported by the
+pages they cite, so a confirmation rate can be a property of the materials rather than of the judge.
+And the clause that closes the most judgments is the one the protocol guards least: contract
+refutation carries no evidence requirement, closes 50 of 243 judgments and is wrong about half the
+time, while the guarded by-design clause closes 19 and is right 17 times. The guard protects the
+clause that was already clean. Fixing that is a replay rather than a re-adjudication, and its gain
+exists only under the counting convention — which is itself the finding: on this pool, what an
+LLM judge confirms is decided less by how it is organized than by how it accounts for the cases it
+refuses to decide.
 
 **Data availability.** The replication package is at [anonymized URL]: the pool, the frozen per-run
 verdicts of all twelve configurations, the packages the study read (the post-rebuild,
