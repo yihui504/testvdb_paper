@@ -22,6 +22,7 @@
 | 5 | 09-15 12:17 | `.in-progress-sample8` | v9 | Weak Accept | Weak Accept | Weak Accept | **0/3** | — |
 | 6 | 09-15 13:21 | `.in-progress-sample9` | v10 | Weak Accept | Weak Accept | Weak Accept | **0/3** | — |
 | 7 | 09-15 15:03 | `.in-progress-sample10` | v10 LaTeX（首轮审提交物） | Weak Accept | Weak Accept | Weak Accept | **0/3** | — |
+| 8 | 09-15 16:05 | `.in-progress` | v10 LaTeX + sample10 修复批次 | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
 
 **语义提醒**：第 1 轮的「合并 ACCEPT」与 reviewer 的「Weak Accept」不矛盾——rubric 的合并规则允许多票
 Weak Accept 在「无共识 Poor / 无共识 Weak」时上浮。看**趋势**时以 Accept 数列为主，合并总评作辅。
@@ -30,40 +31,62 @@ Weak Accept 在「无共识 Poor / 无共识 Weak」时上浮。看**趋势**时
 
 ## 2. 最近 4 轮趋势对比
 
-前提核对：第 4–7 轮**评审对象同源可比**（同一篇 FSE 论文的连续版本，criteria 同为
-Importance / Insights / Presentation + Perspective / Verifiability 五准则），只差份量与修复批次。
+前提核对：第 4–8 轮**评审对象同源**（同一篇 FSE 论文的连续版本，criteria 同为
+Importance & Scope / Insights & Evidence / Perspective / Verifiability / Presentation）。
+
+> ⚠️ **但评分量表换过，这是本表最重要的一条可比性说明。**
+> rubric 规定的是 **4 级**（Excellent > Adequate > Weak > Poor）。
+> 第 4、5 轮与第 8 轮用的是这 4 级；**第 6、7 轮的评审自造了 5 级量表并大量使用 "Good"**
+> （第 7 轮 R1 用了 8 次、R2 用 4 次、R3 用 4 次）。"Good" 不是 rubric 的档位。
+> 若按「5 级里的 Good ≈ 4 级里的 Adequate」（最自然的映射——第 5 档插在 Excellent 与 Adequate 之间）折算，
+> 则第 7 轮 R1 = Imp:Adequate / Ins:Adequate / Pers:Adequate / Ver:Excellent / Pres:Adequate，
+> 第 8 轮 R1 = Imp:**Excellent** / Ins:Adequate / Pers:Adequate / Ver:Excellent / Pres:Adequate——
+> **两轮只差一个准则**，而正是这一个准则把 rubric 的映射行从 Weak Accept 推到 Accept。
+> 结论：**第 7→8 轮的跳变至少有相当一部分是instrument，不全是论文**。不要把它当成一次真实的跃升来庆祝。
 
 ### 2.1 评委票型
 
-| 轮次 | R1 | R2 | R3 | Accept 数 | 相对上轮 |
-|---|---|---|---|---|---|
-| #4 sample7 | **Accept** | Weak Accept | Weak Accept | 1/3 | 首次出现 Accept |
-| #5 sample8 | Weak Accept | Weak Accept | Weak Accept | 0/3 | **回落** |
-| #6 sample9 | Weak Accept | Weak Accept | Weak Accept | 0/3 | 持平 |
-| #7 sample10 | Weak Accept | Weak Accept | Weak Accept | 0/3 | 持平 |
+| 轮次 | R1 | R2 | R3 | Accept 数 | 量表 | 相对上轮 |
+|---|---|---|---|---|---|---|
+| #5 sample8 | Weak Accept | Weak Accept | Weak Accept | 0/3 | 4 级 | — |
+| #6 sample9 | Weak Accept | Weak Accept | Weak Accept | 0/3 | ⚠️ 5 级 | 持平 |
+| #7 sample10 | Weak Accept | Weak Accept | Weak Accept | 0/3 | ⚠️ 5 级 | 持平 |
+| #8 round-19 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | **跳变** |
 
-**趋势读数**：**#4 是峰值，此后三轮在 0/3 上持平**，没有单调上升。
-#4 的 Accept 是有条件的（R1 的 CONDITIONAL 判词），条件是「重判两条漏洗臂」，**该条件在 #5–#7 均已兑现**，
-但票型没有回来——说明 **R1 当时的 Accept 是对"承诺兑现"的定价，不是对论文本身的定价**；
-承诺兑现后，评审的注意力转移到了更下一层的问题（见 2.3）。
+**趋势读数（慎重）**：#5–#7 三轮在 0/3 上持平，**#8 跳到 3/3**。
+#6/#7 用的是自造 5 级量表，与 #8 不同源，**这个跳变不能直接读作论文质变**（见上方可比性说明）。
+按最自然的折算，第 7→8 轮真正的位移是 **Importance & Scope 一项从 Adequate 到 Excellent**——
+而论文在第 7→8 轮之间做的修复（§8 配对顺序、路由总数、提示词真发货、suppression 定义等）
+**都是第 7 轮自己开出的缺陷单**，按常理补自己的缺陷单不该把一条准则抬一档。
+
+更可信的读法是：**这份评审工具的轮间方差很大**。同一份近乎相同的稿子，
+第 7 轮三票 Weak Accept、第 8 轮三票 Accept。**含义有二**：
+（a）不要对任何单轮结果做过度反应，无论涨还是跌；
+（b）既然 ACCEPT 已经拿到，**继续加码实验的边际收益低于其回归风险**——本项目历史上每加一批新臂都带出过新缺陷。
 
 ### 2.2 准则层趋势（只有被明确写出时才记）
 
-| 准则 | #4 | #5 | #6 | #7 |
+| 准则 | #5 sample8 | #6 sample9 ⚠️5级 | #7 sample10 ⚠️5级 | #8 round-19 |
 |---|---|---|---|---|
-| Perspective | Excellent (R1) | — | Excellent (R1) | Excellent (**R2**) |
-| Verifiability | Excellent (R1) | Adequate (**R2 降级**) | **Good**×2 + Excellent (R3) | Excellent (R1, R3) / **Good (R2)** |
-| Presentation | — | — | Good×3 | Good×3 |
+| Importance & Scope | — | — | Good×3 | **Excellent×3（共识）** |
+| Insights & Evidence | — | — | Good×3 | Adequate×3（共识） |
+| Perspective | — | Excellent (R1) | Excellent (R2) | Excellent (**R2, R3**) / Adequate (R1) |
+| Verifiability | Adequate (**R2 降级**) | Good×2 + Excellent (R3) | Excellent (R1, R3) / Good (R2) | **Excellent (R1, R3)** / Adequate (R2) |
+| Presentation | — | Good×3 | Good×3 | Adequate×3 |
 
-**两条最重要的读数**：
+**三条最重要的读数**：
 
-1. **Verifiability 是最灵敏的指标，且它对"复现包是否同步"高度敏感。**
-   #5 因复现包落后一代被 R2 从 Excellent 打回 Adequate；#6 补齐后回到 Good/Excellent；
-   #7 又因两处解不出（`22/8`、both-levels）被 R2 单票压到 Good——**首次掉出共识 Excellent**。
-   这一项的振幅比任何其它准则都大，且**每次都由"数字能不能从 artifact 复现"驱动**，
-   与文笔无关。→ 结论：**Verifiability 是当前唯一的杠杆准则**，其它四项已在 Good 上饱和。
-2. **Perspective 从 R1 独占变成 R2 给出，说明它不是 R1 的个人偏好**，但始终没有形成共识
-   Excellent（R1 在 #6/#7 反而只给 Good）。
+1. **Verifiability 是最灵敏的指标，且它对"复现包是否同步"高度敏感。** #5 因复现包落后一代被
+   R2 从 Excellent 打回 Adequate；#6 补齐后回升；#7 又因两处解不出被 R2 单票压回。
+   **#8 它重新升到 R1/R3 双 Excellent，而 R2 仍给 Adequate——原因换了：从"数字解不出"
+   变成"匿名快照缺件"**（见 #8 记录）。振幅比任何其它准则都大，且**每一轮都由"读者能不能
+   把论文的数字跑出来"驱动**，与文笔无关。→ **Verifiability 是唯一持续有效的杠杆准则。**
+2. **Importance & Scope 在 #8 从共识底线升到共识 Excellent**，三家都把它归给"问题本身选得对"
+   而不是论文写法。这条是 #8 拿到 ACCEPT 的直接原因（rubric：无 Poor + 至少一个实质性准则
+   Excellent → Accept）。**但它也是那条最可疑的位移**——见上方可比性说明。
+3. **Insights & Evidence 在 #8 是唯一的共识 Adequate**，且三家独立给出同一理由：
+   普查只落在单骨干、唯一复制为负且被自家派发缺陷混淆、处方是重放而非实测。
+   **这是唯一还能往上抬的准则，而抬它需要新实验，不是新文字。**
 
 ### 2.3 反复出现、始终未清的问题（跨轮收敛名单）
 
@@ -71,10 +94,11 @@ Importance / Insights / Presentation + Perspective / Verifiability 五准则）�
 
 | 问题 | 出现轮次 | 状态 |
 |---|---|---|
-| **普查处方在 forced 读法下为零 / 二骨干不复制**（census 的处方不是实测的） | #5 #6 **#7（三家独立写出）** | **未解**，且是三家各自点名的头号沉船点 |
-| 复现包与论文代际不同步（数字复现不出） | #5 #6 **#7** | 每次修，每次新出——**这是 Verifiability 的根因** |
-| 关键量「印在论文里但没脚本」 | #6 #7 | #7 改为显式声明「printed but not scripted」，仍未脚本化 |
-| 主张与 scope 不匹配（本文以单骨干、约定定价测量，却按通用处方叙述） | #6 #7 | #7 已加 scope 限定，但标题/摘要仍未重述 |
+| **单骨干普查 / 二骨干反向且被自家 C-D 派发缺陷混淆** | #5 #6 **#7（三家）** **#8（三家）** | **未解**，且**连续两轮是三家各自点名的头号沉船点**；#8 三家一致给出同一出路（重派一条修正派发词的臂，或把处方降格为 scope） |
+| **复现包与论文不同步** | #5 #6 **#7** **#8** | **每轮都出新形态**：`override=None` 静默跳过 → 缺重判文件 → 代际落后 → **#8 匿名快照缺 5 个提交**。**这是 Verifiability 的根因，且每次都是我自查漏掉的。** |
+| 关键量「印在论文里但没脚本」 | #6 #7 **#8** | #8 首次**减项**：材料/协议交叉表已脚本化并发货（`clause_tally.py` + `doc_evidence_layer.json`），未脚本化家族 5 项未增 |
+| 主张与 scope 不匹配 | #6 #7 | **#8 已闭合**：三家一致认为 scope 已写在每个受影响数字旁边（R2/R3 只要求标题/摘要也带上） |
+| **论文引文缺口（自家 bib 里躺着却从未引用）** | **#8（R1+R2 独立）** | 新条目。#8 补引 4 处，未引用 bib 项 28→25；仍有 25 项未引用（非缺陷，但属 bib 卫生欠账） |
 
 ### 2.4 改进路线反思
 
@@ -88,9 +112,21 @@ Importance / Insights / Presentation + Perspective / Verifiability 五准则）�
 - **"改定位"路线**（把基准当贡献、收敛叙事）：**未走**。R1 在 #1 和 #7 两次独立提出同一件事
   （"应该把 81 案基准作为贡献来声称"），我一直没做。**这是唯一一条不需要新实验、且被重复要求的路。**
 
-**当前判断**：#7 的三家评语高度一致地指向同一件事——**论文不再缺诚实，缺的是"我们测到了什么"的
-正向主张**。三家各自给出一个"能推到 Accept"的条件，全部落在这两类上：
-（a）那 ~15 案重判（新实验）；（b）把已有的联合定价脚本化 / 把基准正面声称（写作）。
+**当前判断（#8 更新）**：#7 的判断——"论文不再缺诚实，缺的是正向主张"——**#8 被三家自己推翻了**：
+他们这次把 Importance & Scope 直接给了共识 Excellent，理由就是论文对问题的定位本身站得住。
+所以那条"改定位"的欠账**已经不再欠**。
+
+**#8 之后，唯一还能抬的只剩 Insights & Evidence（共识 Adequate）**，而它的两条出路都是新实验：
+（a）重派一条修正派发词的臂（R2 明说"one re-dispatched arm per backbone with the corrected
+text"）以解开二骨干混淆；（b）那 ~15 案在 verbatim-evidence guard 下重判。
+**两条都被三家标为 fixable，但没有任何一家把判定挂在上面**——这是本轮的 key judgment：
+**判定已经拿到 ACCEPT，加做实验的边际收益低于回归风险**（本项目史上每加一批新臂都带出过新缺陷：
+漏洗臂、重判覆盖缺口、artifact 代际漂移，三次都发生在新臂批次上）。
+
+**已挂账未决**（证据不足，不阻塞）：
+- `agoraplus25` 年份（ACM TOC 路径指向 2026，一手源被网络策略挡下）
+- Metamon `0.722/0.480` 第三位小数（无公开一手源）
+- **匿名快照 `TestVDB_artifact-EC36` 落后 GitHub 5 个提交**（#8 R2 独立发现，我逐路径复验）
 
 **已挂账未决**（证据不足，不阻塞）：
 - `agoraplus25` 年份（ACM TOC 路径指向 2026，一手源被网络策略挡下）
@@ -98,7 +134,34 @@ Importance / Insights / Presentation + Perspective / Verifiability 五准则）�
 
 ---
 
-## 3. 本轮（#7 sample10）记录
+## 3. 各轮记录
+
+### 3.1 本轮（#8 round-19，2026-09-15 16:05）
+
+**对象**：`TestVDB-v10.tex` + PDF（承接 #7 的修复批次）。
+**产物**：`.paperpilot/review/TestVDB-review-2026-09-15.md`（三审 + meta）。
+**评价**：**三票 Accept，合并 ACCEPT**。准则：Imp&Scope **Excellent×3**、
+Perspective Excellent×2、Verifiability Excellent×2、Insights Adequate×3、Presentation Adequate×3。
+
+**本轮我做的最有价值的一件事不是修，是核实——两条 [major] 一真一伪：**
+
+1. **R1 的 2.4 被我实测证伪，且方向对论文有利。** R1（领域专家）推理：契约否决是机械包含检查，
+   而审计发现 58/134 对无依据，所以"80% 误关集中在 A 条款"可能只是**审计结果换了个面孔**；
+   若成立，处方应是修材料而非守条款。我算了交叉表：**24 次误关中 20 落在文档依据完备的案子
+   （率 0.11），4 落在 weak_evidence，0 落在 18 个依据缺失案（率 0.00）**——条款是在审计判定
+   "有依据"的材料上误读的。**普查是协议结果，不是材料结果。** 已写进 §4.5 并发货脚本。
+2. **R2 的 4.2 为真，但根因是匿名快照。** 我逐路径探过 `TestVDB_artifact-EC36`：
+   `clause_tally.py`、`bootstrap_net_f1.py`、`audit/pair_audit.py`、`pricing/` 工作表、
+   `rq2/prompts/` **全部 404**，README 还是旧标题。本地仓与 GitHub 都是对的，
+   **快照落后 5 个提交**。这是 Verifiability 未成共识 Excellent 的唯一原因。
+
+**另外两条 [major]（R1 3.3 引文缺口 / R1 2.3 审计代际）已核实为真并修复。**
+
+**教训（与 [[artifact-sync-stale-arms]] 同族，第四次）**：我又一次以为"包已经同步好了"——
+本地和 GitHub 确实好了，**但论文里那个 URL 指向的东西没好**。
+前三次是开发树 vs 发货包，这次是**发货包 vs 公开快照**。**验证必须验到读者实际会点开的那一层。**
+
+### 3.2 上一轮（#7 sample10）
 
 **对象**：`TestVDB-v10.tex` + 编译产物 PDF（首次审格式化提交物，不再是 markdown 草稿）。
 **产物**：`.paperpilot/review/.in-progress-sample10/`（`meta-review.md` + `FINDINGS_VERIFIED.md` + 三份 `reviewer-*/draft.md`）。
@@ -124,17 +187,26 @@ Importance / Insights / Presentation + Perspective / Verifiability 五准则）�
 
 ---
 
-## 4. 下一轮（#8）的决策点
+## 4. 下一轮（#9）的决策点
 
-**先读 2.3 / 2.4 再决定做什么。** 本轮不打算再做"补齐披露"类修补——2.4 已论证其边际收益见底，
-且 #7 的三家都在说"问题不在诚实度"。候选动作按 [成本 × 是否被重复要求 × 是否新实验] 排列：
+**先读 2.3 / 2.4 再决定做什么。** #8 已把候选 A（改定位）与 B（脚本化）部分兑现，
+且 #8 的三家把 Importance & Scope 给了共识 Excellent——**写作类路线基本走到头**。
 
 | 候选 | 成本 | 谁要求过 | 是否新实验 | 预期 |
 |---|---|---|---|---|
-| **A. 把基准正面对待**（标题/摘要/贡献清单） | 极低（纯写作） | #1 R1、#7 R1+R3 | 否 | 直接冲 Significance/Importance 一项 |
-| **B. 联合定价脚本化**（worksheet 接进发货脚本） | 低（~30 行） | #7 R1 明说"仅此即可到 unconditional Accept" | 否 | 直接冲 Verifiability |
-| **C. ~15 案重判（verbatim-evidence guard）** | 高（新实验） | #5 #6 #7 三家各自点名 | **是** | 唯一能把处方从"重放"变"实测"的动作 |
-| D. 双骨干 scope 重述（标题/摘要/§8） | 低 | #7 R3 作为 C 的替代给出 | 否 | 与 A 同向，可合并 |
+| **B'. 把「未脚本化家族」继续减项** | 低 | #7 R1、#8 R1/R2/R3 都点了名 | 否 | 唯一还在动的 Verifiability 杠杆（#8 已减一项） |
+| **E. 匿名快照同步** | 极低（用户操作） | #8 R2 [major] | 否 | **Verifiability 从 2/3 到共识 Excellent 的唯一路径** |
+| **F. 描述统计表**（12 臂 × 4 数） | 低（~15 行） | #8 R2 5.4 / R3 5.2 独立 | 否 | 抬 Presentation（现共识 Adequate） |
+| **C. ~15 案重判（verbatim-evidence guard）** | **高** | #5 #6 #7 **#8** 三家各自点名 | **是** | 唯一能抬 Insights 的动作 |
+| **G. 重派一条修正派发词的臂**（解二骨干混淆） | **高** | #8 R2 2.2 | **是** | 同上，R2 明说是它给的 fix |
+
+**本轮（#8）对 C/G 的判断：不做。** 理由写在 2.4——判定已是 ACCEPT，
+两家都把 C/G 标为 fixable 但**没有一家把判定挂在它们上面**；而本项目史上三次回归
+（漏洗臂、重判覆盖缺口、artifact 代际漂移）**全部发生在新臂批次上**。
+在余量只剩 0.36 页、且判定已达标的情况下加实验，是拿确定的收益换不确定的风险。
+
+**下一轮优先做 E（用户同步）→ B' → F**，三者都不动实验、不动承重数字。
+若 #9 仍≥2 Accept，则距停止条件还差 #10 一轮。
 
 **执行纪律**（每一步都要满足）：
 1. 先读本文件 2.3/2.4，再动手；
