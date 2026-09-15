@@ -14,11 +14,11 @@ packages were then rebuilt against version-pinned documentation; and a census of
 243 recorded judgments on its primary model backbone, classified by the clause of its aggregation rule
 that closes each judgment.
 
-The census is the analytical core. The two clauses that assign False-Positive are compared: contract
+The census is the analytical core. Three clauses assign False-Positive, and the census reports each: contract
 refutation---a mechanical containment check that carries no evidence requirement---closes 50 judgments and
-falls on maintainer-confirmed bugs in 24 of them, while by-design refutation, which the protocol requires
-be backed by verbatim intent evidence, closes 19 and is wrong twice; 24 of the stage's 30 incorrect
-closures to False-Positive come from the unguarded clause. A replay that routes contract refutation to
+falls on maintainer-confirmed bugs in 24 of them; by-design refutation, which the protocol requires
+be backed by verbatim intent evidence, closes 19 and is wrong twice; cognition refutation closes 16 and is
+wrong four times. 24 of the stage's 30 incorrect closures to False-Positive come from the unguarded clause. A replay that routes contract refutation to
 human review rather than closing on it moves recall from 39/51 to 46/51 under the deployment's counting
 convention (a routed case counts as confirmed) and changes nothing under the forced-verdict reading.
 Beside the census, a twelve-configuration study runs three times over the same frozen pool while varying
@@ -121,8 +121,11 @@ deferral.
      contribution the field has not made.
    - **2.4** The statistics and the reading discipline are handled correctly, and I checked the arithmetic
      rather than taking it. All ten recall-level p-values follow from the discordant pairs as printed
-     (0/9 -> 0.0039; 0/14 -> 0.0001; 12/1 -> 0.0034; 2/6 -> 0.2891; 1/6 -> 0.1250; 0/5 -> 0.0625;
-     16/2 -> 0.0013; 11/2 -> 0.0225; 2/14 -> 0.0042; 9/6 -> 0.6072), the Holm sequence over them stops
+     (0/14 -> 0.0001; 12/1 -> 0.0034; 0/9 -> 0.0039 for the bundled contrast and again for evidence
+     access; 11/2 -> 0.0225; 0/5 -> 0.0625; 2/6 -> 0.2891; 5/2 -> 0.4531; 1/3 -> 0.6250; 4/4 -> 1.0;
+     listed in ascending order, these are the paper's ten recall-level tests, its other ten being
+     confirmed-set tests it excludes from the family because they do not share the estimator), the Holm
+     sequence over them stops
      exactly where the paper says it stops (four at alpha/10 .. alpha/7, the fifth at alpha/6 = 0.00833
      failing against 0.0225), and the net/F1 figures reconcile with the confusion counts (deployed
      39 true positives / 9 leaked, F1 0.788; no-source 48/18, F1 0.821). The paper also reports the ties
@@ -506,7 +509,7 @@ texts and runs the released VDBFuzz configuration against the Qdrant instance, o
      firing order, the exact differences among the twelve configurations, the discordant-pair a/b convention, the
      Holm family, and the analysis scripts by name. I recomputed every printed McNemar p-value and every printed
      margin (see 2.4) from the text alone; the census table's own arithmetic is closed (rows sum to 243; decided
-     rows 174; 24 of 30 = 80%; 15+2+2 = 19; 37+32 = 69; 28+17 = 45; 51+49+2 = 132), and the F1/net figures follow
+     rows 174; 24 of 30 = 80%; 15+2+2 = 19; 37+32 = 69; 28+17 = 45; 81+49+2 = 132), and the F1/net figures follow
      from the confirmed sets (39 TP / 9 leaked → 0.788; 48 / 18 → 0.821; net 30 both ways).
    - **4.3 [minor, fixable]** Three recomputability gaps remain, all self-declared: four analyses are "printed but
      not yet scripted" (the catch-all composition, the expectation-framing check, the C row's evidence
@@ -518,10 +521,11 @@ texts and runs the released VDBFuzz configuration against the Qdrant instance, o
 
 5. **Presentation** — Excellent
    - **5.1** The structure carries a heavy instrument: §3 describes the pipeline and says what each stage is for in
-     the measurement, §4.1 fixes the pool, the counting convention and the statistics before any result, §4.3–§4.6
-     are four self-contained measurements each opened by an italicised question, §5 is lessons, §6 threats, and §7
-     related work ends by naming what is not claimed. Headings do real work ("The protocol guards the clause that is
-     already clean", "We report them rather than repair them") and the tables are readable and correctly captioned
+     the measurement, §4.1 fixes the pool, the counting convention and the statistics before any result, §4.3–§4.5
+     are three self-contained measurements each opened by an italicised question, §4.6 adds the crash-oracle
+     baseline, §5 is lessons, §6 threats, and §7 related work ends by naming what is not claimed. Headings do real
+     work ("The protocol guards the clause that is already clean", §4.5; "A defect we report rather than repair",
+     §4.1) and the tables are readable and correctly captioned
      (the pair-audit table even pre-empts the double-counting reading of its two 43.3% shares).
    - **5.2 [minor, fixable]** §7 names CASCADE and characterises its mechanism — "inverts the roles the same way
      while working at method granularity, taking a regenerated implementation rather than a real one as its
