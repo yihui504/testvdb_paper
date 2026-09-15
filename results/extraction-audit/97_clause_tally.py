@@ -60,7 +60,6 @@ def clause(o):
     b_c = B.startswith("CONF")
     d_def = "SUPPORTS_DEFECT" in D
     d_not = "SUPPORTS_NOT_DEFECT" in D
-    d_none = D in ("NO_SIGNAL", "NONE", "")
     c_r = C.startswith("REFUT") and "WEAK" not in C
     c_w = "WEAK" in C
     if a_c:
@@ -75,7 +74,14 @@ def clause(o):
         return "D=SUPPORTS_DEFECT -> CONFIRMED"
     if d_not:
         return "D=SUPPORTS_NOT_DEFECT -> FALSE_POSITIVE"
-    if d_none and c_r:
+    # The printed rule (TestVDB.tex:493) makes C=Refuted a plain clause: the
+    # earlier D clauses have already taken Supports-Defect and
+    # Supports-Not-Defect by this point, so no further precondition is due.
+    # Requiring D==No-Signal here was the bug -- perspective D records five
+    # other values (validation_present, validation_absent, by_design_in_source,
+    # not_found, ...), and each such case fell through to the catch-all,
+    # inflating it to 76 against the paper's 69.
+    if c_r:
         return "C=REFUTED -> FALSE_POSITIVE"
     return "catch-all -> route"
 
@@ -93,5 +99,30 @@ print("\n=== clause tally over 243 full-arm judgments ===")
 for k, v in tally.most_common():
     print(f"  {v:3d}  {k}")
 print(f"\n  total: {sum(tally.values())}")
-print(f"  clauses whose outcome is HUMAN_REVIEW: {route}  "
-      f"(paper prints 48; {route/243:.1%} vs the paper's 19.8%)")
+print(f"  catch-all clause fires: {route} of 243 ({route/243:.1%})")
+
+# The tally above describes the RULE applied to the perspective values the
+# judge recorded. The paper's routing figure (48/243 = 19.8%) is a different
+# quantity: the count of verdicts the judge actually wrote as HUMAN_REVIEW.
+# The two differ by the judge's own discretion, so they are reported side by
+# side rather than against each other.
+recorded = Counter()
+cross = Counter()
+for r in range(3):
+    for i in runs[r]:
+        o = runs[r][i]
+        recorded[o.get("verdict")] += 1
+        cross[(clause(o), o.get("verdict"))] += 1
+n_hr = recorded.get("HUMAN_REVIEW", 0)
+print(f"  recorded HUMAN_REVIEW verdicts: {n_hr} of 243 ({n_hr/243:.1%})")
+
+mandated = {k: v for k, v in cross.items() if "route" in k[0]}
+tot_m = sum(mandated.values())
+print(f"\n=== where the rule mandates Human-Review ({tot_m} judgments), "
+      f"what the judge wrote ===")
+for (cl, v), n in sorted(mandated.items(), key=lambda x: -x[1]):
+    flag = "" if v == "HUMAN_REVIEW" else "   <-- deviates from the rule"
+    print(f"  {n:3d}  recorded {v}{flag}")
+forced_fp = sum(n for (cl, v), n in mandated.items() if v == "FALSE_POSITIVE")
+print(f"\n  forced to FALSE_POSITIVE although the rule routes them: {forced_fp}"
+      f"  (the protocol's red lines forbid this)")

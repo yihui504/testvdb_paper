@@ -27,9 +27,11 @@ IS_C = lambda v: v in ("CONFIRMED", "HUMAN_REVIEW")
 ARMS = [
     ("flat judge", "run_flat", "verdicts_rejudge_cog.jsonl"),
     ("flat + aggregation", "run_flatagg", None),
-    ("full, no aggregation", "run_noscopic", None),
+    ("full, no aggregation", "run_noscopic",
+     "verdicts_coganchor_rejudge.jsonl"),
     ("full stage", "run_full", "verdicts_coganchor_rejudge.jsonl"),
-    ("full, no source", "run_fullnosrc", None),
+    ("full, no source", "run_fullnosrc",
+     "verdicts_coganchor_rejudge.jsonl"),
 ]
 
 

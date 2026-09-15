@@ -93,7 +93,7 @@ print(f"  of those, majority-confirmed by the full stage: "
       f"{sum(1 for c in csrc if sum(IS_C(full[r][c]['verdict']) for r in range(3)) >= 2)}")
 
 # ---- Part 2: the no-source arm ---------------------------------------------
-ns = arm("run_fullnosrc")
+ns = arm("run_fullnosrc", "verdicts_coganchor_rejudge.jsonl")
 if ns is None or any(len(r) != 81 for r in ns):
     print(f"\n=== Part 2: no-source arm incomplete "
           f"{[len(r) for r in ns] if ns else 'no files'} ===")
