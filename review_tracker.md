@@ -194,7 +194,7 @@ Perspective Excellent×2、Verifiability Excellent×2、Insights Adequate×3、P
 
 | 候选 | 成本 | 谁要求过 | 是否新实验 | 预期 |
 |---|---|---|---|---|
-| **B'. 把「未脚本化家族」继续减项** | 低 | #7 R1、#8 R1/R2/R3 都点了名 | 否 | 唯一还在动的 Verifiability 杠杆（#8 已减一项） |
+| ~~**B'. 把「未脚本化家族」继续减项**~~ | ~~低~~ | #7 R1、#8 R1/R2/R3 | 否 | ✅ **#8 已做两项**：材料/协议交叉表（`clause_tally.py` + `doc_evidence_layer.json`）、对比定价与路由队列（`convention_pricing.py`）。未脚本化家族 5 → **4**，论文缩短 0.08 页。**#7 R1 的 Accept 条件至此兑现。** |
 | **E. 匿名快照同步** | 极低（用户操作） | #8 R2 [major] | 否 | **Verifiability 从 2/3 到共识 Excellent 的唯一路径** |
 | **F. 描述统计表**（12 臂 × 4 数） | 低（~15 行） | #8 R2 5.4 / R3 5.2 独立 | 否 | 抬 Presentation（现共识 Adequate） |
 | **C. ~15 案重判（verbatim-evidence guard）** | **高** | #5 #6 #7 **#8** 三家各自点名 | **是** | 唯一能抬 Insights 的动作 |
