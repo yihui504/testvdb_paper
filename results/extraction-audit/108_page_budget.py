@@ -39,17 +39,24 @@ def body_blocks(page):
 
 
 def text_frame(doc):
-    """The text frame, measured on the page carrying the most body text."""
-    best = None
+    """The text frame: the topmost and the bottom-most body line, over all pages.
+
+    NOT the extents of the page carrying the most body text. That page is the
+    one whose own span is largest, which is not the same as the page whose first
+    line sits highest and the page whose last line sits lowest -- the frame's
+    two edges fall on different pages, since a page opening on a section heading
+    starts lower and a page ending a paragraph stops higher. Reading the frame
+    off one page understates its height, and the understatement lands directly
+    in the counted fraction, which is why the frame is the min and the max.
+    """
+    tops, bottoms = [], []
     for i in range(doc.page_count):
         blocks = body_blocks(doc[i])
         if not blocks:
             continue
-        top = min(b[1] for b in blocks)
-        bottom = max(b[3] for b in blocks)
-        if best is None or (bottom - top) > (best[1] - best[0]):
-            best = (top, bottom)
-    return best
+        tops.append(min(b[1] for b in blocks))
+        bottoms.append(max(b[3] for b in blocks))
+    return min(tops), max(bottoms)
 
 
 def heading_y(doc, wanted):
@@ -90,6 +97,12 @@ def main():
     refs_pages = n - counted
 
     print("pdf            :", PDF)
+    # The reading depends on the interpreter: two Pythons on this machine differ
+    # in PyMuPDF version and segment text blocks differently, which moves the
+    # frame and the counted fraction. Print both so a reading is attributable to
+    # the tool that produced it.
+    print("interpreter    : %s %s  (PyMuPDF %s)"
+          % (sys.executable, sys.version.split()[0], fitz.version[0]))
     print("total pages    :", n)
     print("text frame     : y %.1f .. %.1f (height %.1f pt)" % (frame_top, frame_bottom, height))
     print("exempt section : %s on page %s" % (EXEMPT_HEADING, ex_page))

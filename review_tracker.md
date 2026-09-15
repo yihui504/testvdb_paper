@@ -25,8 +25,11 @@
 | 8 | 09-15 16:05 | `.in-progress` | v10 LaTeX + sample10 修复批次 | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
 | 9 | 09-15 16:55 | `.in-progress-round20` | v10 + round-19 修复批次 + **匿名快照已同步** | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
 | 10 | 09-15 17:40 | `.in-progress` | v10 + round-20 修复批次 | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
+| 11 | 09-15 19:47 | `.in-progress-round21` | v10 + round-21 修复批次（用户手动触发） | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
+| 12 | 09-15 20:45 | `.in-progress` | v10 + A+B 批次 + B7（用户手动触发） | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
 
-> ✅ **停止条件于 #10 达成**：最近 3 轮（#8 / #9 / #10）的 Accept 数均 = **3/3 ≥ 2**。循环结束。
+> ✅ **停止条件于 #10 达成**（#8/#9/#10 均 3/3），#11、#12 为用户手动触发，**同样 3/3**。
+> 即 **#9–#12 连续四轮三票 Accept、合并全 ACCEPT**。循环再次到点。
 
 **语义提醒**：第 1 轮的「合并 ACCEPT」与 reviewer 的「Weak Accept」不矛盾——rubric 的合并规则允许多票
 Weak Accept 在「无共识 Poor / 无共识 Weak」时上浮。看**趋势**时以 Accept 数列为主，合并总评作辅。
@@ -56,6 +59,10 @@ Importance & Scope / Insights & Evidence / Perspective / Verifiability / Present
 | #6 sample9 | Weak Accept | Weak Accept | Weak Accept | 0/3 | ⚠️ 5 级 | 持平 |
 | #7 sample10 | Weak Accept | Weak Accept | Weak Accept | 0/3 | ⚠️ 5 级 | 持平 |
 | #8 round-19 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | **跳变** |
+| #9 round-20 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | 持平 |
+| #10 round-21 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | 持平 |
+| #11 round-22 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | 持平 |
+| #12 round-23 | **Accept** | **Accept** | **Accept** | **3/3** | 4 级 | 持平 |
 
 **趋势读数（慎重）**：#5–#7 三轮在 0/3 上持平，**#8 跳到 3/3**。
 #6/#7 用的是自造 5 级量表，与 #8 不同源，**这个跳变不能直接读作论文质变**（见上方可比性说明）。
@@ -70,13 +77,13 @@ Importance & Scope / Insights & Evidence / Perspective / Verifiability / Present
 
 ### 2.2 准则层趋势（只有被明确写出时才记）
 
-| 准则 | #6 sample9 ⚠️5级 | #7 sample10 ⚠️5级 | #8 round-19 | #9 round-20 | #10 round-21 |
-|---|---|---|---|---|---|
-| Importance & Scope | — | Good×3 | **Excellent×3** | **Excellent×3** | **Excellent×3** |
-| Insights & Evidence | — | Good×3 | Adequate×3 | Adequate×2 / Exc×1 | Adequate×2 / Exc×1 |
-| Perspective | Excellent (R1) | Excellent (R2) | Excellent×2 / Adq | **Excellent×3** | **Excellent×3** |
-| Verifiability | Good×2 + Exc (R3) | Exc×2 / Good (R2) | Exc×2 / **Adq (R2)** | **Excellent×3** | **Excellent×3** |
-| Presentation | Good×3 | Good×3 | Adequate×3 | Adequate×3 | Adequate×2 / **Exc×1 (R2)** |
+| 准则 | #7 sample10 ⚠️5级 | #8 round-19 | #9 round-20 | #10 round-21 | #11 round-22 | #12 round-23 |
+|---|---|---|---|---|---|---|
+| Importance & Scope | Good×3 | **Excellent×3** | **Excellent×3** | **Excellent×3** | **Excellent×3** | Exc×2 / Adq |
+| Insights & Evidence | Good×3 | Adequate×3 | Adequate×2 / Exc×1 | Adequate×2 / Exc×1 | Adequate×2 / Exc×1 | Exc×1 / Adq×2 |
+| Perspective | Excellent (R2) | Excellent×2 / Adq | **Excellent×3** | **Excellent×3** | **Adq×2 / Exc** | Exc×2 / Adq |
+| Verifiability | Exc×2 / Good (R2) | Exc×2 / **Adq (R2)** | **Excellent×3** | **Excellent×3** | **Excellent×3** | **Excellent×3** |
+| Presentation | Good×3 | Adequate×3 | Adequate×3 | Adequate×2 / **Exc×1 (R2)** | Adequate×3 | Adequate×3 |
 
 **三条最重要的读数**：
 
@@ -444,3 +451,111 @@ Python 再把 `\f` 解释成 form feed → 落盘成 `0x0c + "ootnotesize"`，
 
 **为腾篇幅做的取舍**：图 `0.86→0.76`（0.86 恰好顶到 18.00、零余量）；
 四张表统一 `\footnotesize`（原本两张就是）。**余量 0.18 页 ≈ 9 行。**
+
+---
+
+## 10. 第 12 轮（round-23，2026-09-15 20:45）— 用户手动触发
+
+**对象**：`TestVDB-v10.tex`（`00c0c3d`，含 A+B 批次与 B7）。
+**产物**：`.paperpilot/review/TestVDB-review-2026-09-15e.md`（85.5 KB）。
+**评价**：**三票 Accept，合并 ACCEPT**。**#9–#12 连续四轮三票 Accept。停止条件再次达成。**
+
+**准则**：Imp&Scope Exc×2/Adq、**Perspective 回升共识 Excellent**（R2/R3，R1 单票 Adq）、
+**Verifiability 连续第三轮共识 Excellent**、Insights 仍共识 Adequate、Presentation 共识 Adequate。
+
+### 10.1 本轮最重要的事实：**检查器一次都没抓到编造的数字**
+
+三份 draft 的 checker 各自独立复算了 McNemar p 值、two-level 家族、两个 Holm 步降、census 边际、
+legend 总数、κ、净值与 F1——**没有一份被报"fabricated content"里的数字**。四轮来第一次。
+抓到的**全是引用锚点**（不存在的 §5.x/§6.x、错位的 §5.x→§4.x、Table 2→Table 3），
+外加 R1 的一条**全称失实**（"三种读法对每个对照都报"）。
+
+**这与本项目的历史模式相反**（每轮都能抓到一两条我发布的错数）。
+最可能的解释不是论文变好了，而是**A+B/B7 那两批改的都是文字而非数字**——
+**本项目的错误密度跟"这一轮改了什么"强相关，不跟"审了多少轮"相关。**
+
+### 10.2 收敛名单（两家以上独立命中）
+
+| 项 | 谁 | 标签 | 可做性 |
+|---|---|---|---|
+| **处方的价 ≠ 处方的干预**：replay 路由全部 50 次契约否决，而处方要"证据守卫"；**两人给出同一个修法**——把 50 次按证据分类（§4.5 已对 19 次 C 关闭做过） | R1 2.9/W3 + R2 2.6/W1 | R2 判 `[major, fixable]` | **不需新实验**，冻结记录里就有 |
+| **审计对象那一代包不发货**（Data Availability 自述 "archived separately and do not ship"） | R2 4.3/W2 + R3 4.3/Q3 | `[minor, fixable]` | 发货即可 |
+| **Testora 在 `.bib` 里却零引用**（R2 另数出 22 条无 `\cite` 可达） | R1 3.4/W4 + R2 3.5/W4 | `[minor, fixable]` | 一句定位 |
+| **19/32 vs 48/81 比较器混淆**（后者带认知、前者不带） | R1 2.11 + R2 1.3/Q3 | `[minor, fixable]` | 一句限定 |
+| **普查单骨干**（三家又都点） | R1 2.7 + R2 2.8 + R3 2.3 | **R3 判 `[major, unfixable]`，R1/R2 判 minor** | 见 10.3 |
+| **FP 侧标注无第二读者**（30 个负例中 19 个是作者自判） | R1 2.8/W2 + R3 2.4/W2 | `[minor, fixable]` | 同配对审计的设计 |
+
+### 10.3 唯一实质分歧：普查的"够不够致命"
+
+R3 把普查可达性判 **`[major, unfixable]`**（并建议在**标题层**就标成一骨干案例研究），
+R1 判 `[minor, fixable]`、R2 判 `[minor, unfixable]`（都认为披露完备、主张已限定，剩下的只是天花板）。
+**这是一家之言，不构成共识，因此不动判定**——但它标出了论文该退到的边界。
+R1/R2 共同给的廉价出路（**写明"什么条件下这个模式才是协议属性"**：模型族 / 文档风格 / 路由率）
+既不违反 R3 的反对，也不需要新部署。
+
+### 10.4 篇幅：本轮**零改动**（流程第二步未执行）
+
+**这是本轮最需要写明白的一件事。** 论当前余量 **0.18 页 ≈ 9 行**，而 10.2 里**几乎没有一条是纯替换**——
+Anchoring/Testora/比较器三条各需 1–2 行，结果表（三家都要）需 ~0.24 页**会把硬顶顶穿**。
+**任何一条落地前都必须先删。** 流程第二步因此挂起，等用户拍板取舍。
+
+### 10.5 流程侧的一处观察
+
+三份 draft **各被 checker 抓到 4/7/4 处，全部集中在"引用锚点"这一类**，且 R1 与 R2 的错位模式
+**方向相反**（R1 造出不存在的 §5.4，R2 把 §4.x 整体记成 §5.x）。
+这是**评稿子代理的共性弱点**：它们读 `.tex` 全文却不去解析 `\section` 的计数器，
+于是按自己脑子里的提纲编号。**下一轮若还要跑，dispatch 里应把章节号地图直接给它们**——
+不改判据、不注入指向性，只是把"论文有几节、每节叫什么"这个客观事实前置，省掉一轮修补。
+
+**另：结构校验器报 1 处 FAIL（`leak token: "do not ship"`），已核实为假阳性**——
+那是论文 Data Availability 的原文（`TestVDB-v10.tex:1040`），评审带引号转述它来论证该发货。
+另三个泄漏 token 计数为 0。**这个 FAIL 反过来给 10.2 第二条当了证。**
+
+---
+
+## 11. 流程第二步执行：给守卫定价（2026-09-15 21:30，用户拍板"做做看"）
+
+**做的项**：第 12 轮收敛名单第 1 条 —— R1 2.9 / W3 与 R2 2.6 / W1（**R2 判 `[major, fixable]`**），
+两人独立给出**同一个修法**：把 50 次契约否决像 19 次 by-design 关闭一样按证据分类，
+**从而给守卫本身定价，而不是给"全路由"定价**。
+
+### 11.1 实算结果（不是估计）
+
+| | |
+|---|---|
+| A = Refuted 关闭数 | **50**（24 真 bug / 26 负例） |
+| 其中引了源码注释/docstring 或维护者引语的 | **8**（5 次是**同一个** query-estimator 模块 docstring + 3 处） |
+| 引维护者引语的 | **0** |
+| **守卫会路由的** | **42** |
+
+**关键结果：守卫与"全路由"给出完全相同的确认集（0 处分歧）。**
+在两种读法下都是 46/51、12/30、46+18。**所以 replay 不是松上界，它就是守卫自己的价。**
+原因是可查的：**守卫触及的每个案子都在 ≥2 次运行里被关闭、且只在恰好 1 次里引了注释**
+→ 去掉那一票，其余各票照样被路由。论文与发货脚本都**断言**了这条（断言不过即崩）。
+
+**顺带的结构性发现**：A 条款的自然证据与 C 条款**根本不是同一类** —— C 要证"这是设计意图"，
+得引意图证据；A 是**包含性检查**，依据天然是"包内断言原文 + 记录观察"。所以"守卫的成本已经被付了一部分"
+这个假设不成立，它**一点都没被付**。
+
+### 11.2 落地
+
+- 论文 §4.5 反事实段改写：新增"**The guard prices the same**"一句组（净 +5 行）；
+  §4.1 脚本覆盖句同步；**Conclusion 第二段的数字复述被压掉**（同时关掉 R3 的 W4「重复五遍」）。
+- 复现包：新增 `rq2/analyses/audit/aclosure_evidence.json`（50 行逐条 + 审计说明），
+  `clause_tally.py` 新增守卫段（**断言** JSON 与判决一致、断言"≥2 次关闭/恰好 1 次放行"、
+  断言两种路由 0 分歧），README 同步。五个发货脚本原地 exit=0。
+
+### 11.3 ⚠️ 本轮三起工具事故（全部是我的）
+
+1. **篇幅量具第三次出错**：`text_frame()` 取"最满那一页"的跨度，而**框的两条边落在不同的页上**
+   （顶最高 83.9、底最低 669.6 分属两页）→ 框高被低估 585.0 vs 真实 585.6，
+   **误差恰好落在判定的刀口上**（18.0012 "OVER" vs 18.0000 "OK"）。改为全程 min-top / max-bottom。
+2. **本机有两个 Python**：`py` = 3.12.7 + PyMuPDF 1.27.2.2，`python` = **3.8.6 + PyMuPDF 1.24.11**，
+   两者**切分文本块的方式不同**（正文末行 599.2 vs 599.3，框 585.6 vs 600.9）。
+   我中途换了解释器 → **本轮读数彼此不可比**。已让量具**自报解释器与 PyMuPDF 版本**。
+3. **我自己的三处代码手误**：`ACLAUSE`/`ACLause`/`ACLUSE` 三个拼法混用（改了两次才改对）、
+   给量具加打印时用了未导入的 `os`。**共同点：我在猜，不是在读。**
+
+**教训合并成一条**：**量具的输出必须连同"谁产出的它"一起记录**——
+解释器、库版本、算法定义。三次事故没有一次是算法错得离谱，
+**都是"读数是某个特定工具在说话，而我没记下是哪个"。**
