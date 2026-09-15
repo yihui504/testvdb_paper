@@ -1,10 +1,68 @@
-# 样本 v9
+# 样本 v10
+
+**v9 送审结果**（首份完整稿）：三票 **Weak Accept / CONDITIONAL**。
+**每一项准则都离开了 Adequate**（round-18 是五项 Adequate）：
+Importance / Insights / Perspective / Verifiability / Presentation 全部 **Good**，
+其中 R1 给 Perspective、R3 给 Verifiability 各一个 **Excellent**——但**无共识 Excellent**，
+按 rubric 仍不够 ACCEPT。元评审：`.paperpilot/review/.in-progress-sample9/meta-review.md`。
+
+**三审一致确认的正面**：round-18 头号沉船点（复现包落后一代）**不复现**——R1 逐文件比对
+发货包与冻结研究树在 **452 个文件上零差异**；R3 把五个脚本全部就地跑通、逐条对上论文。
+§2/§3/§7/§8 四节被认为关闭了结构性缺口（此前八轮反复提的那条），R3 的判断是
+「emphasis 终于移到主张本身上了」。
+
+## v10 处置
+
+**① §4.5 的 identification 段——我上一轮写错，重写。** R1、R2 各自独立算出、与我逐格重算一致：
+不是「18 格引注释 + 1 格引校验规则」，而是 **15 格引注释/文档字符串 / 2 格引校验规则
+（milvus_026 的两个 run）/ 2 格引代码结构（milvus_011、milvus_012 各自的第三个 run）**。
+更重的是 R2 挖出的第三条：这两案的**另两个 run 都记 WEAK_REFUTED 并写明理由**——
+`milvus_011` run2「无注释静默行为」、`milvus_012` run2「兜底链结构示设计但**无注释/quote 明文
+（红线3 不构成 REFUTED）**」，而 run3 却按同一份结构判了 REFUTED。
+→ 所以「C 是唯一要求逐字意图证据的条款」这一命题，在它自己的 19 格里有 4 格没守住。
+已于 §4.5 如实写出，并说明**合规重算抓不到它**（那重量的是聚合规则，不是视角的证据要求）。
+教训：我上轮用关键词匹配（源码/注释/文档字符串）把"提到源码"当成了"引注释"——又一次全称断言未证伪。
+
+**② §8 层次错配（三人全中）**：把召回层费率配了确认集层的配对与 p。已改为
+`0.588→0.765` 配 `9/0, p=0.0039`、`0.529→0.804` 配 `14/0, p=0.0001`，确认集层另述。
+这正是我本轮在 §4.4 修好的同类错，上一批没传播到 §8。
+
+**③ Holm 家族是循环定义（R1、R2）**：我把家族定义成"那四个显著值本身"。已重写为
+**m=10（正文印出的十个召回层检验）**，非循环：留 0.0001 / 0.0034 / 0.0039 / 0.0039 四个
+（对 α/10…α/7），**停在第 5 个 0.0225**——即部署臂自己 vs flat 的召回层优势应作描述性读。
+配套：§4.4 补印了捆绑对比两骨干的召回层配对与 p（§4.1 承诺"每个对比两个层次都报"，缺的正是这个）。
+
+**④ 重判方向按 convention 口径是 15/0/4，不是 18/1（R1，我复现）**：我按三级序
+（Confirmed > Human-Review > False-Positive）算的；convention 是二值口径，HR↔Confirmed 是**无操作**。
+已改。方向仍全对我们不利。
+
+**⑤ 多数票平局规则未定义（R3，我复现）**：81 案中 **3 案三次运行给出三个不同判定**
+（milvus_021 / milvus_038 / qdrant_027）。原文 "a case confirmed on a majority" 已改为
+「至少两次把该案算作确认」，并写明换严格多数则 39/51 → **37/51**。
+
+**⑥ §4.2 的 26/20 —— 三人全中，撤断言。** 按 (vendor, reported_version) join 发货台账与
+`rq1-fullrun` 的十二个版本目录给 **49/30**（前缀归一 50/31）；R2 重建给 27/21；论文印 26/20。
+数值随"覆盖"的定义而变，我定不了代际，故**正文改为不带数的表述**，账挂在自检表。
+
+**⑦ 我本轮新写的三处过强（R2）**：§3.1 "holding everything else fixed" 与 §4.1/§6 冲突；
+§2 "**none** takes its expectation from untagged, system-level API prose" 对 RESTInfer/ICON 过强；
+§4.4 九臂描述"主骨干非 core 的六个"实为七个（含 source-only）——已逐条改准。
+
+**⑧ 工具盲区**：`107_rejudge_coverage_audit.py` 此前只扫 `rerun_v3`，**整个 contract core 漏掉**——
+这正是 R1 找到 core 三条前代归档缺失的原因。已扩到 `rerun_v2/run{1,2,3}`，现报 3 处 GAP。
+
+**⚠️ 未结**：复现包的三项（匿名化声明不实 254 文件 / core 前代归档 / README 的 RQ3 双计数表）
+**需你拍板**；§4.2 的 crash 计数与台账两处措辞（R1 小项）留待下轮。
+
+---
+
+## 沿革（v8 处置）
 
 **v8 送审结果**：R1 **Weak Accept** / R2 **Weak Accept** / R3 **Weak Accept**——三票全 CONDITIONAL。
 R2 明确把自己的 Verifiability 从 **Excellent 降到 Adequate**，理由是"机械的、不是科学的"：
 **发货的复现包比论文落后一代**。三人**独立**把这一条列为头号沉船点。
 
-## v9 处置（按三审收敛顺序）
+### v9 处置（按三审收敛顺序）
 
 **① 复现包同步（三人共同头号项，已落盘）。** 复现包对 `run_fullnosrc*` / `run_noscopic*`
 既无 `verdicts_coganchor_rejudge.jsonl` 也无 override 行，`recompute_paper_numbers.py`
@@ -27,9 +85,10 @@ audited"并说明第二骨干上误差质量会移动、§6 Backbone 单独一�
 configuration study" 改为 "twelve-configuration study"（§4.1 自己说臂是中途加的、三个对比多于一个变量）。
 
 **④ identification gap（R2 W5 / R3 2.4，R3 称之为"最大的结构性漏洞"）。** 论文用 C/D 互换这个
-自身缺陷去限定跨骨干比较，却从没说**主骨干**的字母凭什么算数。现已实测补齐：19 个由 C=Refuted
-关闭的判定里，**18 个明写源码注释或文档字符串**，第 19 个（milvus_026）依据服务端名称校验规则；
-主骨干 D 格 145 用认知词表、98 用源码词表。答案有利，且是可核的。
+自身缺陷去限定跨骨干比较，却从没说**主骨干**的字母凭什么算数。v9 实测补齐：主骨干 D 格 145 用认知
+词表、98 用源码词表。
+⚠️ **同一段对 C 行的分布断言当时写错了**（"18 明写源码注释 + 1 引校验规则"），
+v10 已按逐格重读改正为 **15 / 2 / 2**，见上方 ①。
 
 **⑤ 新增证据。** net/F1 配对 bootstrap 区间（R2 已用仓库自带脚本算过，我复现一致）：
 无源码 − full 的 net **0 [−8,+8]**、F1 **+0.033 [−0.044,+0.115]**，两者都跨零 → "leads on F1"
@@ -216,7 +275,7 @@ auditable, and an audit that only reports what it finds in the target is not one
 
 ---
 
-## 2 Preliminaries（~710 词，已写全）
+## 2 Preliminaries（~740 词，已写全）
 
 **The non-crashing majority.** Studies of VDBMS defects converge on one structural fact: most do not
 crash. The systematic bug study attributes the dominant share to functional failures — the service
@@ -255,9 +314,10 @@ reason each anchors somewhere other than system-level API prose:
 | structured-source oracles (AGORA+, SATORI, MASTOR, MASTEST) | OpenAPI fields, execution traces, or the implementation source | anchored in structured sources; source-anchored oracles encode implemented behaviour and so cannot report a documentation–code gap as a defect |
 | documentation-derived oracles (@tComment, JDoctor, DocTer, RBCTest, RESTInfer) | tagged or method-/parameter-level prose | prose-derived, but the derived oracle stays the final arbiter and the granularity sits below system-level behavioural prose |
 
-Each of these reaches something real. The point of the table is narrower: none takes its
-expectation from untagged, system-level API prose, which is where the VDBMS documentation states the
-constraints that matter here — "the other collection should have the same vector size as the current
+Each of these reaches something real. The point of the table is narrower: the families that read
+prose at all read it at field, parameter or method granularity, and often from tagged sources; none
+of them takes its expectation from **untagged, system-level behavioural prose**, which is where the
+VDBMS documentation states the constraints that matter here — "the other collection should have the same vector size as the current
 one", an `nprobe` bound, a password length. Those constraints are prose: implicit, ambiguous, spread
 across pages, and rarely stated as a machine-checkable value. "Optional, default 1" may or may not
 admit zero, and the documentation usually does not say. The systems also diverge by design — each
@@ -272,7 +332,7 @@ pipeline; it is the price of the only oracle family that anchors where the resid
 of this paper measures what that price buys, where inside a judge the errors concentrate, and which
 parts of the judge change the answer.
 
-## 3 Approach（~1,770 词，已写全）
+## 3 Approach（~1,840 词，已写全）
 
 ### 3.1 Overview
 
@@ -284,7 +344,8 @@ probes, assigning every probe to a strategy that was registered before it ran. (
 execution** runs the probes against a pinned instance of the target and records raw HTTP traffic.
 (iv) **Bug confirmation** decides, per candidate, whether the observation is a defect — and this
 stage is the object of study for most of what follows: §4.4 and §4.5 vary its internal organization
-and its evidence access, holding everything else fixed.
+and its evidence access against one common set of frozen packages, and §4.1 states which of the
+resulting contrasts change more than one thing.
 
 Two features of the design make it measurable rather than merely usable. First, each stage writes a
 structured artifact — a constraint record, a probe with an inline oracle line, a request/response
@@ -439,7 +500,7 @@ pipeline.
 
 ## 4 Evaluation
 
-### 4.1 Methodology（~950 词，已写全）
+### 4.1 Methodology（~1,055 词，已写全）
 
 **The pool.** Eighty-one candidates from Milvus, Qdrant, and Weaviate: 51 maintainer-confirmed bugs
 and 30 adjudicated false positives. Ground truth is maintainer adjudication for the 51 (labels,
@@ -469,9 +530,10 @@ were dispatched around the same time and whose recorded rationales still cite th
 issue number; those six runs have since been re-judged on the same terms, and the two controls'
 numbers below are computed on the cleaned pool as the rest are. **Every number this paper reports is computed on the cleaned pool**, and the
 second repair is not cosmetic: without it the deployed configuration would read 41/51 with
-a confirmed set of 41+6 rather than the 39/51 and 39+9 we report. It is not neutral for the two
-controls either: of the nineteen verdicts the six re-judge files rewrite, eighteen move a case
-toward confirmation under the convention and one away; the arms' true-positive sets are unchanged
+a confirmed set of 41+6 rather than the 39/51 and 39+9 we report. It does not move the two controls in our favour either: of the
+nineteen verdicts the six re-judge files rewrite, fifteen move a case toward confirmation under the
+convention, four move between Confirmed and Human-Review, which the convention counts alike, and
+none moves away; the arms' true-positive sets are unchanged
 (48 and 33) while their false-positive counts rise by two and one — suppression $0.467\to0.400$
 and $0.933\to0.900$ — and on the forced reading the no-source arm's recall rises by one, to 31.
 Both raw generations ship
@@ -488,8 +550,12 @@ cases under the pack-only, pack-plus-source and full-protocol statements respect
 ($\kappa = -0.01$, $0.08$, $0.11$), so we report the joint reading as a bound rather than a
 measurement. **Two of the three independent passes land at the forced floor.**
 
-**The twelve configurations.** Each re-adjudicates all 81 cases three times, a case confirmed on a
-majority; both backbones are serving aliases without pinned weights.
+**The twelve configurations.** Each re-adjudicates all 81 cases three times. A case counts as
+confirmed when **at least two of its three runs recorded it as confirmed** — under the convention,
+either Confirmed or Human-Review — which is not the same as requiring two runs to agree on a
+verdict: three of the 81 cases split three ways, and under a rule that demanded two identical
+verdicts the deployed stage's recall would be 37/51 rather than the 39/51 we report. Both backbones
+are serving aliases without pinned weights.
 
 | # | configuration | perspectives | rule | source | backbone |
 |---|---|---|---|---|---|
@@ -520,12 +586,13 @@ judgments against a binary schema.
 (51 true bugs); they disagree and **both are reported for every contrast**, including the isolation
 steps. Matched-pairs Wald intervals on recall differences. Discordant pairs are written *a/b*, where *a* is the arm whose
 count is printed first in the comparison being reported. **The p-values we print are unadjusted.**
-Nineteen paired tests appear below; the four significant *recall-level* values among them are the
-rule's effect on the primary backbone ($p{=}0.0039$) and on the second ($0.0001$), the
-evidence-access contrast ($0.0039$) and the second backbone's perspective contrast ($0.0034$) —
-these four survive a Holm correction taken over that family ($0.0001$, $0.0034$, $0.0039$,
-$0.0039$ against $\alpha/4$, $\alpha/3$, $\alpha/2$, $\alpha$), and the remaining fifteen should
-be read descriptively. All rates, the census on both backbones, both replays, the net and $F_1$
+Sixteen paired tests appear below, ten of them at the recall level. Read as a family of ten, a Holm
+correction leaves the four smallest significant — the bundled contrast on the second backbone
+($0.0001$), that backbone's perspective contrast ($0.0034$), the bundled contrast on the primary
+backbone ($0.0039$) and the evidence-access contrast ($0.0039$), tested against $\alpha/10$,
+$\alpha/9$, $\alpha/8$ and $\alpha/7$ — and stops at the fifth
+($0.0225$), so the deployed stage's own recall-level advantage over the flat judge, and everything
+larger than it, should be read descriptively. All rates, the census on both backbones, both replays, the net and $F_1$
 intervals and the pair audit are recomputable from the artifact
 (`rq2/analyses/{recompute_paper_numbers,clause_tally,convention_pricing,bootstrap_net_f1}.py` and
 `rq2/analyses/audit/pair_audit.py`; `clause_tally.py second` gives the second backbone's census);
@@ -549,8 +616,8 @@ It is **not a per-run detection rate, and we cannot supply one**: the RQ1 *detec
 experiment — 15 versions run to measure per-version detection — was **voided in full on 2026-08-23**
 because its attack dispatches carried source-clone paths and cross-round experience, violating our
 own information-boundary rules, with quality gates missed on the versions that were clean. Those
-runs measure nothing. **Twenty-six of the 81 adjudicated submissions, 20 of them confirmed, sit on
-versions that experiment covered**, so the distinction matters and we state it: the voided object is
+runs measure nothing. **A substantial share of the 81 adjudicated submissions sits on versions that
+experiment covered**, so the distinction matters and we state it: the voided object is
 the *measurement*, and the adjudication survives because maintainers are external to the violated
 protocol — they confirmed the candidates and merged the fixes. We report the ledger for that reason
 and no other. The void record ships with the artifact.
@@ -615,8 +682,10 @@ so we added the missing pieces to the flat judge in turn. The schema-line repair
 30→35 (recall level 0/5, $p{=}0.0625$; confirmed-set level 34→39, 1/6, $p{=}0.1250$) and forced
 recall 25→29; adding the routing rule on top moves recall 35→39 at the recall level (2/6,
 $p{=}0.2891$; confirmed-set 39→51, 2/14, $p{=}0.0042$) and, forced, the other way (29→27, 3/1).
-**The bundled contrast — flat judge to rule-bearing judge — moves 30→39** at the recall level and
-34→51 on the confirmed set (0/17, $p{<}0.0001$), and it replicates on the second backbone (27→41).
+**The bundled contrast — flat judge to rule-bearing judge — moves 30→39** at the recall level (0/9,
+$p{=}0.0039$) and 34→51 on the confirmed set (0/17, $p{<}0.0001$), and it replicates on the second
+backbone: 27→41 at the recall level (0/14, $p{=}0.0001$) and 32→51 on the confirmed set (0/19,
+$p{<}0.0001$).
 **The two levels disagree for the rule step, and we privilege neither**: it is significant at the
 confirmed-set level and not at the recall level. For reference, the deployed stage against the flat
 judge is 48 vs 34 on the confirmed set (16/2, $p{=}0.0013$) and 39 vs 30 at recall (11/2,
@@ -644,8 +713,9 @@ forced true-bug sets intersect in 22 of 27 and 23 of 26. At the recall level aga
 flat judge the perspectives are $+3$ (33 vs.\ 30, 5/2, $p{=}0.4531$) and against the
 schema-corrected control $-2$ (33 vs.\ 35, 1/3, $p{=}0.6250$), neither significant.
 
-**The readings reorder the arms.** Across the nine judging arms this section contrasts — the six
-primary-backbone configurations other than the core, plus the second backbone's three — forced
+**The readings reorder the arms.** Across the nine judging arms this section contrasts — the flat
+judge, flat $+$ schema, flat $+$ aggregation, full-no-aggregation, full stage and full-no-source on
+the primary backbone, and the second backbone's flat, flat $+$ aggregation and full — forced
 recall spans [23, 31] of 51 against a convention span of [27, 48]; the contract-only core, a blind
 baseline, reaches 8 forced and 8 convention, and the two source-only configurations 20 and 19
 forced (36 and 37 convention, the two recall figures quoted below).
@@ -666,7 +736,7 @@ redirects the by-design clause to the cognition materials and drops the objectiv
 perspective's negative-sentinel exemption), and the two source-only configurations (0.706 and 0.725
 recall) are shipped but outside this section's contrasts.
 
-### 4.5 The clause census: where the confirmation stage closes wrong（~950 词，已写全）
+### 4.5 The clause census: where the confirmation stage closes wrong（~1,150 词，已写全）
 
 *Where does the confirmation stage's error come from?*
 
@@ -682,16 +752,25 @@ the recorded D cells use the source vocabulary in **217 of 243 judgments on the 
 against 98 of 243 on the primary**, so the letters may not denote the same perspective on the two
 backbones and the two censuses may not be comparable.
 
-**On the primary backbone the letters are identified by their content rather than assumed.** Every
-one of the nineteen judgments this census closes by C=Refuted records the evidence it rests on:
-eighteen cite a source comment or docstring, the nineteenth (`milvus_026`) the server's own
-name-validation rule, whose code and error message the same case's other runs record — none infers
-intent from behavior alone. The primary's D cells likewise carry the cognition vocabulary in 145 of
-243 judgments against the source vocabulary's 98, which is the split that puts the latter in the
-catch-all below. Whatever the doubled definition does to the second backbone, it does not leave the
-primary's C row resting on anything other than the evidence the legend requires of it. The ambiguity
-therefore bounds the cross-backbone comparison without voiding the census on the backbone we claim.
-What we claim is therefore the primary-backbone
+**On the primary backbone the letters are identified by their content rather than assumed.** The
+nineteen judgments this census closes by C=Refuted record what they rest on, and reading them
+separates three kinds of evidence rather than one: **fifteen** cite a comment or docstring in the
+implementation; **two** (`milvus_026`, in two of its three runs) cite the server's own
+name-validation rule, whose code and error message those runs name; and **two** (`milvus_011` and
+`milvus_012`, each in its third run) rest on code structure — a default expression, a fallback
+chain. None rests on observed behaviour alone, which is the property the legend requires of this
+clause. But the last two are the weaker kind, and the same two cases show why the distinction is
+not academic: in both, the case's *other* runs recorded a weak refutation and gave their reason —
+`milvus_011`'s second run notes that a silent behaviour has no comment behind it, and
+`milvus_012`'s second run states that the fallback-chain structure shows design but carries no
+comment or quote, so the red line governing this perspective does not admit it. The
+verbatim-evidence requirement is therefore not applied uniformly by the judge that recorded these
+cells — a departure the compliance recount below does not catch, because that recount measures
+compliance with the *aggregation* rule, and this is a requirement of the perspective itself. The
+primary's D cells likewise carry the cognition vocabulary in 145 of 243 judgments against the source
+vocabulary's 98, which is the split that puts the latter in the catch-all below. The ambiguity
+between the two printed definitions therefore bounds the cross-backbone comparison without voiding
+the census on the backbone we claim. What we claim is the primary-backbone
 result; what we can say about the second is that it does not reproduce and that we cannot rule out
 the letters meaning different things there.
 
@@ -924,7 +1003,7 @@ non-crashing defects. To our knowledge no prior work measures the reliability of
 documentation-derived oracle on an adjudicated pool of VDBMS cases, which is what the pool and the
 twelve frozen configurations below are for.
 
-## 8 Conclusion（~410 词，已写全）
+## 8 Conclusion（~430 词，已写全）
 
 We set out to measure what determines which candidate defects an LLM confirmation judge confirms,
 and the answer on this pool is not the judge's internal organization. Two configurations that differ
@@ -932,8 +1011,9 @@ in whether they carry a four-perspective decomposition confirm the same number o
 forced verdicts on both backbones — 27 of 51 and 26 of 51 — while agreeing on only 22 and 23 of
 those cases: the organization changes which cases are decided, not how many. What moves the outcome
 is how often the judge declines to decide. Adding an aggregation rule that lets it route a case to
-human review rather than close it raises recall on both backbones (0.588 to 0.765, 17/0,
-$p{<}0.0001$; 0.529 to 0.804, 19/0, $p{<}0.0001$), and almost all of that is deferral: forced-verdict
+human review rather than close it raises recall on both backbones (0.588 to 0.765, 9/0 at the recall
+level, $p{=}0.0039$; 0.529 to 0.804, 14/0, $p{=}0.0001$) — and on the confirmed set the same two
+contrasts are 17/0 and 19/0, both $p{<}0.0001$. Almost all of that is deferral: forced-verdict
 recall moves only 25 to 27 and 23 to 26. Under the deployment's convention, where a routed case
 counts as confirmed, the rule's effect and the routing rate are the same quantity, and we say so
 rather than presenting the difference as the rule getting better at deciding.
@@ -975,14 +1055,16 @@ batches, so either pool can be reconstructed from the package alone.
 | 规则隔离步 | 召回 2/6 (p=0.2891)；**确认集 39→51，2/14，p=0.0042** | artifact 脚本 |
 | **joint 定价** | 规则臂 29→32 = **+3**；部署臂 29→33 = **+4**；**对称计满 = +4**（不对称才是 +5） | 本人重算 |
 | **源码臂（补漏后）** | 48+18；supp **0.400**、prec 0.727；**net 30（与 full 持平）**、F1 **0.821**；**forced 31**（原 30，milvus_006） | 本人重算 |
-| **重判效果** | 6 个重判文件改 19 个判定：**18 朝确认、1 反向**；两臂 TP 集合不变（48/33）、FP +2/+1 | 本人重算 |
+| **重判效果** | 6 个重判文件改 19 个判定：**15 朝确认、4 无操作、0 反向**（convention 二值口径；三级序口径才是 18/1/0，v10 修正）；两臂 TP 集合不变（48/33）、FP +2/+1 | 本人重算 |
 | **无聚合臂（补漏后）** | 33+3；supp **0.900**、prec 0.917；**net 30**、F1 0.759；vs flat **确认集 36 vs 34，6/4，p=0.7539** | 本人重算 |
 | **源码对比** | 召回层 0/9 p=0.0039（**不变**）；**确认集 48 vs 66，0/18，p<0.0001**；supp 21/30→**12/30** | 本人重算 |
 | **net/F1 区间** | 无源码 − full：net 0 **[−8,+8]**、F1 +0.033 **[−0.044,+0.115]**（配对 bootstrap 20k，seed 20260914） | `bootstrap_net_f1.py` |
 | Qwen | 捆绑 27→41 (0/14, p=0.0001) | artifact 脚本 |
 | 视角（五变量） | 39 vs 39 (4/4, p=1.0, ±0.11)；Qwen 41 vs 30 (12/1, p=0.0034, forced 26 vs 26) | artifact 脚本 |
 | 强制跨度 | 九臂 **[23,31]**/[27,48]（6 主骨干 + 3 Qwen，不含两个 core）；core 8；source-only 20、19 | 本人重算 |
-| **identification** | 主骨干 19 个 C=Refuted 关闭格：18 明写源码注释/文档字符串，第 19（milvus_026）为服务端名称校验规则；D 词表 145 认知 / 98 源码 | 本人逐格读 rationale |
+| **identification** | 主骨干 19 个 C=Refuted 关闭格：**15 引注释/文档字符串、2 引服务端校验规则（milvus_026 的两个 run）、2 引代码结构**（milvus_011、milvus_012 各 run3；这两案的另两 run 均记 WEAK_REFUTED 并写明「无注释/quote 明文」）；D 词表 145 认知 / 98 源码 | 本人逐格读 rationale（v10 修正） |
+| **多数票规则** | 「至少两次算作确认」（convention 二值）→ 39/51；严格多数（两次须记同一判定）→ **37/51**；**3 案三向分裂**（milvus_021/038、qdrant_027） | 本人重算 |
+| **Holm 家族** | 正文印 **16 个配对检验（召回层 10 个）**；m=10 下 Holm 留 4 个（0.0001/0.0034/0.0039/0.0039，对 α/10…α/7），**停在第 5 个 0.0225** | 本人重算（v10 修正，原为循环定义） |
 | 条款表 | 243 = 61+21+7+50+19+16+69；A 24/50；C 17/19（**三个 FP 条款的中间**）；错误关闭 30，A 占 24 = 80% | `clause_tally.py` |
 | catch-all 构成 | 69 中 37 用源码词表（**54%**，28 真 bug）；32 可定义，17 真 bug = 53.1% vs 63.0%（**−1.12 SE**，SE 取观测比口径；取基准率口径为 −1.16） | 本人重算 |
 | 重放 | 严格 43/51·19/30；反事实 46/51·12/30；**两条 forced 均 no-op** | `clause_tally.py` |
