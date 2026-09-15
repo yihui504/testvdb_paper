@@ -23,6 +23,7 @@
 | 6 | 09-15 13:21 | `.in-progress-sample9` | v10 | Weak Accept | Weak Accept | Weak Accept | **0/3** | — |
 | 7 | 09-15 15:03 | `.in-progress-sample10` | v10 LaTeX（首轮审提交物） | Weak Accept | Weak Accept | Weak Accept | **0/3** | — |
 | 8 | 09-15 16:05 | `.in-progress` | v10 LaTeX + sample10 修复批次 | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
+| 9 | 09-15 16:55 | `.in-progress` | v10 + round-19 修复批次 + **匿名快照已同步** | **Accept** | **Accept** | **Accept** | **3/3** | **ACCEPT** |
 
 **语义提醒**：第 1 轮的「合并 ACCEPT」与 reviewer 的「Weak Accept」不矛盾——rubric 的合并规则允许多票
 Weak Accept 在「无共识 Poor / 无共识 Weak」时上浮。看**趋势**时以 Accept 数列为主，合并总评作辅。
@@ -66,13 +67,13 @@ Importance & Scope / Insights & Evidence / Perspective / Verifiability / Present
 
 ### 2.2 准则层趋势（只有被明确写出时才记）
 
-| 准则 | #5 sample8 | #6 sample9 ⚠️5级 | #7 sample10 ⚠️5级 | #8 round-19 |
-|---|---|---|---|---|
-| Importance & Scope | — | — | Good×3 | **Excellent×3（共识）** |
-| Insights & Evidence | — | — | Good×3 | Adequate×3（共识） |
-| Perspective | — | Excellent (R1) | Excellent (R2) | Excellent (**R2, R3**) / Adequate (R1) |
-| Verifiability | Adequate (**R2 降级**) | Good×2 + Excellent (R3) | Excellent (R1, R3) / Good (R2) | **Excellent (R1, R3)** / Adequate (R2) |
-| Presentation | — | Good×3 | Good×3 | Adequate×3 |
+| 准则 | #5 sample8 | #6 sample9 ⚠️5级 | #7 sample10 ⚠️5级 | #8 round-19 | #9 round-20 |
+|---|---|---|---|---|---|
+| Importance & Scope | — | — | Good×3 | **Excellent×3（共识）** | **Excellent×3（共识）** |
+| Insights & Evidence | — | — | Good×3 | Adequate×3（共识） | Adequate×2 / Excellent×1（R2 上抬，[Mixed] 取中位 Adequate） |
+| Perspective | — | Excellent (R1) | Excellent (R2) | Excellent (R2, R3) / Adequate (R1) | **Excellent×3（共识，新）** |
+| Verifiability | Adequate (**R2 降级**) | Good×2 + Excellent (R3) | Excellent (R1, R3) / Good (R2) | Excellent (R1, R3) / Adequate (R2) | **Excellent×3（共识，新）** |
+| Presentation | — | Good×3 | Good×3 | Adequate×3 | Adequate×3 |
 
 **三条最重要的读数**：
 
@@ -136,7 +137,31 @@ text"）以解开二骨干混淆；（b）那 ~15 案在 verbatim-evidence guard
 
 ## 3. 各轮记录
 
-### 3.1 本轮（#8 round-19，2026-09-15 16:05）
+### 3.1 本轮（#9 round-20，2026-09-15 16:55）
+
+**对象**：`TestVDB-v10.tex` + round-19 修复批次；**匿名快照已在开审前同步**。
+**产物**：`.paperpilot/review/TestVDB-review-2026-09-15b.md`。
+**评价**：**三票 Accept，合并 ACCEPT**。
+
+**本轮最大的结构变化：Verifiability 首次成为共识 Excellent（3/3）。**
+它的成因是机械的——上一轮 R2 的 [major] 4.2（匿名快照缺 5 个提交）被**你同步掉了**。
+这条准则在本项目里连续四轮都是唯一的杠杆，**每一次的涨跌都由"读者能不能把论文印的东西跑出来"决定**，
+与文笔无关。Perspective 也在本轮成为共识（R1 归队）。
+
+**本轮抓到的最硬一条是「可数宣称」：§4.1 写 "Sixteen paired tests appear below"，
+实际是 20 个**（我逐条枚举确认，10 个在召回层）。R2 报的，我用列表证伪。
+**这是本项目第四次栽在"我写了一个可数的数但没数"上**
+（前三次：236≠243、69≠48、§4.4 的 22/8）。**纪律应当升级为：凡写进论文的计数，
+先跑一遍把它数出来。**
+
+另有一处 **我上一轮自己引入的缺陷**：§4.5 交叉表只印了 two of the four strata，
+R1 与 R3 **独立地**分别反推出 20/60 与 60+3+18=81——**两个人都推错了**（实际 59+3+18+1）。
+"给率不给分母"是可复现的公允缺陷，已补全。
+
+**修复**：20 个检验 + Holm 家族理由、交叉表分层与分母、选择性预测线（R1 独立报的**新**缺口，
+bib 此前完全没有这条线）、Table 1 对 SATORI 的过头刻画、§5 第一条教训超出设计、§4.6 的读不通句。
+
+### 3.2 上一轮（#8 round-19，2026-09-15 16:05）
 
 **对象**：`TestVDB-v10.tex` + PDF（承接 #7 的修复批次）。
 **产物**：`.paperpilot/review/TestVDB-review-2026-09-15.md`（三审 + meta）。
@@ -161,7 +186,7 @@ Perspective Excellent×2、Verifiability Excellent×2、Insights Adequate×3、P
 本地和 GitHub 确实好了，**但论文里那个 URL 指向的东西没好**。
 前三次是开发树 vs 发货包，这次是**发货包 vs 公开快照**。**验证必须验到读者实际会点开的那一层。**
 
-### 3.2 上一轮（#7 sample10）
+### 3.3 再上一轮（#7 sample10）
 
 **对象**：`TestVDB-v10.tex` + 编译产物 PDF（首次审格式化提交物，不再是 markdown 草稿）。
 **产物**：`.paperpilot/review/.in-progress-sample10/`（`meta-review.md` + `FINDINGS_VERIFIED.md` + 三份 `reviewer-*/draft.md`）。
@@ -187,26 +212,28 @@ Perspective Excellent×2、Verifiability Excellent×2、Insights Adequate×3、P
 
 ---
 
-## 4. 下一轮（#9）的决策点
+## 4. 下一轮（#10）的决策点
 
 **先读 2.3 / 2.4 再决定做什么。** #8 已把候选 A（改定位）与 B（脚本化）部分兑现，
 且 #8 的三家把 Importance & Scope 给了共识 Excellent——**写作类路线基本走到头**。
 
-| 候选 | 成本 | 谁要求过 | 是否新实验 | 预期 |
+| 候选 | 成本 | 谁要求过 | 是否新实验 | 状态 / 预期 |
 |---|---|---|---|---|
-| ~~**B'. 把「未脚本化家族」继续减项**~~ | ~~低~~ | #7 R1、#8 R1/R2/R3 | 否 | ✅ **#8 已做两项**：材料/协议交叉表（`clause_tally.py` + `doc_evidence_layer.json`）、对比定价与路由队列（`convention_pricing.py`）。未脚本化家族 5 → **4**，论文缩短 0.08 页。**#7 R1 的 Accept 条件至此兑现。** |
-| **E. 匿名快照同步** | 极低（用户操作） | #8 R2 [major] | 否 | **Verifiability 从 2/3 到共识 Excellent 的唯一路径** |
-| **F. 描述统计表**（12 臂 × 4 数） | 低（~15 行） | #8 R2 5.4 / R3 5.2 独立 | 否 | 抬 Presentation（现共识 Adequate） |
-| **C. ~15 案重判（verbatim-evidence guard）** | **高** | #5 #6 #7 **#8** 三家各自点名 | **是** | 唯一能抬 Insights 的动作 |
-| **G. 重派一条修正派发词的臂**（解二骨干混淆） | **高** | #8 R2 2.2 | **是** | 同上，R2 明说是它给的 fix |
+| ~~**B'. 未脚本化家族减项**~~ | 低 | #7 R1、#8 三家 | 否 | ✅ **已做两项**（交叉表 + 对比定价），家族 5 → **4** |
+| ~~**E. 匿名快照同步**~~ | 极低 | #8 R2 [major] | 否 | ✅ **已做**。#9 Verifiability 升为**共识 Excellent** |
+| **F. 描述统计表**（12 臂 × 4 数） | 中 | #8 R2/R3、**#9 三家** | 否 | **仍未做**：需 ~0.24 页，会把余量从 0.20 压没。**须等量删减才可做** |
+| **H. 臂/骨干命名表**（×1 行术语表） | 低 | #8 R2/R3、**#9 三家** | 否 | **连续三轮被三家点名**，是当前最廉价的 Presentation 杠杆 |
+| **I. 审计第二读者** | 中 | #8 三家、**#9 三家** | 是（小） | 连续两轮三家点名；抬 Insights/Verifiability 的稳健性 |
+| **C. ~15 案重判（verbatim-evidence guard）** | **高** | #5 #6 #7 #8 **#9**（R2/R3） | **是** | 唯一能抬 Insights 的动作 |
+| **G. 重派一条修正派发词的臂**（解二骨干混淆） | **高** | #8 R2、**#9 R1/R2/R3** | **是** | 同上；R1 2.5 / R3 2.5 / R2 2.4 本轮全部指向它 |
 
-**本轮（#8）对 C/G 的判断：不做。** 理由写在 2.4——判定已是 ACCEPT，
-两家都把 C/G 标为 fixable 但**没有一家把判定挂在它们上面**；而本项目史上三次回归
-（漏洗臂、重判覆盖缺口、artifact 代际漂移）**全部发生在新臂批次上**。
-在余量只剩 0.36 页、且判定已达标的情况下加实验，是拿确定的收益换不确定的风险。
+**#9 对 C/G 的判断仍是不做**，理由与 #8 相同，且本轮更明确：三家的 `[major, fixable]`
+**全部落在 C/G 上，但没有一家把判定挂在它们上面**。Insights 由 R2 单票抬到 Excellent、
+R1/R3 保持 Adequate——**分歧在权重不在事实**，加做实验去消除这个分歧，
+收益远小于本项目史上"每加一批新臂必出一次回归"的代价（已发生三次）。
 
-**下一轮优先做 E（用户同步）→ B' → F**，三者都不动实验、不动承重数字。
-若 #9 仍≥2 Accept，则距停止条件还差 #10 一轮。
+**#10 的优先序**：**H（术语表，等长可做）→ I（审计第二读者，若判官能用）→ F（表，须先删减）**。
+三者都不动承重数字。**距离停止条件还差 #10 一轮**（#7:0/3、#8:3/3、#9:3/3，需连续三轮 ≥2）。
 
 **执行纪律**（每一步都要满足）：
 1. 先读本文件 2.3/2.4，再动手；
